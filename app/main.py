@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from src.db import get_engine
 from src.queries import query_product_by_bcode
+from src.ai import format_product_answer
 
 app = FastAPI(title="KCW API")
 
@@ -24,9 +25,11 @@ def ask(req: AskRequest):
 
     df = query_product_by_bcode(engine, bcode)
 
+    rows = df.fillna("").to_dict(orient="records")
+
+    formatted = format_product_answer(bcode, rows)
+
     return {
         "status": "ok",
-        "query": bcode,
-        "count": len(df),
-        "rows": df.fillna("").to_dict(orient="records"),
+        "reply": formatted
     }
