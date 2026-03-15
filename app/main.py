@@ -48,6 +48,17 @@ async def telegram_webhook(request: Request):
     if not chat_id:
         return {"ok": True}
 
+    # ⭐ greeting when user press START
+    if text.lower() == "/start":
+        greeting = (
+            "สวัสดีครับ 👋\n"
+            "นี่คือระบบค้นหาสินค้า KCW (เวอร์ชันทดลอง)\n\n"
+            "คุณสามารถพิมพ์ BCODE เพื่อค้นหาสินค้าได้ทันที\n"
+            "ระบบยังอยู่ระหว่างพัฒนา อาจมีข้อผิดพลาดได้ 🙏"
+        )
+        send_telegram_message(chat_id, greeting)
+        return {"ok": True}
+
     if not text:
         send_telegram_message(chat_id, "ส่ง BCODE มาได้เลย")
         return {"ok": True}
