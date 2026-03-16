@@ -54,7 +54,7 @@ async def telegram_webhook(request: Request):
         # remove loading spinner
         answer_callback_query(callback["id"])
 
-        resp = handle_callback(data)
+        resp = handle_callback(engine, data)
         text, markup = to_telegram_message(resp)
 
         send_telegram_message(chat_id, text, markup)

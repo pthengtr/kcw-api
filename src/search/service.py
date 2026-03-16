@@ -275,3 +275,21 @@ def query_product_search_v3(engine, search_query: SearchQuery) -> pd.DataFrame:
 def search_products(engine, raw_query: str, limit: int = 20) -> pd.DataFrame:
     sq = SearchQuery(raw=raw_query, limit=limit)
     return query_product_search_v3(engine, sq)
+
+def get_product_detail_by_bcode(engine, bcode: str) -> pd.DataFrame:
+    sql = """
+    select
+        trim("BCODE") as "BCODE",
+        trim("XCODE") as "XCODE",
+        trim("MCODE") as "MCODE",
+        trim("PCODE") as "PCODE",
+        trim("ACODE") as "ACODE",
+        trim("DESCR") as "DESCR",
+        trim("MODEL") as "MODEL",
+        trim("BRAND") as "BRAND",
+        "PRICE1"
+    from raw_kcw.raw_hq_icmas_products
+    where trim("BCODE") = %(bcode)s
+    limit 1
+    """
+    return pd.read_sql(sql, engine, params={"bcode": bcode.strip()})
