@@ -58,20 +58,7 @@ def handle_callback(engine, data: str) -> BotResponse:
 
         row = df.iloc[0]
 
-        text = (
-            f"ข้อมูลสินค้า\n"
-            f"BCODE: {safe_val(row.get('BCODE'))}\n"
-            f"DESCR: {safe_val(row.get('DESCR'))}\n"
-            f"MODEL: {safe_val(row.get('MODEL'))}\n"
-            f"BRAND: {safe_val(row.get('BRAND'))}\n"
-            f"XCODE: {safe_val(row.get('XCODE'))}\n"
-            f"MCODE: {safe_val(row.get('MCODE'))}\n"
-            f"PCODE: {safe_val(row.get('PCODE'))}\n"
-            f"ACODE: {safe_val(row.get('ACODE'))}\n"
-            f"PRICE1: {safe_val(row.get('PRICE1'))}"
-        )
-
-        formated_text = format_product_answer_ai(text)
+        formated_text = format_product_answer_ai(row.get('BCODE'), row)
 
         return BotResponse(
             text=formated_text,

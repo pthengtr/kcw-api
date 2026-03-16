@@ -4,7 +4,7 @@ from openai import OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def format_product_answer_ai(bcode: str) -> str:
+def format_product_answer_ai(bcode: str, rows: list[dict]) -> str:
 
     res = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -21,6 +21,10 @@ def format_product_answer_ai(bcode: str) -> str:
                             คุณคือผู้ช่วยร้านค้าปลีกที่เป็นมิตร
 
                             ผู้ใช้ค้นหาสินค้า: {bcode}
+
+                            ด้านล่างคือข้อมูลสินค้าในรูปแบบ JSON
+
+                            {rows}
 
                             ด้านล่างคือชือคอลัมเทียบกับความหมาย
                        
