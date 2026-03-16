@@ -1,4 +1,5 @@
 from src.search.service import search_products, get_product_detail_by_bcode
+from src.ai import format_product_answer_ai
 from .models import BotResponse, Action
 
 
@@ -70,8 +71,10 @@ def handle_callback(engine, data: str) -> BotResponse:
             f"PRICE1: {safe_val(row.get('PRICE1'))}"
         )
 
+        formated_text = format_product_answer_ai(text)
+
         return BotResponse(
-            text=text,
+            text=formated_text,
             actions=build_product_menu(value)
         )
 
