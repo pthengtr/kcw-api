@@ -82,12 +82,7 @@ async def telegram_webhook(request: Request):
         telegram_send_message(chat_id, "❌ ไม่พบสินค้า")
         return {"ok": True}
 
-    # ⭐ FORMAT RESULT
-    lines = []
-    for i, r in df.iterrows():
-        lines.append(f"{i+1}. {r['BCODE']} {r['DESCR']}")
-
-    msg = "🔎 พบสินค้า:\n\n" + "\n".join(lines)
+    msg = format_product_answer(df)
 
     telegram_send_message(chat_id, msg)
 
