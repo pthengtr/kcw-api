@@ -30,16 +30,12 @@ def format_product_answer(df: pd.DataFrame, max_rows: int = 5) -> str:
         brand = _safe_text(row.get("BRAND"))
         model = _safe_text(row.get("MODEL"))
         price1 = format_price(row.get("PRICE1"))
-        matched_column = _safe_text(row.get("matched_column"))
-        match_type = _safe_text(row.get("match_type"))
-        matched_terms = _safe_text(row.get("matched_terms"))
-        score = _safe_text(row.get("score"))
+        qtyoh2 = format_price(row.get("QTYOH2"))
 
         lines.append(
             f"{i}. {bcode} | {descr}\n"
             f"   BRAND: {brand} | MODEL: {model}\n"
-            f"   PRICE1: {price1}\n"
-            f"   match: {matched_column} | type: {match_type} | terms: {matched_terms} | score: {score}"
+            f"   PRICE1: {price1} | QTYOH2: {qtyoh2}\n"
         )
 
     if len(df) > max_rows:

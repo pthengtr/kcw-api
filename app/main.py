@@ -2,14 +2,9 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from src.db import get_engine
-from src.search.service import search_products
-from src.ai import format_product_answer_ai
+from src.search.service import simple_and_search_sql
+from src.search.formatters import format_product_answer
 from src.bot.telegram_bot import send_telegram_message
-from src.bot.telegram_bot import to_telegram_message
-from src.bot.telegram_bot import answer_callback_query
-from src.bot.engine import handle_callback
-from src.bot.engine import handle_user_text
-
 
 app = FastAPI(title="KCW API")
 
@@ -29,11 +24,11 @@ def health():
 def ask(req: AskRequest):
     bcode = req.message.strip()
 
-    df = search_products(engine, bcode, limit=5)
+    df = simple_and_search_sql(engine, bcode, limit=5)
 
     rows = df.fillna("").to_dict(orient="records")
 
-    formatted = format_product_answer_ai(bcode, rows)
+    formatted = format_product_answer(bcode, rows)
 
     return {
         "status": "ok",
@@ -43,52 +38,58 @@ def ask(req: AskRequest):
 
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):
+
     update = await request.json()
 
-    # ⭐ CALLBACK MODE (button click)
-    callback = update.get("callback_query")
-    if callback:
-        chat_id = callback["message"]["chat"]["id"]
-        data = callback.get("data", "")
-
-        # remove loading spinner
-        answer_callback_query(callback["id"])
-
-        resp = handle_callback(engine, data)
-        text, markup = to_telegram_message(resp)
-
-        send_telegram_message(chat_id, text, markup)
-
-        return {"ok": True}
-
-    # ⭐ NORMAL MESSAGE MODE
     message = update.get("message") or {}
     chat = message.get("chat") or {}
-    text = (message.get("text") or "").strip()
+
     chat_id = chat.get("id")
+    user_text = (message.get("text") or "").strip()
 
     if not chat_id:
         return {"ok": True}
 
-    # ⭐ greeting
-    if text.lower() == "/start":
-        greeting = (
-            "สวัสดีครับ 👋\n"
-            "นี่คือระบบค้นหาสินค้า KCW (เวอร์ชันทดลอง)\n\n"
-            "พิมพ์ชื่อสินค้า / รหัส / รุ่น เพื่อค้นหาได้เลย"
+    # ⭐ GREETING
+    if user_text.lower() == "/start":
+
+        msg = (
+            "👋 สวัสดีครับ\n"
+            "ระบบค้นหาสินค้า KCW (ทดลอง)\n\n"
+            "ตัวอย่างการค้นหา:\n"
+            "• 22010585\n"
+            "• ลูกปืน 6207\n"
+            "• 220105 นมฮ\n\n"
+            "พิมพ์คำค้นหาได้เลย"
         )
-        send_telegram_message(chat_id, greeting)
+
+        send_telegram_message(chat_id, msg)
         return {"ok": True}
 
-    if not text:
+    # ⭐ EMPTY
+    if not user_text:
         send_telegram_message(chat_id, "พิมพ์คำค้นหาได้เลย")
         return {"ok": True}
 
-    # ⭐ use conversation engine (NOT direct search anymore)
-    resp = handle_user_text(engine, text)
+    # ⭐ SIMPLE SEARCH
+    df = simple_and_search_sql(
+        engine=engine,
+        query=user_text,
+        table_name="raw_kcw.raw_hq_icmas_products",
+        limit=10
+    )
 
-    text, markup = to_telegram_message(resp)
+    if df.empty:
+        send_telegram_message(chat_id, "❌ ไม่พบสินค้า")
+        return {"ok": True}
 
-    send_telegram_message(chat_id, text, markup)
+    # ⭐ FORMAT RESULT
+    lines = []
+    for i, r in df.iterrows():
+        lines.append(f"{i+1}. {r['BCODE']} {r['DESCR']}")
+
+    msg = "🔎 พบสินค้า:\n\n" + "\n".join(lines)
+
+    send_telegram_message(chat_id, msg)
 
     return {"ok": True}

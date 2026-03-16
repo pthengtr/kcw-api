@@ -1,11 +1,7 @@
-from .models import SearchQuery
-from .service import search_products, query_product_search_v3, get_product_detail_by_bcode
+from .service import simple_and_search_sql
 from .formatters import format_product_answer
 
 __all__ = [
-    "SearchQuery",
-    "search_products",
-    "query_product_search_v3",
-    "get_product_detail_by_bcode",
+    "simple_and_search_sql",
     "format_product_answer",
 ]
