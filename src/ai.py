@@ -4,9 +4,7 @@ from openai import OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def format_product_answer_ai(bcode: str, rows: list[dict]) -> str:
-    if not rows:
-        return f"ไม่พบสินค้า BCODE {bcode}"
+def format_product_answer_ai(bcode: str) -> str:
 
     res = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -19,9 +17,6 @@ def format_product_answer_ai(bcode: str, rows: list[dict]) -> str:
                 "role": "user",
                 "content": f"""
                             ผู้ใช้ค้นหา BCODE: {bcode}
-
-                            ข้อมูลสินค้า:
-                            {rows}
 
                             ช่วยสรุปผลเป็นภาษาไทย
                             แสดง:
