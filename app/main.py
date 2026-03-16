@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from src.db import get_engine
 from src.search.service import simple_and_search_sql
 from src.search.formatters import format_product_answer
-from src.bot.telegram_bot import send_telegram_message
+from src.bot.telegram_bot import telegram_send_message
 
 app = FastAPI(title="KCW API")
 
@@ -63,12 +63,12 @@ async def telegram_webhook(request: Request):
             "พิมพ์คำค้นหาได้เลย"
         )
 
-        send_telegram_message(chat_id, msg)
+        telegram_send_message(chat_id, msg)
         return {"ok": True}
 
     # ⭐ EMPTY
     if not user_text:
-        send_telegram_message(chat_id, "พิมพ์คำค้นหาได้เลย")
+        telegram_send_message(chat_id, "พิมพ์คำค้นหาได้เลย")
         return {"ok": True}
 
     # ⭐ SIMPLE SEARCH
@@ -80,7 +80,7 @@ async def telegram_webhook(request: Request):
     )
 
     if df.empty:
-        send_telegram_message(chat_id, "❌ ไม่พบสินค้า")
+        telegram_send_message(chat_id, "❌ ไม่พบสินค้า")
         return {"ok": True}
 
     # ⭐ FORMAT RESULT
@@ -90,6 +90,6 @@ async def telegram_webhook(request: Request):
 
     msg = "🔎 พบสินค้า:\n\n" + "\n".join(lines)
 
-    send_telegram_message(chat_id, msg)
+    telegram_send_message(chat_id, msg)
 
     return {"ok": True}
