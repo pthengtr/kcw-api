@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from src.db import get_engine
-from src.queries import query_product_by_bcode
+from src.queries import query_product_search_v1_multi
 from src.ai import format_product_answer
 from src.telegram_bot import send_telegram_message
 
@@ -64,7 +64,7 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     # ⭐ query DB
-    df = query_product_by_bcode(engine, text)
+    df = query_product_search_v1_multi(engine, text, limit=5)
     rows = df.fillna("").to_dict(orient="records")
 
     # ⭐ use AI formatter
