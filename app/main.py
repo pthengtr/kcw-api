@@ -24,7 +24,7 @@ def health():
 def ask(req: AskRequest):
     bcode = req.message.strip()
 
-    df = query_product_by_bcode(engine, bcode)
+    df = query_product_search_v1_multi(engine, bcode)
 
     rows = df.fillna("").to_dict(orient="records")
 
