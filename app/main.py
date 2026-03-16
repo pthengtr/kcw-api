@@ -2,8 +2,8 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from src.db import get_engine
-from src.queries import query_product_search_v1_multi
-from src.ai import format_product_answer
+from src.search.service import search_products
+from src.ai import format_product_answer_ai
 from src.telegram_bot import send_telegram_message
 
 app = FastAPI(title="KCW API")
@@ -24,11 +24,11 @@ def health():
 def ask(req: AskRequest):
     bcode = req.message.strip()
 
-    df = query_product_search_v1_multi(engine, bcode)
+    df = search_products(engine, bcode, limit=5)
 
     rows = df.fillna("").to_dict(orient="records")
 
-    formatted = format_product_answer(bcode, rows)
+    formatted = format_product_answer_ai(bcode, rows)
 
     return {
         "status": "ok",
@@ -64,11 +64,11 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     # ⭐ query DB
-    df = query_product_search_v1_multi(engine, text, limit=5)
+    df = search_products(engine, text, limit=5)
     rows = df.fillna("").to_dict(orient="records")
 
     # ⭐ use AI formatter
-    reply = format_product_answer(text, rows)
+    reply = format_product_answer_ai(text, rows)
 
     # ⭐ send back
     send_telegram_message(chat_id, reply)

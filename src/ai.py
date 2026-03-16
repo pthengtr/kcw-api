@@ -4,7 +4,7 @@ from openai import OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def format_product_answer(bcode: str, rows: list[dict]) -> str:
+def format_product_answer_ai(bcode: str, rows: list[dict]) -> str:
     if not rows:
         return f"ไม่พบสินค้า BCODE {bcode}"
 
@@ -26,7 +26,7 @@ def format_product_answer(bcode: str, rows: list[dict]) -> str:
                             ช่วยสรุปผลเป็นภาษาไทย
                             แสดง:
                             - BCODE
-                            - รายละเอียดสินค้า
+                            - ชื่อสินค้า
                             - ยี่ห้อ
                             - รุ่น
                             - ราคา
