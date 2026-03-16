@@ -1,9 +1,6 @@
 import os
 import requests
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from src.bot.models import BotResponse
-
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 
