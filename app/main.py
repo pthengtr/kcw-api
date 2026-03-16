@@ -75,7 +75,6 @@ async def telegram_webhook(request: Request):
     df = simple_and_search_sql(
         engine=engine,
         query=user_text,
-        table_name="raw_kcw.raw_hq_icmas_products",
         limit=10
     )
 
