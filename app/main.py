@@ -4,9 +4,9 @@ from pydantic import BaseModel
 from src.db import get_engine
 from src.search.service import search_products
 from src.ai import format_product_answer_ai
-from src.bot.telegram import send_telegram_message
-from src.bot.telegram import to_telegram_message
-from src.bot.telegram import answer_callback_query
+from src.bot.telegram_bot import send_telegram_message
+from src.bot.telegram_bot import to_telegram_message
+from src.bot.telegram_bot import answer_callback_query
 from src.bot.engine import handle_callback
 from src.bot.engine import handle_user_text
 
