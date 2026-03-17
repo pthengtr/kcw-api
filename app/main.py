@@ -1,4 +1,10 @@
-from fastapi import FastAPI, Request
+import os
+import hmac
+import base64
+import hashlib
+import json
+
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 
 from src.db import get_engine
@@ -85,5 +91,43 @@ async def telegram_webhook(request: Request):
     msg = format_product_answer(df)
 
     telegram_send_message(chat_id, msg)
+
+    return {"ok": True}
+
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+
+def verify_line_signature(body: bytes, signature: str, channel_secret: str) -> bool:
+    digest = hmac.new(
+        channel_secret.encode("utf-8"),
+        body,
+        hashlib.sha256
+    ).digest()
+    expected_signature = base64.b64encode(digest).decode("utf-8")
+    return hmac.compare_digest(expected_signature, signature)
+
+@app.post("/line/webhook")
+async def line_webhook(request: Request):
+    body = await request.body()
+    signature = request.headers.get("x-line-signature", "")
+
+    if not verify_line_signature(body, signature, LINE_CHANNEL_SECRET):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    payload = json.loads(body.decode("utf-8"))
+    events = payload.get("events", [])
+
+    # Important: LINE verification can send events=[]
+    if not events:
+        return {"ok": True}
+
+    for event in events:
+        print("LINE EVENT:", event)
+
+        # later you can handle:
+        # - follow
+        # - message
+        # - postback
+        # - unfollow
 
     return {"ok": True}
