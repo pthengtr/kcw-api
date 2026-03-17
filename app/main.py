@@ -3,6 +3,7 @@ import hmac
 import base64
 import hashlib
 import json
+import requests
 
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
@@ -97,6 +98,8 @@ async def telegram_webhook(request: Request):
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
+LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
+
 def verify_line_signature(body: bytes, signature: str, channel_secret: str) -> bool:
     digest = hmac.new(
         channel_secret.encode("utf-8"),
@@ -105,6 +108,25 @@ def verify_line_signature(body: bytes, signature: str, channel_secret: str) -> b
     ).digest()
     expected_signature = base64.b64encode(digest).decode("utf-8")
     return hmac.compare_digest(expected_signature, signature)
+
+def reply_line_message(reply_token: str, text: str):
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+    }
+
+    payload = {
+        "replyToken": reply_token,
+        "messages": [
+            {
+                "type": "text",
+                "text": text[:5000]  # LINE text limit safety
+            }
+        ]
+    }
+
+    resp = requests.post(LINE_REPLY_URL, headers=headers, json=payload, timeout=15)
+    resp.raise_for_status()
 
 @app.post("/line-webhook")
 async def line_webhook(request: Request):
@@ -117,6 +139,7 @@ async def line_webhook(request: Request):
     payload = json.loads(body.decode("utf-8"))
     events = payload.get("events", [])
 
+    engine = get_engine()
     # Important: LINE verification can send events=[]
     if not events:
         return {"ok": True}
@@ -124,10 +147,29 @@ async def line_webhook(request: Request):
     for event in events:
         print("LINE EVENT:", event)
 
-        # later you can handle:
-        # - follow
-        # - message
-        # - postback
-        # - unfollow
+        event_type = event.get("type")
+
+        if event_type != "message":
+            continue
+
+        message = event.get("message", {})
+        if message.get("type") != "text":
+            continue
+
+        user_text = (message.get("text") or "").strip()
+        reply_token = event.get("replyToken")
+
+        try:
+            results = simple_and_search_sql(engine, user_text)
+            reply_text = format_product_answer(results)
+        except Exception as e:
+            print("SEARCH ERROR:", e)
+            reply_text = "ระบบค้นหามีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
+
+        try:
+            reply_line_message(reply_token, reply_text)
+        except Exception as e:
+            print("LINE REPLY ERROR:", e)
+
 
     return {"ok": True}
