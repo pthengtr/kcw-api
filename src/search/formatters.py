@@ -113,7 +113,8 @@ def format_product_answer(search_result: dict) -> str:
             f"{i}. รหัสสินค้า: {bcode}\n"
             f"   รายละเอียดสินค้า: {product_detail}\n"
             f"   {price_line}\n"
-            f"   คงเหลือ (สำนักงานใหญ่): {qtyoh2} ({ingested_at})"
+            f"   คงเหลือ (สำนักงานใหญ่): {qtyoh2}\n"
+            f"   ({ingested_at})"
         )
 
     shown = len(df)
