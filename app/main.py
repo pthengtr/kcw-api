@@ -106,7 +106,7 @@ def verify_line_signature(body: bytes, signature: str, channel_secret: str) -> b
     expected_signature = base64.b64encode(digest).decode("utf-8")
     return hmac.compare_digest(expected_signature, signature)
 
-@app.post("/line/webhook")
+@app.post("/line-webhook")
 async def line_webhook(request: Request):
     body = await request.body()
     signature = request.headers.get("x-line-signature", "")
