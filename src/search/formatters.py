@@ -1,4 +1,6 @@
+
 import pandas as pd
+from zoneinfo import ZoneInfo
 
 
 def _safe_text(value, default: str = "-") -> str:
@@ -28,16 +30,26 @@ def format_qty_whole(value) -> str:
         return _safe_text(value)
 
 
+LOCAL_TZ = ZoneInfo("Asia/Singapore")   # or Asia/Bangkok
+
+
 def format_ingested_at(value) -> str:
     try:
         if value is None or str(value).strip() in {"", "<NA>", "nan"}:
             return "-"
-        dt = pd.to_datetime(value, errors="coerce")
+
+        dt = pd.to_datetime(value, errors="coerce", utc=True)
+
         if pd.isna(dt):
-            return _safe_text(value)
-        return dt.strftime("%Y-%m-%d %H:%M")
+            return str(value)
+
+        # ⭐ convert to local timezone
+        dt_local = dt.tz_convert(LOCAL_TZ)
+
+        return dt_local.strftime("%Y-%m-%d %H:%M")
+
     except Exception:
-        return _safe_text(value)
+        return "-"
 
 
 def format_product_answer(search_result: dict) -> str:
