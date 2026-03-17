@@ -3,9 +3,10 @@ from src.queries import get_daily_sales_summary
 def format_daily_sales_message(sales: dict) -> str:
     return (
         f"ยอดขายวันที่ {sales['date']}\n"
-        f"HQ: {sales['HQ']:,.0f}\n"
-        f"SYP: {sales['SYP']:,.0f}\n"
-        f"รวม: {sales['BOTH']:,.0f}"
+        f"สำนักงานใหญ่: {sales['HQ']:,.0f}\n"
+        f"สี่แยกพัฒนา: {sales['SYP']:,.0f}\n"
+        f"รวม: {sales['BOTH']:,.0f}\n"
+        f"(ไม่รวมส่วนลดท้ายบิล)"
     )
 
 

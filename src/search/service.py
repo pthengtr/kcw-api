@@ -1,20 +1,29 @@
-from sqlalchemy import text
 import pandas as pd
+from sqlalchemy import text
 
 SEARCH_COLS = [
     "BCODE", "XCODE", "MCODE", "PCODE", "ACODE",
     "DESCR", "MODEL", "BRAND"
 ]
 
+
 def simple_and_search_sql(
     engine,
     query: str,
     schema: str = "raw_kcw",
     table_name: str = "raw_hq_icmas_products",
-    limit: int = 50,
-):
+    limit: int = 5,
+) -> dict:
+    """
+    AND search across SEARCH_COLS.
+    Returns:
+    {
+        "items": DataFrame,
+        "total": int
+    }
+    """
     if not query or not str(query).strip():
-        return pd.DataFrame()
+        return {"items": pd.DataFrame(), "total": 0}
 
     tokens = str(query).strip().lower().split()
 
@@ -33,12 +42,17 @@ def simple_and_search_sql(
 
     where_sql = " AND ".join(where_parts)
 
-    sql = f'''
+    sql = f"""
         SELECT *
-        FROM "{schema}"."{table_name}"
-        WHERE {where_sql}
+        FROM (
+            SELECT
+                *,
+                COUNT(*) OVER() AS total_count
+            FROM "{schema}"."{table_name}"
+            WHERE {where_sql}
+        ) t
         LIMIT :limit
-    '''
+    """
 
     params["limit"] = limit
 
@@ -47,4 +61,14 @@ def simple_and_search_sql(
         rows = result.fetchall()
         cols = result.keys()
 
-    return pd.DataFrame(rows, columns=cols)
+    df = pd.DataFrame(rows, columns=cols)
+
+    total = 0
+    if not df.empty and "total_count" in df.columns:
+        total = int(df["total_count"].iloc[0])
+        df = df.drop(columns=["total_count"], errors="ignore")
+
+    return {
+        "items": df,
+        "total": total,
+    }
