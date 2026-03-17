@@ -33,20 +33,40 @@ def format_qty_whole(value) -> str:
 LOCAL_TZ = ZoneInfo("Asia/Singapore")   # or Asia/Bangkok
 
 
-def format_ingested_at(value) -> str:
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import pandas as pd
+
+LOCAL_TZ = ZoneInfo("Asia/Singapore")
+
+
+def format_last_updated(value) -> str:
     try:
-        if value is None or str(value).strip() in {"", "<NA>", "nan"}:
+        if not value:
             return "-"
 
-        dt = pd.to_datetime(value, errors="coerce", utc=True)
-
+        dt = pd.to_datetime(value, utc=True, errors="coerce")
         if pd.isna(dt):
-            return str(value)
+            return "-"
 
-        # ⭐ convert to local timezone
         dt_local = dt.tz_convert(LOCAL_TZ)
+        now = datetime.now(LOCAL_TZ)
 
-        return dt_local.strftime("%Y-%m-%d %H:%M")
+        diff = now - dt_local
+        minutes = int(diff.total_seconds() // 60)
+
+        if minutes < 1:
+            return "อัปเดตเมื่อสักครู่"
+
+        if minutes < 60:
+            return f"อัปเดต {minutes} นาทีที่แล้ว"
+
+        hours = minutes // 60
+        if hours < 24:
+            return f"อัปเดต {hours} ชม.ที่แล้ว"
+
+        days = hours // 24
+        return f"อัปเดต {days} วันที่แล้ว"
 
     except Exception:
         return "-"
@@ -73,7 +93,7 @@ def format_product_answer(search_result: dict) -> str:
         price1 = format_price(row.get("PRICE1"))
         pricem1 = format_price(row.get("PRICEM1"))
         qtyoh2 = format_qty_whole(row.get("QTYOH2"))
-        ingested_at = format_ingested_at(row.get("_ingested_at"))
+        ingested_at = format_last_updated(row.get("_ingested_at"))
 
         detail_parts = [x for x in [descr, brand, model] if x != "-"]
         product_detail = " | ".join(detail_parts) if detail_parts else "-"
@@ -93,7 +113,7 @@ def format_product_answer(search_result: dict) -> str:
             f"{i}. รหัสสินค้า: {bcode}\n"
             f"   รายละเอียดสินค้า: {product_detail}\n"
             f"   {price_line}\n"
-            f"   คงเหลือ: {qtyoh2} ณ {ingested_at}"
+            f"   คงเหลือ (สำนักงานใหญ่): {qtyoh2} ({ingested_at})"
         )
 
     shown = len(df)
