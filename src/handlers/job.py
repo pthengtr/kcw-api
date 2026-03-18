@@ -39,7 +39,8 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
     job = enqueue_job(
         engine=engine,
         job_type="echo_test",
-        payload={"text": text},
+        payload={"text": text, "site":"TEST-PC"},
+        worker_name="TEST-PC",
         requested_by=access.get("line_user_id"),
         source="line",
     )

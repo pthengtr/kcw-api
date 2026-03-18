@@ -24,7 +24,7 @@ def process_job(job: dict) -> str:
 
 def run_worker_forever():
     engine = get_engine()
-    worker_name = os.getenv("WORKER_NAME", "kcw-worker-1")
+    worker_name = os.getenv("WORKER_NAME", "unknown-worker")
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "3"))
 
     print(f"[START] worker={worker_name}")
