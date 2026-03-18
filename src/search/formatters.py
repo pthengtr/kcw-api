@@ -93,6 +93,7 @@ def format_product_answer(search_result: dict) -> str:
         price1 = format_price(row.get("PRICE1"))
         pricem1 = format_price(row.get("PRICEM1"))
         qtyoh2 = format_qty_whole(row.get("QTYOH2"))
+        costnet = format_price(row.get("COSTNET"))
         ingested_at = format_last_updated(row.get("_ingested_at"))
 
         detail_parts = [x for x in [descr, brand, model] if x != "-"]
@@ -111,9 +112,10 @@ def format_product_answer(search_result: dict) -> str:
 
         lines.append(
             f"{i}. รหัสสินค้า: {bcode}\n"
-            f"   รายละเอียดสินค้า: {product_detail}\n"
+            f"   ชื่อ: {product_detail}\n"
             f"   {price_line}\n"
-            f"   คงเหลือ (สำนักงานใหญ่): {qtyoh2}\n"
+            f"   ทุน: {costnet}"
+            f"   คงเหลือ (สนญ): {qtyoh2}\n"
             f"   ({ingested_at})"
         )
 
