@@ -2,11 +2,15 @@ import json
 from sqlalchemy import text
 
 
+import json
+from sqlalchemy import text
+
+
 def enqueue_job(
     engine,
     job_type: str,
     payload: dict | None = None,
-    worker_name: str | None = None,   # ⭐ ADD THIS
+    worker_name: str | None = None,
     requested_by: str | None = None,
     source: str | None = None,
 ) -> dict:
@@ -34,6 +38,7 @@ def enqueue_job(
             job_type,
             payload,
             status,
+            worker_name,
             requested_by,
             source,
             requested_at
