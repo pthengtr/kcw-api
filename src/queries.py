@@ -38,7 +38,7 @@ def get_daily_sales_summary(
                     end as sale_net
                 from {table_name}
                 where
-                    "BILLDATE" = :target_date
+                    "BILLDATE"::date = :target_date
                     and coalesce("JOURMODE", '') <> '0'
                     and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
             )
