@@ -16,8 +16,9 @@ def process_job(job: dict) -> str:
 
     if job_type == "echo_test":
         text_value = payload.get("text", "")
+        site_value = payload.get("site", "")
         time.sleep(2)
-        return f"echo ok: {text_value}"
+        return f"echo ok: {text_value}\n from: {site_value}"
 
     raise ValueError(f"Unsupported job_type: {job_type}")
 

@@ -6,6 +6,7 @@ def enqueue_job(
     engine,
     job_type: str,
     payload: dict | None = None,
+    worker_name: str | None = None,   # ⭐ ADD THIS
     requested_by: str | None = None,
     source: str | None = None,
 ) -> dict:
@@ -16,6 +17,7 @@ def enqueue_job(
             job_type,
             payload,
             status,
+            worker_name,
             requested_by,
             source
         )
@@ -23,6 +25,7 @@ def enqueue_job(
             :job_type,
             cast(:payload as jsonb),
             'pending',
+            :worker_name,
             :requested_by,
             :source
         )
@@ -42,6 +45,7 @@ def enqueue_job(
             {
                 "job_type": job_type,
                 "payload": json.dumps(payload),
+                "worker_name": worker_name,
                 "requested_by": requested_by,
                 "source": source,
             },
