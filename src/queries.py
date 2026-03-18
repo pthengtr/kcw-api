@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
 
