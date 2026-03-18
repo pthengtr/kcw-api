@@ -1,4 +1,5 @@
-from src.jobs.queue import enqueue_job, get_job_by_id, enqueue_sync_inventory_jobs
+from src.jobs.queue import enqueue_job, get_job_by_id
+from src.jobs.tasks import enqueue_sync_inventory_jobs
 from src.access.helper import can_execute
 
 
