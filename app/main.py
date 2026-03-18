@@ -4,6 +4,9 @@ import json
 from src.db import get_engine
 from src.bot.line_bot import verify_line_signature, reply_line_message
 from src.handlers.router import route_user_text
+from src.access.helper import get_line_user_id
+from src.access.helper import get_or_create_line_access
+from src.access.helper import build_access_denied_message
 
 app = FastAPI()
 
@@ -37,8 +40,34 @@ async def line_webhook(request: Request):
         user_text = (message.get("text") or "").strip()
         reply_token = event.get("replyToken")
 
+        # =========================
+        # ACCESS CHECK
+        # =========================
         try:
-            reply_text = route_user_text(engine, user_text)
+            line_user_id = get_line_user_id(event)
+            access = get_or_create_line_access(engine, line_user_id)
+
+            if not access["is_allowed"]:
+                reply_text = build_access_denied_message(access)
+                reply_line_message(reply_token, reply_text)
+                continue
+
+        except Exception as e:
+            print("ACCESS CHECK ERROR:", e)
+            try:
+                reply_line_message(
+                    reply_token,
+                    "ระบบตรวจสอบสิทธิ์มีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
+                )
+            except Exception as reply_err:
+                print("LINE REPLY ERROR:", reply_err)
+            continue
+
+        # =========================
+        # NORMAL ROUTING
+        # =========================
+        try:
+            reply_text = route_user_text(engine, user_text, access= access)
         except Exception as e:
             print("ROUTE ERROR:", e)
             reply_text = "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
