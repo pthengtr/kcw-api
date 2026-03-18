@@ -4,7 +4,7 @@ from sqlalchemy import text
 def get_daily_sales_summary(
     engine,
     target_date: str | None = None,
-    table_name: str = "raw_kcw.fact_sales_all",
+    table_name: str = "curated_kcw.fact_sales_all",
 ) -> dict:
     """
     Daily sales summary.
