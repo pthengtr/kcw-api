@@ -1,4 +1,6 @@
 from sqlalchemy import text
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 
 def get_daily_sales_summary(
@@ -16,21 +18,16 @@ def get_daily_sales_summary(
     with engine.connect() as conn:
 
         # ⭐ auto resolve latest date
+        bangkok_now = datetime.now(ZoneInfo("Asia/Bangkok"))
+
         if not target_date:
-            sql_max = text(f"""
-                select max("BILLDATE")
-                from {table_name}
-            """)
-            target_date = conn.execute(sql_max).scalar()
+            bangkok_now = datetime.now(ZoneInfo("Asia/Bangkok"))
 
-            if not target_date:
-                return {
-                    "date": None,
-                    "HQ": 0.0,
-                    "SYP": 0.0,
-                    "BOTH": 0.0,
-                }
-
+            if bangkok_now.hour < 19:
+                target_date = (bangkok_now - timedelta(days=1)).date()
+            else:
+                target_date = bangkok_now.date()
+                
         # ⭐ main aggregation
         sql = text(f"""
             with filtered as (

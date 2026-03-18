@@ -114,7 +114,7 @@ def format_product_answer(search_result: dict) -> str:
             f"{i}. รหัสสินค้า: {bcode}\n"
             f"   ชื่อ: {product_detail}\n"
             f"   {price_line}\n"
-            f"   ทุน: {costnet}"
+            f"   ทุน: {costnet}\n"
             f"   คงเหลือ (สนญ): {qtyoh2}\n"
             f"   ({ingested_at})"
         )
