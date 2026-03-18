@@ -1,13 +1,13 @@
 from src.jobs.queue import enqueue_job, get_job_by_id
-from src.jobs.tasks import enqueue_sync_inventory_jobs
+from src.jobs.tasks import enqueue_sync_inventory_jobs, get_all_worker_status
 from src.access.helper import can_execute
 
 
 def is_job_request(text: str) -> bool:
     t = (text or "").strip().lower()
     return (
-        t in {"test job", "queue test", "run test", "ทดสอบคิว", "ทดสอบงาน"}
-        or t.startswith("job ")
+        t.startswith("job status")
+        or t == "worker status"
         or t == "sync inventory"
     )
 
@@ -21,6 +21,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
     text = (user_text or "").strip()
     text_lower = text.lower()
 
+    # ⭐ job status
     if text_lower.startswith("job status "):
         raw_id = text_lower.replace("job status ", "", 1).strip()
         if not raw_id.isdigit():
@@ -32,6 +33,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
 
         return format_job_status(job)
 
+    # ⭐ sync inventory
     if text_lower == "sync inventory":
         jobs = enqueue_sync_inventory_jobs(
             engine=engine,
@@ -47,21 +49,25 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
 
         return "\n".join(lines)
 
-    job = enqueue_job(
-        engine=engine,
-        job_type="echo_test",
-        payload={"text": text},
-        worker_name=None,
-        requested_by=access.get("line_user_id"),
-        source="line",
-    )
+    # ⭐ worker status
+    if text_lower in {"worker status"}:
+        rows = get_all_worker_status(engine)
 
-    return (
-        "รับงานแล้วครับ ✅\n"
-        f"job_id: {job['id']}\n"
-        "ลองเช็กสถานะด้วย:\n"
-        f"job status {job['id']}"
-    )
+        lines = ["สถานะ worker"]
+
+        for r in rows:
+            if r["status"] == "online":
+                lines.append(
+                    f"🟢 {r['worker_name']} ({r['seconds_ago']}s ago)"
+                )
+            else:
+                lines.append(
+                    f"🔴 {r['worker_name']}"
+                )
+
+        return "\n".join(lines)
+
+    return "คำสั่งไม่ถูกต้อง"
 
 
 def format_job_status(job: dict) -> str:
