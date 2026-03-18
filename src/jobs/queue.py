@@ -60,7 +60,7 @@ def claim_next_job(engine, worker_name: str) -> dict | None:
             select id
             from ops.job_queue
             where status = 'pending'
-            and (worker_name is null or worker_name = :worker_name)
+              and (worker_name is null or worker_name = :worker_name)
             order by requested_at
             for update skip locked
             limit 1
@@ -69,10 +69,21 @@ def claim_next_job(engine, worker_name: str) -> dict | None:
         set
             status = 'running',
             started_at = now(),
-            worker_name = :worker_name
+            worker_name = :worker_name,
+            result_message = null,
+            error_message = null
         from next_job
         where q.id = next_job.id
-        returning q.*;
+        returning
+            q.id,
+            q.job_type,
+            q.payload,
+            q.status,
+            q.worker_name,
+            q.requested_by,
+            q.source,
+            q.requested_at,
+            q.started_at
     """)
 
     with engine.begin() as conn:

@@ -1,19 +1,14 @@
-from src.jobs.queue import enqueue_job, get_job_by_id
+from src.jobs.queue import enqueue_job, get_job_by_id, enqueue_sync_inventory_jobs
 from src.access.helper import can_execute
-
-
-JOB_TRIGGER_KEYWORDS = {
-    "test job",
-    "queue test",
-    "run test",
-    "ทดสอบคิว",
-    "ทดสอบงาน",
-}
 
 
 def is_job_request(text: str) -> bool:
     t = (text or "").strip().lower()
-    return t in JOB_TRIGGER_KEYWORDS or t.startswith("job ")
+    return (
+        t in {"test job", "queue test", "run test", "ทดสอบคิว", "ทดสอบงาน"}
+        or t.startswith("job ")
+        or t == "sync inventory"
+    )
 
 
 def handle_job_query(engine, user_text: str, access: dict) -> str:
@@ -36,11 +31,26 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
 
         return format_job_status(job)
 
+    if text_lower == "sync inventory":
+        jobs = enqueue_sync_inventory_jobs(
+            engine=engine,
+            requested_by=access.get("line_user_id"),
+            source="line",
+        )
+
+        lines = ["รับงาน sync inventory แล้วครับ ✅"]
+        for job in jobs:
+            lines.append(
+                f"- {job['payload'].get('site')}: job_id {job['id']} -> {job['worker_name']}"
+            )
+
+        return "\n".join(lines)
+
     job = enqueue_job(
         engine=engine,
         job_type="echo_test",
-        payload={"text": text, "site":"TEST-PC"},
-        worker_name="TEST-PC",
+        payload={"text": text},
+        worker_name=None,
         requested_by=access.get("line_user_id"),
         source="line",
     )
@@ -54,22 +64,21 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
 
 
 def format_job_status(job: dict) -> str:
-    status = job.get("status") or "-"
-    job_id = job.get("id")
-    job_type = job.get("job_type") or "-"
-    result_message = job.get("result_message")
-    error_message = job.get("error_message")
-
     parts = [
-        f"job_id: {job_id}",
-        f"type: {job_type}",
-        f"status: {status}",
+        f"job_id: {job.get('id')}",
+        f"type: {job.get('job_type')}",
+        f"status: {job.get('status')}",
+        f"worker: {job.get('worker_name') or '-'}",
     ]
 
-    if result_message:
-        parts.append(f"result: {result_message}")
+    payload = job.get("payload") or {}
+    if payload.get("site"):
+        parts.append(f"site: {payload['site']}")
 
-    if error_message:
-        parts.append(f"error: {error_message}")
+    if job.get("result_message"):
+        parts.append(f"result: {job['result_message']}")
+
+    if job.get("error_message"):
+        parts.append(f"error: {job['error_message']}")
 
     return "\n".join(parts)

@@ -9,6 +9,21 @@ from src.jobs.queue import (
     finish_job_failed,
 )
 
+import time
+
+
+def run_sync_inventory(job: dict) -> str:
+    payload = job.get("payload") or {}
+    site = payload.get("site")
+
+    if site not in {"HQ", "SYP"}:
+        raise ValueError(f"Invalid site for sync_inventory: {site}")
+
+    # TODO: replace with actual local sync logic
+    time.sleep(3)
+
+    return f"sync_inventory done for {site}"
+
 
 def process_job(job: dict) -> str:
     job_type = job["job_type"]
@@ -16,9 +31,11 @@ def process_job(job: dict) -> str:
 
     if job_type == "echo_test":
         text_value = payload.get("text", "")
-        site_value = payload.get("site", "")
         time.sleep(2)
-        return f"echo ok: {text_value}\n from: {site_value}"
+        return f"echo ok: {text_value}"
+
+    if job_type == "sync_inventory":
+        return run_sync_inventory(job)
 
     raise ValueError(f"Unsupported job_type: {job_type}")
 
