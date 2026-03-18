@@ -1,5 +1,6 @@
-from src.jobs.queue import enqueue_job, get_job_by_id
-from src.jobs.tasks import enqueue_sync_inventory_jobs, get_all_worker_status
+from src.jobs.queue import get_job_by_id
+from src.jobs.tasks import enqueue_sync_inventory_jobs
+from src.jobs.heartbeat import get_all_worker_status
 from src.access.helper import can_execute
 
 
@@ -50,19 +51,23 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
         return "\n".join(lines)
 
     # ⭐ worker status
-    if text_lower in {"worker status"}:
-        rows = get_all_worker_status(engine)
+    if text_lower in {"worker status", "สถานะเครื่อง"}:
+        rows = get_all_worker_status(engine, offline_after_seconds=30)
+
+        if not rows:
+            return "ยังไม่พบ worker heartbeat"
 
         lines = ["สถานะ worker"]
-
         for r in rows:
-            if r["status"] == "online":
-                lines.append(
-                    f"🟢 {r['worker_name']} ({r['seconds_ago']}s ago)"
-                )
+            icon = "🟢" if r["online_status"] == "online" else "🔴"
+            worker_state = r.get("worker_state") or "-"
+            seconds_ago = r.get("seconds_ago")
+
+            if seconds_ago is None:
+                lines.append(f"{icon} {r['worker_name']} ({worker_state})")
             else:
                 lines.append(
-                    f"🔴 {r['worker_name']}"
+                    f"{icon} {r['worker_name']} ({worker_state}, {seconds_ago}s ago)"
                 )
 
         return "\n".join(lines)
