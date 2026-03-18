@@ -1,5 +1,6 @@
 import requests
 import os
+from src.access.config import COMMAND_PERMISSIONS
 
 LINE_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
@@ -102,3 +103,12 @@ def build_access_denied_message(access: dict) -> str:
         "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานระบบ\n"
         "กรุณาติดต่อผู้ดูแลเพื่อขออนุญาตก่อนครับ"
     )
+
+def can_execute(access_group: str, command: str) -> bool:
+    allowed = COMMAND_PERMISSIONS.get(command)
+
+    # command not registered → deny by default
+    if allowed is None:
+        return False
+
+    return access_group in allowed
