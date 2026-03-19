@@ -46,9 +46,31 @@ def simple_and_search_sql(
         SELECT *
         FROM (
             SELECT
-                *,
+                p.*,
+
+                COALESCE(hq.qty, 0) AS qty_hq,
+                COALESCE(syp.qty, 0) AS qty_syp,
+
+                hq.updated_at AS updated_at_hq,
+                syp.updated_at AS updated_at_syp,
+
+                GREATEST(
+                    COALESCE(hq.updated_at, '1900-01-01'::timestamptz),
+                    COALESCE(syp.updated_at, '1900-01-01'::timestamptz)
+                ) AS inventory_updated_at,
+
                 COUNT(*) OVER() AS total_count
-            FROM "{schema}"."{table_name}"
+
+            FROM "{schema}"."{table_name}" p
+
+            LEFT JOIN curated_kcw.inventory_qty_latest hq
+                ON p."BCODE" = hq.bcode
+            AND hq.branch = 'HQ'
+
+            LEFT JOIN curated_kcw.inventory_qty_latest syp
+                ON p."BCODE" = syp.bcode
+            AND syp.branch = 'SYP'
+
             WHERE {where_sql}
         ) t
         LIMIT :limit
