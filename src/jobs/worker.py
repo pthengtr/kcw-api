@@ -1,6 +1,7 @@
 import os
 import time
 import traceback
+import subprocess
 
 from src.db import get_engine
 from src.jobs.queue import (
@@ -12,16 +13,27 @@ from src.jobs.heartbeat import upsert_worker_heartbeat
 
 
 def run_sync_inventory(job: dict) -> str:
-    payload = job.get("payload") or {}
-    site = payload.get("site")
+    bat_path = os.getenv("SYNC_INVENTORY_BAT")
+    if not bat_path:
+        raise ValueError("SYNC_INVENTORY_BAT is not configured")
 
-    if site not in {"HQ", "SYP"}:
-        raise ValueError(f"Invalid site for sync_inventory: {site}")
+    result = subprocess.run(
+        [bat_path],
+        capture_output=True,
+        text=True,
+        shell=True,
+        timeout=60 * 30,
+    )
 
-    # TODO: replace this with real sync logic
-    time.sleep(3)
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
 
-    return f"sync_inventory done for {site}"
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"bat failed rc={result.returncode}; stderr={stderr[:500]}"
+        )
+
+    return stdout[:1000] or "sync_inventory completed"
 
 
 def process_job(job: dict) -> str:
