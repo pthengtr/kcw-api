@@ -11,6 +11,163 @@ def _to_num_sql(column_name: str) -> str:
         end
     """
 
+def get_latest_purchase_by_bcode(engine, bcode: str) -> dict | None:
+    sql = text(f"""
+        with purchase_rows as (
+            select
+                _ingested_at,
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("BILLNO", '')) as "BILLNO",
+                trim(coalesce("BILLDATE", '')) as "BILLDATE",
+                trim(coalesce("DETAIL", '')) as "DETAIL",
+                {_to_num_sql('"QTY"')} as "QTY_NUM",
+                {_to_num_sql('"AMOUNT"')} as "AMOUNT_NUM"
+            from raw_kcw.raw_hq_pidet_purchase_lines
+            where trim(coalesce("BCODE", '')) = :bcode
+              and coalesce(trim("CANCELED"), '') <> 'Y'
+        )
+        select
+            _ingested_at,
+            "BCODE",
+            "BILLNO",
+            "BILLDATE",
+            "DETAIL",
+            "QTY_NUM" as "QTY",
+            "AMOUNT_NUM" as "AMOUNT",
+            case
+                when "QTY_NUM" = 0 then 0
+                else "AMOUNT_NUM" / "QTY_NUM"
+            end as "UNIT_AMOUNT"
+        from purchase_rows
+        order by "BILLDATE" desc, "BILLNO" desc
+        limit 1
+    """)
+
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"bcode": bcode.strip()}).mappings().first()
+
+    return dict(row) if row else None
+
+def get_latest_sale_by_bcode(engine, bcode: str) -> dict | None:
+    sql = text(f"""
+        with sales_rows as (
+            select
+                _ingested_at,
+                trim(coalesce("BRANCH", '')) as "BRANCH",
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("BILLNO", '')) as "BILLNO",
+                trim(coalesce("BILLDATE", '')) as "BILLDATE",
+                trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("JOURMODE", '')) as "JOURMODE",
+                trim(coalesce("BILLTYPE_STD", '')) as "BILLTYPE_STD",
+                trim(coalesce("CANCELED", '')) as "CANCELED",
+                {_to_num_sql('"QTY"')} as "QTY_NUM",
+                case
+                    when {_to_num_sql('"AMOUNT_NUM"')} <> 0
+                        then {_to_num_sql('"AMOUNT_NUM"')}
+                    else {_to_num_sql('"AMOUNT"')}
+                end as "AMOUNT_NUM"
+            from curated_kcw.fact_sales_all
+            where trim(coalesce("BCODE", '')) = :bcode
+        )
+        select
+            _ingested_at,
+            "BRANCH",
+            "BCODE",
+            "BILLNO",
+            "BILLDATE",
+            "DETAIL",
+            "QTY_NUM" as "QTY",
+            "AMOUNT_NUM" as "AMOUNT",
+            case
+                when "QTY_NUM" = 0 then 0
+                else "AMOUNT_NUM" / "QTY_NUM"
+            end as "UNIT_AMOUNT"
+        from sales_rows
+        where coalesce("CANCELED", '') <> 'Y'
+          and coalesce("JOURMODE", '') <> '0'
+          and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
+        order by "BILLDATE" desc, "BILLNO" desc, "BRANCH" asc
+        limit 1
+    """)
+
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"bcode": bcode.strip()}).mappings().first()
+
+    return dict(row) if row else None
+
+def get_stock_snapshot_by_bcode(engine, bcode: str) -> dict | None:
+    sql = text(f"""
+        with stock_rows as (
+            select
+                updated_at as "_ingested_at",
+                trim(coalesce(branch, '')) as "BRANCH",
+                trim(coalesce(bcode, '')) as "BCODE",
+                coalesce(qty, 0) as "QTY_NUM"
+            from curated_kcw.inventory_qty_latest
+            where trim(coalesce(bcode, '')) = :bcode
+        )
+        select
+            max("_ingested_at") as "_ingested_at",
+            "BCODE",
+            case
+                when count(distinct "BRANCH") > 1 then 'BOTH'
+                else max("BRANCH")
+            end as "BRANCH",
+            sum("QTY_NUM") as "QTYOH2"
+        from stock_rows
+        group by "BCODE"
+    """)
+
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"bcode": bcode.strip()}).mappings().first()
+
+    return dict(row) if row else None
+
+def get_product_snapshot_by_bcode(engine, bcode: str) -> dict | None:
+    stock = get_stock_snapshot_by_bcode(engine, bcode)
+    purchase = get_latest_purchase_by_bcode(engine, bcode)
+    sale = get_latest_sale_by_bcode(engine, bcode)
+
+    if not stock and not purchase and not sale:
+        return None
+
+    product_name = None
+    for candidate in (purchase, sale, stock):
+        if candidate and candidate.get("DETAIL"):
+            product_name = candidate["DETAIL"]
+            break
+
+    latest_ingested_candidates = []
+    for candidate in (stock, purchase, sale):
+        if candidate and candidate.get("_ingested_at"):
+            latest_ingested_candidates.append(candidate["_ingested_at"])
+
+    latest_ingested_at = max(latest_ingested_candidates) if latest_ingested_candidates else None
+
+    return {
+        "bcode": bcode,
+        "product_name": product_name or "-",
+        "stock_qty": stock.get("QTYOH2") if stock else 0,
+        "stock_branch": stock.get("BRANCH") if stock else None,
+        "last_purchase": {
+            "billdate": purchase.get("BILLDATE"),
+            "billno": purchase.get("BILLNO"),
+            "qty": float(purchase.get("QTY") or 0),
+            "amount": float(purchase.get("AMOUNT") or 0),
+            "unit_amount": float(purchase.get("UNIT_AMOUNT") or 0),
+        } if purchase else None,
+        "last_sale": {
+            "branch": sale.get("BRANCH"),
+            "billdate": sale.get("BILLDATE"),
+            "billno": sale.get("BILLNO"),
+            "qty": float(sale.get("QTY") or 0),
+            "amount": float(sale.get("AMOUNT") or 0),
+            "unit_amount": float(sale.get("UNIT_AMOUNT") or 0),
+        } if sale else None,
+        "latest_ingested_at": latest_ingested_at,
+    }
+
 def get_purchase_history_by_bcode(
     engine,
     bcode: str,

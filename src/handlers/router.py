@@ -1,5 +1,6 @@
 from src.handlers.sales import handle_sales_query
 from src.handlers.product import handle_product_query
+from src.handlers.product_snapshot import handle_product_snapshot_query, is_product_snapshot_request
 from src.handlers.job import handle_job_query, is_job_request
 from src.handlers.history import handle_history_query, is_history_request
 from src.handlers.ai_chat import handle_ai_chat_query, is_ai_chat_request
@@ -25,16 +26,23 @@ def route_user_text(engine, user_text: str, access: dict) -> str:
             return "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"
         return handle_sales_query(engine, text)
 
-    # 4) purchase / sales history
+    # 4) product snapshot
+    if is_product_snapshot_request(text):
+        cmd = "สินค้า"
+        if not can_execute(access["access_group"], cmd):
+            return "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"
+        return handle_product_snapshot_query(engine, text)
+
+    # 5) purchase / sales history
     if is_history_request(text):
         cmd = "ประวัติสินค้า"
         if not can_execute(access["access_group"], cmd):
             return "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"
         return handle_history_query(engine, text)
-    
-    # 5) AI chat
+
+    # 6) AI chat
     if is_ai_chat_request(text):
         return handle_ai_chat_query(text)
 
-    # 5) default product search
+    # 7) default product search
     return handle_product_query(engine, text)
