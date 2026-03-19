@@ -39,46 +39,54 @@ def _extract_text_from_response(resp) -> str:
 
 
 def handle_ai_chat_query(user_text: str) -> str:
-    question = extract_ai_question(user_text)
 
-    if not question:
+    try: 
+            question = extract_ai_question(user_text)
+
+            if not question:
+                return (
+                    "เฮียช้าพร้อมครับ 😄\n"
+                    "ลองพิมพ์แบบนี้:\n"
+                    "• เฮียช้า ปีนี้ตรุษจีนวันไหน\n"
+                    "• เฮียช้า ลูกปืนคืออะไร\n"
+                    "• เฮียช้า ช่วยสรุปความต่างระหว่างน้ำมันเกียร์กับไฮดรอลิก"
+                )
+
+            client = get_openai_client()
+
+            system_prompt = """
+        คุณคือ "เฮียช้า" ผู้ช่วยแชทร้านอะไหล่
+
+        แนวทางตอบ:
+        - ตอบเป็นภาษาไทย
+        - สั้น กระชับ อ่านง่าย เหมาะกับ LINE chat
+        - โทนเป็นกันเอง สุภาพ แบบคนในร้าน
+        - ถ้าเป็นคำถามทั่วไป ตอบได้ตามปกติ
+        - ถ้าเป็นคำถามด้านเทคนิคที่เสี่ยงต่อการเดามั่ว เช่น การใส่แทนกัน ความเข้ากันได้ อะแดปเตอร์
+        และยังไม่มีข้อมูลยืนยัน ให้ตอบแบบระวังตัวว่า "ยังไม่แน่ใจ ต้องเช็กเพิ่ม"
+        - อย่าตอบยาวเกินจำเป็น
+        - ไม่ต้องใส่ markdown พิเศษ
+        - ไม่ต้องใส่คำนำยืดยาวทุกครั้ง
+        """
+
+            resp = client.responses.create(
+                model="gpt-4.1-mini",
+                input=[
+                    {
+                        "role": "system",
+                        "content": [{"type": "input_text", "text": system_prompt.strip()}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": question}],
+                    },
+                ],
+            )
+
+            return _extract_text_from_response(resp)
+    
+    except Exception:
         return (
-            "เฮียช้าพร้อมครับ 😄\n"
-            "ลองพิมพ์แบบนี้:\n"
-            "• เฮียช้า ปีนี้ตรุษจีนวันไหน\n"
-            "• เฮียช้า ลูกปืนคืออะไร\n"
-            "• เฮียช้า ช่วยสรุปความต่างระหว่างน้ำมันเกียร์กับไฮดรอลิก"
-        )
-
-    client = get_openai_client()
-
-    system_prompt = """
-คุณคือ "เฮียช้า" ผู้ช่วยแชทร้านอะไหล่
-
-แนวทางตอบ:
-- ตอบเป็นภาษาไทย
-- สั้น กระชับ อ่านง่าย เหมาะกับ LINE chat
-- โทนเป็นกันเอง สุภาพ แบบคนในร้าน
-- ถ้าเป็นคำถามทั่วไป ตอบได้ตามปกติ
-- ถ้าเป็นคำถามด้านเทคนิคที่เสี่ยงต่อการเดามั่ว เช่น การใส่แทนกัน ความเข้ากันได้ อะแดปเตอร์
-  และยังไม่มีข้อมูลยืนยัน ให้ตอบแบบระวังตัวว่า "ยังไม่แน่ใจ ต้องเช็กเพิ่ม"
-- อย่าตอบยาวเกินจำเป็น
-- ไม่ต้องใส่ markdown พิเศษ
-- ไม่ต้องใส่คำนำยืดยาวทุกครั้ง
-"""
-
-    resp = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": system_prompt.strip()}],
-            },
-            {
-                "role": "user",
-                "content": [{"type": "input_text", "text": question}],
-            },
-        ],
-    )
-
-    return _extract_text_from_response(resp)
+            "เฮียช้าตอบไม่ทันครับ 😅\n"
+            "ลองถามใหม่อีกครั้งได้เลย"
+        )    
