@@ -71,8 +71,9 @@ def handle_product_snapshot_query(engine, user_text: str) -> str:
         return f"ไม่พบข้อมูลสินค้าสำหรับ {bcode}"
 
     product_name = result.get("product_name") or "-"
-    stock_qty = _safe_float(result.get("stock_qty"))
-    stock_branch = result.get("stock_branch") or "BOTH"
+    stock_total = _safe_float(result.get("stock_total"))
+    stock_hq = _safe_float(result.get("stock_hq"))
+    stock_syp = _safe_float(result.get("stock_syp"))
 
     purchase = result.get("last_purchase") or {}
     sales = result.get("last_sale") or {}
@@ -83,7 +84,8 @@ def handle_product_snapshot_query(engine, user_text: str) -> str:
         f"สินค้า {bcode}",
         product_name,
         "",
-        f"สต็อก {stock_branch}: {stock_qty:,.0f}",
+        f"สต็อก HQ {stock_hq:,.0f} | SYP {stock_syp:,.0f}",
+        f"รวม {stock_total:,.0f}",
     ]
 
     if updated:

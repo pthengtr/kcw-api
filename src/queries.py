@@ -97,26 +97,28 @@ def get_latest_sale_by_bcode(engine, bcode: str) -> dict | None:
     return dict(row) if row else None
 
 def get_stock_snapshot_by_bcode(engine, bcode: str) -> dict | None:
-    sql = text(f"""
-        with stock_rows as (
-            select
-                updated_at as "_ingested_at",
-                trim(coalesce(branch, '')) as "BRANCH",
-                trim(coalesce(bcode, '')) as "BCODE",
-                coalesce(qty, 0) as "QTY_NUM"
-            from curated_kcw.inventory_qty_latest
-            where trim(coalesce(bcode, '')) = :bcode
-        )
+    sql = text("""
         select
-            max("_ingested_at") as "_ingested_at",
-            "BCODE",
-            case
-                when count(distinct "BRANCH") > 1 then 'BOTH'
-                else max("BRANCH")
-            end as "BRANCH",
-            sum("QTY_NUM") as "QTYOH2"
-        from stock_rows
-        group by "BCODE"
+            trim(coalesce(bcode, '')) as "BCODE",
+            max(updated_at) as "_ingested_at",
+            sum(coalesce(qty, 0)) as "QTY_TOTAL",
+            sum(
+                case
+                    when upper(trim(coalesce(branch, ''))) = 'HQ'
+                        then coalesce(qty, 0)
+                    else 0
+                end
+            ) as "QTY_HQ",
+            sum(
+                case
+                    when upper(trim(coalesce(branch, ''))) = 'SYP'
+                        then coalesce(qty, 0)
+                    else 0
+                end
+            ) as "QTY_SYP"
+        from curated_kcw.inventory_qty_latest
+        where trim(coalesce(bcode, '')) = :bcode
+        group by trim(coalesce(bcode, ''))
     """)
 
     with engine.connect() as conn:
@@ -148,8 +150,9 @@ def get_product_snapshot_by_bcode(engine, bcode: str) -> dict | None:
     return {
         "bcode": bcode,
         "product_name": product_name or "-",
-        "stock_qty": stock.get("QTYOH2") if stock else 0,
-        "stock_branch": stock.get("BRANCH") if stock else None,
+        "stock_total": float(stock.get("QTY_TOTAL") or 0) if stock else 0,
+        "stock_hq": float(stock.get("QTY_HQ") or 0) if stock else 0,
+        "stock_syp": float(stock.get("QTY_SYP") or 0) if stock else 0,
         "last_purchase": {
             "billdate": purchase.get("BILLDATE"),
             "billno": purchase.get("BILLNO"),
