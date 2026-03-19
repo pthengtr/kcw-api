@@ -71,6 +71,16 @@ def format_last_updated(value) -> str:
     except Exception:
         return "-"
 
+def _fmt_price_or_dash(v):
+    if v is None:
+        return "-"
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+    if v == 0:
+        return "-"
+    return format_price(v)
 
 def format_product_answer(search_result: dict) -> str:
     df = search_result.get("items", pd.DataFrame())
@@ -107,26 +117,27 @@ def format_product_answer(search_result: dict) -> str:
         detail_parts = [x for x in [descr, brand, model] if x != "-"]
         product_detail = " | ".join(detail_parts) if detail_parts else "-"
 
-        price_ui1_parts = []
+        p1 = _fmt_price_or_dash(row.get("PRICE1"))
+        p2 = _fmt_price_or_dash(row.get("PRICE2"))
+        p3 = _fmt_price_or_dash(row.get("PRICE3"))
+
+        ui1 = _safe_text(row.get("UI1"))
+
         if ui1 != "-":
-            price_ui1_parts.append(f"ราคา1/{ui1}: {price1 if price1 != '-' else '-'}")
-            price_ui1_parts.append(f"ราคา2/{ui1}: {price2 if price2 != '-' else '-'}")
-            price_ui1_parts.append(f"ราคา3/{ui1}: {price3 if price3 != '-' else '-'}")
+            price_ui1_line = f"ราคา/{ui1}: ({p1}/{p2}/{p3})"
         else:
-            price_ui1_parts.append(f"ราคา1: {price1 if price1 != '-' else '-'}")
-            price_ui1_parts.append(f"ราคา2: {price2 if price2 != '-' else '-'}")
-            price_ui1_parts.append(f"ราคา3: {price3 if price3 != '-' else '-'}")
+            price_ui1_line = f"ราคา: ({p1}/{p2}/{p3})"
 
         price_ui2_line = f"ราคา/{ui2}: {pricem1}" if ui2 != "-" and pricem1 != "-" else "ราคา/หน่วยใหญ่: -"
 
         lines.append(
             f"{i}. รหัสสินค้า: {bcode}\n"
             f"   ชื่อ: {product_detail}\n"
-            f"   {' | '.join(price_ui1_parts)}\n"
+            f"   {price_ui1_line}\n"
             f"   {price_ui2_line}\n"
             f"   ทุน: {costnet}\n"
-            f"   คงเหลือ HQ: {qty_hq} ({updated_at_hq})\n"
-            f"   คงเหลือ SYP: {qty_syp} ({updated_at_syp})\n"
+            f"   สนญ: {qty_hq} ({updated_at_hq})\n"
+            f"   สาขา: {qty_syp} ({updated_at_syp})\n"
             f"   ข้อมูลสินค้าอัปเดต: {ingested_at}"
         )
 
