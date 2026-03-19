@@ -11,27 +11,17 @@ def _to_num_sql(column_name: str) -> str:
         end
     """
 
-
 def get_purchase_history_by_bcode(
     engine,
     bcode: str,
     limit: int = 3,
 ) -> dict:
     """
-    Purchase history from raw HQ + SYP purchase lines.
-
-    Returns:
-        {
-            "product_name": str,
-            "rows": [...],
-            "latest_summary": {...} | None,
-            "total_found": int,
-        }
+    Purchase history from HQ purchase lines only.
     """
     sql = text(f"""
         with purchase_rows as (
             select
-                'HQ' as "BRANCH",
                 trim(coalesce("BCODE", '')) as "BCODE",
                 trim(coalesce("BILLNO", '')) as "BILLNO",
                 trim(coalesce("BILLDATE", '')) as "BILLDATE",
@@ -43,22 +33,6 @@ def get_purchase_history_by_bcode(
             from raw_kcw.raw_hq_pidet_purchase_lines
             where trim(coalesce("BCODE", '')) = :bcode
               and coalesce(trim("CANCELED"), '') <> 'Y'
-
-            union all
-
-            select
-                'SYP' as "BRANCH",
-                trim(coalesce("BCODE", '')) as "BCODE",
-                trim(coalesce("BILLNO", '')) as "BILLNO",
-                trim(coalesce("BILLDATE", '')) as "BILLDATE",
-                trim(coalesce("DETAIL", '')) as "DETAIL",
-                trim(coalesce("TAXIC", '')) as "TAXIC",
-                trim(coalesce("ACCT_NO", '')) as "ACCT_NO",
-                {_to_num_sql('"QTY"')} as "QTY_NUM",
-                {_to_num_sql('"AMOUNT"')} as "AMOUNT_NUM"
-            from raw_kcw.raw_syp_pidet_purchase_lines
-            where trim(coalesce("BCODE", '')) = :bcode
-              and coalesce(trim("CANCELED"), '') <> 'Y'
         ),
         ranked as (
             select
@@ -68,13 +42,12 @@ def get_purchase_history_by_bcode(
                     else "AMOUNT_NUM" / "QTY_NUM"
                 end as "UNIT_AMOUNT",
                 row_number() over (
-                    order by "BILLDATE" desc, "BILLNO" desc, "BRANCH" asc
+                    order by "BILLDATE" desc, "BILLNO" desc
                 ) as rn,
                 count(*) over () as total_found
             from purchase_rows
         )
         select
-            "BRANCH",
             "BCODE",
             "BILLNO",
             "BILLDATE",
