@@ -22,12 +22,13 @@ def get_purchase_history_by_bcode(
     sql = text(f"""
         with purchase_rows as (
             select
+                _ingested_at,
                 trim(coalesce("BCODE", '')) as "BCODE",
                 trim(coalesce("BILLNO", '')) as "BILLNO",
                 trim(coalesce("BILLDATE", '')) as "BILLDATE",
                 trim(coalesce("DETAIL", '')) as "DETAIL",
                 trim(coalesce("TAXIC", '')) as "TAXIC",
-                trim(coalesce("ACCT_NO", '')) as "ACCT_NO",
+                trim(coalesce("ACCTNO", '')) as "ACCTNO",
                 {_to_num_sql('"QTY"')} as "QTY_NUM",
                 {_to_num_sql('"AMOUNT"')} as "AMOUNT_NUM"
             from raw_kcw.raw_hq_pidet_purchase_lines
@@ -48,12 +49,13 @@ def get_purchase_history_by_bcode(
             from purchase_rows
         )
         select
+            _ingested_at,
             "BCODE",
             "BILLNO",
             "BILLDATE",
             "DETAIL",
             "TAXIC",
-            "ACCT_NO",
+            "ACCTNO",
             "QTY_NUM" as "QTY",
             "AMOUNT_NUM" as "AMOUNT",
             "UNIT_AMOUNT",
@@ -87,11 +89,16 @@ def get_purchase_history_by_bcode(
     for r in rows:
         r.pop("TOTAL_FOUND", None)
 
+    latest_ingested = None
+    if rows:
+        latest_ingested = max(r["_ingested_at"] for r in rows if r.get("_ingested_at"))
+
     return {
         "product_name": product_name,
         "rows": rows,
         "latest_summary": latest_summary,
         "total_found": total_found,
+        "latest_ingested_at": latest_ingested,
     }
 
 def get_sales_history_by_bcode(
@@ -105,6 +112,7 @@ def get_sales_history_by_bcode(
     sql = text(f"""
         with sales_rows as (
             select
+                _ingested_at,
                 trim(coalesce("BRANCH", '')) as "BRANCH",
                 trim(coalesce("BCODE", '')) as "BCODE",
                 trim(coalesce("BILLNO", '')) as "BILLNO",
@@ -112,34 +120,24 @@ def get_sales_history_by_bcode(
                 trim(coalesce("DETAIL", '')) as "DETAIL",
                 trim(coalesce("TAXIC", '')) as "TAXIC",
                 trim(coalesce("ACCTNO", '')) as "ACCTNO",
+                trim(coalesce("JOURMODE", '')) as "JOURMODE",
+                trim(coalesce("BILLTYPE_STD", '')) as "BILLTYPE_STD",
+                trim(coalesce("CANCELED", '')) as "CANCELED",
                 {_to_num_sql('"QTY"')} as "QTY_NUM",
-                {_to_num_sql('"AMOUNT_NUM"')} as "AMOUNT_NUM_CLEAN",
-                {_to_num_sql('"AMOUNT"')} as "AMOUNT_RAW_NUM",
-                trim(coalesce("IS_VALID", '')) as "IS_VALID",
-                trim(coalesce("CANCELED", '')) as "CANCELED"
+                case
+                    when {_to_num_sql('"AMOUNT_NUM"')} <> 0
+                        then {_to_num_sql('"AMOUNT_NUM"')}
+                    else {_to_num_sql('"AMOUNT"')}
+                end as "AMOUNT_NUM"
             from curated_kcw.fact_sales_all
             where trim(coalesce("BCODE", '')) = :bcode
         ),
         filtered as (
-            select
-                "BRANCH",
-                "BCODE",
-                "BILLNO",
-                "BILLDATE",
-                "DETAIL",
-                "TAXIC",
-                "ACCTNO",
-                "QTY_NUM",
-                case
-                    when "AMOUNT_NUM_CLEAN" <> 0 then "AMOUNT_NUM_CLEAN"
-                    else "AMOUNT_RAW_NUM"
-                end as "AMOUNT_NUM"
+            select *
             from sales_rows
             where coalesce("CANCELED", '') <> 'Y'
-              and (
-                  coalesce("IS_VALID", '') = ''
-                  or upper(coalesce("IS_VALID", '')) = 'Y'
-              )
+              and coalesce("JOURMODE", '') <> '0'
+              and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
         ),
         ranked as (
             select
@@ -155,6 +153,7 @@ def get_sales_history_by_bcode(
             from filtered
         )
         select
+            _ingested_at,
             "BRANCH",
             "BCODE",
             "BILLNO",
@@ -195,11 +194,16 @@ def get_sales_history_by_bcode(
     for r in rows:
         r.pop("TOTAL_FOUND", None)
 
+    latest_ingested = None
+    if rows:
+        latest_ingested = max(r["_ingested_at"] for r in rows if r.get("_ingested_at"))
+
     return {
         "product_name": product_name,
         "rows": rows,
         "latest_summary": latest_summary,
         "total_found": total_found,
+        "latest_ingested_at": latest_ingested,
     }
 
 def get_daily_sales_summary(
