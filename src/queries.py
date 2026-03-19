@@ -104,15 +104,12 @@ def get_purchase_history_by_bcode(
 def get_sales_history_by_bcode(
     engine,
     bcode: str,
+    branch: str | None = None,
     limit: int = 3,
 ) -> dict:
-    """
-    Sales history from curated_kcw.fact_sales_all.
-    """
     sql = text(f"""
         with sales_rows as (
             select
-                _ingested_at,
                 trim(coalesce("BRANCH", '')) as "BRANCH",
                 trim(coalesce("BCODE", '')) as "BCODE",
                 trim(coalesce("BILLNO", '')) as "BILLNO",
@@ -123,6 +120,7 @@ def get_sales_history_by_bcode(
                 trim(coalesce("JOURMODE", '')) as "JOURMODE",
                 trim(coalesce("BILLTYPE_STD", '')) as "BILLTYPE_STD",
                 trim(coalesce("CANCELED", '')) as "CANCELED",
+                _ingested_at,
                 {_to_num_sql('"QTY"')} as "QTY_NUM",
                 case
                     when {_to_num_sql('"AMOUNT_NUM"')} <> 0
@@ -131,6 +129,10 @@ def get_sales_history_by_bcode(
                 end as "AMOUNT_NUM"
             from curated_kcw.fact_sales_all
             where trim(coalesce("BCODE", '')) = :bcode
+              and (
+                    cast(:branch as text) is null
+                    or trim(coalesce("BRANCH", '')) = cast(:branch as text)
+              )
         ),
         filtered as (
             select *
@@ -153,7 +155,6 @@ def get_sales_history_by_bcode(
             from filtered
         )
         select
-            _ingested_at,
             "BRANCH",
             "BCODE",
             "BILLNO",
@@ -161,6 +162,7 @@ def get_sales_history_by_bcode(
             "DETAIL",
             "TAXIC",
             "ACCTNO",
+            "_ingested_at",
             "QTY_NUM" as "QTY",
             "AMOUNT_NUM" as "AMOUNT",
             "UNIT_AMOUNT",
@@ -173,7 +175,11 @@ def get_sales_history_by_bcode(
     with engine.connect() as conn:
         rows = conn.execute(
             sql,
-            {"bcode": bcode.strip(), "limit": limit},
+            {
+                "bcode": bcode.strip(),
+                "branch": branch,
+                "limit": limit,
+            },
         ).mappings().all()
 
     rows = [dict(r) for r in rows]
@@ -191,12 +197,13 @@ def get_sales_history_by_bcode(
             "unit_amount": float(rows[0]["UNIT_AMOUNT"] or 0),
         }
 
-    for r in rows:
-        r.pop("TOTAL_FOUND", None)
-
     latest_ingested = None
     if rows:
-        latest_ingested = max(r["_ingested_at"] for r in rows if r.get("_ingested_at"))
+        ingested_values = [r["_ingested_at"] for r in rows if r.get("_ingested_at")]
+        latest_ingested = max(ingested_values) if ingested_values else None
+
+    for r in rows:
+        r.pop("TOTAL_FOUND", None)
 
     return {
         "product_name": product_name,
@@ -204,6 +211,7 @@ def get_sales_history_by_bcode(
         "latest_summary": latest_summary,
         "total_found": total_found,
         "latest_ingested_at": latest_ingested,
+        "branch": branch,
     }
 
 def get_daily_sales_summary(
