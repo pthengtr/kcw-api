@@ -3,6 +3,232 @@ from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
 
+def _to_num_sql(column_name: str) -> str:
+    return f"""
+        case
+            when trim(coalesce({column_name}, '')) = '' then 0
+            else cast(replace(coalesce({column_name}, '0'), ',', '') as numeric)
+        end
+    """
+
+
+def get_purchase_history_by_bcode(
+    engine,
+    bcode: str,
+    limit: int = 3,
+) -> dict:
+    """
+    Purchase history from raw HQ + SYP purchase lines.
+
+    Returns:
+        {
+            "product_name": str,
+            "rows": [...],
+            "latest_summary": {...} | None,
+            "total_found": int,
+        }
+    """
+    sql = text(f"""
+        with purchase_rows as (
+            select
+                'HQ' as "BRANCH",
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("BILLNO", '')) as "BILLNO",
+                trim(coalesce("BILLDATE", '')) as "BILLDATE",
+                trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("TAXIC", '')) as "TAXIC",
+                trim(coalesce("ACCT_NO", '')) as "ACCT_NO",
+                {_to_num_sql('"QTY"')} as "QTY_NUM",
+                {_to_num_sql('"AMOUNT"')} as "AMOUNT_NUM"
+            from raw_kcw.raw_hq_pidet_purchase_lines
+            where trim(coalesce("BCODE", '')) = :bcode
+              and coalesce(trim("CANCELED"), '') <> 'Y'
+
+            union all
+
+            select
+                'SYP' as "BRANCH",
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("BILLNO", '')) as "BILLNO",
+                trim(coalesce("BILLDATE", '')) as "BILLDATE",
+                trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("TAXIC", '')) as "TAXIC",
+                trim(coalesce("ACCT_NO", '')) as "ACCT_NO",
+                {_to_num_sql('"QTY"')} as "QTY_NUM",
+                {_to_num_sql('"AMOUNT"')} as "AMOUNT_NUM"
+            from raw_kcw.raw_syp_pidet_purchase_lines
+            where trim(coalesce("BCODE", '')) = :bcode
+              and coalesce(trim("CANCELED"), '') <> 'Y'
+        ),
+        ranked as (
+            select
+                *,
+                case
+                    when "QTY_NUM" = 0 then 0
+                    else "AMOUNT_NUM" / "QTY_NUM"
+                end as "UNIT_AMOUNT",
+                row_number() over (
+                    order by "BILLDATE" desc, "BILLNO" desc, "BRANCH" asc
+                ) as rn,
+                count(*) over () as total_found
+            from purchase_rows
+        )
+        select
+            "BRANCH",
+            "BCODE",
+            "BILLNO",
+            "BILLDATE",
+            "DETAIL",
+            "TAXIC",
+            "ACCT_NO",
+            "QTY_NUM" as "QTY",
+            "AMOUNT_NUM" as "AMOUNT",
+            "UNIT_AMOUNT",
+            total_found as "TOTAL_FOUND"
+        from ranked
+        where rn <= :limit
+        order by rn
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {"bcode": bcode.strip(), "limit": limit},
+        ).mappings().all()
+
+    rows = [dict(r) for r in rows]
+
+    total_found = int(rows[0]["TOTAL_FOUND"]) if rows else 0
+    product_name = rows[0]["DETAIL"] if rows else None
+
+    latest_summary = None
+    if rows:
+        latest_summary = {
+            "billdate": rows[0]["BILLDATE"],
+            "billno": rows[0]["BILLNO"],
+            "qty": float(rows[0]["QTY"] or 0),
+            "amount": float(rows[0]["AMOUNT"] or 0),
+            "unit_amount": float(rows[0]["UNIT_AMOUNT"] or 0),
+        }
+
+    for r in rows:
+        r.pop("TOTAL_FOUND", None)
+
+    return {
+        "product_name": product_name,
+        "rows": rows,
+        "latest_summary": latest_summary,
+        "total_found": total_found,
+    }
+
+def get_sales_history_by_bcode(
+    engine,
+    bcode: str,
+    limit: int = 3,
+) -> dict:
+    """
+    Sales history from curated_kcw.fact_sales_all.
+    """
+    sql = text(f"""
+        with sales_rows as (
+            select
+                trim(coalesce("BRANCH", '')) as "BRANCH",
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("BILLNO", '')) as "BILLNO",
+                trim(coalesce("BILLDATE", '')) as "BILLDATE",
+                trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("TAXIC", '')) as "TAXIC",
+                trim(coalesce("ACCTNO", '')) as "ACCTNO",
+                {_to_num_sql('"QTY"')} as "QTY_NUM",
+                {_to_num_sql('"AMOUNT_NUM"')} as "AMOUNT_NUM_CLEAN",
+                {_to_num_sql('"AMOUNT"')} as "AMOUNT_RAW_NUM",
+                trim(coalesce("IS_VALID", '')) as "IS_VALID",
+                trim(coalesce("CANCELED", '')) as "CANCELED"
+            from curated_kcw.fact_sales_all
+            where trim(coalesce("BCODE", '')) = :bcode
+        ),
+        filtered as (
+            select
+                "BRANCH",
+                "BCODE",
+                "BILLNO",
+                "BILLDATE",
+                "DETAIL",
+                "TAXIC",
+                "ACCTNO",
+                "QTY_NUM",
+                case
+                    when "AMOUNT_NUM_CLEAN" <> 0 then "AMOUNT_NUM_CLEAN"
+                    else "AMOUNT_RAW_NUM"
+                end as "AMOUNT_NUM"
+            from sales_rows
+            where coalesce("CANCELED", '') <> 'Y'
+              and (
+                  coalesce("IS_VALID", '') = ''
+                  or upper(coalesce("IS_VALID", '')) = 'Y'
+              )
+        ),
+        ranked as (
+            select
+                *,
+                case
+                    when "QTY_NUM" = 0 then 0
+                    else "AMOUNT_NUM" / "QTY_NUM"
+                end as "UNIT_AMOUNT",
+                row_number() over (
+                    order by "BILLDATE" desc, "BILLNO" desc, "BRANCH" asc
+                ) as rn,
+                count(*) over () as total_found
+            from filtered
+        )
+        select
+            "BRANCH",
+            "BCODE",
+            "BILLNO",
+            "BILLDATE",
+            "DETAIL",
+            "TAXIC",
+            "ACCTNO",
+            "QTY_NUM" as "QTY",
+            "AMOUNT_NUM" as "AMOUNT",
+            "UNIT_AMOUNT",
+            total_found as "TOTAL_FOUND"
+        from ranked
+        where rn <= :limit
+        order by rn
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {"bcode": bcode.strip(), "limit": limit},
+        ).mappings().all()
+
+    rows = [dict(r) for r in rows]
+
+    total_found = int(rows[0]["TOTAL_FOUND"]) if rows else 0
+    product_name = rows[0]["DETAIL"] if rows else None
+
+    latest_summary = None
+    if rows:
+        latest_summary = {
+            "billdate": rows[0]["BILLDATE"],
+            "billno": rows[0]["BILLNO"],
+            "qty": float(rows[0]["QTY"] or 0),
+            "amount": float(rows[0]["AMOUNT"] or 0),
+            "unit_amount": float(rows[0]["UNIT_AMOUNT"] or 0),
+        }
+
+    for r in rows:
+        r.pop("TOTAL_FOUND", None)
+
+    return {
+        "product_name": product_name,
+        "rows": rows,
+        "latest_summary": latest_summary,
+        "total_found": total_found,
+    }
+
 def get_daily_sales_summary(
     engine,
     target_date: str | date | None = None,

@@ -1,4 +1,5 @@
 COMMAND_PERMISSIONS = {
-    "ยอดขาย": {"admin", "exec"},
-    "job": {"admin"},
+    "admin": {"ยอดขาย", "ประวัติสินค้า", "job", "sync"},
+    "exec": {"ยอดขาย", "ประวัติสินค้า", "job", "sync"},
+    "staff": {"ประวัติสินค้า"},
 }

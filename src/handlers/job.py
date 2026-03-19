@@ -36,7 +36,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
     text = (user_text or "").strip()
     text_lower = text.lower()
 
-    # job status
+    # ⭐ job status
     if text_lower.startswith("job status "):
         raw_id = text_lower.replace("job status ", "", 1).strip()
         if not raw_id.isdigit():
@@ -48,7 +48,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
 
         return format_job_status(job)
 
-    # worker status
+    # ⭐ worker status
     if is_worker_status_request(text_lower):
         rows = get_all_worker_status(engine, offline_after_seconds=30)
 
@@ -68,7 +68,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
 
         return "\n".join(lines)
 
-    # sync inventory
+    # ⭐ sync inventory
     if is_sync_inventory_request(text_lower):
         rows = get_all_worker_status(engine, offline_after_seconds=30)
         online_workers = {
