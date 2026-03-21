@@ -2,7 +2,11 @@ from fastapi import FastAPI, Request, HTTPException
 import json
 
 from src.db import get_engine
-from src.bot.line_bot import verify_line_signature, reply_line_message
+from src.bot.line_bot import (
+    verify_line_signature,
+    reply_line_message,
+    reply_line_image,
+)
 from src.handlers.router import route_user_text
 from src.access.helper import get_line_user_id
 from src.access.helper import get_or_create_line_access
@@ -67,13 +71,22 @@ async def line_webhook(request: Request):
         # NORMAL ROUTING
         # =========================
         try:
-            reply_text = route_user_text(engine, user_text, access= access)
+            reply_payload = route_user_text(engine, user_text, access=access)
         except Exception as e:
             print("ROUTE ERROR:", e)
-            reply_text = "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
-
+            reply_payload = {
+                "type": "text",
+                "text": "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
+            }
         try:
-            reply_line_message(reply_token, reply_text)
+            if reply_payload["type"] == "image":
+                reply_line_image(
+                    reply_token,
+                    image_url=reply_payload["originalContentUrl"],
+                    preview_url=reply_payload.get("previewImageUrl"),
+                )
+            else:
+                reply_line_message(reply_token, reply_payload["text"])
         except Exception as e:
             print("LINE REPLY ERROR:", e)
 

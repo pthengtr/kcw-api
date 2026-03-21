@@ -1,0 +1,45 @@
+import os
+
+
+SUPABASE_URL = os.getenv("SUPABASE_DB_URL", "").rstrip("/")
+SUPABASE_IMAGE_BUCKET = os.getenv("SUPABASE_IMAGE_BUCKET", "pictures")
+
+
+def build_public_storage_url(bucket: str, path: str) -> str:
+    path = path.lstrip("/")
+    return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
+
+
+def is_image_command(text: str) -> bool:
+    t = (text or "").strip().lower()
+    return t.startswith("img ")
+
+
+def handle_image_command(text: str) -> dict:
+    """
+    Prototype:
+      img test
+      img measure
+    """
+    t = (text or "").strip()
+    key = t[4:].strip().lower()
+
+    image_map = {
+        "test": "line/test.jpg",
+        "measure": "public/knowledge/how_to_measure_screw.jpg",
+    }
+
+    path = image_map.get(key)
+    if not path:
+        return {
+            "type": "text",
+            "text": "ไม่พบรูปครับ ลองใช้:\nimg test\nimg measure"
+        }
+
+    image_url = build_public_storage_url(SUPABASE_IMAGE_BUCKET, path)
+
+    return {
+        "type": "image",
+        "originalContentUrl": image_url,
+        "previewImageUrl": image_url,
+    }
