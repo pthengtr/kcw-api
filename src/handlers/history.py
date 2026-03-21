@@ -161,14 +161,14 @@ def _format_sales_history(result: dict, bcode: str, limit: int, branch: str | No
         taxic = row.get("TAXIC", "")
         acctno = row.get("ACCTNO") or "-"
         row_branch = row.get("BRANCH") or "-"
-        _, vat_amount = _format_amount_with_vat(amount, taxic)
+        base_amount, vat_amount = _format_amount_with_vat(amount, taxic)
 
         lines.extend([
             "",
             f"• {_fmt_short_date(row.get('BILLDATE', '-'))}",
-            f"  {row.get('BILLNO', '-')} | {row_branch}",
-            f"  จำนวน {qty:,.0f} | สุทธิ {amount:,.2f}",
-            f"  ภาษี {vat_amount:,.2f}",
+            # f"  {row.get('BILLNO', '-')} | {row_branch}",
+            f"  จำนวน {qty:,.0f} | ราคา {(base_amount/qty):,.2f}",
+            # f"  ภาษี {vat_amount:,.2f}",
             f"  ลูกค้า {acctno}",
         ])
 
@@ -214,14 +214,14 @@ def _format_purchase_history(result: dict, bcode: str, limit: int) -> str:
         qty = _safe_float(row.get("QTY"))
         taxic = row.get("TAXIC", "")
         acct_no = row.get("ACCTNO") or "-"
-        _, vat_amount = _format_amount_with_vat(amount, taxic)
+        base_amount, vat_amount = _format_amount_with_vat(amount, taxic)
 
         lines.extend([
             "",
             f"• {_fmt_short_date(row.get('BILLDATE', '-'))}",
-            f"  {row.get('BILLNO', '-')} | HQ",
-            f"  qty {qty:,.0f} | net {amount:,.2f}",
-            f"  vat {vat_amount:,.2f}",
+            # f"  {row.get('BILLNO', '-')} | HQ",
+            f"  จำนวน {qty:,.0f} | ราคา {(base_amount/qty):,.2f}",
+            # f"  vat {vat_amount:,.2f}",
             f"  บริษัท {acct_no}",
         ])
 
