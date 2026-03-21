@@ -72,21 +72,32 @@ async def line_webhook(request: Request):
         # =========================
         try:
             reply_payload = route_user_text(engine, user_text, access=access)
+
+            # backward compatibility:
+            if isinstance(reply_payload, str):
+                reply_payload = {"type": "text", "text": reply_payload}
+
+            if not isinstance(reply_payload, dict):
+                raise ValueError(f"Unexpected reply_payload type: {type(reply_payload)}")
+
         except Exception as e:
             print("ROUTE ERROR:", e)
             reply_payload = {
                 "type": "text",
                 "text": "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
             }
+
         try:
-            if reply_payload["type"] == "image":
+            print("DEBUG reply_payload:", reply_payload)
+
+            if reply_payload.get("type") == "image":
                 reply_line_image(
                     reply_token,
                     image_url=reply_payload["originalContentUrl"],
                     preview_url=reply_payload.get("previewImageUrl"),
                 )
             else:
-                reply_line_message(reply_token, reply_payload["text"])
+                reply_line_message(reply_token, reply_payload.get("text", "ไม่มีข้อความตอบกลับ"))
         except Exception as e:
             print("LINE REPLY ERROR:", e)
 
