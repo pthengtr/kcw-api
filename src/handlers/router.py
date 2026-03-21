@@ -6,6 +6,7 @@ from src.handlers.history import handle_history_query, is_history_request
 from src.handlers.ai_chat import handle_ai_chat_query, is_ai_chat_request
 from src.handlers.message import GREETING_MESSAGE, is_help_request
 from src.access.helper import can_execute
+from src.ai.gemini_kb import ask_gemini_file_search
 
 
 def route_user_text(engine, user_text: str, access: dict) -> str:
@@ -42,7 +43,8 @@ def route_user_text(engine, user_text: str, access: dict) -> str:
 
     # 6) AI chat
     if is_ai_chat_request(text):
-        return handle_ai_chat_query(text)
+        # return handle_ai_chat_query
+        return ask_gemini_file_search(text)
 
     # 7) default product search
     return handle_product_query(engine, text)
