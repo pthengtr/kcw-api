@@ -6,7 +6,11 @@ AI_TRIGGER = ["เฮียช้า", "จ๋า"]
 
 def is_ai_chat_request(text: str) -> bool:
     t = (text or "").strip()
-    return t.startswith(AI_TRIGGER + " ")
+
+    return any(
+        t.startswith(trg)
+        for trg in AI_TRIGGER
+    )
 
 
 def extract_ai_question(text: str) -> str:
