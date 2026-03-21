@@ -1,7 +1,7 @@
 from src.ai.openai_client import get_openai_client
 
 
-AI_TRIGGER = "เฮียช้า"
+AI_TRIGGER = ["เฮียช้า", "จ๋า"]
 
 
 def is_ai_chat_request(text: str) -> bool:
