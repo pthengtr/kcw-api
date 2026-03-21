@@ -53,3 +53,41 @@ def reply_line_image(reply_token: str, image_url: str, preview_url: str | None =
             "previewImageUrl": preview,
         }
     ])
+
+def reply_line_response(reply_token: str, response: dict | None):
+
+    if not isinstance(response, dict):
+        return reply_line_payload(reply_token, [
+            {"type": "text", "text": "ระบบมีปัญหาชั่วคราวครับ"}
+        ])
+
+    rtype = response.get("type")
+
+    # ⭐ multiple messages
+    if rtype == "messages":
+        msgs = response.get("messages") or []
+        if not msgs:
+            msgs = [{"type": "text", "text": "ไม่พบข้อมูลครับ"}]
+
+        return reply_line_payload(reply_token, msgs)
+
+    # ⭐ single image
+    if rtype == "image":
+        url = response.get("originalContentUrl")
+        if not url:
+            return reply_line_payload(reply_token, [
+                {"type": "text", "text": "ไม่พบรูปสินค้า"}
+            ])
+
+        return reply_line_payload(reply_token, [{
+            "type": "image",
+            "originalContentUrl": url,
+            "previewImageUrl": response.get("previewImageUrl") or url,
+        }])
+
+    # ⭐ default text
+    text = (response.get("text") or "ไม่เข้าใจคำสั่งครับ")[:5000]
+
+    return reply_line_payload(reply_token, [
+        {"type": "text", "text": text}
+    ])

@@ -5,7 +5,7 @@ from src.db import get_engine
 from src.bot.line_bot import (
     verify_line_signature,
     reply_line_message,
-    reply_line_image,
+    reply_line_response,
 )
 from src.handlers.router import route_user_text
 from src.access.helper import get_line_user_id
@@ -90,14 +90,8 @@ async def line_webhook(request: Request):
         try:
             print("DEBUG reply_payload:", reply_payload)
 
-            if reply_payload.get("type") == "image":
-                reply_line_image(
-                    reply_token,
-                    image_url=reply_payload["originalContentUrl"],
-                    preview_url=reply_payload.get("previewImageUrl"),
-                )
-            else:
-                reply_line_message(reply_token, reply_payload.get("text", "ไม่มีข้อความตอบกลับ"))
+            reply_line_response(reply_token, reply_payload)
+
         except Exception as e:
             print("LINE REPLY ERROR:", e)
 
