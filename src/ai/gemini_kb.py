@@ -8,6 +8,22 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
+def _strip_trigger(text: str) -> str:
+    t = (text or "").strip()
+
+    triggers = [
+        "เฮียช้า",
+        "เฮียช้า ",
+        "เฮียช้า:",
+        "เฮียช้า,"
+    ]
+
+    for trg in triggers:
+        if t.lower().startswith(trg):
+            t = t[len(trg):].strip()
+            break
+
+    return t
 
 def _extract_reference_text(resp, max_refs: int = 3) -> str:
     """
@@ -71,9 +87,12 @@ def _extract_reference_text(resp, max_refs: int = 3) -> str:
 
 
 def ask_gemini_file_search(question: str) -> str:
+
+    q = _strip_trigger(question)
+
     q = (question or "").strip()
     if not q:
-        return "กรุณาพิมพ์คำถามก่อนครับ"
+        return "ถามอะไรเฮียหน่อยสิครับ 😄"
 
     if not GEMINI_FILE_SEARCH_STORE:
         return "ยังไม่ได้ตั้งค่า Gemini File Search store ครับ"
