@@ -1,23 +1,19 @@
 from src.ai.openai_client import get_openai_client
+import re
 
 
 AI_TRIGGER = ["เฮียช้า", "จ๋า"]
+AI_PATTERN = re.compile(r"^(?:เฮียช้า|จ๋า)[\s,:-]*", re.IGNORECASE)
 
 
 def is_ai_chat_request(text: str) -> bool:
     t = (text or "").strip()
-
-    return any(
-        t.startswith(trg)
-        for trg in AI_TRIGGER
-    )
+    return bool(AI_PATTERN.match(t))
 
 
 def extract_ai_question(text: str) -> str:
     t = (text or "").strip()
-    if t.startswith(AI_TRIGGER):
-        return t.replace(AI_TRIGGER, "", 1).strip()
-    return t
+    return AI_PATTERN.sub("", t).strip()
 
 
 def _extract_text_from_response(resp) -> str:
