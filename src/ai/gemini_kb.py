@@ -150,6 +150,46 @@ def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned, images
 
+def gemini_result_to_line_response(result: dict) -> dict:
+    text = (result.get("text") or "").strip()
+    images = result.get("images") or []
+
+    messages = []
+
+    if text:
+        messages.append({
+            "type": "text",
+            "text": text[:5000],
+        })
+
+    for img in images[:3]:
+        url = (img.get("url") or "").strip()
+        if not url:
+            continue
+
+        messages.append({
+            "type": "image",
+            "originalContentUrl": url,
+            "previewImageUrl": url,
+        })
+
+    if not messages:
+        return {
+            "type": "text",
+            "text": "ไม่พบข้อมูลครับ",
+        }
+
+    if len(messages) == 1 and messages[0]["type"] == "text":
+        return {
+            "type": "text",
+            "text": messages[0]["text"],
+        }
+
+    return {
+        "type": "messages",
+        "messages": messages,
+    }
+
 def ask_gemini_file_search(question: str) -> dict:
     q = (_strip_trigger(question) or "").strip()
     if not q:
