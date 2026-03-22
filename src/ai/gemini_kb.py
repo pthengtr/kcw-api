@@ -1,4 +1,5 @@
 import os
+import re
 from google import genai
 from google.genai import types
 
@@ -7,6 +8,7 @@ GEMINI_FILE_SEARCH_STORE = os.getenv("GEMINI_FILE_SEARCH_STORE", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
 client = genai.Client(api_key=GEMINI_API_KEY)
+
 
 def _strip_trigger(text: str) -> str:
     t = (text or "").strip()
@@ -26,6 +28,7 @@ def _strip_trigger(text: str) -> str:
 
     return t
 
+
 def _extract_reference_text(resp, max_refs: int = 3) -> str:
     """
     Try to build a short reference line from Gemini grounding metadata.
@@ -42,11 +45,9 @@ def _extract_reference_text(resp, max_refs: int = 3) -> str:
 
         refs = []
 
-        # Different SDK / response shapes may expose different fields
         chunks = getattr(gm, "grounding_chunks", None) or []
         supports = getattr(gm, "grounding_supports", None) or []
 
-        # 1) Try chunk-level titles first
         for ch in chunks:
             title = None
 
@@ -64,7 +65,6 @@ def _extract_reference_text(resp, max_refs: int = 3) -> str:
             if len(refs) >= max_refs:
                 break
 
-        # 2) Fallback: some responses only expose segment text or partial info
         if not refs:
             for s in supports:
                 seg = getattr(s, "segment", None)
@@ -87,14 +87,55 @@ def _extract_reference_text(resp, max_refs: int = 3) -> str:
         return ""
 
 
-def ask_gemini_file_search(question: str) -> str:
+def _extract_markdown_images(text: str, max_images: int = 3) -> tuple[str, list[dict]]:
+    """
+    Extract markdown image links: ![alt](url)
 
+    Returns:
+        cleaned_text: text with image markdown removed
+        images: [{"alt": "...", "url": "..."}]
+    """
+    if not text:
+        return "", []
+
+    pattern = re.compile(r'!\[(.*?)\]\((https?://[^\s)]+)\)')
+    images = []
+
+    for m in pattern.finditer(text):
+        alt = (m.group(1) or "").strip()
+        url = (m.group(2) or "").strip()
+
+        if not url:
+            continue
+
+        images.append({
+            "alt": alt,
+            "url": url,
+        })
+
+        if len(images) >= max_images:
+            break
+
+    cleaned_text = pattern.sub("", text)
+    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
+
+    return cleaned_text, images
+
+def ask_gemini_file_search(question: str) -> dict:
     q = (_strip_trigger(question) or "").strip()
     if not q:
-        return "ถามอะไรเฮียหน่อยสิครับ 😄"
+        return {
+            "text": "ถามอะไรเฮียหน่อยสิครับ 😄",
+            "images": [],
+            "raw_answer": "",
+        }
 
     if not GEMINI_FILE_SEARCH_STORE:
-        return "ยังไม่ได้ตั้งค่า Gemini File Search store ครับ"
+        return {
+            "text": "ยังไม่ได้ตั้งค่า Gemini File Search store ครับ",
+            "images": [],
+            "raw_answer": "",
+        }
 
     prompt = f"""
 ---
@@ -159,16 +200,30 @@ def ask_gemini_file_search(question: str) -> str:
 
         answer = (getattr(resp, "text", "") or "").strip()
         if not answer:
-            return "ผมหาคำตอบจากคลังเอกสารไม่เจอครับ ลองถามให้เฉพาะเจาะจงขึ้นอีกนิด"
+            return {
+                "text": "ผมหาคำตอบจากคลังเอกสารไม่เจอครับ ลองถามให้เฉพาะเจาะจงขึ้นอีกนิด",
+                "images": [],
+                "raw_answer": "",
+            }
 
         ref_line = _extract_reference_text(resp)
 
-        final_text = answer
+        raw_answer = answer
         if ref_line:
-            final_text += f"\n\n{ref_line}"
+            raw_answer += f"\n\n{ref_line}"
 
-        return final_text
+        cleaned_text, images = _extract_markdown_images(raw_answer, max_images=3)
+
+        return {
+            "text": cleaned_text,
+            "images": images,
+            "raw_answer": raw_answer,
+        }
 
     except Exception as e:
         print("Gemini file search error:", e)
-        return "ระบบค้นหาคู่มือขัดข้องชั่วคราวครับ"
+        return {
+            "text": "ระบบค้นหาคู่มือขัดข้องชั่วคราวครับ",
+            "images": [],
+            "raw_answer": "",
+        }
