@@ -87,39 +87,68 @@ def _extract_reference_text(resp, max_refs: int = 3) -> str:
         return ""
 
 
-def _extract_markdown_images(text: str, max_images: int = 3) -> tuple[str, list[dict]]:
-    """
-    Extract markdown image links: ![alt](url)
+def _looks_like_image_url(url: str) -> bool:
+    u = (url or "").lower()
+    return any(ext in u for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]) or "/storage/v1/object/public/" in u
 
-    Returns:
-        cleaned_text: text with image markdown removed
-        images: [{"alt": "...", "url": "..."}]
+
+def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list[dict]]:
+    """
+    Supports:
+    1) ![alt](url)
+    2) [alt](url)  -> if url looks like image
+    3) bare image urls
     """
     if not text:
         return "", []
 
-    pattern = re.compile(r'!\[(.*?)\]\((https?://[^\s)]+)\)')
     images = []
+    seen = set()
+    cleaned = text
 
-    for m in pattern.finditer(text):
+    # 1) markdown images
+    md_image_pattern = re.compile(r'!\[(.*?)\]\((https?://[^\s<>"\)]+(?:\?[^\s<>"\)]*)?)\)')
+    for m in md_image_pattern.finditer(text):
         alt = (m.group(1) or "").strip()
         url = (m.group(2) or "").strip()
-
-        if not url:
-            continue
-
-        images.append({
-            "alt": alt,
-            "url": url,
-        })
-
+        if url and url not in seen and _looks_like_image_url(url):
+            images.append({"alt": alt, "url": url})
+            seen.add(url)
         if len(images) >= max_images:
             break
 
-    cleaned_text = pattern.sub("", text)
-    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
+    cleaned = md_image_pattern.sub("", cleaned)
 
-    return cleaned_text, images
+    # 2) normal markdown links that are actually images
+    if len(images) < max_images:
+        md_link_pattern = re.compile(r'(?<!!)\[(.*?)\]\((https?://[^\s<>"\)]+(?:\?[^\s<>"\)]*)?)\)')
+        for m in md_link_pattern.finditer(text):
+            alt = (m.group(1) or "").strip()
+            url = (m.group(2) or "").strip()
+            if url and url not in seen and _looks_like_image_url(url):
+                images.append({"alt": alt, "url": url})
+                seen.add(url)
+            if len(images) >= max_images:
+                break
+
+        cleaned = md_link_pattern.sub("", cleaned)
+
+    # 3) bare urls
+    if len(images) < max_images:
+        bare_url_pattern = re.compile(r'https?://[^\s<>"\]]+')
+        for m in bare_url_pattern.finditer(text):
+            url = (m.group(0) or "").rstrip(".,);:").strip()
+            if url and url not in seen and _looks_like_image_url(url):
+                images.append({"alt": "", "url": url})
+                seen.add(url)
+            if len(images) >= max_images:
+                break
+
+        for url in list(seen):
+            cleaned = cleaned.replace(url, "")
+
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned, images
 
 def ask_gemini_file_search(question: str) -> dict:
     q = (_strip_trigger(question) or "").strip()
@@ -212,7 +241,7 @@ def ask_gemini_file_search(question: str) -> dict:
         if ref_line:
             raw_answer += f"\n\n{ref_line}"
 
-        cleaned_text, images = _extract_markdown_images(raw_answer, max_images=3)
+        cleaned_text, images = _extract_images_from_text(raw_answer, max_images=3)
 
         return {
             "text": cleaned_text,
@@ -222,6 +251,8 @@ def ask_gemini_file_search(question: str) -> dict:
 
     except Exception as e:
         print("Gemini file search error:", e)
+        print("RAW ANSWER:", raw_answer)
+        print("IMAGES:", images)
         return {
             "text": "ระบบค้นหาคู่มือขัดข้องชั่วคราวครับ",
             "images": [],
