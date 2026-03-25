@@ -238,7 +238,7 @@ def ask_gemini_file_search(question: str) -> dict:
                     types.Tool(
                         file_search=types.FileSearch(
                             file_search_store_names=[GEMINI_FILE_SEARCH_STORE]
-                        )s
+                        )
                     )
                 ]
             )
