@@ -96,7 +96,7 @@ def handle_product_snapshot_query(engine, user_text: str) -> str:
             "",
             "ซื้อล่าสุด:",
             _fmt_short_date(purchase.get("billdate")),
-            f"บิล {purchase.get('billno', '-')}",
+            # f"บิล {purchase.get('billno', '-')}",
             f"บริษัท {purchase.get('acct', '-')}",
             f"จำนวน {purchase.get('qty', 0):,.0f} | {purchase.get('unit_amount', 0):,.2f}/หน่วย",
         ])
@@ -111,8 +111,8 @@ def handle_product_snapshot_query(engine, user_text: str) -> str:
         lines.extend([
             "",
             "ขายล่าสุด:",
-            _fmt_short_date(sales.get("billdate")),
-            f"บิล {sales.get('billno', '-')} | {BRANCH_LABEL.get(branch, branch)}",
+            f"{_fmt_short_date(sales.get("billdate"))} | {BRANCH_LABEL.get(branch, branch)}",
+            # f"บิล {sales.get('billno', '-')} | {BRANCH_LABEL.get(branch, branch)}",
             f"ลูกค้า {sales.get('acct', '-')}",
             f"จำนวน {sales.get('qty', 0):,.0f} | {sales.get('unit_amount', 0):,.2f}/หน่วย",
         ])
