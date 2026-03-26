@@ -20,6 +20,7 @@ def get_latest_purchase_by_bcode(engine, bcode: str) -> dict | None:
                 trim(coalesce("BILLNO", '')) as "BILLNO",
                 trim(coalesce("BILLDATE", '')) as "BILLDATE",
                 trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("ACCTNO", '')) as "ACCTNO",
                 {_to_num_sql('"QTY"')} as "QTY_NUM",
                 {_to_num_sql('"AMOUNT"')} as "AMOUNT_NUM"
             from raw_kcw.raw_hq_pidet_purchase_lines
@@ -32,6 +33,7 @@ def get_latest_purchase_by_bcode(engine, bcode: str) -> dict | None:
             "BILLNO",
             "BILLDATE",
             "DETAIL",
+            "ACCTNO",
             "QTY_NUM" as "QTY",
             "AMOUNT_NUM" as "AMOUNT",
             case
@@ -58,6 +60,7 @@ def get_latest_sale_by_bcode(engine, bcode: str) -> dict | None:
                 trim(coalesce("BILLNO", '')) as "BILLNO",
                 trim(coalesce("BILLDATE", '')) as "BILLDATE",
                 trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("ACCTNO", '')) as "ACCTNO",
                 trim(coalesce("JOURMODE", '')) as "JOURMODE",
                 trim(coalesce("BILLTYPE_STD", '')) as "BILLTYPE_STD",
                 trim(coalesce("CANCELED", '')) as "CANCELED",
@@ -77,6 +80,7 @@ def get_latest_sale_by_bcode(engine, bcode: str) -> dict | None:
             "BILLNO",
             "BILLDATE",
             "DETAIL",
+            "ACCTNO",
             "QTY_NUM" as "QTY",
             "AMOUNT_NUM" as "AMOUNT",
             case
@@ -159,7 +163,7 @@ def get_product_snapshot_by_bcode(engine, bcode: str) -> dict | None:
             "qty": float(purchase.get("QTY") or 0),
             "amount": float(purchase.get("AMOUNT") or 0),
             "unit_amount": float(purchase.get("UNIT_AMOUNT") or 0),
-            "acct": float(purchase.get("ACCTNO") or 0),
+            "acct": purchase.get("ACCTNO"),
         } if purchase else None,
         "last_sale": {
             "branch": sale.get("BRANCH"),
@@ -168,7 +172,7 @@ def get_product_snapshot_by_bcode(engine, bcode: str) -> dict | None:
             "qty": float(sale.get("QTY") or 0),
             "amount": float(sale.get("AMOUNT") or 0),
             "unit_amount": float(sale.get("UNIT_AMOUNT") or 0),
-            "acct": float(purchase.get("ACCTNO") or 0),
+            "acct": sale.get("ACCTNO"),
         } if sale else None,
         "latest_ingested_at": latest_ingested_at,
     }
