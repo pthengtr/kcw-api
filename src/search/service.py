@@ -13,24 +13,21 @@ SEARCH_COLS = [
     "BRAND",
 ]
 
-# รหัสคุม -> รายการ
 CODE1_KEYWORD_MAP = {
     "A": ["ถ่าน"],
     "C": ["ซีล"],
-    "D": ["บูช","บู๊ช","บู๊ซ","บู็ช","บู็ซ"],
+    "D": ["บูช", "บู๊ช", "บู๊ซ", "บู็ช", "บู็ซ"],
     "E": ["ลูกปืนเข็ม", "ลูกปืนกรงนก", "เข็ม", "กรงนก"],
-    "F": ["ไส้กรองอากาศ","กรองอากาศ"],
-    "G": ["ยอยกากบาท","ยอย"],
-    "I": ["ลูกปืนตลับ","ลูกปืน"],
-    "K": ["จานคลัช","คลัช"],
+    "F": ["ไส้กรองอากาศ", "กรองอากาศ"],
+    "G": ["ยอยกากบาท", "ยอย"],
+    "I": ["ลูกปืนตลับ", "ลูกปืน"],
+    "K": ["จานคลัช", "คลัช"],
     "L": ["สายอ่อน"],
     "O": ["โอริง"],
-    "P": ["ไส้กรองน้ำมันเครื่อง","กรองน้ำมัน"],
+    "P": ["ไส้กรองน้ำมันเครื่อง", "กรองน้ำมัน"],
     "Q": ["ลูกหมาก"],
     "R": ["ลูกยาง"],
 }
-
-VALID_CODE1 = set(CODE1_KEYWORD_MAP.keys())
 
 
 def _normalize_text(text_value: str) -> str:
@@ -40,14 +37,6 @@ def _normalize_text(text_value: str) -> str:
 
 
 def _extract_code1_and_remaining_tokens(query: str) -> tuple[str | None, list[str]]:
-    """
-    Return:
-      detected_code1: exact CODE1 to filter, or None
-      remaining_tokens: tokens for normal free-text search
-    Priority:
-      1) explicit code in user text
-      2) keyword match from รายการ table
-    """
     raw = str(query or "").strip()
     if not raw:
         return None, []
@@ -57,13 +46,10 @@ def _extract_code1_and_remaining_tokens(query: str) -> tuple[str | None, list[st
 
     detected_code1 = None
 
-    # 1) explicit control code in free text
-    # match standalone single-letter code only
     explicit_codes = re.findall(r"(?<![A-Z0-9])([ACDEFGIKLOPQR])(?![A-Z0-9])", text_upper)
     if explicit_codes:
         detected_code1 = explicit_codes[0]
 
-    # 2) keyword-based mapping from รายการ
     if not detected_code1:
         for code1, keywords in CODE1_KEYWORD_MAP.items():
             for kw in keywords:
@@ -75,7 +61,6 @@ def _extract_code1_and_remaining_tokens(query: str) -> tuple[str | None, list[st
 
     cleaned_query = raw
 
-    # remove explicit code token from normal token search
     if detected_code1:
         cleaned_query = re.sub(
             rf"(?<![A-Za-z0-9]){re.escape(detected_code1)}(?![A-Za-z0-9])",
@@ -83,15 +68,55 @@ def _extract_code1_and_remaining_tokens(query: str) -> tuple[str | None, list[st
             cleaned_query,
             flags=re.IGNORECASE,
         )
-
-        # remove matched Thai keywords too, so they don't become noisy LIKE tokens
         for kw in CODE1_KEYWORD_MAP.get(detected_code1, []):
             cleaned_query = re.sub(re.escape(kw), " ", cleaned_query, flags=re.IGNORECASE)
 
     cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
     tokens = cleaned_query.lower().split() if cleaned_query else []
-
     return detected_code1, tokens
+
+
+def _extract_size_filters(query: str) -> tuple[dict[str, str], str]:
+    """
+    Examples:
+      ขนาด 1 2 3   -> SIZE1=1, SIZE2=2, SIZE3=3
+      ขนาด 1 2     -> SIZE1=1, SIZE2=2
+      ขนาด - 2 3   -> SIZE2=2, SIZE3=3
+      ขนาด - - 3   -> SIZE3=3
+      ขนาด 1       -> SIZE1=1
+    Returns:
+      ({'SIZE1': '1', ...}, cleaned_query_without_size_part)
+    """
+    raw = str(query or "").strip()
+    if not raw:
+        return {}, raw
+
+    # match "ขนาด" followed by 1-3 slots, each slot = number/word or "-"
+    # stops after max 3 slots
+    m = re.search(
+        r"(?:^|\s)(ขนาด)\s+([^\s]+)(?:\s+([^\s]+))?(?:\s+([^\s]+))?",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return {}, raw
+
+    slots = [m.group(2), m.group(3), m.group(4)]
+    size_filters = {}
+
+    for idx, value in enumerate(slots, start=1):
+        if value is None:
+            continue
+        value = value.strip()
+        if value == "-":
+            continue
+        size_filters[f"SIZE{idx}"] = value
+
+    # remove the whole matched size phrase from free-text query
+    cleaned_query = (raw[:m.start()] + " " + raw[m.end():]).strip()
+    cleaned_query = re.sub(r"\s+", " ", cleaned_query)
+
+    return size_filters, cleaned_query
 
 
 def simple_and_search_sql(
@@ -101,27 +126,27 @@ def simple_and_search_sql(
     table_name: str = "raw_hq_icmas_products",
     limit: int = 5,
 ) -> dict:
-    """
-    AND search across SEARCH_COLS,
-    optionally with CODE1 exact-match filter.
-    Returns:
-    {
-      "items": DataFrame,
-      "total": int
-    }
-    """
     if not query or not str(query).strip():
         return {"items": pd.DataFrame(), "total": 0}
 
-    detected_code1, tokens = _extract_code1_and_remaining_tokens(query)
+    # 1) extract size first
+    size_filters, query_wo_size = _extract_size_filters(query)
+
+    # 2) then extract CODE1 + remaining free-text
+    detected_code1, tokens = _extract_code1_and_remaining_tokens(query_wo_size)
 
     where_parts = []
     params = {}
 
-    # CODE1 exact match
     if detected_code1:
         where_parts.append('UPPER(TRIM(COALESCE(p."CODE1", \'\'))) = :code1')
         params["code1"] = detected_code1
+
+    # exact size filters
+    for col, value in size_filters.items():
+        param_key = col.lower()
+        where_parts.append(f'TRIM(COALESCE(CAST(p."{col}" AS TEXT), \'\')) = :{param_key}')
+        params[param_key] = str(value)
 
     # normal AND token search
     for i, tk in enumerate(tokens):
@@ -133,7 +158,6 @@ def simple_and_search_sql(
         ]
         where_parts.append("(" + " OR ".join(col_parts) + ")")
 
-    # if query was only a CODE1/รายการ keyword, still allow search by CODE1 alone
     if not where_parts:
         return {"items": pd.DataFrame(), "total": 0}
 
