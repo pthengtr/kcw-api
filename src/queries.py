@@ -159,6 +159,7 @@ def get_product_snapshot_by_bcode(engine, bcode: str) -> dict | None:
             "qty": float(purchase.get("QTY") or 0),
             "amount": float(purchase.get("AMOUNT") or 0),
             "unit_amount": float(purchase.get("UNIT_AMOUNT") or 0),
+            "acct": float(purchase.get("ACCTNO") or 0),
         } if purchase else None,
         "last_sale": {
             "branch": sale.get("BRANCH"),
@@ -167,6 +168,7 @@ def get_product_snapshot_by_bcode(engine, bcode: str) -> dict | None:
             "qty": float(sale.get("QTY") or 0),
             "amount": float(sale.get("AMOUNT") or 0),
             "unit_amount": float(sale.get("UNIT_AMOUNT") or 0),
+            "acct": float(purchase.get("ACCTNO") or 0),
         } if sale else None,
         "latest_ingested_at": latest_ingested_at,
     }

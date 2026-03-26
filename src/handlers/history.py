@@ -146,14 +146,14 @@ def _format_sales_history(result: dict, bcode: str, limit: int, branch: str | No
     if updated:
         lines.append(f"อัปเดต: {_format_local_dt(updated)}")
 
-    if latest:
-        lines.extend([
-            "",
-            "ล่าสุด:",
-            _fmt_short_date(latest["billdate"]),
-            f"บิล {latest['billno']}",
-            f"จำนวน {latest['qty']:,.0f} | {latest['unit_amount']:,.2f}/หน่วย",
-        ])
+    # if latest:
+    #     lines.extend([
+    #         "",
+    #         "ล่าสุด:",
+    #         _fmt_short_date(latest["billdate"]),
+    #         f"บิล {latest['billno']}",
+    #         f"จำนวน {latest['qty']:,.0f} | {latest['unit_amount']:,.2f}/หน่วย",
+    #     ])
 
     for row in rows:
         amount = _safe_float(row.get("AMOUNT"))
@@ -200,14 +200,14 @@ def _format_purchase_history(result: dict, bcode: str, limit: int) -> str:
     if updated:
         lines.append(f"อัปเดต: {_format_local_dt(updated)}")
 
-    if latest:
-        lines.extend([
-            "",
-            "ล่าสุด:",
-            _fmt_short_date(latest["billdate"]),
-            f"บิล {latest['billno']}",
-            f"จำนวน {latest['qty']:,.0f} | {latest['unit_amount']:,.2f}/หน่วย",
-        ])
+    # if latest:
+    #     lines.extend([
+    #         "",
+    #         "ล่าสุด:",
+    #         _fmt_short_date(latest["billdate"]),
+    #         f"บิล {latest['billno']}",
+    #         f"จำนวน {latest['qty']:,.0f} | {latest['unit_amount']:,.2f}/หน่วย",
+    #     ])
 
     for row in rows:
         amount = _safe_float(row.get("AMOUNT"))
