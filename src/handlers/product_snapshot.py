@@ -111,7 +111,7 @@ def handle_product_snapshot_query(engine, user_text: str) -> str:
         lines.extend([
             "",
             "ขายล่าสุด:",
-            f"{_fmt_short_date(sales.get("billdate"))} | {BRANCH_LABEL.get(branch, branch)}",
+            f"{_fmt_short_date(sales.get('billdate'))} | {BRANCH_LABEL.get(branch, branch)}"
             # f"บิล {sales.get('billno', '-')} | {BRANCH_LABEL.get(branch, branch)}",
             f"ลูกค้า {sales.get('acct', '-')}",
             f"จำนวน {sales.get('qty', 0):,.0f} | {sales.get('unit_amount', 0):,.2f}/หน่วย",
