@@ -46,53 +46,33 @@ def _extract_code1_and_remaining_tokens(query: str) -> tuple[str | None, list[st
 
     detected_code1 = None
 
-    explicit_codes = re.findall(r"(?<![A-Z0-9])([ACDEFGIKLOPQR])(?![A-Z0-9])", text_upper)
+    explicit_codes = re.findall(r"(?<![A-Z])CODE1\s*[:=]?\s*([A-Z])(?![A-Z])", text_upper)
     if explicit_codes:
         detected_code1 = explicit_codes[0]
 
     if not detected_code1:
         for code1, keywords in CODE1_KEYWORD_MAP.items():
-            for kw in keywords:
-                if kw and kw.lower() in text_lower:
-                    detected_code1 = code1
-                    break
-            if detected_code1:
+            if any(kw in text_lower for kw in keywords):
+                detected_code1 = code1
                 break
 
-    cleaned_query = raw
+    cleaned = raw
+    if detected_code1 and detected_code1 in CODE1_KEYWORD_MAP:
+        for kw in CODE1_KEYWORD_MAP[detected_code1]:
+            cleaned = re.sub(re.escape(kw), " ", cleaned, flags=re.IGNORECASE)
 
-    if detected_code1:
-        cleaned_query = re.sub(
-            rf"(?<![A-Za-z0-9]){re.escape(detected_code1)}(?![A-Za-z0-9])",
-            " ",
-            cleaned_query,
-            flags=re.IGNORECASE,
-        )
-        for kw in CODE1_KEYWORD_MAP.get(detected_code1, []):
-            cleaned_query = re.sub(re.escape(kw), " ", cleaned_query, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(?<![A-Za-z])CODE1\s*[:=]?\s*[A-Za-z](?![A-Za-z])", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-    cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
-    tokens = cleaned_query.lower().split() if cleaned_query else []
+    tokens = [tk.strip().lower() for tk in cleaned.split() if tk.strip()]
     return detected_code1, tokens
 
 
 def _extract_size_filters(query: str) -> tuple[dict[str, str], str]:
-    """
-    Examples:
-      ขนาด 1 2 3   -> SIZE1=1, SIZE2=2, SIZE3=3
-      ขนาด 1 2     -> SIZE1=1, SIZE2=2
-      ขนาด - 2 3   -> SIZE2=2, SIZE3=3
-      ขนาด - - 3   -> SIZE3=3
-      ขนาด 1       -> SIZE1=1
-    Returns:
-      ({'SIZE1': '1', ...}, cleaned_query_without_size_part)
-    """
     raw = str(query or "").strip()
     if not raw:
         return {}, raw
 
-    # match "ขนาด" followed by 1-3 slots, each slot = number/word or "-"
-    # stops after max 3 slots
     m = re.search(
         r"(?:^|\s)(ขนาด)\s+([^\s]+)(?:\s+([^\s]+))?(?:\s+([^\s]+))?",
         raw,
@@ -112,10 +92,8 @@ def _extract_size_filters(query: str) -> tuple[dict[str, str], str]:
             continue
         size_filters[f"SIZE{idx}"] = value
 
-    # remove the whole matched size phrase from free-text query
     cleaned_query = (raw[:m.start()] + " " + raw[m.end():]).strip()
     cleaned_query = re.sub(r"\s+", " ", cleaned_query)
-
     return size_filters, cleaned_query
 
 
@@ -123,16 +101,13 @@ def simple_and_search_sql(
     engine,
     query: str,
     schema: str = "raw_kcw",
-    table_name: str = "raw_hq_icmas_products",
+    table_name: str = "raw_hq_icmas_products",  # kept for compatibility, not used now
     limit: int = 5,
 ) -> dict:
     if not query or not str(query).strip():
         return {"items": pd.DataFrame(), "total": 0}
 
-    # 1) extract size first
     size_filters, query_wo_size = _extract_size_filters(query)
-
-    # 2) then extract CODE1 + remaining free-text
     detected_code1, tokens = _extract_code1_and_remaining_tokens(query_wo_size)
 
     where_parts = []
@@ -142,20 +117,15 @@ def simple_and_search_sql(
         where_parts.append('UPPER(TRIM(COALESCE(p."CODE1", \'\'))) = :code1')
         params["code1"] = detected_code1
 
-    # exact size filters
     for col, value in size_filters.items():
         param_key = col.lower()
         where_parts.append(f'TRIM(COALESCE(CAST(p."{col}" AS TEXT), \'\')) = :{param_key}')
         params[param_key] = str(value)
 
-    # normal AND token search
     for i, tk in enumerate(tokens):
         key = f"tk{i}"
         params[key] = f"%{tk}%"
-        col_parts = [
-            f'LOWER(CAST(p."{col}" AS TEXT)) LIKE :{key}'
-            for col in SEARCH_COLS
-        ]
+        col_parts = [f'LOWER(CAST(p."{col}" AS TEXT)) LIKE :{key}' for col in SEARCH_COLS]
         where_parts.append("(" + " OR ".join(col_parts) + ")")
 
     if not where_parts:
@@ -164,6 +134,49 @@ def simple_and_search_sql(
     where_sql = " AND ".join(where_parts)
 
     sql = f"""
+    WITH hq_products AS (
+        SELECT *
+        FROM "{schema}"."raw_hq_icmas_products"
+    ),
+    syp_products AS (
+        SELECT *
+        FROM "{schema}"."raw_syp_icmas_products"
+    ),
+    merged_products AS (
+        SELECT
+            COALESCE(hq."BCODE", syp."BCODE") AS "BCODE",
+            COALESCE(NULLIF(TRIM(hq."XCODE"), ''), NULLIF(TRIM(syp."XCODE"), '')) AS "XCODE",
+            COALESCE(NULLIF(TRIM(hq."MCODE"), ''), NULLIF(TRIM(syp."MCODE"), '')) AS "MCODE",
+            COALESCE(NULLIF(TRIM(hq."PCODE"), ''), NULLIF(TRIM(syp."PCODE"), '')) AS "PCODE",
+            COALESCE(NULLIF(TRIM(hq."ACODE"), ''), NULLIF(TRIM(syp."ACODE"), '')) AS "ACODE",
+            COALESCE(NULLIF(TRIM(hq."DESCR"), ''), NULLIF(TRIM(syp."DESCR"), '')) AS "DESCR",
+            COALESCE(NULLIF(TRIM(hq."MODEL"), ''), NULLIF(TRIM(syp."MODEL"), '')) AS "MODEL",
+            COALESCE(NULLIF(TRIM(hq."BRAND"), ''), NULLIF(TRIM(syp."BRAND"), '')) AS "BRAND",
+            COALESCE(NULLIF(TRIM(hq."CODE1"), ''), NULLIF(TRIM(syp."CODE1"), '')) AS "CODE1",
+            COALESCE(hq."SIZE1", syp."SIZE1") AS "SIZE1",
+            COALESCE(hq."SIZE2", syp."SIZE2") AS "SIZE2",
+            COALESCE(hq."SIZE3", syp."SIZE3") AS "SIZE3",
+            COALESCE(hq."UI1", syp."UI1") AS "UI1",
+            COALESCE(hq."UI2", syp."UI2") AS "UI2",
+            COALESCE(hq."PRICE1", syp."PRICE1") AS "PRICE1",
+            COALESCE(hq."PRICE2", syp."PRICE2") AS "PRICE2",
+            COALESCE(hq."PRICE3", syp."PRICE3") AS "PRICE3",
+            COALESCE(hq."PRICEM1", syp."PRICEM1") AS "PRICEM1",
+            COALESCE(hq."COSTNET", syp."COSTNET") AS "COSTNET",
+
+            NULLIF(TRIM(CAST(hq."LOCATION1" AS TEXT)), '') AS "location1_hq",
+            NULLIF(TRIM(CAST(hq."LOCATION2" AS TEXT)), '') AS "location2_hq",
+            NULLIF(TRIM(CAST(syp."LOCATION1" AS TEXT)), '') AS "location1_syp",
+            NULLIF(TRIM(CAST(syp."LOCATION2" AS TEXT)), '') AS "location2_syp",
+
+            GREATEST(
+                COALESCE(hq._ingested_at, '1900-01-01'::timestamptz),
+                COALESCE(syp._ingested_at, '1900-01-01'::timestamptz)
+            ) AS _ingested_at
+        FROM hq_products hq
+        FULL OUTER JOIN syp_products syp
+            ON hq."BCODE" = syp."BCODE"
+    )
     SELECT *
     FROM (
         SELECT
@@ -177,7 +190,7 @@ def simple_and_search_sql(
                 COALESCE(syp.updated_at, '1900-01-01'::timestamptz)
             ) AS inventory_updated_at,
             COUNT(*) OVER() AS total_count
-        FROM "{schema}"."{table_name}" p
+        FROM merged_products p
         LEFT JOIN curated_kcw.inventory_qty_latest hq
             ON p."BCODE" = hq.bcode AND hq.branch = 'HQ'
         LEFT JOIN curated_kcw.inventory_qty_latest syp
@@ -201,8 +214,4 @@ def simple_and_search_sql(
         total = int(df["total_count"].iloc[0])
 
     df = df.drop(columns=["total_count"], errors="ignore")
-
-    return {
-        "items": df,
-        "total": total,
-    }
+    return {"items": df, "total": total}

@@ -20,6 +20,13 @@ CODE1_DISPLAY_MAP = {
     "R": {"name": "ลูกยาง", "size_labels": ["ใน", "นอก", "หนา"]},
 }
 
+def format_location_pair(loc1, loc2) -> str:
+    parts = []
+    for v in [loc1, loc2]:
+        s = _safe_size_value(v)
+        if s:
+            parts.append(s)
+    return " / ".join(parts)
 
 def _safe_text(value, default: str = "-") -> str:
     if value is None:
@@ -165,6 +172,9 @@ def format_product_answer(search_result: dict) -> str:
         detail_parts = [x for x in [descr, brand, model] if x != "-"]
         product_detail = " | ".join(detail_parts) if detail_parts else "-"
 
+        loc_hq = format_location_pair(row.get("location1_hq"), row.get("location2_hq"))
+        loc_syp = format_location_pair(row.get("location1_syp"), row.get("location2_syp"))
+
         p1 = _fmt_price_or_dash(row.get("PRICE1"))
         p2 = _fmt_price_or_dash(row.get("PRICE2"))
         p3 = _fmt_price_or_dash(row.get("PRICE3"))
@@ -193,8 +203,8 @@ def format_product_answer(search_result: dict) -> str:
             f" {price_ui1_line}\n"
             f" {price_ui2_line}\n"
             f" ทุน: {costnet}\n"
-            f" สนญ: {qty_hq} ({updated_at_hq})\n"
-            f" สาขา: {qty_syp} ({updated_at_syp})\n"
+            f" สนญ: {qty_hq}" + (f" | {loc_hq}" if loc_hq else "") + f" ({updated_at_hq})\n"
+            f" สาขา: {qty_syp}" + (f" | {loc_syp}" if loc_syp else "") + f" ({updated_at_syp})\n"
             f" ข้อมูลสินค้าอัปเดต: {ingested_at}"
         )
 
