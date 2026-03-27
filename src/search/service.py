@@ -45,28 +45,60 @@ def _extract_code1_and_remaining_tokens(query: str) -> tuple[str | None, list[st
     text_lower = raw.lower()
 
     detected_code1 = None
+    matched_keyword = None
 
-    explicit_codes = re.findall(r"(?<![A-Z])CODE1\s*[:=]?\s*([A-Z])(?![A-Z])", text_upper)
-    if explicit_codes:
-        detected_code1 = explicit_codes[0]
+    # 1) explicit CODE1: I, CODE1 I, CODE1:I
+    m = re.search(r'(?<![A-Z0-9])CODE1\s*[:=]?\s*([A-Z])(?![A-Z0-9])', text_upper)
+    if m:
+        detected_code1 = m.group(1)
 
+    # 2) bare single-letter prefix like "I 6201" or "O 35 3"
     if not detected_code1:
+        m = re.match(r'^\s*([A-Z])\b', text_upper)
+        if m and m.group(1) in CODE1_KEYWORD_MAP:
+            detected_code1 = m.group(1)
+
+    # 3) keyword detection — longest keyword first
+    if not detected_code1:
+        keyword_rows = []
         for code1, keywords in CODE1_KEYWORD_MAP.items():
-            if any(kw in text_lower for kw in keywords):
+            for kw in keywords:
+                keyword_rows.append((kw, code1))
+
+        keyword_rows.sort(key=lambda x: len(x[0]), reverse=True)
+
+        for kw, code1 in keyword_rows:
+            if kw.lower() in text_lower:
                 detected_code1 = code1
+                matched_keyword = kw
                 break
 
     cleaned = raw
-    if detected_code1 and detected_code1 in CODE1_KEYWORD_MAP:
-        for kw in CODE1_KEYWORD_MAP[detected_code1]:
-            cleaned = re.sub(re.escape(kw), " ", cleaned, flags=re.IGNORECASE)
 
-    cleaned = re.sub(r"(?<![A-Za-z])CODE1\s*[:=]?\s*[A-Za-z](?![A-Za-z])", " ", cleaned, flags=re.IGNORECASE)
+    # remove only the actually matched keyword, not all synonyms
+    if matched_keyword:
+        cleaned = re.sub(re.escape(matched_keyword), " ", cleaned, flags=re.IGNORECASE)
+
+    # remove explicit CODE1 notation if present
+    cleaned = re.sub(
+        r'(?<![A-Za-z0-9])CODE1\s*[:=]?\s*[A-Za-z](?![A-Za-z0-9])',
+        ' ',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    # remove bare leading code1 if present, e.g. "I 6201"
+    if detected_code1:
+        cleaned = re.sub(
+            rf'^\s*{re.escape(detected_code1)}\b',
+            ' ',
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-
     tokens = [tk.strip().lower() for tk in cleaned.split() if tk.strip()]
     return detected_code1, tokens
-
 
 def _extract_size_filters(query: str) -> tuple[dict[str, str], str]:
     raw = str(query or "").strip()
