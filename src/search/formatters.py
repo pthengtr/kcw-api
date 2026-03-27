@@ -203,8 +203,10 @@ def format_product_answer(search_result: dict) -> str:
             f" {price_ui1_line}\n"
             f" {price_ui2_line}\n"
             f" ทุน: {costnet}\n"
-            f" สนญ: {qty_hq}" + (f" | {loc_hq}" if loc_hq else "") + f" ({updated_at_hq})\n"
-            f" สาขา: {qty_syp}" + (f" | {loc_syp}" if loc_syp else "") + f" ({updated_at_syp})\n"
+            f" สนญ: {qty_hq}" + (f" | {loc_hq}" if loc_hq else "") + "\n"
+            f" ({updated_at_hq})\n"
+            f" สาขา: {qty_syp}" + (f" | {loc_syp}" if loc_syp else "")  + "\n"
+            f" ({updated_at_syp})\n"
             f" ข้อมูลสินค้าอัปเดต: {ingested_at}"
         )
 
