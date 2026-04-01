@@ -14,6 +14,23 @@ from src.access.helper import build_access_denied_message
 
 app = FastAPI()
 
+@app.post("/kcw-peak/sync")
+async def kcw_peak_sync(request: Request):
+    try:
+        body = await request.json()
+
+        print("========== KCW PEAK ==========")
+        print("payload:", body)
+        print("==============================")
+
+        return {
+            "status": "ok",
+            "received": True
+        }
+
+    except Exception as e:
+        print("KCW PEAK ERROR:", e)
+        raise HTTPException(status_code=400, detail="Invalid payload")
 
 @app.post("/line-webhook")
 async def line_webhook(request: Request):
