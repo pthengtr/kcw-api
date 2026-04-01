@@ -50,7 +50,4 @@ def route_user_text(engine, user_text: str, access: dict) -> dict:
     if is_product_snapshot_request(text):
         return handle_product_snapshot_query(engine, text)
     
-    return {
-        "type": "text",
-        "text": handle_product_query(engine, text),
-    }
+    return {"type": "text", "text": handle_product_query(engine, text, access=access)}

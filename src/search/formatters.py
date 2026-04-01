@@ -145,7 +145,8 @@ def format_size_line(code1_value, size1, size2, size3) -> str:
     return f" ขนาด: {' | '.join(pairs)}\n"
 
 
-def format_product_answer(search_result: dict) -> str:
+def format_product_answer(search_result: dict, can_see_cost: bool = False) -> str:
+
     df = search_result.get("items", pd.DataFrame())
     total = int(search_result.get("total", 0) or 0)
 
@@ -205,6 +206,8 @@ def format_product_answer(search_result: dict) -> str:
         if mcode:
             code_lines += f" เบอร์โรงงาน: {mcode}\n"
 
+        cost_line = f" ทุน: {costnet}\n" if can_see_cost else ""
+
         lines.append(
             f"{i}.\n"
             f" รหัสสินค้า: {bcode}\n"
@@ -214,7 +217,7 @@ def format_product_answer(search_result: dict) -> str:
             f"{size_line}"
             f" {price_ui1_line}\n"
             f" {price_ui2_line}\n"
-            f" ทุน: {costnet}\n"
+            f" {cost_line}"
             f" สนญ: {qty_hq}" + (f" | {loc_hq}" if loc_hq else "") + "\n"
             f" ({updated_at_hq})\n"
             f" สาขา: {qty_syp}" + (f" | {loc_syp}" if loc_syp else "") + "\n"
