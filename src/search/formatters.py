@@ -211,9 +211,9 @@ def format_product_answer(search_result: dict, can_see_cost: bool = False) -> st
         lines.append(
             f"{i}.\n"
             f" รหัสสินค้า: {bcode}\n"
+            f" ชื่อ: {product_detail}\n"
             f"{code_lines}"
             f"{code1_line}"
-            f" ชื่อ: {product_detail}\n"
             f"{size_line}"
             f" {price_ui1_line}\n"
             f" {price_ui2_line}\n"
