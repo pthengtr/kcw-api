@@ -230,7 +230,7 @@ def ask_gemini_file_search(question: str) -> dict:
 
     try:
         resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=f"คำถามผู้ใช้: {q}",
             config=types.GenerateContentConfig(
                 system_instruction=FULL_SYSTEM_PROMPT,
