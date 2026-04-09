@@ -190,6 +190,17 @@ def gemini_result_to_line_response(result: dict) -> dict:
         "messages": messages,
     }
 
+import time
+from typing import Dict, List, Tuple, Optional
+
+PRIMARY_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-2.5-flash-lite"
+
+MAX_RETRIES_PRIMARY = 2
+MAX_RETRIES_FALLBACK = 1
+INITIAL_BACKOFF_SECONDS = 1.2
+
+
 def ask_gemini_file_search(question: str) -> dict:
     q = (_strip_trigger(question) or "").strip()
     if not q:
@@ -207,71 +218,114 @@ def ask_gemini_file_search(question: str) -> dict:
         }
 
     FULL_SYSTEM_PROMPT = """
-    บทบาท:
-    คุณคือผู้เชี่ยวชาญด้านเทคนิคอะไหล่ยนต์และเครื่องจักร ตอบโดยอ้างอิงข้อมูลจากเอกสารในคลัง File Search เท่านั้น
+บทบาท:
+คุณคือผู้เชี่ยวชาญด้านเทคนิคอะไหล่ยนต์และเครื่องจักร ตอบโดยอ้างอิงข้อมูลจากเอกสารในคลัง File Search เท่านั้น
 
-    รูปแบบการตอบ (LINE):
-    - ตอบภาษาไทย สั้น กระชับ อ่านง่าย
-    - บรรทัดแรก: สรุปคำตอบตรงๆ ไม่เกิน 2 ประโยค
-    - จากนั้นสรุปเป็นหัวข้อสั้นๆ 2–4 ข้อ
-    - หากมีข้อควรระวัง ให้ใส่ท้ายคำตอบแบบสั้น
+รูปแบบการตอบ (LINE):
+- ตอบภาษาไทย สั้น กระชับ อ่านง่าย
+- บรรทัดแรก: สรุปคำตอบตรงๆ ไม่เกิน 2 ประโยค
+- จากนั้นสรุปเป็นหัวข้อสั้นๆ 2–4 ข้อ
+- หากมีข้อควรระวัง ให้ใส่ท้ายคำตอบแบบสั้น
 
-    กฎสำคัญ:
-    - ยึดข้อมูลจากเอกสารเป็นหลัก สามารถเชื่อมโยงคำที่มีความหมายใกล้เคียงได้ แต่ห้ามสร้างข้อมูลทางเทคนิคใหม่
-    - หากข้อมูลไม่ชัดเจน ให้ตอบว่า "ข้อมูลในคลังไม่ชัดเจน"
-    - หากไม่พบข้อมูล ให้ตอบว่า "ไม่มีข้อมูลในคลังข้อมูล"
+กฎสำคัญ:
+- ตอบโดยอ้างอิงเฉพาะข้อมูลที่ค้นพบจาก File Search ในรอบนี้เท่านั้น
+- ยึดข้อมูลจากเอกสารเป็นหลัก สามารถเชื่อมโยงคำที่มีความหมายใกล้เคียงได้ แต่ห้ามสร้างข้อมูลทางเทคนิคใหม่
+- หากข้อมูลไม่ชัดเจน ให้ตอบว่า "ข้อมูลในคลังไม่ชัดเจน"
+- หากไม่พบข้อมูล ให้ตอบว่า "ไม่มีข้อมูลในคลังข้อมูล"
+- หากคำตอบมีหลายความเป็นไปได้ ให้เลือกเฉพาะที่เอกสารระบุชัด
+- ห้ามใช้ความรู้ทั่วไปนอกเอกสาร แม้จะดูเหมือนถูกต้อง
 
-    การแสดงรูปภาพ:
-    - หากพบ Markdown รูปภาพในเอกสาร (เช่น ![alt](url)) ต้องคัดลอกมาแสดงแบบเดิมทันที ห้ามแก้ไข ห้ามย่อ ห้ามละเว้น
+การแสดงรูปภาพ:
+- หากพบ Markdown รูปภาพในเอกสาร (เช่น ![alt](url)) ต้องคัดลอกมาแสดงแบบเดิมทันที ห้ามแก้ไข ห้ามย่อ ห้ามละเว้น
 
-    คำถามทั่วไป:
-    - หากไม่เกี่ยวกับงานหรืออะไหล่ ให้ตอบเชิงติดตลกว่าเป็นเวลางาน ให้ตั้งใจทำงานก่อน
-    """
+คำถามทั่วไป:
+- หากไม่เกี่ยวกับงานหรืออะไหล่ ให้ตอบเชิงติดตลกว่าเป็นเวลางาน ให้ตั้งใจทำงานก่อน
+""".strip()
 
-    try:
-        resp = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=f"คำถามผู้ใช้: {q}",
-            config=types.GenerateContentConfig(
-                system_instruction=FULL_SYSTEM_PROMPT,
-                tools=[
-                    types.Tool(
-                        file_search=types.FileSearch(
-                            file_search_store_names=[GEMINI_FILE_SEARCH_STORE]
-                        )
+    raw_answer = ""
+    images: List[str] = []
+
+    def _build_config():
+        return types.GenerateContentConfig(
+            system_instruction=FULL_SYSTEM_PROMPT,
+            tools=[
+                types.Tool(
+                    file_search=types.FileSearch(
+                        file_search_store_names=[GEMINI_FILE_SEARCH_STORE]
                     )
-                ]
-            )
+                )
+            ],
+        )
+
+    def _call_model(model_name: str) -> Tuple[str, List[str], str]:
+        resp = client.models.generate_content(
+            model=model_name,
+            contents=f"คำถามผู้ใช้: {q}",
+            config=_build_config(),
         )
 
         answer = (getattr(resp, "text", "") or "").strip()
         if not answer:
-            return {
-                "text": "ผมหาคำตอบจากคลังเอกสารไม่เจอครับ ลองถามให้เฉพาะเจาะจงขึ้นอีกนิด",
-                "images": [],
-                "raw_answer": "",
-            }
+            return "", [], ""
 
         ref_line = _extract_reference_text(resp)
 
-        raw_answer = answer
+        combined_answer = answer
         if ref_line:
-            raw_answer += f"\n\n{ref_line}"
+            combined_answer += f"\n\n{ref_line}"
 
-        cleaned_text, images = _extract_images_from_text(raw_answer, max_images=3)
+        cleaned_text, extracted_images = _extract_images_from_text(
+            combined_answer,
+            max_images=3,
+        )
 
-        return {
-            "text": cleaned_text,
-            "images": images,
-            "raw_answer": raw_answer,
-        }
+        return cleaned_text.strip(), extracted_images, combined_answer.strip()
 
-    except Exception as e:
-        print("Gemini file search error:", e)
-        print("RAW ANSWER:", raw_answer)
-        print("IMAGES:", images)
-        return {
-            "text": "ระบบค้นหาคู่มือขัดข้องชั่วคราวครับ",
-            "images": [],
-            "raw_answer": "",
-        }
+    def _is_good_answer(text: str) -> bool:
+        if not text:
+            return False
+        return True
+
+    def _run_with_retry(model_name: str, max_retries: int) -> Optional[Dict[str, object]]:
+        last_error = None
+        backoff = INITIAL_BACKOFF_SECONDS
+
+        for attempt in range(max_retries + 1):
+            try:
+                cleaned_text, extracted_images, combined_answer = _call_model(model_name)
+
+                if _is_good_answer(cleaned_text):
+                    return {
+                        "text": cleaned_text,
+                        "images": extracted_images,
+                        "raw_answer": combined_answer,
+                    }
+
+                last_error = RuntimeError("Empty or invalid answer")
+
+            except Exception as e:
+                last_error = e
+                print(f"Gemini file search error [{model_name}] attempt {attempt + 1}: {e}")
+
+            if attempt < max_retries:
+                time.sleep(backoff)
+                backoff *= 2
+
+        print(f"Gemini file search failed on model [{model_name}]: {last_error}")
+        return None
+
+    # 1) primary model
+    result = _run_with_retry(PRIMARY_MODEL, MAX_RETRIES_PRIMARY)
+    if result:
+        return result
+
+    # 2) fallback model
+    result = _run_with_retry(FALLBACK_MODEL, MAX_RETRIES_FALLBACK)
+    if result:
+        return result
+
+    return {
+        "text": "ระบบค้นหาคู่มือขัดข้องชั่วคราวครับ",
+        "images": [],
+        "raw_answer": raw_answer,
+    }
