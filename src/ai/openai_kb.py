@@ -12,7 +12,7 @@ OPENAI_VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
 # request timeout in seconds for each OpenAI call
-OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "8").strip())
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "12").strip())
 
 # retry settings
 MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "2").strip())
