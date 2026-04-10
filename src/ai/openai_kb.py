@@ -12,13 +12,16 @@ OPENAI_VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
 # request timeout in seconds for each OpenAI call
-OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "45").strip())
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "25").strip())
 
 # retry settings
 MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "2").strip())
 INITIAL_BACKOFF_SECONDS = float(os.getenv("OPENAI_INITIAL_BACKOFF_SECONDS", "1.2").strip())
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
+    max_retries=0,
+)
 
 logger = logging.getLogger("kcw.openai_kb")
 
@@ -253,6 +256,7 @@ def ask_openai_file_search(question: str) -> dict:
                 }
             ],
             include=["file_search_call.results"],
+            max_output_tokens=700,
             timeout=OPENAI_TIMEOUT_SECONDS,
         )
 
