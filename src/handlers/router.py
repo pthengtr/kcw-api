@@ -3,7 +3,7 @@ from src.handlers.product import handle_product_query
 from src.handlers.job import handle_job_query, is_job_request
 from src.handlers.history import handle_history_query, is_history_request
 from src.handlers.ai_chat import is_ai_chat_request
-from src.ai.gemini_kb import ask_gemini_file_search, gemini_result_to_line_response
+from src.ai.openai_kb import ask_openai_file_search, openai_result_to_line_response
 from src.handlers.message import GREETING_MESSAGE, is_help_request
 from src.handlers.image import is_image_command, handle_image_command
 from src.handlers.product_snapshot import is_product_snapshot_request, handle_product_snapshot_query
@@ -44,8 +44,8 @@ def route_user_text(engine, user_text: str, access: dict) -> dict:
         }
 
     if is_ai_chat_request(text):
-        result = ask_gemini_file_search(text)
-        return gemini_result_to_line_response(result)
+        result = ask_openai_file_search(text)
+        return openai_result_to_line_response(result)
 
     if is_product_snapshot_request(text):
         return handle_product_snapshot_query(engine, text)
