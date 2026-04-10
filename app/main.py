@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 import json
+import time
 
 from src.db import get_engine
 from src.bot.line_bot import (
@@ -88,7 +89,14 @@ async def line_webhook(request: Request):
         # NORMAL ROUTING
         # =========================
         try:
+            t_route_0 = time.perf_counter()
             reply_payload = route_user_text(engine, user_text, access=access)
+            t_route_1 = time.perf_counter()
+
+            print(
+                f"LATENCY route_ms={(t_route_1 - t_route_0)*1000:.1f} "
+                f"text={user_text[:80]!r}"
+            )
 
             # backward compatibility:
             if isinstance(reply_payload, str):
@@ -107,7 +115,11 @@ async def line_webhook(request: Request):
         try:
             print("DEBUG reply_payload:", reply_payload)
 
+            t_reply_0 = time.perf_counter()
             reply_line_response(reply_token, reply_payload)
+            t_reply_1 = time.perf_counter()
+
+            print(f"LATENCY line_reply_ms={(t_reply_1 - t_reply_0)*1000:.1f}")
 
         except Exception as e:
             print("LINE REPLY ERROR:", e)
