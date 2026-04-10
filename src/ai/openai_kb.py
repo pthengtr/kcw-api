@@ -276,6 +276,14 @@ def ask_openai_file_search(question: str) -> dict:
 
         t_req_1 = time.perf_counter()
 
+        usage = resp.usage
+
+        logger.info(
+            f"tokens input={usage.input_tokens} "
+            f"output={usage.output_tokens} "
+            f"total={usage.total_tokens}"
+        )
+
         answer = (getattr(resp, "output_text", "") or "").strip()
 
         ref_line = _extract_reference_text(resp)
