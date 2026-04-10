@@ -12,6 +12,18 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
+def _clean_image_url(url: str) -> str:
+    if not url:
+        return ""
+
+    url = url.strip()
+
+    # remove trailing markdown leftovers
+    url = url.split(")")[0]
+    url = url.split("\n")[0]
+
+    return url.strip()
+
 def _strip_trigger(text: str) -> str:
     t = (text or "").strip()
     triggers = ["เฮียช้า", "เฮียช้า ", "เฮียช้า:", "เฮียช้า,", "จ๋า"]
@@ -121,15 +133,17 @@ def openai_result_to_line_response(result: dict) -> dict:
         })
 
     for img in images[:3]:
-        url = (img.get("url") or "").strip()
+        url = _clean_image_url(img.get("url"))
+
         if not url:
             continue
+
         messages.append({
             "type": "image",
             "originalContentUrl": url,
             "previewImageUrl": url,
         })
-
+        
     if not messages:
         return {
             "type": "text",
