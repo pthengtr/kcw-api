@@ -1,6 +1,12 @@
 from fastapi import FastAPI, Request, HTTPException
 import json
 import time
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,  # THIS is critical
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
 
 from src.db import get_engine
 from src.bot.line_bot import (
