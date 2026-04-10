@@ -3,5 +3,5 @@ COMMAND_PERMISSIONS = {
     "ประวัติสินค้า": {"admin", "exec", "staff"},
     "สินค้า": {"admin", "exec", "staff"},
     "job": {"admin", "exec"},
-    "sync": {"admin", "exec"},
+    "sync": {"admin", "exec", "user"},
 }
