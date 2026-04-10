@@ -266,7 +266,7 @@ def ask_openai_file_search(question: str) -> dict:
                 {
                     "type": "file_search",
                     "vector_store_ids": [OPENAI_VECTOR_STORE_ID],
-                    "max_num_results": 8,
+                    "max_num_results": 2,
                 }
             ],
             include=["file_search_call.results"],
