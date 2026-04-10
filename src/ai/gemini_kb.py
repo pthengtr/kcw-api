@@ -193,8 +193,8 @@ def gemini_result_to_line_response(result: dict) -> dict:
 import time
 from typing import Dict, List, Tuple, Optional
 
-PRIMARY_MODEL = "gemini-2.5-flash"
-FALLBACK_MODEL = "gemini-2.5-flash-lite"
+PRIMARY_MODEL = "gemini-2.5-pro"
+FALLBACK_MODEL = "gemini-2.5-flash"
 
 MAX_RETRIES_PRIMARY = 2
 MAX_RETRIES_FALLBACK = 1
