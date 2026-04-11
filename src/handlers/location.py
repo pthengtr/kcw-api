@@ -1,8 +1,7 @@
 from collections import OrderedDict
 from datetime import datetime
 
-from src.queries import get_products_grouped_by_location
-
+from src.queries import get_top_matched_locations_with_products
 
 BRANCH_ALIASES = {
     "HQ": "HQ",
@@ -52,7 +51,13 @@ def handle_location_query(engine, user_text: str) -> str:
             "• ที่เก็บ SYP B-02"
         )
 
-    rows = get_products_grouped_by_location(engine, branch=branch, location_keyword=location_kw, limit=200)
+    rows = get_top_matched_locations_with_products(
+        engine,
+        branch=branch,
+        location_keyword=location_kw,
+        max_locations=3,
+        max_products_per_location=100,
+    )
 
     if not rows:
         return f"ไม่พบสินค้าที่เก็บ {branch} ตรงกับ '{location_kw}'"
@@ -72,7 +77,7 @@ def handle_location_query(engine, user_text: str) -> str:
     lines = [
         f"ที่เก็บ {branch} ค้นหา: {location_kw}",
         f"อัปเดตล่าสุด: {_fmt_updated_at(latest_updated)}",
-        f"พบ {len(rows):,} รายการ ใน {len(grouped):,} ที่เก็บ",
+        f"พบ {len(grouped):,} ที่เก็บที่ตรงคำค้น",
         "",
     ]
 

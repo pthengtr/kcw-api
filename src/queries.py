@@ -445,7 +445,13 @@ def get_daily_sales_summary(
 
     return result
 
-def get_products_grouped_by_location(engine, branch: str, location_keyword: str, limit: int = 200) -> list[dict]:
+def get_top_matched_locations_with_products(
+    engine,
+    branch: str,
+    location_keyword: str,
+    max_locations: int = 3,
+    max_products_per_location: int = 100,
+) -> list[dict]:
     branch = (branch or "").strip().upper()
     location_keyword = (location_keyword or "").strip()
 
@@ -454,46 +460,63 @@ def get_products_grouped_by_location(engine, branch: str, location_keyword: str,
 
     if branch == "HQ":
         product_table = 'raw_kcw.raw_hq_icmas_products'
-        loc1_col = 'p."LOCATION1"'
-        loc2_col = 'p."LOCATION2"'
     else:
         product_table = 'raw_kcw.raw_syp_icmas_products'
-        loc1_col = 'p."LOCATION1"'
-        loc2_col = 'p."LOCATION2"'
 
     sql = text(f"""
-        WITH matched AS (
+        WITH all_locations AS (
+            SELECT DISTINCT TRIM(CAST("LOCATION1" AS TEXT)) AS location_name
+            FROM {product_table}
+            WHERE NULLIF(TRIM(CAST("LOCATION1" AS TEXT)), '') IS NOT NULL
+
+            UNION
+
+            SELECT DISTINCT TRIM(CAST("LOCATION2" AS TEXT)) AS location_name
+            FROM {product_table}
+            WHERE NULLIF(TRIM(CAST("LOCATION2" AS TEXT)), '') IS NOT NULL
+        ),
+        matched_locations AS (
             SELECT
-                TRIM(COALESCE(p."BCODE", '')) AS "BCODE",
-                TRIM(COALESCE(p."DESCR", '')) AS "DESCR",
+                location_name,
                 CASE
-                    WHEN UPPER(TRIM(COALESCE(CAST({loc1_col} AS TEXT), ''))) ILIKE UPPER(:kw)
-                        THEN TRIM(COALESCE(CAST({loc1_col} AS TEXT), ''))
-                    WHEN UPPER(TRIM(COALESCE(CAST({loc2_col} AS TEXT), ''))) ILIKE UPPER(:kw)
-                        THEN TRIM(COALESCE(CAST({loc2_col} AS TEXT), ''))
-                    ELSE NULL
-                END AS "MATCHED_LOCATION"
-            FROM {product_table} p
-            WHERE
-                UPPER(TRIM(COALESCE(CAST({loc1_col} AS TEXT), ''))) ILIKE UPPER(:kw)
-                OR UPPER(TRIM(COALESCE(CAST({loc2_col} AS TEXT), ''))) ILIKE UPPER(:kw)
+                    WHEN UPPER(location_name) = UPPER(:keyword) THEN 0
+                    WHEN UPPER(location_name) LIKE UPPER(:prefix_kw) THEN 1
+                    ELSE 2
+                END AS match_rank,
+                LENGTH(location_name) AS name_len
+            FROM all_locations
+            WHERE UPPER(location_name) LIKE UPPER(:contains_kw)
+            ORDER BY
+                match_rank ASC,
+                name_len ASC,
+                location_name ASC
+            LIMIT :max_locations
+        ),
+        products_in_matched_locations AS (
+            SELECT
+                ml.location_name AS matched_location,
+                TRIM(COALESCE(p."BCODE", '')) AS "BCODE",
+                TRIM(COALESCE(p."DESCR", '')) AS "DESCR"
+            FROM matched_locations ml
+            JOIN {product_table} p
+              ON TRIM(COALESCE(CAST(p."LOCATION1" AS TEXT), '')) = ml.location_name
+              OR TRIM(COALESCE(CAST(p."LOCATION2" AS TEXT), '')) = ml.location_name
         )
         SELECT
-            m."MATCHED_LOCATION",
-            m."BCODE",
-            m."DESCR",
+            x.matched_location AS "MATCHED_LOCATION",
+            x."BCODE",
+            x."DESCR",
             COALESCE(i.qty, 0) AS "QTY",
             i.updated_at AS "UPDATED_AT"
-        FROM matched m
+        FROM products_in_matched_locations x
         LEFT JOIN curated_kcw.inventory_qty_latest i
-            ON m."BCODE" = i.bcode
-           AND UPPER(TRIM(COALESCE(i.branch, ''))) = :branch
-        WHERE m."MATCHED_LOCATION" IS NOT NULL
+          ON x."BCODE" = i.bcode
+         AND UPPER(TRIM(COALESCE(i.branch, ''))) = :branch
         ORDER BY
-            m."MATCHED_LOCATION" ASC,
+            x.matched_location ASC,
             COALESCE(i.qty, 0) DESC,
-            m."BCODE" ASC
-        LIMIT :limit
+            x."BCODE" ASC
+        LIMIT :final_limit
     """)
 
     with engine.connect() as conn:
@@ -501,8 +524,11 @@ def get_products_grouped_by_location(engine, branch: str, location_keyword: str,
             sql,
             {
                 "branch": branch,
-                "kw": f"%{location_keyword}%",
-                "limit": limit,
+                "keyword": location_keyword,
+                "prefix_kw": f"{location_keyword}%",
+                "contains_kw": f"%{location_keyword}%",
+                "max_locations": max_locations,
+                "final_limit": max_locations * max_products_per_location,
             },
         ).mappings().all()
 
