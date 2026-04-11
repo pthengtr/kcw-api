@@ -195,12 +195,10 @@ def simple_and_search_sql(
             COALESCE(hq."PRICE3", syp."PRICE3") AS "PRICE3",
             COALESCE(hq."PRICEM1", syp."PRICEM1") AS "PRICEM1",
             COALESCE(hq."COSTNET", syp."COSTNET") AS "COSTNET",
-
             NULLIF(TRIM(CAST(hq."LOCATION1" AS TEXT)), '') AS "location1_hq",
             NULLIF(TRIM(CAST(hq."LOCATION2" AS TEXT)), '') AS "location2_hq",
             NULLIF(TRIM(CAST(syp."LOCATION1" AS TEXT)), '') AS "location1_syp",
             NULLIF(TRIM(CAST(syp."LOCATION2" AS TEXT)), '') AS "location2_syp",
-
             GREATEST(
                 COALESCE(hq._ingested_at, '1900-01-01'::timestamptz),
                 COALESCE(syp._ingested_at, '1900-01-01'::timestamptz)
@@ -209,12 +207,12 @@ def simple_and_search_sql(
         FULL OUTER JOIN syp_products syp
             ON hq."BCODE" = syp."BCODE"
     )
-    SELECT *
-    FROM (
+    SELECT * FROM (
         SELECT
             p.*,
             COALESCE(hq.qty, 0) AS qty_hq,
             COALESCE(syp.qty, 0) AS qty_syp,
+            COALESCE(hq.qty, 0) + COALESCE(syp.qty, 0) AS qty_total,
             hq.updated_at AS updated_at_hq,
             syp.updated_at AS updated_at_syp,
             GREATEST(
@@ -229,6 +227,11 @@ def simple_and_search_sql(
             ON p."BCODE" = syp.bcode AND syp.branch = 'SYP'
         WHERE {where_sql}
     ) t
+    ORDER BY
+        qty_total DESC,
+        qty_hq DESC,
+        qty_syp DESC,
+        "BCODE" ASC
     LIMIT :limit
     """
 

@@ -4,4 +4,5 @@ COMMAND_PERMISSIONS = {
     "สินค้า": {"admin", "exec", "staff"},
     "job": {"admin", "exec", "user"},
     "sync": {"admin", "exec", "user"},
+    "ที่เก็บ": {"admin", "exec", "user"},
 }

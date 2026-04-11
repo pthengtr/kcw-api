@@ -444,3 +444,66 @@ def get_daily_sales_summary(
             result[branch] = float(value or 0)
 
     return result
+
+def get_products_grouped_by_location(engine, branch: str, location_keyword: str, limit: int = 200) -> list[dict]:
+    branch = (branch or "").strip().upper()
+    location_keyword = (location_keyword or "").strip()
+
+    if branch not in {"HQ", "SYP"}:
+        raise ValueError("branch must be HQ or SYP")
+
+    if branch == "HQ":
+        product_table = 'raw_kcw.raw_hq_icmas_products'
+        loc1_col = 'p."LOCATION1"'
+        loc2_col = 'p."LOCATION2"'
+    else:
+        product_table = 'raw_kcw.raw_syp_icmas_products'
+        loc1_col = 'p."LOCATION1"'
+        loc2_col = 'p."LOCATION2"'
+
+    sql = text(f"""
+        WITH matched AS (
+            SELECT
+                TRIM(COALESCE(p."BCODE", '')) AS "BCODE",
+                TRIM(COALESCE(p."DESCR", '')) AS "DESCR",
+                CASE
+                    WHEN UPPER(TRIM(COALESCE(CAST({loc1_col} AS TEXT), ''))) ILIKE UPPER(:kw)
+                        THEN TRIM(COALESCE(CAST({loc1_col} AS TEXT), ''))
+                    WHEN UPPER(TRIM(COALESCE(CAST({loc2_col} AS TEXT), ''))) ILIKE UPPER(:kw)
+                        THEN TRIM(COALESCE(CAST({loc2_col} AS TEXT), ''))
+                    ELSE NULL
+                END AS "MATCHED_LOCATION"
+            FROM {product_table} p
+            WHERE
+                UPPER(TRIM(COALESCE(CAST({loc1_col} AS TEXT), ''))) ILIKE UPPER(:kw)
+                OR UPPER(TRIM(COALESCE(CAST({loc2_col} AS TEXT), ''))) ILIKE UPPER(:kw)
+        )
+        SELECT
+            m."MATCHED_LOCATION",
+            m."BCODE",
+            m."DESCR",
+            COALESCE(i.qty, 0) AS "QTY",
+            i.updated_at AS "UPDATED_AT"
+        FROM matched m
+        LEFT JOIN curated_kcw.inventory_qty_latest i
+            ON m."BCODE" = i.bcode
+           AND UPPER(TRIM(COALESCE(i.branch, ''))) = :branch
+        WHERE m."MATCHED_LOCATION" IS NOT NULL
+        ORDER BY
+            m."MATCHED_LOCATION" ASC,
+            COALESCE(i.qty, 0) DESC,
+            m."BCODE" ASC
+        LIMIT :limit
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "branch": branch,
+                "kw": f"%{location_keyword}%",
+                "limit": limit,
+            },
+        ).mappings().all()
+
+    return [dict(r) for r in rows]
