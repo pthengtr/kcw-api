@@ -486,29 +486,39 @@ def get_top_matched_locations_with_products(
                 LENGTH(location_name) AS name_len
             FROM all_locations
             WHERE UPPER(location_name) LIKE UPPER(:contains_kw)
+        ),
+        matched_location_count AS (
+            SELECT COUNT(*) AS total_location_matches
+            FROM matched_locations
+        ),
+        top_locations AS (
+            SELECT location_name
+            FROM matched_locations
             ORDER BY
                 match_rank ASC,
                 name_len ASC,
                 location_name ASC
             LIMIT :max_locations
         ),
-        products_in_matched_locations AS (
+        products_in_top_locations AS (
             SELECT
-                ml.location_name AS matched_location,
+                tl.location_name AS matched_location,
                 TRIM(COALESCE(p."BCODE", '')) AS "BCODE",
                 TRIM(COALESCE(p."DESCR", '')) AS "DESCR"
-            FROM matched_locations ml
+            FROM top_locations tl
             JOIN {product_table} p
-              ON TRIM(COALESCE(CAST(p."LOCATION1" AS TEXT), '')) = ml.location_name
-              OR TRIM(COALESCE(CAST(p."LOCATION2" AS TEXT), '')) = ml.location_name
+              ON TRIM(COALESCE(CAST(p."LOCATION1" AS TEXT), '')) = tl.location_name
+              OR TRIM(COALESCE(CAST(p."LOCATION2" AS TEXT), '')) = tl.location_name
         )
         SELECT
             x.matched_location AS "MATCHED_LOCATION",
             x."BCODE",
             x."DESCR",
             COALESCE(i.qty, 0) AS "QTY",
-            i.updated_at AS "UPDATED_AT"
-        FROM products_in_matched_locations x
+            i.updated_at AS "UPDATED_AT",
+            c.total_location_matches AS "TOTAL_LOCATION_MATCHES"
+        FROM products_in_top_locations x
+        CROSS JOIN matched_location_count c
         LEFT JOIN curated_kcw.inventory_qty_latest i
           ON x."BCODE" = i.bcode
          AND UPPER(TRIM(COALESCE(i.branch, ''))) = :branch

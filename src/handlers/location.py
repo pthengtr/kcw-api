@@ -74,10 +74,16 @@ def handle_location_query(engine, user_text: str) -> str:
             if latest_updated is None or updated_at > latest_updated:
                 latest_updated = updated_at
 
+    total_location_matches = 0
+    if rows:
+        total_location_matches = int(rows[0].get("TOTAL_LOCATION_MATCHES") or 0)
+
+    shown_location_count = len(grouped)
+
     lines = [
         f"ที่เก็บ {branch} ค้นหา: {location_kw}",
         f"อัปเดตล่าสุด: {_fmt_updated_at(latest_updated)}",
-        f"พบ {len(grouped):,} ที่เก็บที่ตรงคำค้น",
+        f"พบที่เก็บทั้งหมด {total_location_matches:,} จุด แสดง {shown_location_count:,} จุดแรก",
         "",
     ]
 
