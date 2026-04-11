@@ -11,6 +11,10 @@ BRANCH_ALIASES = {
     "สาขา": "SYP",
 }
 
+BRANCH_LABEL = {
+    "HQ": "สนญ",
+    "SYP": "สาขา",
+}
 
 def is_location_request(text: str) -> bool:
     return (text or "").strip().startswith("ที่เก็บ ")
@@ -80,8 +84,10 @@ def handle_location_query(engine, user_text: str) -> str:
 
     shown_location_count = len(grouped)
 
+    branch_label = BRANCH_LABEL.get(branch, branch)
+
     lines = [
-        f"ที่เก็บ {branch} ค้นหา: {location_kw}",
+        f"ที่เก็บ {branch_label} ค้นหา: {location_kw}",
         f"อัปเดตล่าสุด: {_fmt_updated_at(latest_updated)}",
         f"พบที่เก็บทั้งหมด {total_location_matches:,} จุด แสดง {shown_location_count:,} จุดแรก",
         "",
@@ -93,7 +99,7 @@ def handle_location_query(engine, user_text: str) -> str:
             bcode = str(item.get("BCODE") or "-").strip() or "-"
             descr = str(item.get("DESCR") or "-").strip() or "-"
             qty = float(item.get("QTY") or 0)
-            lines.append(f"- {bcode} {descr} {qty:,.0f}")
+            lines.append(f"- {bcode} | {descr} | คงเหลือ: {qty:,.0f}")
         lines.append("")
 
     return "\n".join(lines).rstrip()
