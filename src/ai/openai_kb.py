@@ -2,14 +2,14 @@ import os
 import re
 import time
 import uuid
+import json
 import logging
 from typing import List
 
 from openai import OpenAI
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID", "").strip()
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small").strip()
 
 # request timeout in seconds for each OpenAI call
 OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "12").strip())
@@ -102,42 +102,9 @@ def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list
     return cleaned, images
 
 
-def _extract_reference_text(resp, max_refs: int = 3) -> str:
-    """
-    Reads file_search tool results if present and builds a short reference line.
-    """
-    refs = []
-    try:
-        output = getattr(resp, "output", None) or []
-        for item in output:
-            if getattr(item, "type", None) != "file_search_call":
-                continue
-
-            results = getattr(item, "results", None) or []
-            for r in results:
-                name = getattr(r, "file_name", None) or getattr(r, "filename", None)
-                if name:
-                    name = str(name).strip()
-                if name and name not in refs:
-                    refs.append(name)
-                if len(refs) >= max_refs:
-                    break
-
-            if len(refs) >= max_refs:
-                break
-    except Exception:
-        return ""
-
-    if not refs:
-        return ""
-
-    return "อ้างอิง: " + " | ".join(refs[:max_refs])
-
-
 def openai_result_to_line_response(result: dict) -> dict:
     text = (result.get("text") or "").strip()
     images = result.get("images") or []
-
     messages = []
 
     if text:
@@ -175,138 +142,87 @@ def openai_result_to_line_response(result: dict) -> dict:
 
 
 def ask_openai_file_search(question: str) -> dict:
+    """
+    Kept old function name for compatibility with router.py.
+    Actual behavior is now: embed the stripped query and return the vector.
+    """
     trace_id = str(uuid.uuid4())[:8]
     t_total_0 = time.perf_counter()
-
     q = (_strip_trigger(question) or "").strip()
+
     if not q:
         return {
             "text": "ถามอะไรเฮียหน่อยสิครับ ",
             "images": [],
             "raw_answer": "",
+            "embedding": [],
+            "query": "",
+            "model": OPENAI_EMBEDDING_MODEL,
+            "dimensions": 0,
         }
 
-    if not OPENAI_VECTOR_STORE_ID:
-        logger.warning("trace=%s vector_store_missing", trace_id)
+    if not OPENAI_API_KEY:
+        logger.warning("trace=%s openai_api_key_missing", trace_id)
         return {
-            "text": "ยังไม่ได้ตั้งค่า OpenAI Vector Store ครับ",
+            "text": "ยังไม่ได้ตั้งค่า OpenAI API Key ครับ",
             "images": [],
             "raw_answer": "",
+            "embedding": [],
+            "query": q,
+            "model": OPENAI_EMBEDDING_MODEL,
+            "dimensions": 0,
         }
-
-    system_prompt = """
-บทบาท:
-คุณคือผู้เชี่ยวชาญด้านอะไหล่ยนต์และเครื่องจักร
-ตอบโดยอ้างอิงข้อมูลจาก File Search เท่านั้น
-
-ภาษาที่ใช้:
-
-ภาษาไทย
-สั้น กระชับ อ่านง่าย (เหมาะกับ LINE)
-
-โครงสร้างคำตอบ:
-
-บรรทัดแรก: สรุปคำตอบตรงๆ ไม่เกิน 2 ประโยค
-จากนั้น:
-หากเป็นคำอธิบายทั่วไป → สรุปเป็นหัวข้อสั้นๆ 2–4 ข้อ
-หากเป็นข้อมูลแบบรายการ / list / ตาราง → แสดงรายการทั้งหมด
-
-กฎการแสดงรายการ (สำคัญ):
-
-ต้องแสดงครบทั้งหมด ห้ามตัด ห้ามเลือกบางส่วน
-ห้ามสรุปแทนรายการ
-ต้องคงลำดับเดิม
-ต้องคงชื่อสินค้า / รุ่น / รหัส ตามเอกสาร
-จัดรูปแบบให้อ่านง่ายได้ แต่ห้ามเปลี่ยนความหมาย
-
-กฎการอ้างอิง:
-
-ใช้เฉพาะข้อมูลที่พบจาก File Search ในรอบนี้เท่านั้น
-ห้ามใช้ความรู้ภายนอก
-สามารถตีความคำใกล้เคียงได้ แต่ห้ามสร้างข้อมูลใหม่
-
-กรณีข้อมูล:
-
-ไม่พบข้อมูล → "ไม่มีข้อมูลในคลังข้อมูล"
-ข้อมูลไม่ชัดเจน → "ข้อมูลในคลังไม่ชัดเจน"
-มีหลายความเป็นไปได้ → เลือกเฉพาะที่เอกสารระบุชัด
-
-ข้อห้าม:
-
-ห้ามสร้างรายการสินค้าใหม่
-ห้ามแนะนำสินค้านอกเอกสาร
-ห้ามขยายไปหมวดหรือรุ่นอื่น
-
-รูปภาพ:
-- หากพบ Markdown รูปภาพ (![]()) ต้องแสดงตามต้นฉบับทุกตัวอักษร ห้ามแก้ไข ห้ามย่อ ห้ามละเว้น
-
-คำถามทั่วไป:
-
-หากไม่เกี่ยวกับอะไหล่ → ตอบเชิงติดตลกว่าเป็นเวลางาน ให้ตั้งใจทำงานก่อน
-
-ลำดับการตัดสินใจ:
-
-ค้นข้อมูลจาก File Search
-ถ้าไม่พบ → ตอบ "ไม่มีข้อมูลในคลังข้อมูล"
-ถ้าพบเป็นรายการ → แสดงครบทั้งหมด
-ถ้าเป็นคำอธิบาย → สรุป 2–4 ข้อ
-ตรวจสอบว่าทุกข้อมูลมาจากเอกสารเท่านั้น
-""".strip()
 
     raw_answer = ""
 
     def _call_once() -> dict:
         t_req_0 = time.perf_counter()
 
-        resp = client.responses.create(
-            model=OPENAI_MODEL,
-            instructions=system_prompt,
-            input=f"คำถามผู้ใช้: {q}",
-            tools=[
-                {
-                    "type": "file_search",
-                    "vector_store_ids": [OPENAI_VECTOR_STORE_ID],
-                    "max_num_results": 1,
-                }
-            ],
-            include=["file_search_call.results"],
-            max_output_tokens=700,
+        resp = client.embeddings.create(
+            model=OPENAI_EMBEDDING_MODEL,
+            input=q,
             timeout=OPENAI_TIMEOUT_SECONDS,
         )
 
         t_req_1 = time.perf_counter()
+        vector = resp.data[0].embedding if resp.data else []
 
-        answer = (getattr(resp, "output_text", "") or "").strip()
-
-        ref_line = _extract_reference_text(resp)
-        combined_answer = answer
-        if ref_line:
-            combined_answer = f"{combined_answer}\n\n{ref_line}" if combined_answer else ref_line
-
-        cleaned_text, extracted_images = _extract_images_from_text(combined_answer, max_images=3)
+        preview = {
+            "query": q,
+            "model": OPENAI_EMBEDDING_MODEL,
+            "dimensions": len(vector),
+            "first_8": vector[:8],
+        }
+        answer_text = json.dumps(preview, ensure_ascii=False)
 
         logger.info(
-            "trace=%s stage=openai_call model=%s qlen=%d openai_ms=%.1f output_chars=%d images=%d",
+            "trace=%s stage=openai_embedding model=%s qlen=%d openai_ms=%.1f dims=%d",
             trace_id,
-            OPENAI_MODEL,
+            OPENAI_EMBEDDING_MODEL,
             len(q),
             (t_req_1 - t_req_0) * 1000,
-            len(cleaned_text or ""),
-            len(extracted_images),
+            len(vector),
         )
 
-        usage = resp.usage
-
-        logger.info(
-            f"tokens input={usage.input_tokens} "
-            f"output={usage.output_tokens} "
-            f"total={usage.total_tokens}"
-        )
+        usage = getattr(resp, "usage", None)
+        if usage:
+            try:
+                logger.info(
+                    "tokens input=%s total=%s",
+                    getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None),
+                    getattr(usage, "total_tokens", None),
+                )
+            except Exception:
+                pass
 
         return {
-            "text": cleaned_text,
-            "images": extracted_images,
-            "raw_answer": combined_answer,
+            "text": answer_text,
+            "images": [],
+            "raw_answer": answer_text,
+            "embedding": vector,
+            "query": q,
+            "model": OPENAI_EMBEDDING_MODEL,
+            "dimensions": len(vector),
         }
 
     last_error = None
@@ -314,7 +230,6 @@ def ask_openai_file_search(question: str) -> dict:
 
     for attempt in range(MAX_RETRIES + 1):
         attempt_t0 = time.perf_counter()
-
         try:
             logger.info(
                 "trace=%s attempt=%d/%d stage=start q=%r",
@@ -327,7 +242,7 @@ def ask_openai_file_search(question: str) -> dict:
             result = _call_once()
             raw_answer = result.get("raw_answer", "") or ""
 
-            if (result.get("text") or "").strip() or (result.get("images") or []):
+            if result.get("embedding"):
                 logger.info(
                     "trace=%s attempt=%d/%d stage=success attempt_ms=%.1f total_ms=%.1f",
                     trace_id,
@@ -338,7 +253,7 @@ def ask_openai_file_search(question: str) -> dict:
                 )
                 return result
 
-            last_error = RuntimeError("Empty response")
+            last_error = RuntimeError("Empty embedding response")
             logger.warning(
                 "trace=%s attempt=%d/%d stage=empty_response attempt_ms=%.1f",
                 trace_id,
@@ -378,7 +293,11 @@ def ask_openai_file_search(question: str) -> dict:
     )
 
     return {
-        "text": "ระบบค้นหาคู่มือขัดข้องชั่วคราวครับ",
+        "text": "ระบบ embedding ขัดข้องชั่วคราวครับ",
         "images": [],
         "raw_answer": raw_answer,
+        "embedding": [],
+        "query": q,
+        "model": OPENAI_EMBEDDING_MODEL,
+        "dimensions": 0,
     }
