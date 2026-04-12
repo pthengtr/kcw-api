@@ -2,37 +2,37 @@ import os
 import re
 import time
 import uuid
-import json
 import logging
-from typing import List
+from typing import Any
 
 from openai import OpenAI
+from supabase import create_client, Client
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
+OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small").strip()
 
-# request timeout in seconds for each OpenAI call
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+SUPABASE_KB_SCHEMA = os.getenv("SUPABASE_KB_SCHEMA", "kb").strip()
+SUPABASE_KB_RPC = os.getenv("SUPABASE_KB_RPC", "match_kb_parts").strip()
+
+KB_MATCH_COUNT = int(os.getenv("KB_MATCH_COUNT", "3").strip())
+KB_AUTO_THRESHOLD = float(os.getenv("KB_AUTO_THRESHOLD", "0.90").strip())
+KB_MIN_GAP = float(os.getenv("KB_MIN_GAP", "0.06").strip())
+
 OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "12").strip())
-
-# retry settings
-MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "2").strip())
-INITIAL_BACKOFF_SECONDS = float(os.getenv("OPENAI_INITIAL_BACKOFF_SECONDS", "1.2").strip())
 
 client = OpenAI(
     api_key=OPENAI_API_KEY,
     max_retries=0,
 )
 
+supabase: Client | None = None
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
 logger = logging.getLogger("kcw.openai_kb")
-
-
-def _clean_image_url(url: str) -> str:
-    if not url:
-        return ""
-    url = url.strip()
-    url = url.split(")")[0]
-    url = url.split("\n")[0]
-    return url.strip()
 
 
 def _strip_trigger(text: str) -> str:
@@ -45,16 +45,11 @@ def _strip_trigger(text: str) -> str:
     return t
 
 
-def _looks_like_image_url(url: str) -> bool:
-    u = (url or "").lower()
-    return any(ext in u for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]) or "/storage/v1/object/public/" in u
-
-
-def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list[dict]]:
+def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list[dict[str, str]]]:
     if not text:
         return "", []
 
-    images = []
+    images: list[dict[str, str]] = []
     seen = set()
     cleaned = text
 
@@ -64,40 +59,13 @@ def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list
     for m in md_image_pattern.finditer(text):
         alt = (m.group(1) or "").strip()
         url = (m.group(2) or "").strip()
-        if url and url not in seen and _looks_like_image_url(url):
+        if url and url not in seen:
             images.append({"alt": alt, "url": url})
             seen.add(url)
             if len(images) >= max_images:
                 break
+
     cleaned = md_image_pattern.sub("", cleaned)
-
-    if len(images) < max_images:
-        md_link_pattern = re.compile(
-            r'\[(.*?)\]\((https?://[^\s<>"\)]+(?:\?[^\s<>"\)]*)?)\)'
-        )
-        for m in md_link_pattern.finditer(text):
-            alt = (m.group(1) or "").strip()
-            url = (m.group(2) or "").strip()
-            if url and url not in seen and _looks_like_image_url(url):
-                images.append({"alt": alt, "url": url})
-                seen.add(url)
-                if len(images) >= max_images:
-                    break
-        cleaned = md_link_pattern.sub("", cleaned)
-
-    if len(images) < max_images:
-        bare_url_pattern = re.compile(r'https?://[^\s<>"\]]+')
-        for m in bare_url_pattern.finditer(text):
-            url = (m.group(0) or "").rstrip(".,);:").strip()
-            if url and url not in seen and _looks_like_image_url(url):
-                images.append({"alt": "", "url": url})
-                seen.add(url)
-                if len(images) >= max_images:
-                    break
-
-    for url in list(seen):
-        cleaned = cleaned.replace(url, "")
-
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned, images
 
@@ -105,8 +73,8 @@ def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list
 def openai_result_to_line_response(result: dict) -> dict:
     text = (result.get("text") or "").strip()
     images = result.get("images") or []
-    messages = []
 
+    messages = []
     if text:
         messages.append({
             "type": "text",
@@ -114,7 +82,7 @@ def openai_result_to_line_response(result: dict) -> dict:
         })
 
     for img in images[:3]:
-        url = _clean_image_url(img.get("url"))
+        url = (img.get("url") or "").strip()
         if not url:
             continue
         messages.append({
@@ -124,180 +92,142 @@ def openai_result_to_line_response(result: dict) -> dict:
         })
 
     if not messages:
-        return {
-            "type": "text",
-            "text": "ไม่พบข้อมูลครับ",
-        }
+        return {"type": "text", "text": "ไม่พบข้อมูลครับ"}
 
     if len(messages) == 1 and messages[0]["type"] == "text":
-        return {
-            "type": "text",
-            "text": messages[0]["text"],
-        }
+        return {"type": "text", "text": messages[0]["text"]}
 
-    return {
-        "type": "messages",
-        "messages": messages,
-    }
+    return {"type": "messages", "messages": messages}
+
+
+def _embed_query(question: str) -> list[float]:
+    resp = client.embeddings.create(
+        model=OPENAI_EMBED_MODEL,
+        input=question,
+        timeout=OPENAI_TIMEOUT_SECONDS,
+    )
+    return resp.data[0].embedding
+
+
+def _search_kb(query_embedding: list[float], match_count: int) -> list[dict[str, Any]]:
+    if supabase is None:
+        raise RuntimeError("Supabase client is not configured")
+
+    rpc = supabase.rpc(
+        SUPABASE_KB_RPC,
+        {
+            "query_embedding": query_embedding,
+            "match_count": match_count,
+        },
+    ).execute()
+
+    return rpc.data or []
+
+
+def _format_candidate_line(idx: int, row: dict[str, Any]) -> str:
+    title = str(row.get("title") or "-").strip()
+    sim = float(row.get("similarity") or 0.0)
+    return f"{idx}. {title} ({sim:.2f})"
+
+
+def _build_direct_answer(row: dict[str, Any]) -> str:
+    title = str(row.get("title") or "").strip()
+    content = str(row.get("content") or "").strip()
+    related = str(row.get("related") or "").strip()
+
+    lines = []
+    if title:
+        lines.append(title)
+    if content:
+        lines.append(content)
+    if related:
+        lines.append("")
+        lines.append("อะไหล่เกี่ยวข้อง:")
+        lines.append(related)
+
+    return "\n".join(lines).strip() or "ไม่มีข้อมูลในคลังข้อมูล"
+
+
+def _choose_response_text(q: str, rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "ไม่มีข้อมูลในคลังข้อมูล"
+
+    top1 = float(rows[0].get("similarity") or 0.0)
+    top2 = float(rows[1].get("similarity") or 0.0) if len(rows) > 1 else 0.0
+    gap = top1 - top2
+
+    if top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP:
+        return _build_direct_answer(rows[0])
+
+    lines = ["เจอใกล้เคียงสุด 3 รายการ:"]
+    for idx, row in enumerate(rows[:3], start=1):
+        lines.append(_format_candidate_line(idx, row))
+
+    best = rows[0]
+    best_content = str(best.get("content") or "").strip()
+    if best_content:
+        lines.append("")
+        lines.append("ตัวที่ใกล้สุด:")
+        lines.append(best_content)
+
+    lines.append("")
+    lines.append("พิมพ์เพิ่มอีกนิด เช่น รุ่นรถ / เบอร์ / หน้า-หลัง / ปี")
+    return "\n".join(lines).strip()
 
 
 def ask_openai_file_search(question: str) -> dict:
     """
-    Kept old function name for compatibility with router.py.
-    Actual behavior is now: embed the stripped query and return the vector.
+    Keep function name unchanged so router does not need to change.
     """
     trace_id = str(uuid.uuid4())[:8]
-    t_total_0 = time.perf_counter()
-    q = (_strip_trigger(question) or "").strip()
+    t0 = time.perf_counter()
 
+    q = (_strip_trigger(question) or "").strip()
     if not q:
         return {
-            "text": "ถามอะไรเฮียหน่อยสิครับ ",
+            "text": "ถามอะไรเฮียหน่อยสิครับ",
             "images": [],
             "raw_answer": "",
-            "embedding": [],
-            "query": "",
-            "model": OPENAI_EMBEDDING_MODEL,
-            "dimensions": 0,
         }
 
     if not OPENAI_API_KEY:
-        logger.warning("trace=%s openai_api_key_missing", trace_id)
         return {
-            "text": "ยังไม่ได้ตั้งค่า OpenAI API Key ครับ",
+            "text": "ยังไม่ได้ตั้งค่า OPENAI_API_KEY",
             "images": [],
             "raw_answer": "",
-            "embedding": [],
-            "query": q,
-            "model": OPENAI_EMBEDDING_MODEL,
-            "dimensions": 0,
         }
 
-    raw_answer = ""
-
-    def _call_once() -> dict:
-        t_req_0 = time.perf_counter()
-
-        resp = client.embeddings.create(
-            model=OPENAI_EMBEDDING_MODEL,
-            input=q,
-            timeout=OPENAI_TIMEOUT_SECONDS,
-        )
-
-        t_req_1 = time.perf_counter()
-        vector = resp.data[0].embedding if resp.data else []
-
-        preview = {
-            "query": q,
-            "model": OPENAI_EMBEDDING_MODEL,
-            "dimensions": len(vector),
-            "first_8": vector[:8],
+    if supabase is None:
+        return {
+            "text": "ยังไม่ได้ตั้งค่า Supabase KB",
+            "images": [],
+            "raw_answer": "",
         }
-        answer_text = json.dumps(preview, ensure_ascii=False)
+
+    try:
+        emb = _embed_query(q)
+        rows = _search_kb(emb, KB_MATCH_COUNT)
+        answer_text = _choose_response_text(q, rows)
+        cleaned_text, extracted_images = _extract_images_from_text(answer_text)
 
         logger.info(
-            "trace=%s stage=openai_embedding model=%s qlen=%d openai_ms=%.1f dims=%d",
+            "trace=%s q=%r hits=%d total_ms=%.1f",
             trace_id,
-            OPENAI_EMBEDDING_MODEL,
-            len(q),
-            (t_req_1 - t_req_0) * 1000,
-            len(vector),
+            q[:200],
+            len(rows),
+            (time.perf_counter() - t0) * 1000,
         )
 
-        usage = getattr(resp, "usage", None)
-        if usage:
-            try:
-                logger.info(
-                    "tokens input=%s total=%s",
-                    getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None),
-                    getattr(usage, "total_tokens", None),
-                )
-            except Exception:
-                pass
-
         return {
-            "text": answer_text,
-            "images": [],
+            "text": cleaned_text,
+            "images": extracted_images,
             "raw_answer": answer_text,
-            "embedding": vector,
-            "query": q,
-            "model": OPENAI_EMBEDDING_MODEL,
-            "dimensions": len(vector),
         }
 
-    last_error = None
-    backoff = INITIAL_BACKOFF_SECONDS
-
-    for attempt in range(MAX_RETRIES + 1):
-        attempt_t0 = time.perf_counter()
-        try:
-            logger.info(
-                "trace=%s attempt=%d/%d stage=start q=%r",
-                trace_id,
-                attempt + 1,
-                MAX_RETRIES + 1,
-                q[:200],
-            )
-
-            result = _call_once()
-            raw_answer = result.get("raw_answer", "") or ""
-
-            if result.get("embedding"):
-                logger.info(
-                    "trace=%s attempt=%d/%d stage=success attempt_ms=%.1f total_ms=%.1f",
-                    trace_id,
-                    attempt + 1,
-                    MAX_RETRIES + 1,
-                    (time.perf_counter() - attempt_t0) * 1000,
-                    (time.perf_counter() - t_total_0) * 1000,
-                )
-                return result
-
-            last_error = RuntimeError("Empty embedding response")
-            logger.warning(
-                "trace=%s attempt=%d/%d stage=empty_response attempt_ms=%.1f",
-                trace_id,
-                attempt + 1,
-                MAX_RETRIES + 1,
-                (time.perf_counter() - attempt_t0) * 1000,
-            )
-
-        except Exception as e:
-            last_error = e
-            logger.exception(
-                "trace=%s attempt=%d/%d stage=error attempt_ms=%.1f err=%s",
-                trace_id,
-                attempt + 1,
-                MAX_RETRIES + 1,
-                (time.perf_counter() - attempt_t0) * 1000,
-                e,
-            )
-
-        if attempt < MAX_RETRIES:
-            logger.info(
-                "trace=%s attempt=%d/%d stage=backoff sleep_s=%.2f total_ms=%.1f",
-                trace_id,
-                attempt + 1,
-                MAX_RETRIES + 1,
-                backoff,
-                (time.perf_counter() - t_total_0) * 1000,
-            )
-            time.sleep(backoff)
-            backoff *= 2
-
-    logger.error(
-        "trace=%s stage=failed total_ms=%.1f last_error=%r",
-        trace_id,
-        (time.perf_counter() - t_total_0) * 1000,
-        last_error,
-    )
-
-    return {
-        "text": "ระบบ embedding ขัดข้องชั่วคราวครับ",
-        "images": [],
-        "raw_answer": raw_answer,
-        "embedding": [],
-        "query": q,
-        "model": OPENAI_EMBEDDING_MODEL,
-        "dimensions": 0,
-    }
+    except Exception as e:
+        logger.exception("trace=%s kb_search_error=%s", trace_id, e)
+        return {
+            "text": "ระบบค้นหาคลังข้อมูลขัดข้องชั่วคราวครับ",
+            "images": [],
+            "raw_answer": "",
+        }
