@@ -210,6 +210,24 @@ def ask_openai_file_search(question: str) -> dict:
         answer_text = _choose_response_text(q, rows)
         cleaned_text, extracted_images = _extract_images_from_text(answer_text)
 
+        # Decide whether to use AI formatting
+        USE_AI_FORMAT = False
+
+        if rows:
+            top1 = float(rows[0].get("similarity") or 0.0)
+            top2 = float(rows[1].get("similarity") or 0.0) if len(rows) > 1 else 0.0
+            gap = top1 - top2
+
+            # Only use AI when:
+            # - not very confident
+            # - OR multiple results
+            if not (top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP):
+                USE_AI_FORMAT = True
+
+        # Apply AI formatting only when needed
+        if USE_AI_FORMAT:
+            cleaned_text = _format_with_ai(q, cleaned_text)
+
         logger.info(
             "trace=%s q=%r hits=%d total_ms=%.1f",
             trace_id,
@@ -231,3 +249,40 @@ def ask_openai_file_search(question: str) -> dict:
             "images": [],
             "raw_answer": "",
         }
+    
+
+def _format_with_ai(question: str, raw_answer: str) -> str:
+    """
+    Use GPT-4o-mini to make answer cleaner for LINE.
+    Keep facts EXACTLY the same.
+    """
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful Thai auto parts assistant.\n"
+                        "Rewrite the answer to be clean, structured, and easy to read for LINE.\n"
+                        "DO NOT change facts, numbers, or part codes.\n"
+                        "DO NOT invent anything.\n"
+                        "Use bullet points if helpful.\n"
+                        "Keep it concise."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"คำถาม: {question}\n\nคำตอบ:\n{raw_answer}"
+                }
+            ],
+            timeout=OPENAI_TIMEOUT_SECONDS,
+        )
+
+        return resp.choices[0].message.content.strip()
+
+    except Exception as e:
+        logger.exception("AI format failed: %s", e)
+        return raw_answer  # fallback safely
