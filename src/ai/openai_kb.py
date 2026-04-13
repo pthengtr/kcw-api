@@ -225,8 +225,8 @@ def ask_openai_file_search(question: str) -> dict:
                 USE_AI_FORMAT = True
 
         # Apply AI formatting only when needed
-        # if USE_AI_FORMAT:
-            # cleaned_text = _format_with_ai(q, cleaned_text)
+        if USE_AI_FORMAT:
+            cleaned_text = _format_with_ai(q, cleaned_text)
 
         logger.info(
             "trace=%s q=%r hits=%d total_ms=%.1f",
@@ -265,12 +265,11 @@ def _format_with_ai(question: str, raw_answer: str) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "You are a helpful Thai auto parts assistant.\n"
-                        "Rewrite the answer to be clean, structured, and easy to read for LINE.\n"
-                        "DO NOT change facts, numbers, or part codes.\n"
-                        "DO NOT invent anything.\n"
-                        "Use bullet points if helpful.\n"
-                        "Keep it concise."
+                        """Rewrite for LINE:
+                        - concise
+                        - no markdown
+                        - keep facts exact
+                        - use simple bullets"""
                     )
                 },
                 {
