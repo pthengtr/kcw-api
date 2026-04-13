@@ -267,21 +267,27 @@ def _format_with_ai(question: str, raw_answer: str) -> str:
     try:
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
-            temperature=0.2,
+            temperature=0.0,  # important
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        """Format for LINE.
-                            Keep all codes and quantities exactly the same.
-                            Do not add or infer anything.
-                            Text:
-                            {{db_text}}"""
+                        "You format auto parts kit text for LINE.\n"
+                        "- Keep ALL part codes, quantities, and wording EXACTLY the same\n"
+                        "- DO NOT add, remove, or infer anything\n"
+                        "- DO NOT explain\n"
+                        "- Output clean structure:\n"
+                        "  [ชื่อชุด]\n"
+                        "  เครื่อง: ...\n\n"
+                        "  รายการในชุด\n"
+                        "  - item\n"
+                        "  - item\n"
+                        "- Use short lines, no markdown, no symbols except '-'"
                     )
                 },
                 {
                     "role": "user",
-                    "content": f"คำถาม: {question}\n\nคำตอบ:\n{raw_answer}"
+                    "content": raw_answer
                 }
             ],
             timeout=OPENAI_TIMEOUT_SECONDS,
