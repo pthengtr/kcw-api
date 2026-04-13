@@ -276,12 +276,6 @@ def _format_with_ai(question: str, raw_answer: str) -> str:
                         "- Keep ALL part codes, quantities, and wording EXACTLY the same\n"
                         "- DO NOT add, remove, or infer anything\n"
                         "- DO NOT explain\n"
-                        "- Output clean structure:\n"
-                        "  [ชื่อชุด]\n"
-                        "  เครื่อง: ...\n\n"
-                        "  รายการในชุด\n"
-                        "  - item\n"
-                        "  - item\n"
                         "- Use short lines, no markdown, no symbols except '-'"
                     )
                 },
