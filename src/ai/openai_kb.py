@@ -225,8 +225,8 @@ def ask_openai_file_search(question: str) -> dict:
                 USE_AI_FORMAT = True
 
         # Apply AI formatting only when needed
-        if USE_AI_FORMAT:
-            cleaned_text = _format_with_ai(q, cleaned_text)
+        # if USE_AI_FORMAT:
+            # cleaned_text = _format_with_ai(q, cleaned_text)
 
         logger.info(
             "trace=%s q=%r hits=%d total_ms=%.1f",
