@@ -156,22 +156,29 @@ def _choose_response_text(q: str, rows: list[dict[str, Any]]) -> str:
     top2 = float(rows[1].get("similarity") or 0.0) if len(rows) > 1 else 0.0
     gap = top1 - top2
 
-    if top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP:
-        return _build_direct_answer(rows[0])
+    best = rows[0]
+    best_content = str(best.get("content") or "").strip()
 
-    lines = ["เจอใกล้เคียงสุด 3 รายการ:"]
+    # ✅ Strong confident match → return direct answer only
+    if top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP:
+        return _build_direct_answer(best)
+
+    lines = []
+
+    # ✅ Always show best result FIRST
+    if best_content:
+        lines.append("คำตอบใกล้เคียงที่สุด:")
+        lines.append(best_content)
+
+    # ✅ Then show similar candidates
+    lines.append("")
+    lines.append("หัวข้อใกล้เคียง:")
     for idx, row in enumerate(rows[:3], start=1):
         lines.append(_format_candidate_line(idx, row))
 
-    best = rows[0]
-    best_content = str(best.get("content") or "").strip()
-    if best_content:
-        lines.append("")
-        lines.append("ตัวที่ใกล้สุด:")
-        lines.append(best_content)
-
     lines.append("")
     lines.append("พิมพ์เพิ่มอีกนิด เช่น รุ่นรถ / เบอร์ / หน้า-หลัง / ปี")
+
     return "\n".join(lines).strip()
 
 
@@ -225,8 +232,8 @@ def ask_openai_file_search(question: str) -> dict:
                 USE_AI_FORMAT = True
 
         # Apply AI formatting only when needed
-        if USE_AI_FORMAT:
-            cleaned_text = _format_with_ai(q, cleaned_text)
+        # if USE_AI_FORMAT:
+        #     cleaned_text = _format_with_ai(q, cleaned_text)
 
         logger.info(
             "trace=%s q=%r hits=%d total_ms=%.1f",
