@@ -4,7 +4,7 @@ import time
 import logging
 
 logging.basicConfig(
-    level=logging.INFO,  # THIS is critical
+    level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 
@@ -19,25 +19,27 @@ from src.access.helper import get_line_user_id
 from src.access.helper import get_or_create_line_access
 from src.access.helper import build_access_denied_message
 
+# add this import
+from src.ai.openai_kb import handle_kb_select_postback
+
 app = FastAPI()
+
 
 @app.post("/kcw-peak/sync")
 async def kcw_peak_sync(request: Request):
     try:
         body = await request.json()
-
         print("========== KCW PEAK ==========")
         print("payload:", body)
         print("==============================")
-
         return {
             "status": "ok",
-            "received": True
+            "received": True,
         }
-
     except Exception as e:
         print("KCW PEAK ERROR:", e)
         raise HTTPException(status_code=400, detail="Invalid payload")
+
 
 @app.post("/line-webhook")
 async def line_webhook(request: Request):
@@ -58,15 +60,8 @@ async def line_webhook(request: Request):
     for event in events:
         print("LINE EVENT:", event)
 
-        if event.get("type") != "message":
-            continue
-
-        message = event.get("message", {})
-        if message.get("type") != "text":
-            continue
-
-        user_text = (message.get("text") or "").strip()
         reply_token = event.get("replyToken")
+        event_type = event.get("type")
 
         # =========================
         # ACCESS CHECK
@@ -92,19 +87,40 @@ async def line_webhook(request: Request):
             continue
 
         # =========================
-        # NORMAL ROUTING
+        # ROUTING
         # =========================
         try:
             t_route_0 = time.perf_counter()
-            reply_payload = route_user_text(engine, user_text, access=access)
+
+            if event_type == "postback":
+                postback = event.get("postback", {}) or {}
+                data = (postback.get("data") or "").strip()
+
+                if data.startswith("kb_select:"):
+                    reply_payload = handle_kb_select_postback(data)
+                else:
+                    # ignore unknown postback for now
+                    continue
+
+            elif event_type == "message":
+                message = event.get("message", {}) or {}
+
+                if message.get("type") != "text":
+                    continue
+
+                user_text = (message.get("text") or "").strip()
+                reply_payload = route_user_text(engine, user_text, access=access)
+
+            else:
+                continue
+
             t_route_1 = time.perf_counter()
 
             print(
-                f"LATENCY route_ms={(t_route_1 - t_route_0)*1000:.1f} "
-                f"text={user_text[:80]!r}"
+                f"LATENCY route_ms={(t_route_1 - t_route_0)*1000:.1f}"
             )
 
-            # backward compatibility:
+            # backward compatibility
             if isinstance(reply_payload, str):
                 reply_payload = {"type": "text", "text": reply_payload}
 
@@ -120,11 +136,9 @@ async def line_webhook(request: Request):
 
         try:
             print("DEBUG reply_payload:", reply_payload)
-
             t_reply_0 = time.perf_counter()
             reply_line_response(reply_token, reply_payload)
             t_reply_1 = time.perf_counter()
-
             print(f"LATENCY line_reply_ms={(t_reply_1 - t_reply_0)*1000:.1f}")
 
         except Exception as e:

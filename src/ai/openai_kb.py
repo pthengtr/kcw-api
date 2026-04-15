@@ -292,3 +292,90 @@ def _format_with_ai(question: str, raw_answer: str) -> str:
     except Exception as e:
         logger.exception("AI format failed: %s", e)
         return raw_answer  # fallback safely
+
+
+def build_kb_quick_reply_result(question: str) -> dict:
+    q = (_strip_trigger(question) or "").strip()
+    if not q:
+        return {"type": "text", "text": "ถามอะไรเฮียหน่อยสิครับ"}
+
+    emb = _embed_query(q)
+    rows = _search_kb(emb, KB_MATCH_COUNT)
+
+    if not rows:
+        return {"type": "text", "text": "ไม่มีข้อมูลในคลังข้อมูล"}
+
+    items = []
+    lines = ["เจอหัวข้อใกล้เคียงครับ เลือกได้เลย:"]
+
+    for idx, row in enumerate(rows[:10], start=1):
+        kb_id = str(row.get("id") or "").strip()
+        title = str(row.get("title") or f"หัวข้อ {idx}").strip()
+
+        lines.append(f"{idx}. {title}")
+
+        items.append({
+            "type": "action",
+            "action": {
+                "type": "postback",
+                "label": title[:20],
+                "data": f"kb_select:{kb_id}",
+                "displayText": title[:300],
+            }
+        })
+
+    return {
+        "type": "messages",
+        "messages": [
+            {
+                "type": "text",
+                "text": "\n".join(lines)[:5000],
+                "quickReply": {"items": items},
+            }
+        ],
+    }
+
+
+def get_kb_by_id(kb_id: str) -> dict | None:
+    if supabase is None:
+        raise RuntimeError("Supabase client is not configured")
+
+    resp = (
+        supabase.table("kb_parts")
+        .select("id,title,content,related")
+        .eq("id", kb_id)
+        .limit(1)
+        .execute()
+    )
+    data = resp.data or []
+    return data[0] if data else None
+
+def handle_kb_select_postback(data: str) -> dict:
+    kb_id = data.replace("kb_select:", "", 1).strip()
+    row = get_kb_by_id(kb_id)
+
+    if not row:
+        return {"type": "text", "text": "ไม่พบข้อมูลรายการที่เลือกครับ"}
+
+    text = "\n\n".join(
+        x for x in [
+            str(row.get("title") or "").strip(),
+            str(row.get("content") or "").strip(),
+        ] if x
+    ).strip() or "ไม่พบข้อมูลครับ"
+
+    cleaned_text, extracted_images = _extract_images_from_text(text)
+    return {
+        "type": "messages",
+        "messages": (
+            [{"type": "text", "text": cleaned_text[:5000]}] +
+            [
+                {
+                    "type": "image",
+                    "originalContentUrl": img["url"],
+                    "previewImageUrl": img["url"],
+                }
+                for img in extracted_images[:3]
+            ]
+        ),
+    }
