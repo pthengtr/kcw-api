@@ -421,12 +421,12 @@ def build_kb_quick_reply_result(question: str) -> dict:
     }
 
 
-def get_kb_by_id(kb_id: str) -> dict | None:
+def get_kb_by_id(kb_id: str) -> dict[str, Any] | None:
     if supabase is None:
         raise RuntimeError("Supabase client is not configured")
 
     resp = (
-        supabase.table("kb_parts")
+        supabase.table(SUPABASE_KB_TABLE)
         .select("id,title,content,related")
         .eq("id", kb_id)
         .limit(1)
@@ -437,33 +437,40 @@ def get_kb_by_id(kb_id: str) -> dict | None:
 
 
 def handle_kb_select_postback(data: str) -> dict:
-    kb_id = data.replace("kb_select:", "", 1).strip()
-    row = get_kb_by_id(kb_id)
+    kb_id = (data or "").replace("kb_select:", "", 1).strip()
+    if not kb_id:
+        return {
+            "text": "ไม่พบรายการที่เลือกครับ",
+            "images": [],
+            "raw_answer": "",
+        }
 
-    if not row:
-        return {"type": "text", "text": "ไม่พบข้อมูลรายการที่เลือกครับ"}
+    try:
+        row = get_kb_by_id(kb_id)
+        if not row:
+            return {
+                "text": "ไม่พบข้อมูลรายการที่เลือกครับ",
+                "images": [],
+                "raw_answer": "",
+            }
 
-    text = "\n\n".join(
-        x for x in [
+        raw_answer_text = _build_direct_answer(row)
+        final_answer_text = _maybe_format_with_ai(
             str(row.get("title") or "").strip(),
-            str(row.get("content") or "").strip(),
-        ]
-        if x
-    ).strip() or "ไม่พบข้อมูลครับ"
+            raw_answer_text,
+        )
+        cleaned_text, extracted_images = _extract_images_from_text(final_answer_text)
 
-    cleaned_text, extracted_images = _extract_images_from_text(text)
+        return {
+            "text": cleaned_text,
+            "images": extracted_images,
+            "raw_answer": raw_answer_text,
+        }
 
-    return {
-        "type": "messages",
-        "messages": (
-            [{"type": "text", "text": cleaned_text[:5000]}] +
-            [
-                {
-                    "type": "image",
-                    "originalContentUrl": img["url"],
-                    "previewImageUrl": img["url"],
-                }
-                for img in extracted_images[:3]
-            ]
-        ),
-    }
+    except Exception as e:
+        logger.exception("kb_select_error=%s", e)
+        return {
+            "text": "ระบบค้นหาคลังข้อมูลขัดข้องชั่วคราวครับ",
+            "images": [],
+            "raw_answer": "",
+        }
