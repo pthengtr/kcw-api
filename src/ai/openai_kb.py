@@ -17,11 +17,20 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SUPABASE_KB_SCHEMA = os.getenv("SUPABASE_KB_SCHEMA", "kb").strip()
 SUPABASE_KB_RPC = os.getenv("SUPABASE_KB_RPC", "match_kb_parts").strip()
 
+# table used for direct fetch by id after quick-reply selection
+SUPABASE_KB_TABLE = os.getenv("SUPABASE_KB_TABLE", "kb_parts").strip()
+
 KB_MATCH_COUNT = int(os.getenv("KB_MATCH_COUNT", "3").strip())
 KB_AUTO_THRESHOLD = float(os.getenv("KB_AUTO_THRESHOLD", "0.90").strip())
 KB_MIN_GAP = float(os.getenv("KB_MIN_GAP", "0.06").strip())
 
 OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "12").strip())
+
+# new flags
+AI_FORMAT_KB_ENABLED = os.getenv("AI_FORMAT_KB_ENABLED", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+AI_FORMAT_KB_MODEL = os.getenv("AI_FORMAT_KB_MODEL", "gpt-4o-mini").strip()
 
 client = OpenAI(
     api_key=OPENAI_API_KEY,
@@ -56,14 +65,15 @@ def _extract_images_from_text(text: str, max_images: int = 3) -> tuple[str, list
     md_image_pattern = re.compile(
         r'!\[(.*?)\]\((https?://[^\s<>"\)]+(?:\?[^\s<>"\)]*)?)\)'
     )
+
     for m in md_image_pattern.finditer(text):
         alt = (m.group(1) or "").strip()
         url = (m.group(2) or "").strip()
         if url and url not in seen:
             images.append({"alt": alt, "url": url})
             seen.add(url)
-            if len(images) >= max_images:
-                break
+        if len(images) >= max_images:
+            break
 
     cleaned = md_image_pattern.sub("", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
@@ -75,6 +85,7 @@ def openai_result_to_line_response(result: dict) -> dict:
     images = result.get("images") or []
 
     messages = []
+
     if text:
         messages.append({
             "type": "text",
@@ -124,6 +135,21 @@ def _search_kb(query_embedding: list[float], match_count: int) -> list[dict[str,
     return rpc.data or []
 
 
+def get_kb_by_id(kb_id: str) -> dict[str, Any] | None:
+    if supabase is None:
+        raise RuntimeError("Supabase client is not configured")
+
+    resp = (
+        supabase.table(SUPABASE_KB_TABLE)
+        .select("id,title,content,related")
+        .eq("id", kb_id)
+        .limit(1)
+        .execute()
+    )
+    data = resp.data or []
+    return data[0] if data else None
+
+
 def _format_candidate_line(idx: int, row: dict[str, Any]) -> str:
     title = str(row.get("title") or "-").strip()
     sim = float(row.get("similarity") or 0.0)
@@ -148,29 +174,36 @@ def _build_direct_answer(row: dict[str, Any]) -> str:
     return "\n".join(lines).strip() or "ไม่มีข้อมูลในคลังข้อมูล"
 
 
-def _choose_response_text(q: str, rows: list[dict[str, Any]]) -> str:
+def _is_confident_match(rows: list[dict[str, Any]]) -> bool:
     if not rows:
-        return "ไม่มีข้อมูลในคลังข้อมูล"
+        return False
 
     top1 = float(rows[0].get("similarity") or 0.0)
     top2 = float(rows[1].get("similarity") or 0.0) if len(rows) > 1 else 0.0
     gap = top1 - top2
 
+    return top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP
+
+
+def _choose_response_text(q: str, rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "ไม่มีข้อมูลในคลังข้อมูล"
+
     best = rows[0]
     best_content = str(best.get("content") or "").strip()
 
-    # ✅ Strong confident match → return direct answer only
-    if top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP:
+    # Strong confident match → return direct answer
+    if _is_confident_match(rows):
         return _build_direct_answer(best)
 
     lines = []
 
-    # ✅ Always show best result FIRST
+    # Show best result first
     if best_content:
         lines.append("คำตอบใกล้เคียงที่สุด:")
         lines.append(best_content)
 
-    # ✅ Then show similar candidates
+    # Then show similar candidates
     lines.append("")
     lines.append("หัวข้อใกล้เคียง:")
     for idx, row in enumerate(rows[:3], start=1):
@@ -182,6 +215,59 @@ def _choose_response_text(q: str, rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines).strip()
 
 
+def _format_with_ai(question: str, raw_answer: str) -> str:
+    """
+    Use GPT-4o-mini to make deterministic final answer cleaner for LINE.
+    Must preserve facts exactly.
+    """
+    try:
+        resp = client.chat.completions.create(
+            model=AI_FORMAT_KB_MODEL,
+            temperature=0.0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You format Thai auto-parts knowledge answers for LINE.\n"
+                        "Rules:\n"
+                        "- Use ONLY the provided source text\n"
+                        "- Keep ALL part codes, quantities, model names, and facts EXACTLY the same\n"
+                        "- Do NOT add, infer, explain, summarize beyond the source, or remove lines\n"
+                        "- Improve readability only\n"
+                        "- Keep it concise and easy to read in LINE\n"
+                        "- Plain text only\n"
+                        "- No markdown table\n"
+                        "- No bold\n"
+                        "- Bullets are allowed only as '-'"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question:\n{question}\n\n"
+                        f"Source text:\n{raw_answer}\n\n"
+                        "Format this for LINE."
+                    ),
+                },
+            ],
+            timeout=OPENAI_TIMEOUT_SECONDS,
+        )
+        return (resp.choices[0].message.content or "").strip() or raw_answer
+    except Exception as e:
+        logger.exception("AI format failed: %s", e)
+        return raw_answer
+
+
+def _maybe_format_with_ai(question: str, raw_answer: str) -> str:
+    if not raw_answer:
+        return raw_answer
+
+    if not AI_FORMAT_KB_ENABLED:
+        return raw_answer
+
+    return _format_with_ai(question, raw_answer)
+
+
 def ask_openai_file_search(question: str) -> dict:
     """
     Keep function name unchanged so router does not need to change.
@@ -190,6 +276,7 @@ def ask_openai_file_search(question: str) -> dict:
     t0 = time.perf_counter()
 
     q = (_strip_trigger(question) or "").strip()
+
     if not q:
         return {
             "text": "ถามอะไรเฮียหน่อยสิครับ",
@@ -214,39 +301,29 @@ def ask_openai_file_search(question: str) -> dict:
     try:
         emb = _embed_query(q)
         rows = _search_kb(emb, KB_MATCH_COUNT)
-        answer_text = _choose_response_text(q, rows)
-        cleaned_text, extracted_images = _extract_images_from_text(answer_text)
 
-        # Decide whether to use AI formatting
-        USE_AI_FORMAT = False
+        raw_answer_text = _choose_response_text(q, rows)
 
-        if rows:
-            top1 = float(rows[0].get("similarity") or 0.0)
-            top2 = float(rows[1].get("similarity") or 0.0) if len(rows) > 1 else 0.0
-            gap = top1 - top2
+        # only AI-format deterministic direct answers
+        final_answer_text = raw_answer_text
+        if rows and _is_confident_match(rows):
+            final_answer_text = _maybe_format_with_ai(q, raw_answer_text)
 
-            # Only use AI when:
-            # - not very confident
-            # - OR multiple results
-            if not (top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP):
-                USE_AI_FORMAT = True
-
-        # Apply AI formatting only when needed
-        # if USE_AI_FORMAT:
-        #     cleaned_text = _format_with_ai(q, cleaned_text)
+        cleaned_text, extracted_images = _extract_images_from_text(final_answer_text)
 
         logger.info(
-            "trace=%s q=%r hits=%d total_ms=%.1f",
+            "trace=%s q=%r hits=%d ai_format=%s total_ms=%.1f",
             trace_id,
             q[:200],
             len(rows),
+            "yes" if final_answer_text != raw_answer_text else "no",
             (time.perf_counter() - t0) * 1000,
         )
 
         return {
             "text": cleaned_text,
             "images": extracted_images,
-            "raw_answer": answer_text,
+            "raw_answer": raw_answer_text,
         }
 
     except Exception as e:
@@ -256,126 +333,44 @@ def ask_openai_file_search(question: str) -> dict:
             "images": [],
             "raw_answer": "",
         }
-    
 
-def _format_with_ai(question: str, raw_answer: str) -> str:
-    """
-    Use GPT-4o-mini to make answer cleaner for LINE.
-    Keep facts EXACTLY the same.
-    """
-
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.0,  # important
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You format auto parts kit text for LINE.\n"
-                        "- Keep ALL part codes, quantities, and wording EXACTLY the same\n"
-                        "- DO NOT add, remove, or infer anything\n"
-                        "- DO NOT explain\n"
-                        "- Use short lines, no markdown, no symbols except '-'"
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": raw_answer
-                }
-            ],
-            timeout=OPENAI_TIMEOUT_SECONDS,
-        )
-
-        return resp.choices[0].message.content.strip()
-
-    except Exception as e:
-        logger.exception("AI format failed: %s", e)
-        return raw_answer  # fallback safely
-
-
-def build_kb_quick_reply_result(question: str) -> dict:
-    q = (_strip_trigger(question) or "").strip()
-    if not q:
-        return {"type": "text", "text": "ถามอะไรเฮียหน่อยสิครับ"}
-
-    emb = _embed_query(q)
-    rows = _search_kb(emb, KB_MATCH_COUNT)
-
-    if not rows:
-        return {"type": "text", "text": "ไม่มีข้อมูลในคลังข้อมูล"}
-
-    items = []
-    lines = ["เจอหัวข้อใกล้เคียงครับ เลือกได้เลย:"]
-
-    for idx, row in enumerate(rows[:10], start=1):
-        kb_id = str(row.get("id") or "").strip()
-        title = str(row.get("title") or f"หัวข้อ {idx}").strip()
-
-        lines.append(f"{idx}. {title}")
-
-        items.append({
-            "type": "action",
-            "action": {
-                "type": "postback",
-                "label": title[:20],
-                "data": f"kb_select:{kb_id}",
-                "displayText": title[:300],
-            }
-        })
-
-    return {
-        "type": "messages",
-        "messages": [
-            {
-                "type": "text",
-                "text": "\n".join(lines)[:5000],
-                "quickReply": {"items": items},
-            }
-        ],
-    }
-
-
-def get_kb_by_id(kb_id: str) -> dict | None:
-    if supabase is None:
-        raise RuntimeError("Supabase client is not configured")
-
-    resp = (
-        supabase.table("kb_parts")
-        .select("id,title,content,related")
-        .eq("id", kb_id)
-        .limit(1)
-        .execute()
-    )
-    data = resp.data or []
-    return data[0] if data else None
 
 def handle_kb_select_postback(data: str) -> dict:
-    kb_id = data.replace("kb_select:", "", 1).strip()
-    row = get_kb_by_id(kb_id)
+    """
+    For quick-reply selection flow:
+    data = 'kb_select:<id>'
+    """
+    kb_id = (data or "").replace("kb_select:", "", 1).strip()
+    if not kb_id:
+        return {
+            "text": "ไม่พบรายการที่เลือกครับ",
+            "images": [],
+            "raw_answer": "",
+        }
 
-    if not row:
-        return {"type": "text", "text": "ไม่พบข้อมูลรายการที่เลือกครับ"}
+    try:
+        row = get_kb_by_id(kb_id)
+        if not row:
+            return {
+                "text": "ไม่พบข้อมูลรายการที่เลือกครับ",
+                "images": [],
+                "raw_answer": "",
+            }
 
-    text = "\n\n".join(
-        x for x in [
-            str(row.get("title") or "").strip(),
-            str(row.get("content") or "").strip(),
-        ] if x
-    ).strip() or "ไม่พบข้อมูลครับ"
+        raw_answer_text = _build_direct_answer(row)
+        final_answer_text = _maybe_format_with_ai(str(row.get("title") or "").strip(), raw_answer_text)
+        cleaned_text, extracted_images = _extract_images_from_text(final_answer_text)
 
-    cleaned_text, extracted_images = _extract_images_from_text(text)
-    return {
-        "type": "messages",
-        "messages": (
-            [{"type": "text", "text": cleaned_text[:5000]}] +
-            [
-                {
-                    "type": "image",
-                    "originalContentUrl": img["url"],
-                    "previewImageUrl": img["url"],
-                }
-                for img in extracted_images[:3]
-            ]
-        ),
-    }
+        return {
+            "text": cleaned_text,
+            "images": extracted_images,
+            "raw_answer": raw_answer_text,
+        }
+
+    except Exception as e:
+        logger.exception("kb_select_error=%s", e)
+        return {
+            "text": "ระบบค้นหาคลังข้อมูลขัดข้องชั่วคราวครับ",
+            "images": [],
+            "raw_answer": "",
+        }

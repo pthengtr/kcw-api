@@ -18,9 +18,7 @@ from src.handlers.router import route_user_text
 from src.access.helper import get_line_user_id
 from src.access.helper import get_or_create_line_access
 from src.access.helper import build_access_denied_message
-
-# add this import
-from src.ai.openai_kb import handle_kb_select_postback
+from src.ai.openai_kb import handle_kb_select_postback, openai_result_to_line_response
 
 app = FastAPI()
 
@@ -97,7 +95,8 @@ async def line_webhook(request: Request):
                 data = (postback.get("data") or "").strip()
 
                 if data.startswith("kb_select:"):
-                    reply_payload = handle_kb_select_postback(data)
+                    result = handle_kb_select_postback(data)
+                    reply_payload = openai_result_to_line_response(result)
                 else:
                     # ignore unknown postback for now
                     continue
