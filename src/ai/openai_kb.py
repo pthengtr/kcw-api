@@ -301,29 +301,33 @@ def ask_openai_file_search(question: str) -> dict:
     try:
         emb = _embed_query(q)
         rows = _search_kb(emb, KB_MATCH_COUNT)
+        answer_text = _choose_response_text(q, rows)
+        cleaned_text, extracted_images = _extract_images_from_text(answer_text)
 
-        raw_answer_text = _choose_response_text(q, rows)
+        USE_AI_FORMAT = False
+        if rows:
+            top1 = float(rows[0].get("similarity") or 0.0)
+            top2 = float(rows[1].get("similarity") or 0.0) if len(rows) > 1 else 0.0
+            gap = top1 - top2
 
-        # only AI-format deterministic direct answers
-        final_answer_text = raw_answer_text
-        if rows and _is_confident_match(rows):
-            final_answer_text = _maybe_format_with_ai(q, raw_answer_text)
+            if not (top1 >= KB_AUTO_THRESHOLD and gap >= KB_MIN_GAP):
+                USE_AI_FORMAT = True
 
-        cleaned_text, extracted_images = _extract_images_from_text(final_answer_text)
+        # if USE_AI_FORMAT:
+        #     cleaned_text = _format_with_ai(q, cleaned_text)
 
         logger.info(
-            "trace=%s q=%r hits=%d ai_format=%s total_ms=%.1f",
+            "trace=%s q=%r hits=%d total_ms=%.1f",
             trace_id,
             q[:200],
             len(rows),
-            "yes" if final_answer_text != raw_answer_text else "no",
             (time.perf_counter() - t0) * 1000,
         )
 
         return {
             "text": cleaned_text,
             "images": extracted_images,
-            "raw_answer": raw_answer_text,
+            "raw_answer": answer_text,
         }
 
     except Exception as e:
@@ -374,3 +378,92 @@ def handle_kb_select_postback(data: str) -> dict:
             "images": [],
             "raw_answer": "",
         }
+    
+def build_kb_quick_reply_result(question: str) -> dict:
+    q = (_strip_trigger(question) or "").strip()
+    if not q:
+        return {"type": "text", "text": "ถามอะไรเฮียหน่อยสิครับ"}
+
+    emb = _embed_query(q)
+    rows = _search_kb(emb, KB_MATCH_COUNT)
+
+    if not rows:
+        return {"type": "text", "text": "ไม่มีข้อมูลในคลังข้อมูล"}
+
+    items = []
+    lines = ["เจอหัวข้อใกล้เคียงครับ เลือกได้เลย:"]
+
+    for idx, row in enumerate(rows[:10], start=1):
+        kb_id = str(row.get("id") or "").strip()
+        title = str(row.get("title") or f"หัวข้อ {idx}").strip()
+
+        lines.append(f"{idx}. {title}")
+
+        items.append({
+            "type": "action",
+            "action": {
+                "type": "postback",
+                "label": title[:20],
+                "data": f"kb_select:{kb_id}",
+                "displayText": title[:300],
+            }
+        })
+
+    return {
+        "type": "messages",
+        "messages": [
+            {
+                "type": "text",
+                "text": "\n".join(lines)[:5000],
+                "quickReply": {"items": items},
+            }
+        ],
+    }
+
+
+def get_kb_by_id(kb_id: str) -> dict | None:
+    if supabase is None:
+        raise RuntimeError("Supabase client is not configured")
+
+    resp = (
+        supabase.table("kb_parts")
+        .select("id,title,content,related")
+        .eq("id", kb_id)
+        .limit(1)
+        .execute()
+    )
+    data = resp.data or []
+    return data[0] if data else None
+
+
+def handle_kb_select_postback(data: str) -> dict:
+    kb_id = data.replace("kb_select:", "", 1).strip()
+    row = get_kb_by_id(kb_id)
+
+    if not row:
+        return {"type": "text", "text": "ไม่พบข้อมูลรายการที่เลือกครับ"}
+
+    text = "\n\n".join(
+        x for x in [
+            str(row.get("title") or "").strip(),
+            str(row.get("content") or "").strip(),
+        ]
+        if x
+    ).strip() or "ไม่พบข้อมูลครับ"
+
+    cleaned_text, extracted_images = _extract_images_from_text(text)
+
+    return {
+        "type": "messages",
+        "messages": (
+            [{"type": "text", "text": cleaned_text[:5000]}] +
+            [
+                {
+                    "type": "image",
+                    "originalContentUrl": img["url"],
+                    "previewImageUrl": img["url"],
+                }
+                for img in extracted_images[:3]
+            ]
+        ),
+    }
