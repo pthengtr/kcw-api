@@ -30,6 +30,10 @@ AI_FORMAT_KB_ENABLED = os.getenv("AI_FORMAT_KB_ENABLED", "false").strip().lower(
 }
 AI_FORMAT_KB_MODEL = os.getenv("AI_FORMAT_KB_MODEL", "gpt-4o-mini").strip()
 
+SUPABASE_KB_TABLE = os.getenv("SUPABASE_KB_TABLE", "kb_parts").strip()
+SUPABASE_KB_IMAGE_BUCKET = os.getenv("SUPABASE_KB_IMAGE_BUCKET", "kb-parts").strip()
+KB_MAX_IMAGES = min(int(os.getenv("KB_MAX_IMAGES", "3").strip()), 4)
+
 client = OpenAI(
     api_key=OPENAI_API_KEY,
     max_retries=0,
@@ -41,6 +45,51 @@ if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
 
 logger = logging.getLogger("kcw.openai_kb")
 
+def _kb_table():
+    if supabase is None:
+        raise RuntimeError("Supabase client is not configured")
+    return supabase.schema(SUPABASE_KB_SCHEMA).table(SUPABASE_KB_TABLE)
+
+def _list_kb_images(kb_id: str, max_images: int = KB_MAX_IMAGES) -> list[dict[str, str]]:
+    if supabase is None:
+        raise RuntimeError("Supabase client is not configured")
+
+    folder = str(kb_id).strip()
+    if not folder:
+        return []
+
+    files = (
+        supabase.storage
+        .from_(SUPABASE_KB_IMAGE_BUCKET)
+        .list(
+            folder,
+            {
+                "limit": max(max_images, 1),
+                "offset": 0,
+                "sortBy": {"column": "name", "order": "asc"},
+            },
+        )
+    ) or []
+
+    images: list[dict[str, str]] = []
+
+    for item in files:
+        name = str((item or {}).get("name") or "").strip()
+        if not name or name.endswith("/"):
+            continue
+
+        path = f"{folder}/{name}"
+        public_url = supabase.storage.from_(SUPABASE_KB_IMAGE_BUCKET).get_public_url(path)
+        url = str(public_url or "").strip()
+        if not url:
+            continue
+
+        images.append({"alt": name, "url": url})
+
+        if len(images) >= max_images:
+            break
+
+    return images
 
 def _strip_trigger(text: str) -> str:
     t = (text or "").strip()
@@ -133,12 +182,13 @@ def get_kb_by_id(kb_id: str) -> dict[str, Any] | None:
         raise RuntimeError("Supabase client is not configured")
 
     resp = (
-        supabase.table(SUPABASE_KB_TABLE)
+        _kb_table()
         .select("id,title,content,related")
         .eq("id", kb_id)
         .limit(1)
         .execute()
     )
+
     data = resp.data or []
     return data[0] if data else None
 
@@ -211,10 +261,6 @@ def _maybe_format_with_ai(question: str, raw_answer: str) -> str:
     return _format_with_ai(question, raw_answer)
 
 def handle_kb_select_postback(data: str) -> dict:
-    """
-    For quick-reply selection flow:
-    data = 'kb_select:<id>'
-    """
     kb_id = (data or "").replace("kb_select:", "", 1).strip()
     if not kb_id:
         return {
@@ -233,12 +279,16 @@ def handle_kb_select_postback(data: str) -> dict:
             }
 
         raw_answer_text = _build_direct_answer(row)
-        final_answer_text = _maybe_format_with_ai(str(row.get("title") or "").strip(), raw_answer_text)
-        cleaned_text, extracted_images = _extract_images_from_text(final_answer_text)
+        final_answer_text = _maybe_format_with_ai(
+            str(row.get("title") or "").strip(),
+            raw_answer_text,
+        )
+
+        images = _list_kb_images(kb_id, KB_MAX_IMAGES)
 
         return {
-            "text": cleaned_text,
-            "images": extracted_images,
+            "text": final_answer_text,
+            "images": images,
             "raw_answer": raw_answer_text,
         }
 
