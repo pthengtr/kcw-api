@@ -9,6 +9,7 @@ from src.handlers.image import is_image_command, handle_image_command
 from src.handlers.product_snapshot import is_product_snapshot_request, handle_product_snapshot_query
 from src.access.helper import can_execute
 from src.handlers.location import is_location_request, handle_location_query
+from src.handlers.check import is_check_request, handle_check_query
 
 
 def route_user_text(engine, user_text: str, access: dict) -> dict:
@@ -61,4 +62,7 @@ def route_user_text(engine, user_text: str, access: dict) -> dict:
             "text": handle_location_query(engine, text),
         }
 
+    if is_check_request(text):
+        return {"type": "text", "text": handle_check_query(engine, text)}
+    
     return {"type": "text", "text": handle_product_query(engine, text, access=access)}

@@ -543,3 +543,232 @@ def get_top_matched_locations_with_products(
         ).mappings().all()
 
     return [dict(r) for r in rows]
+
+def get_product_brief_by_bcode(engine, bcode: str) -> dict | None:
+    sql = text("""
+        with candidates as (
+            select
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("DESCR", '')) as "DESCR",
+                trim(coalesce("BRAND", '')) as "BRAND",
+                trim(coalesce("MODEL", '')) as "MODEL"
+            from raw_kcw.raw_hq_icmas_products
+            where trim(coalesce("BCODE", '')) = :bcode
+
+            union all
+
+            select
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("DESCR", '')) as "DESCR",
+                trim(coalesce("BRAND", '')) as "BRAND",
+                trim(coalesce("MODEL", '')) as "MODEL"
+            from raw_kcw.raw_syp_icmas_products
+            where trim(coalesce("BCODE", '')) = :bcode
+        )
+        select
+            :bcode as "BCODE",
+            max(nullif("DESCR", '')) as "DESCR",
+            max(nullif("BRAND", '')) as "BRAND",
+            max(nullif("MODEL", '')) as "MODEL"
+        from candidates
+    """)
+
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"bcode": bcode.strip()}).mappings().first()
+
+    if not row:
+        return None
+
+    data = dict(row)
+    if not any(data.get(k) for k in ("DESCR", "BRAND", "MODEL")):
+        return None
+
+    return data
+
+def get_recent_purchase_signal_by_bcode(engine, bcode: str, months: int = 6) -> dict:
+    sql = text(f"""
+        with purchase_rows as (
+            select
+                _ingested_at,
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("BILLNO", '')) as "BILLNO",
+                trim(coalesce("BILLDATE", '')) as "BILLDATE",
+                trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("ACCTNO", '')) as "ACCTNO",
+                case
+                    when trim(coalesce("BILLDATE", '')) ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$'
+                        then cast(trim(coalesce("BILLDATE", '')) as date)
+                    else null
+                end as "BILLDATE_DT"
+            from raw_kcw.raw_hq_pidet_purchase_lines
+            where trim(coalesce("BCODE", '')) = :bcode
+              and coalesce(trim("CANCELED"), '') <> 'Y'
+        ),
+        filtered as (
+            select *
+            from purchase_rows
+            where "BILLDATE_DT" >= current_date - (:months || ' months')::interval
+        ),
+        latest_row as (
+            select *
+            from filtered
+            order by "BILLDATE_DT" desc, "BILLNO" desc
+            limit 1
+        )
+        select
+            coalesce((select count(*) from filtered), 0) as "PURCHASE_COUNT",
+            l._ingested_at,
+            l."BILLNO",
+            l."BILLDATE",
+            l."DETAIL",
+            l."ACCTNO"
+        from (select 1) seed
+        left join latest_row l on true
+    """)
+
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"bcode": bcode.strip(), "months": int(months)}).mappings().first()
+
+    row = dict(row) if row else {}
+    return {
+        "count": int(row.get("PURCHASE_COUNT") or 0),
+        "last_purchase": {
+            "billdate": row.get("BILLDATE"),
+            "billno": row.get("BILLNO"),
+            "detail": row.get("DETAIL"),
+            "acct": row.get("ACCTNO"),
+        } if row.get("BILLDATE") else None,
+        "latest_ingested_at": row.get("_ingested_at"),
+    }
+
+def get_recent_sale_signal_by_bcode(engine, bcode: str, months: int = 6) -> dict:
+    sql = text(f"""
+        with sales_rows as (
+            select
+                _ingested_at,
+                trim(coalesce("BRANCH", '')) as "BRANCH",
+                trim(coalesce("BCODE", '')) as "BCODE",
+                trim(coalesce("BILLNO", '')) as "BILLNO",
+                trim(coalesce("BILLDATE", '')) as "BILLDATE",
+                trim(coalesce("DETAIL", '')) as "DETAIL",
+                trim(coalesce("ACCTNO", '')) as "ACCTNO",
+                trim(coalesce("JOURMODE", '')) as "JOURMODE",
+                trim(coalesce("BILLTYPE_STD", '')) as "BILLTYPE_STD",
+                trim(coalesce("CANCELED", '')) as "CANCELED",
+                case
+                    when trim(coalesce("BILLDATE", '')) ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$'
+                        then cast(trim(coalesce("BILLDATE", '')) as date)
+                    else null
+                end as "BILLDATE_DT"
+            from curated_kcw.fact_sales_all
+            where trim(coalesce("BCODE", '')) = :bcode
+        ),
+        filtered as (
+            select *
+            from sales_rows
+            where coalesce("CANCELED", '') <> 'Y'
+              and coalesce("JOURMODE", '') <> '0'
+              and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
+              and "BILLDATE_DT" >= current_date - (:months || ' months')::interval
+        ),
+        latest_row as (
+            select *
+            from filtered
+            order by "BILLDATE_DT" desc, "BILLNO" desc, "BRANCH" asc
+            limit 1
+        )
+        select
+            coalesce((select count(*) from filtered), 0) as "SALE_COUNT",
+            l._ingested_at,
+            l."BRANCH",
+            l."BILLNO",
+            l."BILLDATE",
+            l."DETAIL",
+            l."ACCTNO"
+        from (select 1) seed
+        left join latest_row l on true
+    """)
+
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"bcode": bcode.strip(), "months": int(months)}).mappings().first()
+
+    row = dict(row) if row else {}
+    return {
+        "count": int(row.get("SALE_COUNT") or 0),
+        "last_sale": {
+            "branch": row.get("BRANCH"),
+            "billdate": row.get("BILLDATE"),
+            "billno": row.get("BILLNO"),
+            "detail": row.get("DETAIL"),
+            "acct": row.get("ACCTNO"),
+        } if row.get("BILLDATE") else None,
+        "latest_ingested_at": row.get("_ingested_at"),
+    }
+
+def get_quick_order_check_by_bcode(engine, bcode: str, months: int = 6) -> dict | None:
+    product = get_product_brief_by_bcode(engine, bcode)
+    stock = get_stock_snapshot_by_bcode(engine, bcode)
+    purchase_signal = get_recent_purchase_signal_by_bcode(engine, bcode, months=months)
+    sale_signal = get_recent_sale_signal_by_bcode(engine, bcode, months=months)
+
+    if not product and not stock and not purchase_signal.get("count") and not sale_signal.get("count"):
+        return None
+
+    product_name = None
+    if product and product.get("DESCR"):
+        product_name = product.get("DESCR")
+    elif purchase_signal.get("last_purchase") and purchase_signal["last_purchase"].get("detail"):
+        product_name = purchase_signal["last_purchase"].get("detail")
+    elif sale_signal.get("last_sale") and sale_signal["last_sale"].get("detail"):
+        product_name = sale_signal["last_sale"].get("detail")
+
+    has_sale = (sale_signal.get("count") or 0) > 0
+    has_purchase = (purchase_signal.get("count") or 0) > 0
+
+    if has_sale:
+        status_key = "green"
+        status_label = "สั่งได้"
+        status_reason = f"พบการขายใน {months} เดือนล่าสุด"
+    elif has_purchase:
+        status_key = "orange"
+        status_label = "เช็กอีกที"
+        status_reason = (
+            f"ไม่พบการขายใน {months} เดือนล่าสุด\n"
+            f"แต่พบการซื้อเข้าใน {months} เดือนล่าสุด"
+        )
+    else:
+        status_key = "red"
+        status_label = "หยุดก่อน"
+        status_reason = f"ไม่พบการขายและไม่พบการซื้อเข้าใน {months} เดือนล่าสุด"
+
+    latest_ingested_candidates = []
+    if stock and stock.get("_ingested_at"):
+        latest_ingested_candidates.append(stock.get("_ingested_at"))
+    if purchase_signal.get("latest_ingested_at"):
+        latest_ingested_candidates.append(purchase_signal.get("latest_ingested_at"))
+    if sale_signal.get("latest_ingested_at"):
+        latest_ingested_candidates.append(sale_signal.get("latest_ingested_at"))
+
+    latest_ingested_at = max(latest_ingested_candidates) if latest_ingested_candidates else None
+
+    return {
+        "bcode": bcode.strip(),
+        "product_name": product_name or "-",
+        "brand": (product or {}).get("BRAND"),
+        "model": (product or {}).get("MODEL"),
+        "stock_total": float(stock.get("QTY_TOTAL") or 0) if stock else 0,
+        "stock_hq": float(stock.get("QTY_HQ") or 0) if stock else 0,
+        "stock_syp": float(stock.get("QTY_SYP") or 0) if stock else 0,
+        "has_sale_recent": has_sale,
+        "has_purchase_recent": has_purchase,
+        "recent_sale_count": int(sale_signal.get("count") or 0),
+        "recent_purchase_count": int(purchase_signal.get("count") or 0),
+        "last_sale": sale_signal.get("last_sale"),
+        "last_purchase": purchase_signal.get("last_purchase"),
+        "status_key": status_key,
+        "status_label": status_label,
+        "status_reason": status_reason,
+        "latest_ingested_at": latest_ingested_at,
+        "months_window": int(months),
+    }
+
