@@ -129,6 +129,29 @@ def _extract_size_filters(query: str) -> tuple[dict[str, str], str]:
     return size_filters, cleaned_query
 
 
+def _extract_bcode_category_prefix(query: str) -> tuple[str | None, str]:
+    """
+    Detect leading 2-digit BCODE category search.
+
+    Examples:
+    - "12" -> category 12, remaining ""
+    - "12 ลูกปืน 6207" -> category 12, remaining "ลูกปืน 6207"
+    - "22010585" -> no category, keep as normal BCODE search
+    """
+    raw = str(query or "").strip()
+    if not raw:
+        return None, raw
+
+    m = re.match(r"^\s*(\d{2})(?=\s|$)", raw)
+    if not m:
+        return None, raw
+
+    category_prefix = m.group(1)
+    cleaned = (raw[:m.start()] + " " + raw[m.end():]).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+
+    return category_prefix, cleaned
+
 def simple_and_search_sql(
     engine,
     query: str,
@@ -137,13 +160,22 @@ def simple_and_search_sql(
     limit: int = 5,
 ) -> dict:
     if not query or not str(query).strip():
-        return {"items": pd.DataFrame(), "total": 0}
+        return {
+            "items": pd.DataFrame(),
+            "total": 0,
+            "bcode_category_prefix": None,
+        }
 
-    size_filters, query_wo_size = _extract_size_filters(query)
+    bcode_category_prefix, query_wo_category = _extract_bcode_category_prefix(query)
+    size_filters, query_wo_size = _extract_size_filters(query_wo_category)
     detected_code1, tokens = _extract_code1_and_remaining_tokens(query_wo_size)
 
     where_parts = []
     params = {}
+
+    if bcode_category_prefix:
+        where_parts.append('LEFT(TRIM(CAST(p."BCODE" AS TEXT)), 2) = :bcode_category_prefix')
+        params["bcode_category_prefix"] = bcode_category_prefix
 
     if detected_code1:
         where_parts.append('UPPER(TRIM(COALESCE(p."CODE1", \'\'))) = :code1')
@@ -161,7 +193,11 @@ def simple_and_search_sql(
         where_parts.append("(" + " OR ".join(col_parts) + ")")
 
     if not where_parts:
-        return {"items": pd.DataFrame(), "total": 0}
+        return {
+            "items": pd.DataFrame(),
+            "total": 0,
+            "bcode_category_prefix": bcode_category_prefix,
+        }
 
     where_sql = " AND ".join(where_parts)
 

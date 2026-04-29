@@ -146,14 +146,26 @@ def format_size_line(code1_value, size1, size2, size3) -> str:
 
 
 def format_product_answer(search_result: dict, can_see_cost: bool = False) -> str:
-
     df = search_result.get("items", pd.DataFrame())
     total = int(search_result.get("total", 0) or 0)
 
+    bcode_category_prefix = search_result.get("bcode_category_prefix")
+    category_line = ""
+    if bcode_category_prefix:
+        category_line = (
+            f"ค้นหาเฉพาะหมวด {bcode_category_prefix} "
+            f"(BCODE ขึ้นต้นด้วย {bcode_category_prefix})"
+        )
+
     if df.empty:
+        if category_line:
+            return f"{category_line}\nไม่พบสินค้า"
         return "ไม่พบสินค้า"
 
     lines = []
+    if category_line:
+        lines.append(category_line)
+        
     for i, (_, row) in enumerate(df.iterrows(), start=1):
         bcode = _safe_text(row.get("BCODE"))
         mcode = _safe_text(row.get("MCODE"), "")
