@@ -136,18 +136,21 @@ def _extract_bcode_category_prefix(query: str) -> tuple[str | None, str]:
     Examples:
     - "12" -> category 12, remaining ""
     - "12 ลูกปืน 6207" -> category 12, remaining "ลูกปืน 6207"
+    - "12ลูกปืน 6207" -> category 12, remaining "ลูกปืน 6207"
     - "22010585" -> no category, keep as normal BCODE search
     """
     raw = str(query or "").strip()
     if not raw:
         return None, raw
 
-    m = re.match(r"^\s*(\d{2})(?=\s|$)", raw)
+    # Detect first 2 digits only when they are not followed by another digit.
+    # This avoids treating full BCODE like "22010585" as category "22".
+    m = re.match(r"^\s*(\d{2})(?!\d)", raw)
     if not m:
         return None, raw
 
     category_prefix = m.group(1)
-    cleaned = (raw[:m.start()] + " " + raw[m.end():]).strip()
+    cleaned = raw[m.end():].strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
 
     return category_prefix, cleaned
@@ -285,4 +288,8 @@ def simple_and_search_sql(
         total = int(df["total_count"].iloc[0])
 
     df = df.drop(columns=["total_count"], errors="ignore")
-    return {"items": df, "total": total}
+    return {
+        "items": df,
+        "total": total,
+        "bcode_category_prefix": bcode_category_prefix,
+    }
