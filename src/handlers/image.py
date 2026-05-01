@@ -269,6 +269,60 @@ def _select_upload_target(bcode: str) -> tuple[str, bool, str | None]:
 
     return oldest_item["path"], True, oldest_item.get("name")
 
+def _build_delete_preview_response(
+    bcode: str,
+    image_items: list[dict],
+    success_text: str | None = None,
+) -> dict:
+    """
+    Build delete-preview reply.
+
+    Cases:
+    - initial delete command: up to 5 image messages, quick reply attached to last image
+    - after one deletion: success text + remaining images, quick reply attached to text
+      (safe because remaining images will be <= 4)
+    """
+    if not image_items:
+        return {
+            "type": "text",
+            "text": success_text or f"ไม่พบรูปสินค้าสำหรับ {bcode} ครับ",
+        }
+
+    messages = []
+
+    # After a deletion, we want:
+    # [text success + quick reply] + [remaining images]
+    if success_text:
+        text_msg = {
+            "type": "text",
+            "text": success_text,
+            "quickReply": _build_delete_quick_reply(len(image_items)),
+        }
+        messages.append(text_msg)
+
+    for item in image_items[:MAX_PRODUCT_IMAGES]:
+        url = build_public_storage_url(
+            SUPABASE_IMAGE_BUCKET,
+            item["path"],
+            version=item.get("version"),
+        )
+        messages.append(
+            {
+                "type": "image",
+                "originalContentUrl": url,
+                "previewImageUrl": url,
+            }
+        )
+
+    # Initial delete command may have up to 5 images,
+    # so attach quick reply to the last image instead of adding a text message.
+    if not success_text and messages:
+        messages[-1]["quickReply"] = _build_delete_quick_reply(len(image_items))
+
+    return {
+        "type": "messages",
+        "messages": messages,
+    }
 
 def upload_product_image(bcode: str, image_bytes: bytes, content_type: str | None = None) -> dict:
     bcode = normalize_bcode(bcode)
@@ -363,11 +417,32 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
                     "text": "ลบรูปไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง",
                 }
 
-            _clear_session(DELETE_SESSIONS, line_user_id)
-            return {
-                "type": "text",
-                "text": f"ลบรูปที่ {selected_no} ของสินค้า {bcode} แล้วครับ ✅",
-            }
+            # Refresh current images after deletion
+            refreshed_items = _list_expected_image_items(bcode)
+            refreshed_paths = [item["path"] for item in refreshed_items]
+
+            # If no image remains, end delete session
+            if not refreshed_paths:
+                _clear_session(DELETE_SESSIONS, line_user_id)
+                return {
+                    "type": "text",
+                    "text": f"ลบรูปที่ {selected_no} ของสินค้า {bcode} แล้วครับ ✅\nตอนนี้ไม่เหลือรูปแล้วครับ",
+                }
+
+            # Keep delete session alive so user can continue deleting
+            delete_session["image_paths"] = refreshed_paths
+            _extend_session(delete_session)
+
+            success_text = (
+                f"ลบรูปที่ {selected_no} ของสินค้า {bcode} แล้วครับ ✅\n"
+                "ต้องการลบรูปไหนต่อ เลือกได้เลยครับ"
+            )
+
+            return _build_delete_preview_response(
+                bcode,
+                refreshed_items,
+                success_text=success_text,
+            )
 
         return {
             "type": "text",
@@ -376,7 +451,7 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
                 'กรุณาเลือกปุ่ม "ลบรูป 1-5" หรือพิมพ์ "เสร็จ" เพื่อจบ'
             ),
         }
-
+    
     upload_session = _get_active_session(UPLOAD_SESSIONS, line_user_id)
     if upload_session:
         bcode = upload_session.get("bcode", "")
@@ -507,29 +582,7 @@ def handle_delete_image_command(text: str, line_user_id: str | None) -> dict:
 
     _start_delete_session(line_user_id, bcode, image_paths)
 
-    messages = []
-    for item in image_items[:MAX_PRODUCT_IMAGES]:
-        url = build_public_storage_url(
-            SUPABASE_IMAGE_BUCKET,
-            item["path"],
-            version=item.get("version"),
-        )
-        messages.append(
-            {
-                "type": "image",
-                "originalContentUrl": url,
-                "previewImageUrl": url,
-            }
-        )
-
-    # LINE reply limit is 5 messages, so attach quick reply to the last image.
-    messages[-1]["quickReply"] = _build_delete_quick_reply(len(messages))
-
-    return {
-        "type": "messages",
-        "messages": messages,
-    }
-
+    return _build_delete_preview_response(bcode, image_items)
 
 def handle_view_image_command(text: str) -> dict:
     bcode = normalize_bcode(extract_image_key(text))
