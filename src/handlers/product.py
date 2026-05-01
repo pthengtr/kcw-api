@@ -38,7 +38,7 @@ def build_product_quick_reply(bcode: str) -> dict:
                 "type": "action",
                 "action": {
                     "type": "message",
-                    "label": "เช็ค",
+                    "label": "ซื้อ-ขาย ล่าสุด",
                     "text": f"เช็ค {bcode}",
                 },
             },
@@ -46,32 +46,8 @@ def build_product_quick_reply(bcode: str) -> dict:
                 "type": "action",
                 "action": {
                     "type": "message",
-                    "label": "Snapshot",
-                    "text": f"สินค้า {bcode}",
-                },
-            },
-            {
-                "type": "action",
-                "action": {
-                    "type": "message",
-                    "label": "รูป",
+                    "label": "จัดการรูป",
                     "text": f"รูป {bcode}",
-                },
-            },
-            {
-                "type": "action",
-                "action": {
-                    "type": "message",
-                    "label": "เพิ่มรูป",
-                    "text": f"เพิ่มรูป {bcode}",
-                },
-            },
-            {
-                "type": "action",
-                "action": {
-                    "type": "message",
-                    "label": "ลบรูป",
-                    "text": f"ลบรูป {bcode}",
                 },
             },
         ]

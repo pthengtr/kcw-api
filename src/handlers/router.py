@@ -10,10 +10,10 @@ from src.handlers.image import (
     handle_image_command,
     handle_image_session_text,
 )
-from src.handlers.product_snapshot import is_product_snapshot_request, handle_product_snapshot_query
+from src.handlers.product_snapshot import is_product_snapshot_request
 from src.access.helper import can_execute
 from src.handlers.location import is_location_request, handle_location_query
-from src.handlers.check import is_check_request, handle_check_query
+from src.handlers.check import is_check_request, handle_check_response
 
 
 def route_user_text(
@@ -65,7 +65,9 @@ def route_user_text(
         return build_kb_quick_reply_result(text)
 
     if is_product_snapshot_request(text):
-        return handle_product_snapshot_query(engine, text)
+        # Backward-compatible alias:
+        # "สินค้า {bcode}" now returns the merged เช็ค response.
+        return handle_check_response(engine, text)
 
     if is_location_request(text):
         cmd = "ที่เก็บ"
@@ -78,6 +80,6 @@ def route_user_text(
         }
 
     if is_check_request(text):
-        return {"type": "text", "text": handle_check_query(engine, text)}
+        return handle_check_response(engine, text)
 
     return handle_product_query_response(engine, text, access=access)
