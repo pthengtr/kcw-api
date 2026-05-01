@@ -277,10 +277,10 @@ def _build_delete_preview_response(
     """
     Build delete-preview reply.
 
-    Cases:
-    - initial delete command: up to 5 image messages, quick reply attached to last image
-    - after one deletion: success text + remaining images, quick reply attached to text
-      (safe because remaining images will be <= 4)
+    Important LINE behavior:
+    - Quick reply should be attached to the last message object.
+    - If quick reply is attached to an earlier message and the bot sends more
+      messages after it, LINE may hide/remove the quick reply.
     """
     if not image_items:
         return {
@@ -290,15 +290,13 @@ def _build_delete_preview_response(
 
     messages = []
 
-    # After a deletion, we want:
-    # [text success + quick reply] + [remaining images]
     if success_text:
-        text_msg = {
-            "type": "text",
-            "text": success_text,
-            "quickReply": _build_delete_quick_reply(len(image_items)),
-        }
-        messages.append(text_msg)
+        messages.append(
+            {
+                "type": "text",
+                "text": success_text,
+            }
+        )
 
     for item in image_items[:MAX_PRODUCT_IMAGES]:
         url = build_public_storage_url(
@@ -314,14 +312,14 @@ def _build_delete_preview_response(
             }
         )
 
-    # Initial delete command may have up to 5 images,
-    # so attach quick reply to the last image instead of adding a text message.
-    if not success_text and messages:
+    # Attach quick reply to the LAST message, not the text message.
+    # This keeps it visible after all image messages are sent.
+    if messages:
         messages[-1]["quickReply"] = _build_delete_quick_reply(len(image_items))
 
     return {
         "type": "messages",
-        "messages": messages,
+        "messages": messages[:5],
     }
 
 def upload_product_image(bcode: str, image_bytes: bytes, content_type: str | None = None) -> dict:
