@@ -8,9 +8,9 @@ BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
 VALID_PREFIXES = ("เช็ค", "check")
 
 STATUS_EMOJI = {
-    "green": "",
-    "orange": "",
-    "red": "",
+    "green": "✅",
+    "orange": "⚠️",
+    "red": "🛑",
 }
 
 BRANCH_LABEL = {
