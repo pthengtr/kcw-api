@@ -11,6 +11,7 @@ from src.bot.line_bot import download_line_message_content
 SUPABASE_URL = os.getenv("SUPABASE_DB_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_IMAGE_BUCKET = os.getenv("SUPABASE_IMAGE_BUCKET", "pictures")
+SUPABASE_IMAGE_BASE_FOLDER = os.getenv("SUPABASE_IMAGE_BASE_FOLDER", "product").strip("/")
 
 MAX_PRODUCT_IMAGES = 5
 IMAGE_SESSION_TTL_SECONDS = int(os.getenv("LINE_IMAGE_UPLOAD_SESSION_TTL_SECONDS", "600"))
@@ -28,6 +29,11 @@ END_SESSION_WORDS = {
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+def get_product_image_folder(bcode: str) -> str:
+    bcode = normalize_bcode(bcode)
+    if SUPABASE_IMAGE_BASE_FOLDER:
+        return f"{SUPABASE_IMAGE_BASE_FOLDER}/{bcode}"
+    return bcode
 
 def build_public_storage_url(bucket: str, path: str, version: str | None = None) -> str:
     path = path.lstrip("/")
@@ -56,8 +62,8 @@ def expected_product_image_names(bcode: str) -> list[str]:
 
 
 def expected_product_image_paths(bcode: str) -> list[str]:
-    bcode = normalize_bcode(bcode)
-    return [f"{bcode}/{name}" for name in expected_product_image_names(bcode)]
+    folder = get_product_image_folder(bcode)
+    return [f"{folder}/{name}" for name in expected_product_image_names(bcode)]
 
 
 def _now() -> float:
@@ -107,7 +113,7 @@ def _list_expected_image_items(bcode: str) -> list[dict]:
     if not bcode:
         return []
 
-    folder = bcode.strip("/")
+    folder = get_product_image_folder(bcode)
     expected_names = expected_product_image_names(bcode)
     expected_set = set(expected_names)
 
