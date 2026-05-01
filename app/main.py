@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
+
 import json
 import time
 import logging
@@ -15,10 +16,12 @@ from src.bot.line_bot import (
     reply_line_response,
 )
 from src.handlers.router import route_user_text
+from src.handlers.image import handle_line_image_message
 from src.access.helper import get_line_user_id
 from src.access.helper import get_or_create_line_access
 from src.access.helper import build_access_denied_message
 from src.ai.openai_kb import handle_kb_select_postback, openai_result_to_line_response
+
 
 app = FastAPI()
 
@@ -27,13 +30,16 @@ app = FastAPI()
 async def kcw_peak_sync(request: Request):
     try:
         body = await request.json()
+
         print("========== KCW PEAK ==========")
         print("payload:", body)
         print("==============================")
+
         return {
             "status": "ok",
             "received": True,
         }
+
     except Exception as e:
         print("KCW PEAK ERROR:", e)
         raise HTTPException(status_code=400, detail="Invalid payload")
@@ -75,13 +81,15 @@ async def line_webhook(request: Request):
 
         except Exception as e:
             print("ACCESS CHECK ERROR:", e)
+
             try:
                 reply_line_message(
                     reply_token,
-                    "ระบบตรวจสอบสิทธิ์มีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
+                    "ระบบตรวจสอบสิทธิ์มีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง",
                 )
             except Exception as reply_err:
                 print("LINE REPLY ERROR:", reply_err)
+
             continue
 
         # =========================
@@ -103,21 +111,32 @@ async def line_webhook(request: Request):
 
             elif event_type == "message":
                 message = event.get("message", {}) or {}
+                message_type = message.get("type")
 
-                if message.get("type") != "text":
+                if message_type == "text":
+                    user_text = (message.get("text") or "").strip()
+                    reply_payload = route_user_text(
+                        engine,
+                        user_text,
+                        access=access,
+                        line_user_id=line_user_id,
+                    )
+
+                elif message_type == "image":
+                    message_id = message.get("id")
+                    reply_payload = handle_line_image_message(
+                        line_user_id=line_user_id,
+                        message_id=message_id,
+                    )
+
+                else:
                     continue
-
-                user_text = (message.get("text") or "").strip()
-                reply_payload = route_user_text(engine, user_text, access=access)
 
             else:
                 continue
 
             t_route_1 = time.perf_counter()
-
-            print(
-                f"LATENCY route_ms={(t_route_1 - t_route_0)*1000:.1f}"
-            )
+            print(f"LATENCY route_ms={(t_route_1 - t_route_0) * 1000:.1f}")
 
             # backward compatibility
             if isinstance(reply_payload, str):
@@ -130,15 +149,17 @@ async def line_webhook(request: Request):
             print("ROUTE ERROR:", e)
             reply_payload = {
                 "type": "text",
-                "text": "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง"
+                "text": "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง",
             }
 
         try:
             print("DEBUG reply_payload:", reply_payload)
+
             t_reply_0 = time.perf_counter()
             reply_line_response(reply_token, reply_payload)
             t_reply_1 = time.perf_counter()
-            print(f"LATENCY line_reply_ms={(t_reply_1 - t_reply_0)*1000:.1f}")
+
+            print(f"LATENCY line_reply_ms={(t_reply_1 - t_reply_0) * 1000:.1f}")
 
         except Exception as e:
             print("LINE REPLY ERROR:", e)
