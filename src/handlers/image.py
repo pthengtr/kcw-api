@@ -223,6 +223,27 @@ def _start_delete_session(line_user_id: str, bcode: str, image_paths: list[str])
         "expires_at": _now() + IMAGE_SESSION_TTL_SECONDS,
     }
 
+def _build_view_quick_reply(bcode: str) -> dict:
+    return {
+        "items": [
+            {
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": "เพิ่มรูป",
+                    "text": f"เพิ่มรูป {bcode}",
+                },
+            },
+            {
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": "ลบรูป",
+                    "text": f"ลบรูป {bcode}",
+                },
+            },
+        ]
+    }
 
 def _build_delete_quick_reply(image_count: int) -> dict:
     items = []
@@ -591,30 +612,44 @@ def handle_view_image_command(text: str) -> dict:
         }
 
     image_messages = _list_product_image_messages(bcode, max_images=MAX_PRODUCT_IMAGES)
+
+    # No image case: still offer เพิ่มรูป immediately.
     if not image_messages:
         return {
-            "type": "text",
-            "text": f"ไม่พบรูปสินค้าสำหรับ {bcode} ครับ",
+            "type": "messages",
+            "messages": [
+                {
+                    "type": "text",
+                    "text": f"ไม่พบรูปสินค้าสำหรับ {bcode} ครับ",
+                    "quickReply": _build_view_quick_reply(bcode),
+                }
+            ],
         }
 
     # If 5 images exist, do not add text header because LINE reply limit is 5.
+    # Attach quick reply to the last image.
     if len(image_messages) >= MAX_PRODUCT_IMAGES:
+        image_messages[-1]["quickReply"] = _build_view_quick_reply(bcode)
         return {
             "type": "messages",
             "messages": image_messages,
         }
 
+    messages = [
+        {
+            "type": "text",
+            "text": f"รูปสินค้า {bcode} ({len(image_messages)} รูป)",
+        },
+        *image_messages,
+    ]
+
+    # Quick reply should be attached to the last message object.
+    messages[-1]["quickReply"] = _build_view_quick_reply(bcode)
+
     return {
         "type": "messages",
-        "messages": [
-            {
-                "type": "text",
-                "text": f"รูปสินค้า {bcode} ({len(image_messages)} รูป)",
-            },
-            *image_messages,
-        ],
+        "messages": messages,
     }
-
 
 def handle_image_command(text: str, line_user_id: str | None = None) -> dict:
     if _is_upload_command(text):
