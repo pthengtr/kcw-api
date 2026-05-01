@@ -30,9 +30,13 @@ END_SESSION_WORDS = {
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 def get_product_image_folder(bcode: str) -> str:
-    bcode = normalize_bcode(bcode)
+    bcode = normalize_bcode(bcode).strip("/")
+    if not bcode:
+        return ""
+
     if SUPABASE_IMAGE_BASE_FOLDER:
         return f"{SUPABASE_IMAGE_BASE_FOLDER}/{bcode}"
+
     return bcode
 
 def build_public_storage_url(bucket: str, path: str, version: str | None = None) -> str:
@@ -282,12 +286,14 @@ def _build_delete_quick_reply(image_count: int) -> dict:
 
 def _select_upload_target(bcode: str) -> tuple[str, bool, str | None]:
     bcode = normalize_bcode(bcode)
+    folder = get_product_image_folder(bcode)
+
     existing_items = _list_expected_image_items(bcode)
     existing_names = {item.get("name") for item in existing_items}
 
     for name in expected_product_image_names(bcode):
         if name not in existing_names:
-            return f"{bcode}/{name}", False, None
+            return f"{folder}/{name}", False, None
 
     oldest_item = sorted(
         existing_items,
