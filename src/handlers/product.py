@@ -1,6 +1,83 @@
 from src.search import simple_and_search_sql, format_product_answer
 
 
+def _safe_text(value, default: str = "") -> str:
+    if value is None:
+        return default
+
+    s = str(value).strip()
+    if not s or s.lower() == "nan":
+        return default
+
+    return s
+
+
+def _extract_single_bcode(search_result: dict) -> str | None:
+    """
+    Return BCODE only when search result is confidently one product.
+
+    We use total == 1, not just len(df) == 1, because search limit may return
+    one displayed row while total could still be larger.
+    """
+    total = int(search_result.get("total", 0) or 0)
+    if total != 1:
+        return None
+
+    df = search_result.get("items")
+    if df is None or df.empty:
+        return None
+
+    bcode = _safe_text(df.iloc[0].get("BCODE"))
+    return bcode or None
+
+
+def build_product_quick_reply(bcode: str) -> dict:
+    return {
+        "items": [
+            {
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": "เช็ค",
+                    "text": f"เช็ค {bcode}",
+                },
+            },
+            {
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": "Snapshot",
+                    "text": f"สินค้า {bcode}",
+                },
+            },
+            {
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": "รูป",
+                    "text": f"รูป {bcode}",
+                },
+            },
+            {
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": "เพิ่มรูป",
+                    "text": f"เพิ่มรูป {bcode}",
+                },
+            },
+            {
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": "ลบรูป",
+                    "text": f"ลบรูป {bcode}",
+                },
+            },
+        ]
+    }
+
+
 def handle_product_query(engine, user_text: str, access: dict | None = None) -> str:
     results = simple_and_search_sql(engine, user_text, limit=5)
 
@@ -8,3 +85,23 @@ def handle_product_query(engine, user_text: str, access: dict | None = None) -> 
     can_see_cost = access_group in {"admin", "exec"}
 
     return format_product_answer(results, can_see_cost=can_see_cost)
+
+
+def handle_product_query_response(engine, user_text: str, access: dict | None = None) -> dict:
+    results = simple_and_search_sql(engine, user_text, limit=5)
+
+    access_group = (access or {}).get("access_group", "")
+    can_see_cost = access_group in {"admin", "exec"}
+
+    text = format_product_answer(results, can_see_cost=can_see_cost)
+    bcode = _extract_single_bcode(results)
+
+    response = {
+        "type": "text",
+        "text": text,
+    }
+
+    if bcode:
+        response["quickReply"] = build_product_quick_reply(bcode)
+
+    return response

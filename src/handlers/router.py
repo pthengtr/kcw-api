@@ -1,5 +1,5 @@
 from src.handlers.sales import handle_sales_query
-from src.handlers.product import handle_product_query
+from src.handlers.product import handle_product_query_response
 from src.handlers.job import handle_job_query, is_job_request
 from src.handlers.history import handle_history_query, is_history_request
 from src.handlers.ai_chat import is_ai_chat_request
@@ -80,4 +80,4 @@ def route_user_text(
     if is_check_request(text):
         return {"type": "text", "text": handle_check_query(engine, text)}
 
-    return {"type": "text", "text": handle_product_query(engine, text, access=access)}
+    return handle_product_query_response(engine, text, access=access)

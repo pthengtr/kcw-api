@@ -133,14 +133,15 @@ def reply_line_response(reply_token: str, response: dict | None):
             ],
         )
 
-    # default text
+    # ⭐ default text
     text = (response.get("text") or "ไม่เข้าใจคำสั่งครับ")[:5000]
-    return reply_line_payload(
-        reply_token,
-        [
-            {
-                "type": "text",
-                "text": text,
-            }
-        ],
-    )
+
+    message = {
+        "type": "text",
+        "text": text,
+    }
+
+    if response.get("quickReply"):
+        message["quickReply"] = response["quickReply"]
+
+    return reply_line_payload(reply_token, [message])
