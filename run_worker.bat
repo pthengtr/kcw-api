@@ -66,9 +66,9 @@ echo [%date% %time%] Starting Python worker... >> "%SUPERVISOR_LOG%"
 echo OUT: %OUT_LOG% >> "%SUPERVISOR_LOG%"
 echo ERR: %ERR_LOG% >> "%SUPERVISOR_LOG%"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+powershell -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
-  "$p = Start-Process -FilePath $env:WORKER_PYTHON -ArgumentList '-m','src.jobs.worker' -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $env:OUT_LOG -RedirectStandardError $env:ERR_LOG -PassThru;" ^
+  "$p = Start-Process -FilePath $env:WORKER_PYTHON -ArgumentList '-m','src.jobs.worker' -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $env:OUT_LOG -RedirectStandardError $env:ERR_LOG -WindowStyle Hidden -PassThru;" ^
   "Set-Content -Path $env:PID_FILE -Value $p.Id -Encoding ASCII;" ^
   "Wait-Process -Id $p.Id;" ^
   "exit $p.ExitCode"
