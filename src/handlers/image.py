@@ -58,10 +58,10 @@ def expected_product_image_names(bcode: str) -> list[str]:
     bcode = normalize_bcode(bcode)
     return [
         f"{bcode}.jpg",
-        f"{bcode}_1.jpg",
         f"{bcode}_2.jpg",
         f"{bcode}_3.jpg",
         f"{bcode}_4.jpg",
+        f"{bcode}_5.jpg",
     ]
 
 
