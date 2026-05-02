@@ -1,57 +1,37 @@
 import os
 import time
 import traceback
-import subprocess
+
+from dotenv import load_dotenv
 
 from src.db import get_engine
+from src.jobs.command_runner import run_configured_command
 from src.jobs.queue import (
     claim_next_job,
-    finish_job_success,
     finish_job_failed,
+    finish_job_success,
 )
 from src.jobs.heartbeat import upsert_worker_heartbeat
 
 
-def run_sync_inventory(job: dict) -> str:
-    bat_path = os.getenv("SYNC_INVENTORY_BAT")
-    if not bat_path:
-        raise ValueError("SYNC_INVENTORY_BAT is not configured")
-
-    result = subprocess.run(
-        [bat_path],
-        capture_output=True,
-        text=True,
-        shell=True,
-        timeout=60 * 30,
-    )
-
-    stdout = (result.stdout or "").strip()
-    stderr = (result.stderr or "").strip()
-
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"bat failed rc={result.returncode}; stderr={stderr[:500]}"
-        )
-
-    return stdout[:1000] or "sync_inventory completed"
+load_dotenv()
 
 
 def process_job(job: dict) -> str:
-    job_type = job["job_type"]
-
-    if job_type == "sync_inventory":
-        return run_sync_inventory(job)
-
-    raise ValueError(f"Unsupported job_type: {job_type}")
+    return run_configured_command(job)
 
 
 def run_worker_forever():
     engine = get_engine()
+
     worker_name = os.getenv("WORKER_NAME", "unknown-worker")
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "3"))
     heartbeat_interval_seconds = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "10"))
 
     print(f"[START] worker={worker_name}")
+    print(f"[START] poll_seconds={poll_seconds}")
+    print(f"[START] heartbeat_interval_seconds={heartbeat_interval_seconds}")
+    print("[START] command source=.env WORKER_JOB_<JOB_TYPE>_COMMAND")
 
     last_heartbeat_at = 0.0
 
@@ -74,7 +54,9 @@ def run_worker_forever():
                 continue
 
             job_id = job["id"]
-            print(f"[JOB START] id={job_id} type={job['job_type']}")
+            job_type = job["job_type"]
+
+            print(f"[JOB START] id={job_id} type={job_type}")
 
             upsert_worker_heartbeat(
                 engine=engine,
