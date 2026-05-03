@@ -233,6 +233,58 @@ def _start_delete_session(line_user_id: str, bcode: str, image_paths: list[str])
         "expires_at": _now() + IMAGE_SESSION_TTL_SECONDS,
     }
 
+def _qr_message(label: str, text: str) -> dict:
+    return {
+        "type": "action",
+        "action": {
+            "type": "message",
+            "label": label,
+            "text": text,
+        },
+    }
+
+
+def _qr_camera(label: str = "ถ่ายรูป") -> dict:
+    return {
+        "type": "action",
+        "action": {
+            "type": "camera",
+            "label": label,
+        },
+    }
+
+
+def _qr_camera_roll(label: str = "เลือกรูป") -> dict:
+    return {
+        "type": "action",
+        "action": {
+            "type": "cameraRoll",
+            "label": label,
+        },
+    }
+
+
+def _build_upload_session_quick_reply(bcode: str) -> dict:
+    return {
+        "items": [
+            _qr_camera_roll("เลือกรูป"),
+            _qr_camera("ถ่ายรูป"),
+            _qr_message("เสร็จ", "เสร็จ"),
+            _qr_message("ดูรูป", f"รูป {bcode}"),
+            _qr_message("ลบรูป", f"ลบรูป {bcode}"),
+        ]
+    }
+
+
+def _build_after_upload_done_quick_reply(bcode: str) -> dict:
+    return {
+        "items": [
+            _qr_message("ดูรูป", f"รูป {bcode}"),
+            _qr_message("ลบรูป", f"ลบรูป {bcode}"),
+            _qr_message("เพิ่มรูป", f"เพิ่มรูป {bcode}"),
+        ]
+    }
+
 def _build_view_quick_reply(bcode: str) -> dict:
     return {
         "items": [
@@ -423,7 +475,8 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
             _clear_session(DELETE_SESSIONS, line_user_id)
             return {
                 "type": "text",
-                "text": f"จบการจัดการรูปสินค้า {bcode} แล้วครับ",
+                "text": f"จบการเพิ่มรูปสินค้า {bcode} แล้วครับ\nต้องการทำอะไรต่อ?",
+                "quickReply": _build_after_upload_done_quick_reply(bcode),
             }
 
         selected_no = _extract_delete_selection(t)
@@ -498,8 +551,9 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
             "type": "text",
             "text": (
                 f"ตอนนี้อยู่ในโหมดเพิ่มรูปสินค้า {bcode} ครับ\n"
-                'กรุณาส่งรูปภาพ หรือพิมพ์ "เสร็จ" เพื่อจบ'
+                'กรุณาส่งรูปภาพ หรือกด "เสร็จ" เพื่อจบ'
             ),
+            "quickReply": _build_upload_session_quick_reply(bcode),
         }
 
     if _extract_delete_selection(t) is not None:
@@ -538,8 +592,9 @@ def handle_line_image_message(line_user_id: str | None, message_id: str | None) 
             "type": "text",
             "text": (
                 f"เพิ่มรูปสินค้า {bcode} ไม่สำเร็จครับ\n"
-                "กรุณาส่งรูปใหม่อีกครั้ง หรือพิมพ์ \"เสร็จ\" เพื่อจบ"
+                'กรุณาส่งรูปใหม่อีกครั้ง หรือกด "เสร็จ" เพื่อจบ'
             ),
+            "quickReply": _build_upload_session_quick_reply(bcode),
         }
 
     upload_session["uploaded_count"] = int(upload_session.get("uploaded_count") or 0) + 1
@@ -555,8 +610,9 @@ def handle_line_image_message(line_user_id: str | None, message_id: str | None) 
         "text": (
             f"เพิ่มรูปให้ {bcode} แล้ว ✅\n"
             f"{detail}\n"
-            'ส่งรูปต่อได้เลย หรือพิมพ์ "เสร็จ" เพื่อจบ'
+            'ส่งรูปต่อได้เลย หรือกด "เสร็จ" เพื่อจบ'
         ),
+        "quickReply": _build_upload_session_quick_reply(bcode),
     }
 
 
@@ -582,8 +638,9 @@ def handle_start_upload_command(text: str, line_user_id: str | None) -> dict:
         "text": (
             f"ส่งรูปสินค้า {bcode} ได้เลยครับ\n"
             "ส่งได้หลายรูป ระบบจะอัปโหลดทันทีทีละรูป\n"
-            'พิมพ์ "เสร็จ" เพื่อจบ'
+            'กดเลือกรูป / ถ่ายรูป หรือกด "เสร็จ" เพื่อจบ'
         ),
+        "quickReply": _build_upload_session_quick_reply(bcode),
     }
 
 
