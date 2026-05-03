@@ -33,7 +33,6 @@ def enqueue_sync_inventory_jobs(
 
     return jobs
 
-
 def enqueue_sync_product_images_jobs(
     engine,
     requested_by: str | None = None,
@@ -67,4 +66,37 @@ def enqueue_sync_product_images_jobs(
 
         jobs.append(job)
 
+    return jobs
+
+def enqueue_sync_online_sales_jobs(
+    engine,
+    requested_by: str | None = None,
+    source: str | None = None,
+    allowed_workers: set[str] | None = None,
+) -> list[dict]:
+    jobs = []
+
+    target = {"site": "HQ", "worker_name": "HQ-PC"}
+
+    if allowed_workers is not None and target["worker_name"] not in allowed_workers:
+        return jobs
+
+    job = enqueue_job(
+        engine=engine,
+        job_type="sync_online_sales",
+        payload={
+            "task": "sync_online_sales",
+            "site": target["site"],
+            "notebooks": [
+                "71_online_shopee.ipynb",
+                "72_online_lazada.ipynb",
+                "73_online_tiktok.ipynb",
+            ],
+        },
+        worker_name=target["worker_name"],
+        requested_by=requested_by,
+        source=source,
+    )
+
+    jobs.append(job)
     return jobs
