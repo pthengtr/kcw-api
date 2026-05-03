@@ -1,13 +1,35 @@
 from src.jobs.queue import get_job_by_id
-from src.jobs.tasks import enqueue_sync_inventory_jobs
+from src.jobs.tasks import enqueue_sync_inventory_jobs, enqueue_sync_product_images_job
 from src.jobs.heartbeat import get_all_worker_status
 from src.access.helper import can_execute
 
 
+def is_sync_product_images_request(text: str) -> bool:
+    t = (text or "").strip().lower()
+
+    return t in {
+        "sync รูป",
+        "sync image",
+        "sync images",
+        "sync product images",
+        "อัปเดตรูป",
+        "อัพเดตรูป",
+        "อัปเดตรูปสินค้า",
+        "อัพเดตรูปสินค้า",
+        "ซิงค์รูป",
+        "ซิงค์รูปสินค้า",
+    }
+
+
 def is_sync_inventory_request(text: str) -> bool:
     t = (text or "").strip().lower()
+
+    # Keep old behavior:
+    # sync / อัปเดต / อัพเดต still means inventory sync.
+    # But product image sync must be checked before this function.
     return (
-        t.startswith("sync")
+        t == "sync"
+        or t.startswith("sync ")
         or t.startswith("อัปเดต")
         or t.startswith("อัพเดต")
     )
@@ -20,9 +42,11 @@ def is_worker_status_request(text: str) -> bool:
 
 def is_job_request(text: str) -> bool:
     t = (text or "").strip().lower()
+
     return (
         t.startswith("job status")
         or is_worker_status_request(t)
+        or is_sync_product_images_request(t)
         or is_sync_inventory_request(t)
     )
 
@@ -36,19 +60,21 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
     text = (user_text or "").strip()
     text_lower = text.lower()
 
-    # ⭐ job status
+    # job status
     if text_lower.startswith("job status "):
         raw_id = text_lower.replace("job status ", "", 1).strip()
+
         if not raw_id.isdigit():
             return "รูปแบบไม่ถูกต้องครับ\nลองใช้: job status 123"
 
         job = get_job_by_id(engine, int(raw_id))
+
         if not job:
             return f"ไม่พบ job_id {raw_id}"
 
         return format_job_status(job)
 
-    # ⭐ worker status
+    # worker status
     if is_worker_status_request(text_lower):
         rows = get_all_worker_status(engine, offline_after_seconds=30)
 
@@ -56,6 +82,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
             return "ยังไม่พบ worker heartbeat"
 
         lines = ["สถานะ worker"]
+
         for r in rows:
             icon = "🟢" if r["online_status"] == "online" else "🔴"
             worker_state = r.get("worker_state") or "-"
@@ -64,11 +91,45 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
             if seconds_ago is None:
                 lines.append(f"{icon} {r['worker_name']} ({worker_state})")
             else:
-                lines.append(f"{icon} {r['worker_name']} ({worker_state}, {seconds_ago}s ago)")
+                lines.append(
+                    f"{icon} {r['worker_name']} ({worker_state}, {seconds_ago}s ago)"
+                )
 
         return "\n".join(lines)
 
-    # ⭐ sync inventory
+    # sync product images
+    # Must be checked before inventory sync because old inventory trigger accepts "sync ..."
+    if is_sync_product_images_request(text_lower):
+        rows = get_all_worker_status(engine, offline_after_seconds=30)
+        online_workers = {
+            r["worker_name"]
+            for r in rows
+            if r["online_status"] == "online"
+        }
+
+        job = enqueue_sync_product_images_job(
+            engine=engine,
+            requested_by=access.get("line_user_id"),
+            source="line",
+            allowed_workers=online_workers,
+        )
+
+        if not job:
+            return (
+                "ยังสั่งซิงค์รูปไม่ได้ครับ\n"
+                "ไม่พบ worker ที่ออนไลน์สำหรับงานนี้"
+            )
+
+        worker_name = job.get("worker_name") or "any online worker"
+
+        return (
+            "รับทราบครับ กำลังสั่งซิงค์รูปสินค้าไปที่เครื่อง legacy ✅\n"
+            f"- job_id {job['id']} -> {worker_name}\n"
+            "เช็คสถานะได้ด้วย: job status "
+            f"{job['id']}"
+        )
+
+    # sync inventory
     if is_sync_inventory_request(text_lower):
         rows = get_all_worker_status(engine, offline_after_seconds=30)
         online_workers = {
@@ -87,10 +148,12 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
         if not jobs:
             return "ไว้ลองใหม่อีกรอบนะครับ ตอนนี้ไม่มีใครว่างไปเช็คของให้"
 
-        lines = ["โอเคครับ 👍 เดี๋ยวเฮียเดินไปเช็กสต็อกหลังร้านให้ครับ 📦"]
+        lines = ["โอเคครับ เดี๋ยวเฮียเดินไปเช็กสต็อกหลังร้านให้ครับ"]
+
         for job in jobs:
             lines.append(
-                f"- {job['payload'].get('site')}: job_id {job['id']} -> {job.get('worker_name', '-')}"
+                f"- {job['payload'].get('site')}: "
+                f"job_id {job['id']} -> {job.get('worker_name', '-')}"
             )
 
         return "\n".join(lines)
@@ -107,8 +170,12 @@ def format_job_status(job: dict) -> str:
     ]
 
     payload = job.get("payload") or {}
+
     if payload.get("site"):
         parts.append(f"site: {payload['site']}")
+
+    if payload.get("task"):
+        parts.append(f"task: {payload['task']}")
 
     if job.get("result_message"):
         parts.append(f"result: {job['result_message']}")
