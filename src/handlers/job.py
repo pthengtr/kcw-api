@@ -1,7 +1,46 @@
 from src.jobs.queue import get_job_by_id
-from src.jobs.tasks import enqueue_sync_inventory_jobs, enqueue_sync_product_images_job
+from src.jobs.tasks import enqueue_sync_inventory_jobs, enqueue_sync_product_images_jobs
 from src.jobs.heartbeat import get_all_worker_status
 from src.access.helper import can_execute
+
+
+def _qr_message(label: str, text: str) -> dict:
+    return {
+        "type": "action",
+        "action": {
+            "type": "message",
+            "label": label,
+            "text": text,
+        },
+    }
+
+
+def build_job_status_quick_reply(job_ids: list[int]) -> dict:
+    items = []
+
+    for job_id in job_ids[:12]:
+        items.append(
+            _qr_message(
+                label=f"เช็ค job {job_id}",
+                text=f"job status {job_id}",
+            )
+        )
+
+    items.append(_qr_message("สถานะเครื่อง", "worker status"))
+
+    return {"items": items}
+
+
+def text_response(text: str, quick_reply: dict | None = None) -> dict:
+    response = {
+        "type": "text",
+        "text": text,
+    }
+
+    if quick_reply:
+        response["quickReply"] = quick_reply
+
+    return response
 
 
 def is_sync_product_images_request(text: str) -> bool:
@@ -51,11 +90,11 @@ def is_job_request(text: str) -> bool:
     )
 
 
-def handle_job_query(engine, user_text: str, access: dict) -> str:
+def handle_job_query(engine, user_text: str, access: dict) -> dict:
     cmd = "job"
 
     if not can_execute(access["access_group"], cmd):
-        return "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"
+        return text_response("บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ")
 
     text = (user_text or "").strip()
     text_lower = text.lower()
@@ -65,14 +104,19 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
         raw_id = text_lower.replace("job status ", "", 1).strip()
 
         if not raw_id.isdigit():
-            return "รูปแบบไม่ถูกต้องครับ\nลองใช้: job status 123"
+            return text_response("รูปแบบไม่ถูกต้องครับ\nลองใช้: job status 123")
 
         job = get_job_by_id(engine, int(raw_id))
 
         if not job:
-            return f"ไม่พบ job_id {raw_id}"
+            return text_response(f"ไม่พบ job_id {raw_id}")
 
-        return format_job_status(job)
+        job_id = int(job["id"])
+
+        return text_response(
+            format_job_status(job),
+            quick_reply=build_job_status_quick_reply([job_id]),
+        )
 
     # worker status
     if is_worker_status_request(text_lower):
@@ -95,7 +139,10 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
                     f"{icon} {r['worker_name']} ({worker_state}, {seconds_ago}s ago)"
                 )
 
-        return "\n".join(lines)
+        return text_response(
+            "\n".join(lines),
+            quick_reply={"items": [_qr_message("รีเฟรชสถานะเครื่อง", "worker status")]},
+        )
 
     # sync product images
     # Must be checked before inventory sync because old inventory trigger accepts "sync ..."
@@ -107,26 +154,35 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
             if r["online_status"] == "online"
         }
 
-        job = enqueue_sync_product_images_job(
+        jobs = enqueue_sync_product_images_jobs(
             engine=engine,
             requested_by=access.get("line_user_id"),
             source="line",
             allowed_workers=online_workers,
         )
 
-        if not job:
+        if not jobs:
             return (
                 "ยังสั่งซิงค์รูปไม่ได้ครับ\n"
                 "ไม่พบ worker ที่ออนไลน์สำหรับงานนี้"
             )
 
-        worker_name = job.get("worker_name") or "any online worker"
+        lines = ["ได้เลย เดี๋ยวจ๋าไปก๊อบรูปสินค้าลงเครื่องเซิฟเวอร์ให้นะ ✅"]
 
-        return (
-            "รับทราบครับ กำลังสั่งซิงค์รูปสินค้าไปที่เครื่อง legacy ✅\n"
-            f"- job_id {job['id']} -> {worker_name}\n"
-            "เช็คสถานะได้ด้วย: job status "
-            f"{job['id']}"
+        for job in jobs:
+            lines.append(
+                f"- {job['payload'].get('site')}: "
+                f"job_id {job['id']} -> {job.get('worker_name', '-')}"
+            )
+
+        lines.append("")
+        lines.append("กดปุ่มด้านล่างเพื่อเช็คสถานะต่อได้เลย")
+
+        job_ids = [int(job["id"]) for job in jobs]
+
+        return text_response(
+            "\n".join(lines),
+            quick_reply=build_job_status_quick_reply(job_ids),
         )
 
     # sync inventory
@@ -156,7 +212,15 @@ def handle_job_query(engine, user_text: str, access: dict) -> str:
                 f"job_id {job['id']} -> {job.get('worker_name', '-')}"
             )
 
-        return "\n".join(lines)
+        job_ids = [int(job["id"]) for job in jobs]
+
+        lines.append("")
+        lines.append("กดปุ่มด้านล่างเพื่อเช็คสถานะต่อได้เลย")
+
+        return text_response(
+            "\n".join(lines),
+            quick_reply=build_job_status_quick_reply(job_ids),
+        )
 
     return "คำสั่งไม่ถูกต้อง"
 

@@ -36,10 +36,7 @@ def route_user_text(
         return handle_image_command(text, line_user_id=line_user_id)
 
     if is_job_request(text):
-        return {
-            "type": "text",
-            "text": handle_job_query(engine, text, access=access),
-        }
+        return handle_job_query(engine, text, access=access)
 
     if text.startswith("ยอดขาย"):
         cmd = "ยอดขาย"
