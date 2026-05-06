@@ -543,6 +543,7 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
             return {
                 "type": "text",
                 "text": f"จบการเพิ่มรูปสินค้า {bcode} แล้วครับ",
+                "quickReply": _build_after_upload_done_quick_reply(bcode),
             }
 
         return {
