@@ -54,6 +54,44 @@ def build_product_quick_reply(bcode: str) -> dict:
     }
 
 
+def _qr_pick_bcode_action(bcode: str) -> dict:
+    """
+    Option B: quick reply sends *only* BCODE so user can pick,
+    then the next response can show follow-up actions for that BCODE.
+    """
+    safe_bcode = _safe_text(bcode, "")
+    label = safe_bcode[:20] if safe_bcode else "เลือกสินค้า"
+    return {
+        "type": "action",
+        "action": {
+            "type": "message",
+            "label": label,
+            "text": safe_bcode,
+        },
+    }
+
+
+def build_product_search_quick_reply(search_result: dict, max_items: int = 13) -> dict | None:
+    df = search_result.get("items")
+    if df is None or getattr(df, "empty", True):
+        return None
+
+    items: list[dict] = []
+    seen: set[str] = set()
+
+    for _, row in df.iterrows():
+        bcode = _safe_text(row.get("BCODE"), "")
+        if not bcode or bcode in seen:
+            continue
+        seen.add(bcode)
+
+        items.append(_qr_pick_bcode_action(bcode))
+        if len(items) >= max_items:
+            break
+
+    return {"items": items} if items else None
+
+
 def handle_product_query(engine, user_text: str, access: dict | None = None) -> str:
     results = simple_and_search_sql(engine, user_text, limit=5)
 
@@ -79,5 +117,9 @@ def handle_product_query_response(engine, user_text: str, access: dict | None = 
 
     if bcode:
         response["quickReply"] = build_product_quick_reply(bcode)
+    else:
+        quick_reply = build_product_search_quick_reply(results)
+        if quick_reply:
+            response["quickReply"] = quick_reply
 
     return response
