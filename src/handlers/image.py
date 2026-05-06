@@ -284,6 +284,16 @@ def _build_after_upload_done_quick_reply(bcode: str) -> dict:
         ]
     }
 
+
+def _build_no_image_quick_reply(bcode: str) -> dict:
+    return {
+        "items": [
+            _qr_message("เช็คสินค้า", f"เช็ค {bcode}"),
+            _qr_message("เพิ่มรูป", f"เพิ่มรูป {bcode}"),
+        ]
+    }
+
+
 def _build_view_quick_reply(bcode: str) -> dict:
     return {
         "items": [
@@ -487,6 +497,7 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
                 return {
                     "type": "text",
                     "text": "ไม่พบรูปตามหมายเลขที่เลือกครับ",
+                    "quickReply": _build_delete_quick_reply(len(image_paths)),
                 }
 
             path = image_paths[index]
@@ -498,6 +509,7 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
                 return {
                     "type": "text",
                     "text": "ลบรูปไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง",
+                    "quickReply": _build_delete_quick_reply(len(image_paths)),
                 }
 
             # Refresh current images after deletion
@@ -510,6 +522,7 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
                 return {
                     "type": "text",
                     "text": f"ลบรูปที่ {selected_no} ของสินค้า {bcode} แล้วครับ ✅\nตอนนี้ไม่เหลือรูปแล้วครับ",
+                    "quickReply": _build_no_image_quick_reply(bcode),
                 }
 
             # Keep delete session alive so user can continue deleting
@@ -532,6 +545,9 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
             "text": (
                 f"ตอนนี้อยู่ในโหมดลบรูปสินค้า {bcode} ครับ\n"
                 'กรุณาเลือกปุ่ม "ลบรูป 1-5" หรือพิมพ์ "เสร็จ" เพื่อจบ'
+            ),
+            "quickReply": _build_delete_quick_reply(
+                len(delete_session.get("image_paths") or [])
             ),
         }
     
@@ -666,6 +682,7 @@ def handle_delete_image_command(text: str, line_user_id: str | None) -> dict:
         return {
             "type": "text",
             "text": f"ไม่พบรูปสินค้าสำหรับ {bcode} ครับ",
+            "quickReply": _build_no_image_quick_reply(bcode),
         }
 
     _start_delete_session(line_user_id, bcode, image_paths)
