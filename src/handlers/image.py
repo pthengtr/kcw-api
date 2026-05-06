@@ -277,6 +277,7 @@ def _build_upload_session_quick_reply(bcode: str) -> dict:
 def _build_after_upload_done_quick_reply(bcode: str) -> dict:
     return {
         "items": [
+            _qr_message("เช็คสินค้า", f"เช็ค {bcode}"),
             _qr_message("ดูรูป", f"รูป {bcode}"),
             _qr_message("ลบรูป", f"ลบรูป {bcode}"),
             _qr_message("เพิ่มรูป", f"เพิ่มรูป {bcode}"),
@@ -473,7 +474,7 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
             _clear_session(DELETE_SESSIONS, line_user_id)
             return {
                 "type": "text",
-                "text": f"จบการเพิ่มรูปสินค้า {bcode} แล้วครับ\nต้องการทำอะไรต่อ?",
+                "text": f"จบการลบรูปสินค้า {bcode} แล้วครับ\nต้องการทำอะไรต่อ?",
                 "quickReply": _build_after_upload_done_quick_reply(bcode),
             }
 
@@ -542,7 +543,8 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
             _clear_session(UPLOAD_SESSIONS, line_user_id)
             return {
                 "type": "text",
-                "text": f"จบการเพิ่มรูปสินค้า {bcode} แล้วครับ",
+                "text": f"จบการเพิ่มรูปสินค้า {bcode} แล้วครับ\nต้องการทำอะไรต่อ?",
+                "quickReply": _build_after_upload_done_quick_reply(bcode),
             }
 
         return {
