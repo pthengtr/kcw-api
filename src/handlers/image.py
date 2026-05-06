@@ -270,8 +270,6 @@ def _build_upload_session_quick_reply(bcode: str) -> dict:
             _qr_camera_roll("เลือกรูป"),
             _qr_camera("ถ่ายรูป"),
             _qr_message("เสร็จ", "เสร็จ"),
-            _qr_message("ดูรูป", f"รูป {bcode}"),
-            _qr_message("ลบรูป", f"ลบรูป {bcode}"),
         ]
     }
 
