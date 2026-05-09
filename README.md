@@ -8,6 +8,7 @@ Minimal FastAPI backend for KCW.
 python3.11 -m venv /workspace/.venv
 source /workspace/.venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env  # replace placeholders before using external services
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 

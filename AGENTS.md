@@ -13,7 +13,7 @@ source /workspace/.venv/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The server starts without valid external credentials; however, the `/line-webhook` endpoint will reject requests without a valid LINE signature, and database-backed features require real Supabase credentials.
+The server can start without real external credentials if import-time placeholders are set for `OPENAI_API_KEY`, `SUPABASE_DB_URL`, and `SUPABASE_SERVICE_ROLE_KEY` (see `.env.example`). The `/line-webhook` endpoint will reject requests without a valid LINE signature, and database-backed or AI features require real Supabase/OpenAI credentials at runtime.
 
 ### Testable without credentials
 

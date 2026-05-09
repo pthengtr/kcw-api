@@ -23,7 +23,8 @@ python -m compileall -q app src
 ```
 
 Importing `app.main` initializes the OpenAI and Supabase clients at import
-time. For an import-only smoke check, use non-secret placeholders:
+time. For an import-only smoke check, use non-secret placeholders or copy
+`.env.example` to `.env`:
 
 ```bash
 OPENAI_API_KEY="placeholder" \
@@ -33,7 +34,8 @@ python -c "from app.main import app; print(app.title)"
 ```
 
 Use real credentials only when exercising routes or jobs that call external
-services.
+services. Blank values are not sufficient for import-only checks because the
+OpenAI and Supabase client constructors validate their configuration.
 
 ## Supabase CLI
 
