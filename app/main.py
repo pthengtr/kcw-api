@@ -16,6 +16,10 @@ from src.bot.line_bot import (
     reply_line_response,
 )
 from src.handlers.router import route_user_text
+from src.handlers.product import (
+    handle_product_search_next_postback,
+    is_product_search_next_postback,
+)
 from src.handlers.image import handle_line_image_message
 from src.access.helper import get_line_user_id
 from src.access.helper import get_or_create_line_access
@@ -105,6 +109,12 @@ async def line_webhook(request: Request):
                 if data.startswith("kb_select:"):
                     result = handle_kb_select_postback(data)
                     reply_payload = openai_result_to_line_response(result)
+                elif is_product_search_next_postback(data):
+                    reply_payload = handle_product_search_next_postback(
+                        engine,
+                        data,
+                        access=access,
+                    )
                 else:
                     # ignore unknown postback for now
                     continue

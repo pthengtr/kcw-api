@@ -161,12 +161,18 @@ def simple_and_search_sql(
     schema: str = "raw_kcw",
     table_name: str = "raw_hq_icmas_products",  # kept for compatibility, not used now
     limit: int = 5,
+    offset: int = 0,
 ) -> dict:
+    limit = max(int(limit or 0), 1)
+    offset = max(int(offset or 0), 0)
+
     if not query or not str(query).strip():
         return {
             "items": pd.DataFrame(),
             "total": 0,
             "bcode_category_prefix": None,
+            "limit": limit,
+            "offset": offset,
         }
 
     bcode_category_prefix, query_wo_category = _extract_bcode_category_prefix(query)
@@ -200,6 +206,8 @@ def simple_and_search_sql(
             "items": pd.DataFrame(),
             "total": 0,
             "bcode_category_prefix": bcode_category_prefix,
+            "limit": limit,
+            "offset": offset,
         }
 
     where_sql = " AND ".join(where_parts)
@@ -272,9 +280,11 @@ def simple_and_search_sql(
         qty_syp DESC,
         "BCODE" ASC
     LIMIT :limit
+    OFFSET :offset
     """
 
     params["limit"] = limit
+    params["offset"] = offset
 
     with engine.connect() as conn:
         result = conn.execute(text(sql), params)
@@ -292,4 +302,6 @@ def simple_and_search_sql(
         "items": df,
         "total": total,
         "bcode_category_prefix": bcode_category_prefix,
+        "limit": limit,
+        "offset": offset,
     }
