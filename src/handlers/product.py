@@ -140,6 +140,22 @@ def _qr_next_search_action(query: str, next_offset: int, limit: int) -> dict | N
     }
 
 
+def _qr_previous_search_action(query: str, previous_offset: int, limit: int) -> dict | None:
+    data = _encode_next_search_data(query, previous_offset, limit)
+    if not data:
+        return None
+
+    return {
+        "type": "action",
+        "action": {
+            "type": "postback",
+            "label": f"ก่อนหน้า {limit}",
+            "data": data,
+            "displayText": f"ดูผลลัพธ์ก่อนหน้า {limit} รายการ",
+        },
+    }
+
+
 def build_product_search_quick_reply(
     search_result: dict,
     query: str,
@@ -151,6 +167,18 @@ def build_product_search_quick_reply(
 
     items: list[dict] = []
     seen: set[str] = set()
+    total = int(search_result.get("total", 0) or 0)
+    offset = max(int(search_result.get("offset", 0) or 0), 0)
+    limit = max(int(search_result.get("limit", PRODUCT_SEARCH_PAGE_SIZE) or 0), 1)
+
+    if offset > 0:
+        previous_action = _qr_previous_search_action(
+            query,
+            max(offset - limit, 0),
+            limit,
+        )
+        if previous_action:
+            items.append(previous_action)
 
     for _, row in df.iterrows():
         bcode = _safe_text(row.get("BCODE"), "")
@@ -162,9 +190,6 @@ def build_product_search_quick_reply(
         if len(items) >= max_items:
             break
 
-    total = int(search_result.get("total", 0) or 0)
-    offset = max(int(search_result.get("offset", 0) or 0), 0)
-    limit = max(int(search_result.get("limit", PRODUCT_SEARCH_PAGE_SIZE) or 0), 1)
     next_offset = offset + len(df)
 
     if total > next_offset and len(items) < max_items:
