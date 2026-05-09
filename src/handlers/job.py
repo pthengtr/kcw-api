@@ -1,4 +1,8 @@
-from src.jobs.queue import get_job_by_id
+from src.jobs.queue import (
+    get_job_by_id,
+    get_jobs_by_batch_id,
+    get_recent_jobs_for_requester,
+)
 from src.jobs.tasks import (
     enqueue_sync_inventory_jobs,
     enqueue_sync_product_images_jobs,
@@ -41,20 +45,72 @@ def build_update_menu_quick_reply() -> dict:
         ]
     }
 
-def build_job_status_quick_reply(job_ids: list[int]) -> dict:
+def _job_quick_reply_label(job: dict, current_job_id: int | None = None) -> str:
+    job_id = int(job["id"])
+
+    if current_job_id is not None and job_id == current_job_id:
+        return f"รีเฟรช {job_id}"
+
+    payload = job.get("payload") or {}
+    site = payload.get("site")
+
+    if site:
+        return f"{site} {job_id}"
+
+    return f"job {job_id}"
+
+
+def _job_quick_reply_jobs(job: dict, extra_jobs: list[dict]) -> list[dict]:
+    job_id = int(job["id"])
+    jobs_by_id = {job_id: job}
+
+    for extra_job in extra_jobs:
+        jobs_by_id.setdefault(int(extra_job["id"]), extra_job)
+
+    current = jobs_by_id.pop(job_id)
+    return [current, *jobs_by_id.values()]
+
+
+def build_job_status_quick_reply(
+    jobs: list[dict],
+    current_job_id: int | None = None,
+) -> dict:
     items = []
 
-    for job_id in job_ids[:12]:
+    for job in jobs[:12]:
         items.append(
             _qr_message(
-                label=f"เช็ค job {job_id}",
-                text=f"job status {job_id}",
+                label=_job_quick_reply_label(job, current_job_id=current_job_id),
+                text=f"job status {job['id']}",
             )
         )
 
     items.append(_qr_message("สถานะเครื่อง", "worker status"))
 
     return {"items": items}
+
+
+def get_job_status_quick_reply_jobs(engine, job: dict) -> list[dict]:
+    job_id = int(job["id"])
+    batch_id = job.get("batch_id")
+
+    related_jobs = []
+
+    if batch_id:
+        related_jobs = get_jobs_by_batch_id(engine, str(batch_id))
+
+    if len(related_jobs) <= 1 and job.get("requested_by") and job.get("job_type"):
+        related_jobs.extend(
+            get_recent_jobs_for_requester(
+                engine=engine,
+                requested_by=job["requested_by"],
+                job_type=job["job_type"],
+                exclude_job_id=job_id,
+                limit=3,
+            )
+        )
+
+    return _job_quick_reply_jobs(job, related_jobs)
 
 def text_response(text: str, quick_reply: dict | None = None) -> dict:
     response = {
@@ -187,7 +243,10 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
 
         return text_response(
             format_job_status(job),
-            quick_reply=build_job_status_quick_reply([job_id]),
+            quick_reply=build_job_status_quick_reply(
+                get_job_status_quick_reply_jobs(engine, job),
+                current_job_id=job_id,
+            ),
         )
 
     # worker status
@@ -257,11 +316,9 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         lines.append("")
         lines.append("กดปุ่มด้านล่างเพื่อเช็คสถานะต่อได้เลย")
 
-        job_ids = [int(job["id"]) for job in jobs]
-
         return text_response(
             "\n".join(lines),
-            quick_reply=build_job_status_quick_reply(job_ids),
+            quick_reply=build_job_status_quick_reply(jobs),
         )
 
     # sync inventory
@@ -291,14 +348,12 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
                 f"job_id {job['id']} -> {job.get('worker_name', '-')}"
             )
 
-        job_ids = [int(job["id"]) for job in jobs]
-
         lines.append("")
         lines.append("กดปุ่มด้านล่างเพื่อเช็คสถานะต่อได้เลย")
 
         return text_response(
             "\n".join(lines),
-            quick_reply=build_job_status_quick_reply(job_ids),
+            quick_reply=build_job_status_quick_reply(jobs),
         )
 
     # sync online sales
@@ -335,11 +390,9 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         lines.append("")
         lines.append("กดปุ่มด้านล่างเพื่อเช็คสถานะต่อได้เลย")
 
-        job_ids = [int(job["id"]) for job in jobs]
-
         return text_response(
             "\n".join(lines),
-            quick_reply=build_job_status_quick_reply(job_ids),
+            quick_reply=build_job_status_quick_reply(jobs),
         )
 
     return "คำสั่งไม่ถูกต้อง"
