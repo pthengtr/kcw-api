@@ -148,6 +148,8 @@ def format_size_line(code1_value, size1, size2, size3) -> str:
 def format_product_answer(search_result: dict, can_see_cost: bool = False) -> str:
     df = search_result.get("items", pd.DataFrame())
     total = int(search_result.get("total", 0) or 0)
+    offset = max(int(search_result.get("offset", 0) or 0), 0)
+    limit = max(int(search_result.get("limit", 5) or 0), 1)
 
     bcode_category_prefix = search_result.get("bcode_category_prefix")
     category_line = ""
@@ -166,7 +168,7 @@ def format_product_answer(search_result: dict, can_see_cost: bool = False) -> st
     if category_line:
         lines.append(category_line)
         
-    for i, (_, row) in enumerate(df.iterrows(), start=1):
+    for i, (_, row) in enumerate(df.iterrows(), start=offset + 1):
         bcode = _safe_text(row.get("BCODE"))
         mcode = _safe_text(row.get("MCODE"), "")
         pcode = _safe_text(row.get("PCODE"), "")
@@ -238,11 +240,25 @@ def format_product_answer(search_result: dict, can_see_cost: bool = False) -> st
         )
 
     shown = len(df)
-    if total > shown:
+    shown_start = offset + 1
+    shown_end = offset + shown
+    if total > shown_end:
+        if offset:
+            shown_label = f"แสดงรายการ {shown_start:,.0f}-{shown_end:,.0f}"
+        else:
+            shown_label = f"แสดง {shown:,.0f} รายการแรก"
+
         lines.append(
             f"\nพบทั้งหมด {total:,.0f} รายการ "
-            f"(แสดง {shown:,.0f} รายการแรก)\n"
-            f"กรุณาเพิ่มคำค้น เช่น ยี่ห้อ รุ่น หรือรหัสสินค้า"
+            f"({shown_label})\n"
+            f"กดปุ่ม \"ถัดไป {limit}\" เพื่อดูรายการถัดไป "
+            f"หรือเพิ่มคำค้น เช่น ยี่ห้อ รุ่น หรือรหัสสินค้า"
+        )
+    elif offset:
+        lines.append(
+            f"\nพบทั้งหมด {total:,.0f} รายการ "
+            f"(แสดงรายการ {shown_start:,.0f}-{shown_end:,.0f})\n"
+            f"ถึงรายการสุดท้ายแล้ว"
         )
 
     return "\n\n".join(lines)
