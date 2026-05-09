@@ -13,6 +13,12 @@ def enqueue_job(
 ) -> dict:
     payload = payload or {}
 
+    if batch_id:
+        payload = {
+            **payload,
+            "batch_id": batch_id,
+        }
+
     sql = text("""
         insert into ops.job_queue (
             job_type,
@@ -20,8 +26,7 @@ def enqueue_job(
             status,
             worker_name,
             requested_by,
-            source,
-            batch_id
+            source
         )
         values (
             :job_type,
@@ -29,8 +34,7 @@ def enqueue_job(
             'pending',
             :worker_name,
             :requested_by,
-            :source,
-            cast(:batch_id as uuid)
+            :source
         )
         returning
             id,
@@ -40,7 +44,7 @@ def enqueue_job(
             worker_name,
             requested_by,
             source,
-            batch_id,
+            payload ->> 'batch_id' as batch_id,
             requested_at
     """)
 
@@ -53,7 +57,6 @@ def enqueue_job(
                 "worker_name": worker_name,
                 "requested_by": requested_by,
                 "source": source,
-                "batch_id": batch_id,
             },
         ).mappings().first()
 
@@ -88,7 +91,7 @@ def claim_next_job(engine, worker_name: str) -> dict | None:
             q.worker_name,
             q.requested_by,
             q.source,
-            q.batch_id,
+            q.payload ->> 'batch_id' as batch_id,
             q.requested_at,
             q.started_at
     """)
@@ -153,7 +156,7 @@ def get_job_by_id(engine, job_id: int) -> dict | None:
             started_at,
             finished_at,
             worker_name,
-            batch_id,
+            payload ->> 'batch_id' as batch_id,
             result_message,
             error_message
         from ops.job_queue
@@ -179,11 +182,11 @@ def get_jobs_by_batch_id(engine, batch_id: str, limit: int = 12) -> list[dict]:
             started_at,
             finished_at,
             worker_name,
-            batch_id,
+            payload ->> 'batch_id' as batch_id,
             result_message,
             error_message
         from ops.job_queue
-        where batch_id = cast(:batch_id as uuid)
+        where payload ->> 'batch_id' = :batch_id
         order by requested_at, id
         limit :limit
     """)
@@ -219,7 +222,7 @@ def get_recent_jobs_for_requester(
             started_at,
             finished_at,
             worker_name,
-            batch_id,
+            payload ->> 'batch_id' as batch_id,
             result_message,
             error_message
         from ops.job_queue
