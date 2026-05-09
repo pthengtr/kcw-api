@@ -13,7 +13,7 @@ source /workspace/.venv/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The server starts without valid external credentials; however, the `/line-webhook` endpoint will reject requests without a valid LINE signature, and database-backed features require real Supabase credentials.
+The server can start without real external credentials if import-time placeholders are set for `OPENAI_API_KEY`, `SUPABASE_DB_URL`, and `SUPABASE_SERVICE_ROLE_KEY` (see `.env.example`). The `/line-webhook` endpoint will reject requests without a valid LINE signature, and database-backed or AI features require real Supabase/OpenAI credentials at runtime.
 
 ### Testable without credentials
 
@@ -24,13 +24,15 @@ The server starts without valid external credentials; however, the `/line-webhoo
 
 A `.env` file (gitignored) is loaded via `python-dotenv`. Required variables are documented in `src/db/config.py` (Supabase DB), `src/bot/line_bot.py` (LINE), and `src/ai/openai_kb.py` (OpenAI + Supabase API). If credentials are missing, create a `.env` at the repo root with placeholder values; the server will start but external-service-dependent routes will fail at runtime.
 
+For Cursor Cloud setup commands, Supabase CLI migration commands, and the full list of required secret names, see `docs/cloud-environment.md`. Use `.env.example` as a non-secret template and never commit real values.
+
 ### No tests or linting configured
 
 This codebase has no test suite, no linting/formatting tools, and no pre-commit hooks. There is no `tests/` directory, no `pytest` in `requirements.txt`, and no ruff/flake8/black/mypy configuration.
 
 ### Python version
 
-The project targets Python 3.11 (`runtime.txt`). The venv at `/workspace/.venv` is built with Python 3.11 (installed from `ppa:deadsnakes/ppa`).
+The project targets Python 3.11 (`runtime.txt`). The venv at `/workspace/.venv` should be built with Python 3.11 (installed from `ppa:deadsnakes/ppa` when the base image does not include it).
 
 ### Project structure
 
