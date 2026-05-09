@@ -1,4 +1,4 @@
-import os
+from uuid import uuid4
 
 from src.jobs.queue import enqueue_job
 
@@ -10,6 +10,7 @@ def enqueue_sync_inventory_jobs(
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
     jobs = []
+    batch_id = str(uuid4())
 
     targets = [
         {"site": "HQ", "worker_name": "HQ-PC"},
@@ -27,6 +28,7 @@ def enqueue_sync_inventory_jobs(
             worker_name=target["worker_name"],
             requested_by=requested_by,
             source=source,
+            batch_id=batch_id,
         )
 
         jobs.append(job)
@@ -40,6 +42,7 @@ def enqueue_sync_product_images_jobs(
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
     jobs = []
+    batch_id = str(uuid4())
 
     targets = [
         {"site": "HQ", "worker_name": "HQ-PC"},
@@ -62,6 +65,7 @@ def enqueue_sync_product_images_jobs(
             worker_name=target["worker_name"],
             requested_by=requested_by,
             source=source,
+            batch_id=batch_id,
         )
 
         jobs.append(job)
@@ -75,6 +79,7 @@ def enqueue_sync_online_sales_jobs(
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
     jobs = []
+    batch_id = str(uuid4())
 
     target = {"site": "HQ", "worker_name": "HQ-PC"}
 
@@ -96,6 +101,7 @@ def enqueue_sync_online_sales_jobs(
         worker_name=target["worker_name"],
         requested_by=requested_by,
         source=source,
+        batch_id=batch_id,
     )
 
     jobs.append(job)

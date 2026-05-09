@@ -2,10 +2,6 @@ import json
 from sqlalchemy import text
 
 
-import json
-from sqlalchemy import text
-
-
 def enqueue_job(
     engine,
     job_type: str,
@@ -13,6 +9,7 @@ def enqueue_job(
     worker_name: str | None = None,
     requested_by: str | None = None,
     source: str | None = None,
+    batch_id: str | None = None,
 ) -> dict:
     payload = payload or {}
 
@@ -23,7 +20,8 @@ def enqueue_job(
             status,
             worker_name,
             requested_by,
-            source
+            source,
+            batch_id
         )
         values (
             :job_type,
@@ -31,7 +29,8 @@ def enqueue_job(
             'pending',
             :worker_name,
             :requested_by,
-            :source
+            :source,
+            cast(:batch_id as uuid)
         )
         returning
             id,
@@ -41,6 +40,7 @@ def enqueue_job(
             worker_name,
             requested_by,
             source,
+            batch_id,
             requested_at
     """)
 
@@ -53,6 +53,7 @@ def enqueue_job(
                 "worker_name": worker_name,
                 "requested_by": requested_by,
                 "source": source,
+                "batch_id": batch_id,
             },
         ).mappings().first()
 
@@ -87,6 +88,7 @@ def claim_next_job(engine, worker_name: str) -> dict | None:
             q.worker_name,
             q.requested_by,
             q.source,
+            q.batch_id,
             q.requested_at,
             q.started_at
     """)
@@ -151,6 +153,7 @@ def get_job_by_id(engine, job_id: int) -> dict | None:
             started_at,
             finished_at,
             worker_name,
+            batch_id,
             result_message,
             error_message
         from ops.job_queue
@@ -161,3 +164,85 @@ def get_job_by_id(engine, job_id: int) -> dict | None:
         row = conn.execute(sql, {"job_id": job_id}).mappings().first()
 
     return dict(row) if row else None
+
+
+def get_jobs_by_batch_id(engine, batch_id: str, limit: int = 12) -> list[dict]:
+    sql = text("""
+        select
+            id,
+            job_type,
+            payload,
+            status,
+            requested_by,
+            source,
+            requested_at,
+            started_at,
+            finished_at,
+            worker_name,
+            batch_id,
+            result_message,
+            error_message
+        from ops.job_queue
+        where batch_id = cast(:batch_id as uuid)
+        order by requested_at, id
+        limit :limit
+    """)
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "batch_id": batch_id,
+                "limit": limit,
+            },
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+def get_recent_jobs_for_requester(
+    engine,
+    requested_by: str,
+    job_type: str,
+    exclude_job_id: int,
+    limit: int = 3,
+) -> list[dict]:
+    sql = text("""
+        select
+            id,
+            job_type,
+            payload,
+            status,
+            requested_by,
+            source,
+            requested_at,
+            started_at,
+            finished_at,
+            worker_name,
+            batch_id,
+            result_message,
+            error_message
+        from ops.job_queue
+        where requested_by = :requested_by
+          and job_type = :job_type
+          and id <> :exclude_job_id
+          and requested_at >= now() - interval '1 day'
+        order by
+            case when status in ('pending', 'running') then 0 else 1 end,
+            requested_at desc,
+            id desc
+        limit :limit
+    """)
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "requested_by": requested_by,
+                "job_type": job_type,
+                "exclude_job_id": exclude_job_id,
+                "limit": limit,
+            },
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
