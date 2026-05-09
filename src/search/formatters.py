@@ -248,17 +248,23 @@ def format_product_answer(search_result: dict, can_see_cost: bool = False) -> st
         else:
             shown_label = f"แสดง {shown:,.0f} รายการแรก"
 
+        page_hint = (
+            f"กดปุ่ม \"ก่อนหน้า {limit}\" หรือ \"ถัดไป {limit}\" เพื่อเลื่อนผลลัพธ์"
+            if offset
+            else f"กดปุ่ม \"ถัดไป {limit}\" เพื่อดูรายการถัดไป"
+        )
+
         lines.append(
             f"\nพบทั้งหมด {total:,.0f} รายการ "
             f"({shown_label})\n"
-            f"กดปุ่ม \"ถัดไป {limit}\" เพื่อดูรายการถัดไป "
+            f"{page_hint} "
             f"หรือเพิ่มคำค้น เช่น ยี่ห้อ รุ่น หรือรหัสสินค้า"
         )
     elif offset:
         lines.append(
             f"\nพบทั้งหมด {total:,.0f} รายการ "
             f"(แสดงรายการ {shown_start:,.0f}-{shown_end:,.0f})\n"
-            f"ถึงรายการสุดท้ายแล้ว"
+            f"ถึงรายการสุดท้ายแล้ว กดปุ่ม \"ก่อนหน้า {limit}\" เพื่อย้อนกลับ"
         )
 
     return "\n\n".join(lines)
