@@ -66,10 +66,45 @@ def normalize_row(row: dict) -> dict[str, str]:
     return normalized
 
 
+def header_label_set() -> set[str]:
+    labels = set(TABLE_COLUMNS)
+    for aliases in COLUMN_ALIASES.values():
+        labels.update(aliases)
+    return {label.strip().casefold() for label in labels if label.strip()}
+
+
+def is_header_or_column_row(row: dict[str, str]) -> bool:
+    values = [
+        str(value).strip().casefold()
+        for value in row.values()
+        if value is not None and str(value).strip()
+    ]
+    if not values:
+        return False
+
+    labels = header_label_set()
+    bcode = str(row.get("รหัสสินค้า") or "").strip().casefold()
+    if bcode in labels:
+        return True
+
+    header_matches = sum(1 for value in values if value in labels)
+    if header_matches >= 3:
+        return True
+    if header_matches >= 2 and len(values) <= 4:
+        return True
+    if header_matches == len(values):
+        return True
+
+    return False
+
+
 def normalize_rows(rows: list) -> list[dict[str, str]]:
     result = []
     for row in rows or []:
         normalized = normalize_row(row)
-        if any(normalized.values()):
-            result.append(normalized)
+        if not any(normalized.values()):
+            continue
+        if is_header_or_column_row(normalized):
+            continue
+        result.append(normalized)
     return result

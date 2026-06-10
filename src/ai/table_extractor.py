@@ -37,6 +37,11 @@ Schema:
 Rules:
 - "columns" must be exactly this list in this order: {_COLUMNS_JSON}
 - Each row object must use exactly these keys: {_COLUMNS_JSON}
+- Extract DATA ROWS ONLY.
+- SKIP all document headers, titles, subtitles, page headers, and footer text.
+- SKIP the table column-header row (e.g. รหัสสินค้า, ชื่อสินค้า, แบบ, No.1, No.2, ยี่ห้อ, จำนวน, หน่วย).
+- NEVER include header labels as data rows.
+- If the image has a document title, put it in "title" only, not in "rows".
 - Preserve Thai text exactly. Do not translate.
 - รหัสสินค้า = product code / bcode
 - ชื่อสินค้า = product name / description
@@ -132,7 +137,8 @@ def extract_table_from_image(image_bytes: bytes, content_type: str | None = None
                     {
                         "type": "input_text",
                         "text": (
-                            "Extract every data row from this table image. "
+                            "Extract only product/data rows from this table image. "
+                            "Skip document headers and skip the column-header row. "
                             f"Use only these columns in order: {_COLUMNS_JSON}"
                         ),
                     },
