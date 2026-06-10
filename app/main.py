@@ -28,6 +28,7 @@ from src.handlers.table_printout import (
 )
 from src.ai.table_extractor import extract_table_from_image
 from src.printout.store import save_printout
+from src.printout.enrich import enrich_printout_rows
 from src.access.helper import get_line_user_id
 from src.access.helper import get_or_create_line_access
 from src.access.helper import build_access_denied_message
@@ -51,6 +52,8 @@ async def extract_table_printout(file: UploadFile = File(...)):
         image_bytes = await file.read()
         content_type = file.content_type
         extracted = extract_table_from_image(image_bytes, content_type=content_type)
+        if not extracted.get("error"):
+            extracted = enrich_printout_rows(get_engine(), extracted)
         token = save_printout(extracted, source="api")
         return {
             "status": "ok",
@@ -170,6 +173,7 @@ async def line_webhook(request: Request):
                     reply_payload = handle_table_printout_image(
                         line_user_id=line_user_id,
                         message_id=message_id,
+                        engine=engine,
                     )
                     if reply_payload is None:
                         reply_payload = handle_line_image_message(

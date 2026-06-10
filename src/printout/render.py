@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from src.printout.schema import PRINTOUT_COLUMN_LABELS, PRINTOUT_COLUMNS
+
 BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
 
 
@@ -21,17 +23,19 @@ def _fmt_ts(epoch: float | None) -> str:
 def render_printout_html(printout: dict[str, Any]) -> str:
     extracted = printout.get("extracted") or {}
     title = html.escape(str(extracted.get("title") or "รายการจากตาราง"))
-    columns = [str(c).strip() for c in (extracted.get("columns") or []) if str(c).strip()]
+    columns = list(PRINTOUT_COLUMNS)
     rows = extracted.get("rows") or []
     warnings = extracted.get("warnings") or []
     error = extracted.get("error")
     created_at = _fmt_ts(printout.get("created_at"))
     expires_at = _fmt_ts(printout.get("expires_at"))
 
-    if not columns and rows and isinstance(rows[0], dict):
-        columns = list(rows[0].keys())
+    def _col_label(col: str) -> str:
+        return PRINTOUT_COLUMN_LABELS.get(col, col)
 
-    header_cells = "".join(f"<th>{html.escape(col)}</th>" for col in columns)
+    header_cells = "".join(
+        f"<th>{html.escape(_col_label(col))}</th>" for col in columns
+    )
 
     body_rows = []
     for row in rows:

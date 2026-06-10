@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from src.ai.openai_client import extract_text_from_response, get_openai_client
+from src.printout.schema import TABLE_COLUMNS, normalize_rows
 
 logger = logging.getLogger("kcw.table_extractor")
 
@@ -14,28 +15,37 @@ TABLE_EXTRACT_TIMEOUT_SECONDS = float(
     os.getenv("TABLE_EXTRACT_TIMEOUT_SECONDS", "60").strip()
 )
 
-SYSTEM_PROMPT = """
+_COLUMNS_JSON = json.dumps(TABLE_COLUMNS, ensure_ascii=False)
+
+SYSTEM_PROMPT = f"""
 You extract tabular data from images for a Thai auto-parts shop.
 
 Return JSON only. No markdown fences.
 
 Schema:
-{
+{{
   "title": string,
-  "columns": [string],
+  "columns": {_COLUMNS_JSON},
   "rows": [object],
   "warnings": [string]
-}
+}}
 
 Rules:
+- "columns" must be exactly this list in this order: {_COLUMNS_JSON}
+- Each row object must use exactly these keys: {_COLUMNS_JSON}
 - Preserve Thai text exactly. Do not translate.
-- Detect column headers from the image when possible.
-- Each row object must use the detected column names as keys.
-- Prefer these columns when they appear: ลำดับ, รหัส, รายละเอียด, จำนวน, หน่วย, ราคา, หมายเหตุ
-- If a cell is unreadable, use "" and add a warning.
+- รหัสสินค้า = product code / bcode
+- ชื่อสินค้า = product name / description
+- แบบ = model or type
+- No.1 and No.2 = part numbers, OEM numbers, or reference numbers from the table (keep as shown)
+- ยี่ห้อ = brand
+- จำนวน = quantity
+- หน่วย = unit (ชิ้น, ตัว, ชุด, etc.)
+- If a cell is unreadable or missing, use "" and add a warning with row context.
 - Do not invent values that are not visible in the image.
+- Skip completely empty rows.
 - If no table is found, return:
-  {"error": "no_table_detected", "title": "", "columns": [], "rows": [], "warnings": ["no table detected"]}
+  {{"error": "no_table_detected", "title": "", "columns": [], "rows": [], "warnings": ["no table detected"]}}
 """.strip()
 
 
@@ -75,28 +85,12 @@ def _normalize_result(data: dict[str, Any]) -> dict[str, Any]:
             "warnings": list(data.get("warnings") or []),
         }
 
-    columns = [str(c).strip() for c in (data.get("columns") or []) if str(c).strip()]
-    rows = []
-    for row in data.get("rows") or []:
-        if not isinstance(row, dict):
-            continue
-        normalized_row = {}
-        for key, value in row.items():
-            key_text = str(key).strip()
-            if not key_text:
-                continue
-            normalized_row[key_text] = "" if value is None else str(value).strip()
-        if normalized_row:
-            rows.append(normalized_row)
-
-    if not columns and rows:
-        columns = list(rows[0].keys())
-
+    rows = normalize_rows(data.get("rows") or [])
     warnings = [str(w).strip() for w in (data.get("warnings") or []) if str(w).strip()]
 
     return {
         "title": str(data.get("title") or "").strip(),
-        "columns": columns,
+        "columns": list(TABLE_COLUMNS),
         "rows": rows,
         "warnings": warnings,
     }
@@ -129,7 +123,10 @@ def extract_table_from_image(image_bytes: bytes, content_type: str | None = None
                 "content": [
                     {
                         "type": "input_text",
-                        "text": "Extract the table from this image.",
+                        "text": (
+                            "Extract every data row from this table image. "
+                            f"Use only these columns in order: {_COLUMNS_JSON}"
+                        ),
                     },
                     {
                         "type": "input_image",

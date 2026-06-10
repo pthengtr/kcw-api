@@ -4,6 +4,7 @@ import time
 from src.ai.table_extractor import extract_table_from_image
 from src.bot.line_bot import download_line_message_content
 from src.printout.render import render_printout_html
+from src.printout.enrich import enrich_printout_rows
 from src.printout.store import PRINTOUT_TTL_SECONDS, get_printout, save_printout
 
 TABLE_PRINTOUT_SESSION_TTL_SECONDS = int(
@@ -165,7 +166,11 @@ def has_active_table_printout_session(line_user_id: str | None) -> bool:
     return _get_active_session(line_user_id) is not None
 
 
-def handle_table_printout_image(line_user_id: str | None, message_id: str | None) -> dict | None:
+def handle_table_printout_image(
+    line_user_id: str | None,
+    message_id: str | None,
+    engine,
+) -> dict | None:
     session = _get_active_session(line_user_id)
     if not session:
         return None
@@ -175,6 +180,8 @@ def handle_table_printout_image(line_user_id: str | None, message_id: str | None
     try:
         image_bytes, content_type = download_line_message_content(message_id or "")
         extracted = extract_table_from_image(image_bytes, content_type=content_type)
+        if not extracted.get("error"):
+            extracted = enrich_printout_rows(engine, extracted)
     except Exception as e:
         print("TABLE PRINTOUT ERROR:", e)
         _extend_session(session)
@@ -211,7 +218,7 @@ def handle_table_printout_image(line_user_id: str | None, message_id: str | None
 
     lines = [
         "สแกนตารางเสร็จแล้วครับ",
-        f"พบ {row_count} แถว",
+        f"พบ {row_count} แถว (เติมที่เก็บจากรหัสสินค้าแล้ว)",
         f"เปิดลิงก์เพื่อตรวจและพิมพ์:\n{url}",
         f"ลิงก์หมดอายุใน {_ttl_hours_text()}",
     ]
