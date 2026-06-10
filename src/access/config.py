@@ -5,4 +5,5 @@ COMMAND_PERMISSIONS = {
     "job": {"admin", "exec", "user"},
     "sync": {"admin", "exec", "user"},
     "ที่เก็บ": {"admin", "exec", "user"},
+    "สแกนตาราง": {"admin", "exec", "staff"},
 }

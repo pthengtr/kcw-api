@@ -14,6 +14,11 @@ from src.handlers.product_snapshot import is_product_snapshot_request
 from src.access.helper import can_execute
 from src.handlers.location import is_location_request, handle_location_query
 from src.handlers.check import is_check_request, handle_check_response
+from src.handlers.table_printout import (
+    is_table_printout_command,
+    handle_table_printout_command,
+    handle_table_printout_session_text,
+)
 
 
 def route_user_text(
@@ -29,11 +34,21 @@ def route_user_text(
     if image_session_reply is not None:
         return image_session_reply
 
+    table_printout_session_reply = handle_table_printout_session_text(line_user_id, text)
+    if table_printout_session_reply is not None:
+        return table_printout_session_reply
+
     if is_help_request(user_text):
         return {"type": "text", "text": GREETING_MESSAGE}
 
     if is_image_command(text):
         return handle_image_command(text, line_user_id=line_user_id)
+
+    if is_table_printout_command(text):
+        cmd = "สแกนตาราง"
+        if not can_execute(access["access_group"], cmd):
+            return {"type": "text", "text": "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"}
+        return handle_table_printout_command(line_user_id)
 
     if is_job_request(text):
         return handle_job_query(engine, text, access=access)

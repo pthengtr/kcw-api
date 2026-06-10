@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
+from fastapi.responses import HTMLResponse
 
 import json
 import time
@@ -21,6 +22,12 @@ from src.handlers.product import (
     is_product_search_next_postback,
 )
 from src.handlers.image import handle_line_image_message
+from src.handlers.table_printout import (
+    handle_table_printout_image,
+    build_printout_page,
+)
+from src.ai.table_extractor import extract_table_from_image
+from src.printout.store import save_printout
 from src.access.helper import get_line_user_id
 from src.access.helper import get_or_create_line_access
 from src.access.helper import build_access_denied_message
@@ -28,6 +35,32 @@ from src.ai.openai_kb import handle_kb_select_postback, openai_result_to_line_re
 
 
 app = FastAPI()
+
+
+@app.get("/printout/{token}")
+async def view_printout(token: str):
+    html = build_printout_page(token)
+    if not html:
+        raise HTTPException(status_code=404, detail="Printout not found or expired")
+    return HTMLResponse(content=html)
+
+
+@app.post("/table-printout/extract")
+async def extract_table_printout(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
+        content_type = file.content_type
+        extracted = extract_table_from_image(image_bytes, content_type=content_type)
+        token = save_printout(extracted, source="api")
+        return {
+            "status": "ok",
+            "token": token,
+            "printout_url": f"/printout/{token}",
+            "extracted": extracted,
+        }
+    except Exception as e:
+        print("TABLE PRINTOUT API ERROR:", e)
+        raise HTTPException(status_code=400, detail="Could not extract table from image")
 
 
 @app.post("/kcw-peak/sync")
@@ -134,10 +167,15 @@ async def line_webhook(request: Request):
 
                 elif message_type == "image":
                     message_id = message.get("id")
-                    reply_payload = handle_line_image_message(
+                    reply_payload = handle_table_printout_image(
                         line_user_id=line_user_id,
                         message_id=message_id,
                     )
+                    if reply_payload is None:
+                        reply_payload = handle_line_image_message(
+                            line_user_id=line_user_id,
+                            message_id=message_id,
+                        )
 
                 else:
                     continue

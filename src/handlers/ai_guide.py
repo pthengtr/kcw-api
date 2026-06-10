@@ -1,10 +1,10 @@
 import json
 
 from src.ai.openai_client import get_openai_client
+from src.ai.openai_client import extract_text_from_response
 from src.handlers.ai_chat import (
     is_ai_chat_request,
     extract_ai_question,
-    _extract_text_from_response,
 )
 from src.repos.media_assets import search_measurement_guides
 
@@ -79,7 +79,7 @@ def _route_guide_need(question: str) -> dict:
             },
         ],
     )
-    return _safe_route_json(_extract_text_from_response(resp))
+    return _safe_route_json(extract_text_from_response(resp))
 
 
 def _answer_ai_text(question: str) -> str:
@@ -108,7 +108,7 @@ def _answer_ai_text(question: str) -> str:
             },
         ],
     )
-    return _extract_text_from_response(resp)
+    return extract_text_from_response(resp)
 
 
 def handle_ai_guide_query(engine, user_text: str) -> dict:
