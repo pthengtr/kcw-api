@@ -27,6 +27,13 @@ END_SESSION_WORDS = {
     "cancel",
 }
 
+CONTINUE_SESSION_WORDS = {
+    "สแกนต่อ",
+    "ต่อ",
+    "continue",
+    "สแกน",
+}
+
 TABLE_PRINTOUT_SESSIONS: dict[str, dict] = {}
 
 
@@ -75,31 +82,54 @@ def is_table_printout_command(text: str) -> bool:
     return compact in TABLE_PRINTOUT_COMMANDS
 
 
+def _qr_message(label: str, text: str) -> dict:
+    return {
+        "type": "action",
+        "action": {
+            "type": "message",
+            "label": label,
+            "text": text,
+        },
+    }
+
+
+def _qr_camera(label: str = "ถ่ายรูป") -> dict:
+    return {
+        "type": "action",
+        "action": {
+            "type": "camera",
+            "label": label,
+        },
+    }
+
+
+def _qr_camera_roll(label: str = "เลือกรูป") -> dict:
+    return {
+        "type": "action",
+        "action": {
+            "type": "cameraRoll",
+            "label": label,
+        },
+    }
+
+
 def _build_session_quick_reply() -> dict:
     return {
         "items": [
-            {
-                "type": "action",
-                "action": {
-                    "type": "cameraRoll",
-                    "label": "เลือกรูป",
-                },
-            },
-            {
-                "type": "action",
-                "action": {
-                    "type": "camera",
-                    "label": "ถ่ายรูป",
-                },
-            },
-            {
-                "type": "action",
-                "action": {
-                    "type": "message",
-                    "label": "ยกเลิก",
-                    "text": "ยกเลิก",
-                },
-            },
+            _qr_camera_roll("เลือกรูป"),
+            _qr_camera("ถ่ายรูป"),
+            _qr_message("ยกเลิก", "ยกเลิก"),
+        ]
+    }
+
+
+def _build_continue_quick_reply() -> dict:
+    return {
+        "items": [
+            _qr_message("สแกนต่อ", "สแกนต่อ"),
+            _qr_camera_roll("เลือกรูป"),
+            _qr_camera("ถ่ายรูป"),
+            _qr_message("จบ", "จบ"),
         ]
     }
 
@@ -155,12 +185,39 @@ def handle_table_printout_session_text(line_user_id: str | None, text: str) -> d
     if not session:
         return None
 
-    t_lower = (text or "").strip().lower()
-    if t_lower in END_SESSION_WORDS:
+    t = (text or "").strip()
+    t_lower = t.lower()
+    compact = "".join(t_lower.split())
+
+    if t_lower in END_SESSION_WORDS or compact in END_SESSION_WORDS:
         _clear_session(line_user_id)
         return {
             "type": "text",
-            "text": "ยกเลิกโหมดสแกนตารางแล้วครับ",
+            "text": "จบโหมดสแกนตารางแล้วครับ",
+        }
+
+    if session.get("awaiting_continue"):
+        if t_lower in CONTINUE_SESSION_WORDS or compact in CONTINUE_SESSION_WORDS:
+            session.pop("awaiting_continue", None)
+            _extend_session(session)
+            return {
+                "type": "text",
+                "text": (
+                    "ส่งรูปตารางถัดไปได้เลยครับ\n"
+                    'หรือกด "จบ" เพื่อออกจากโหมดสแกน'
+                ),
+                "quickReply": _build_continue_quick_reply(),
+            }
+
+        _extend_session(session)
+        return {
+            "type": "text",
+            "text": (
+                "ต้องการสแกนรูปถัดไปหรือจบครับ?\n"
+                'กด "สแกนต่อ" หรือส่งรูปใหม่ได้เลย\n'
+                'หรือกด "จบ" เพื่อออก'
+            ),
+            "quickReply": _build_continue_quick_reply(),
         }
 
     _extend_session(session)
@@ -188,6 +245,7 @@ def handle_table_printout_image(
         return None
 
     line_user_id = (line_user_id or "").strip()
+    session.pop("awaiting_continue", None)
 
     try:
         image_bytes, content_type = download_line_message_content(message_id or "")
@@ -222,7 +280,9 @@ def handle_table_printout_image(
         line_user_id=line_user_id,
         source="line",
     )
-    _clear_session(line_user_id)
+
+    session["awaiting_continue"] = True
+    _extend_session(session)
 
     url = _build_printout_url(token)
     row_count = len(extracted.get("rows") or [])
@@ -241,14 +301,22 @@ def handle_table_printout_image(
     if usage_line:
         lines.append(usage_line)
 
+    lines.extend([
+        "",
+        "ต้องการสแกนรูปถัดไปหรือจบครับ?",
+        'กด "สแกนต่อ" หรือส่งรูปใหม่ได้เลย',
+        'กด "จบ" เพื่อออกจากโหมดสแกน',
+    ])
+
     if not PUBLIC_BASE_URL:
         lines.append(
-            "\nหมายเหตุ: ตั้งค่า PUBLIC_BASE_URL ใน .env เพื่อให้ลิงก์เปิดได้จากมือถือ"
+            "หมายเหตุ: ตั้งค่า PUBLIC_BASE_URL ใน .env เพื่อให้ลิงก์เปิดได้จากมือถือ"
         )
 
     return {
         "type": "text",
         "text": "\n".join(lines),
+        "quickReply": _build_continue_quick_reply(),
     }
 
 
