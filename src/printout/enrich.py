@@ -11,6 +11,7 @@ from src.printout.schema import BLANK_OUTPUT_COLUMNS
 
 BCODE_COLUMN = "รหัสสินค้า"
 LOCATION1_COLUMN = "location1"
+LOCATION2_COLUMN = "location2"
 _SAFE_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 TABLE_PRINTOUT_PRODUCT_TABLE = os.getenv(
@@ -31,7 +32,7 @@ def _product_table_ref() -> tuple[str, str]:
     return schema, table
 
 
-def get_location1_by_bcodes(engine, bcodes: list[str]) -> dict[str, str]:
+def get_locations_by_bcodes(engine, bcodes: list[str]) -> dict[str, dict[str, str]]:
     cleaned = list(dict.fromkeys(b.strip() for b in bcodes if b and str(b).strip()))
     if not cleaned:
         return {}
@@ -40,7 +41,8 @@ def get_location1_by_bcodes(engine, bcodes: list[str]) -> dict[str, str]:
     sql = text(f"""
         SELECT DISTINCT ON (trim("BCODE"))
             trim("BCODE") AS bcode,
-            nullif(trim(cast("LOCATION1" AS text)), '') AS location1
+            nullif(trim(cast("LOCATION1" AS text)), '') AS location1,
+            nullif(trim(cast("LOCATION2" AS text)), '') AS location2
         FROM "{schema}"."{table}"
         WHERE trim("BCODE") IN :bcodes
         ORDER BY trim("BCODE"), _ingested_at DESC NULLS LAST
@@ -49,11 +51,16 @@ def get_location1_by_bcodes(engine, bcodes: list[str]) -> dict[str, str]:
     with engine.connect() as conn:
         rows = conn.execute(sql, {"bcodes": cleaned}).mappings().all()
 
-    return {
-        str(row["bcode"]): str(row["location1"] or "").strip()
-        for row in rows
-        if row.get("bcode")
-    }
+    result: dict[str, dict[str, str]] = {}
+    for row in rows:
+        bcode = str(row.get("bcode") or "").strip()
+        if not bcode:
+            continue
+        result[bcode] = {
+            LOCATION1_COLUMN: str(row.get("location1") or "").strip(),
+            LOCATION2_COLUMN: str(row.get("location2") or "").strip(),
+        }
+    return result
 
 
 def enrich_printout_rows(engine, extracted: dict[str, Any]) -> dict[str, Any]:
@@ -71,7 +78,7 @@ def enrich_printout_rows(engine, extracted: dict[str, Any]) -> dict[str, Any]:
     ]
 
     try:
-        location_map = get_location1_by_bcodes(engine, bcodes)
+        location_map = get_locations_by_bcodes(engine, bcodes)
     except Exception:
         logger.exception("printout_location_enrich_failed")
         warnings = list(extracted.get("warnings") or [])
@@ -86,13 +93,16 @@ def enrich_printout_rows(engine, extracted: dict[str, Any]) -> dict[str, Any]:
             continue
 
         bcode = str(row.get(BCODE_COLUMN) or "").strip()
-        location1 = location_map.get(bcode, "")
+        locations = location_map.get(bcode, {})
+        location1 = locations.get(LOCATION1_COLUMN, "")
+        location2 = locations.get(LOCATION2_COLUMN, "")
 
-        if bcode and not location1:
+        if bcode and not location1 and not location2:
             warnings.append(f"ไม่พบที่เก็บสำหรับรหัสสินค้า {bcode}")
 
         enriched_row = dict(row)
         enriched_row[LOCATION1_COLUMN] = location1
+        enriched_row[LOCATION2_COLUMN] = location2
         for col in BLANK_OUTPUT_COLUMNS:
             enriched_row[col] = ""
         enriched_rows.append(enriched_row)

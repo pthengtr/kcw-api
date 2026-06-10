@@ -11,6 +11,7 @@ TABLE_COLUMNS = [
 
 ENRICHMENT_COLUMNS = [
     "location1",
+    "location2",
 ]
 
 OUTPUT_ONLY_COLUMNS = [
@@ -20,7 +21,8 @@ OUTPUT_ONLY_COLUMNS = [
 PRINTOUT_COLUMNS = TABLE_COLUMNS + ENRICHMENT_COLUMNS + OUTPUT_ONLY_COLUMNS
 
 PRINTOUT_COLUMN_LABELS = {
-    "location1": "ที่เก็บ",
+    "location1": "ที่เก็บ 1",
+    "location2": "ที่เก็บ 2",
     "picked": "จัดของแล้ว",
 }
 

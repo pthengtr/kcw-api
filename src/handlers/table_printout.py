@@ -13,6 +13,7 @@ TABLE_PRINTOUT_SESSION_TTL_SECONDS = int(
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
 
 TABLE_PRINTOUT_COMMANDS = {
+    "สแกน",
     "สแกนตาราง",
     "printout",
     "พิมพ์ตาราง",
