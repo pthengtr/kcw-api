@@ -26,6 +26,25 @@ You extract tabular data from images for a Thai auto-parts shop.
 
 Return JSON only. No markdown fences.
 
+Expected input table in the image:
+The image is usually a Thai auto-parts pick/order list with a table like:
+
+| รหัสสินค้า | ชื่อสินค้า | แบบ | No.1 | No.2 | ยี่ห้อ | จำนวน | หน่วย |
+
+Columns that MAY appear in the image but must NOT be extracted:
+- ชื่อสินค้า, แบบ, No.1, No.2, ยี่ห้อ
+- These will be filled later from the database using รหัสสินค้า.
+
+Columns you MUST read from each data row:
+- รหัสสินค้า — product code / BCODE (required)
+- จำนวน — quantity ordered or picked (required)
+- หน่วย — unit of measure such as ชิ้น, ตัว, ชุด (required)
+
+Map image headers to output even if labels differ:
+- รหัสสินค้า: may appear as รหัส, bcode, code
+- จำนวน: may appear as qty, quantity
+- หน่วย: may appear as unit
+
 Schema:
 {{
   "title": string,
@@ -37,18 +56,12 @@ Schema:
 Rules:
 - "columns" must be exactly this list in this order: {_COLUMNS_JSON}
 - Each row object must use exactly these keys: {_COLUMNS_JSON}
-- Extract ONLY these fields from the image: ลำดับ, รหัสสินค้า, จำนวน, หน่วย
-- ลำดับ = row number/position in the image table for the data row (use the number shown in the image when visible)
-- Do NOT extract ชื่อสินค้า, แบบ, ยี่ห้อ, No.1, or No.2 even if they appear in the image.
 - Extract DATA ROWS ONLY.
 - SKIP all document headers, titles, subtitles, page headers, and footer text.
 - SKIP the table column-header row.
 - NEVER include header labels as data rows.
 - If the image has a document title, put it in "title" only, not in "rows".
 - Preserve Thai text exactly. Do not translate.
-- รหัสสินค้า = product code / bcode
-- จำนวน = quantity
-- หน่วย = unit (ชิ้น, ตัว, ชุด, etc.)
 - If a cell is unreadable or missing, use "" and add a warning with row context.
 - Do not invent values that are not visible in the image.
 - Keep "rows" in the exact top-to-bottom order shown in the image.
@@ -140,10 +153,12 @@ def extract_table_from_image(image_bytes: bytes, content_type: str | None = None
                         "type": "input_text",
                         "text": (
                             "Extract only product/data rows from this table image. "
-                            "Read ลำดับ, รหัสสินค้า, จำนวน, and หน่วย from each row. "
+                            "The source table may have many columns, but read only "
+                            "ลำดับ, รหัสสินค้า, จำนวน, and หน่วย from each row. "
+                            "Do not extract ชื่อสินค้า, แบบ, No.1, No.2, or ยี่ห้อ. "
                             "Return rows in exact top-to-bottom image order. "
                             "Skip document headers and skip the column-header row. "
-                            f"Use only these columns in order: {_COLUMNS_JSON}"
+                            f"Use only these output columns in order: {_COLUMNS_JSON}"
                         ),
                     },
                     {
