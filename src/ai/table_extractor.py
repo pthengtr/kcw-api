@@ -10,7 +10,7 @@ from src.ai.openai_client import (
     extract_usage_from_response,
     get_openai_client,
 )
-from src.printout.schema import TABLE_COLUMNS, normalize_rows
+from src.printout.schema import EXTRACTION_COLUMNS, normalize_rows
 
 logger = logging.getLogger("kcw.table_extractor")
 
@@ -19,7 +19,7 @@ TABLE_EXTRACT_TIMEOUT_SECONDS = float(
     os.getenv("TABLE_EXTRACT_TIMEOUT_SECONDS", "60").strip()
 )
 
-_COLUMNS_JSON = json.dumps(TABLE_COLUMNS, ensure_ascii=False)
+_COLUMNS_JSON = json.dumps(EXTRACTION_COLUMNS, ensure_ascii=False)
 
 SYSTEM_PROMPT = f"""
 You extract tabular data from images for a Thai auto-parts shop.
@@ -37,21 +37,23 @@ Schema:
 Rules:
 - "columns" must be exactly this list in this order: {_COLUMNS_JSON}
 - Each row object must use exactly these keys: {_COLUMNS_JSON}
+- Extract ONLY these fields from the image: ลำดับ, รหัสสินค้า, จำนวน, หน่วย
+- ลำดับ = row number/position in the image table for the data row (use the number shown in the image when visible)
+- Do NOT extract ชื่อสินค้า, แบบ, ยี่ห้อ, No.1, or No.2 even if they appear in the image.
 - Extract DATA ROWS ONLY.
 - SKIP all document headers, titles, subtitles, page headers, and footer text.
-- SKIP the table column-header row (e.g. รหัสสินค้า, ชื่อสินค้า, แบบ, No.1, No.2, ยี่ห้อ, จำนวน, หน่วย).
+- SKIP the table column-header row.
 - NEVER include header labels as data rows.
 - If the image has a document title, put it in "title" only, not in "rows".
 - Preserve Thai text exactly. Do not translate.
 - รหัสสินค้า = product code / bcode
-- ชื่อสินค้า = product name / description
-- แบบ = model or type
-- No.1 and No.2 = part numbers, OEM numbers, or reference numbers from the table (keep as shown)
-- ยี่ห้อ = brand
 - จำนวน = quantity
 - หน่วย = unit (ชิ้น, ตัว, ชุด, etc.)
 - If a cell is unreadable or missing, use "" and add a warning with row context.
 - Do not invent values that are not visible in the image.
+- Keep "rows" in the exact top-to-bottom order shown in the image.
+- Never sort, reorder, or group rows.
+- If a row is unreadable, skip it and add a warning; do not shift other rows.
 - Skip completely empty rows.
 - If no table is found, return:
   {{"error": "no_table_detected", "title": "", "columns": [], "rows": [], "warnings": ["no table detected"]}}
@@ -99,7 +101,7 @@ def _normalize_result(data: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "title": str(data.get("title") or "").strip(),
-        "columns": list(TABLE_COLUMNS),
+        "columns": list(EXTRACTION_COLUMNS),
         "rows": rows,
         "warnings": warnings,
     }
@@ -138,6 +140,8 @@ def extract_table_from_image(image_bytes: bytes, content_type: str | None = None
                         "type": "input_text",
                         "text": (
                             "Extract only product/data rows from this table image. "
+                            "Read ลำดับ, รหัสสินค้า, จำนวน, and หน่วย from each row. "
+                            "Return rows in exact top-to-bottom image order. "
                             "Skip document headers and skip the column-header row. "
                             f"Use only these columns in order: {_COLUMNS_JSON}"
                         ),
