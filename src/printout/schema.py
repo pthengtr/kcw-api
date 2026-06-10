@@ -13,10 +13,19 @@ ENRICHMENT_COLUMNS = [
     "location1",
 ]
 
-PRINTOUT_COLUMNS = TABLE_COLUMNS + ENRICHMENT_COLUMNS
+OUTPUT_ONLY_COLUMNS = [
+    "picked",
+]
+
+PRINTOUT_COLUMNS = TABLE_COLUMNS + ENRICHMENT_COLUMNS + OUTPUT_ONLY_COLUMNS
 
 PRINTOUT_COLUMN_LABELS = {
     "location1": "ที่เก็บ",
+    "picked": "จัดของแล้ว",
+}
+
+BLANK_OUTPUT_COLUMNS = {
+    "picked",
 }
 
 # Alternate header labels seen in source images → canonical column

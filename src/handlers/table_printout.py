@@ -110,6 +110,17 @@ def _build_printout_url(token: str) -> str:
     return path
 
 
+def _format_token_usage(extracted: dict) -> str | None:
+    usage = extracted.get("usage") or {}
+    total = int(usage.get("total_tokens") or 0)
+    if not total:
+        return None
+
+    input_tokens = int(usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
+    return f"ใช้ token รวม: {total:,} (input {input_tokens:,} / output {output_tokens:,})"
+
+
 def _ttl_hours_text() -> str:
     hours = PRINTOUT_TTL_SECONDS / 3600
     if hours >= 1 and float(int(hours)) == hours:
@@ -224,6 +235,10 @@ def handle_table_printout_image(
     ]
     if warning_count:
         lines.insert(2, f"มีจุดที่อ่านไม่ชัด {warning_count} รายการ กรุณาตรวจบนหน้าเว็บ")
+
+    usage_line = _format_token_usage(extracted)
+    if usage_line:
+        lines.append(usage_line)
 
     if not PUBLIC_BASE_URL:
         lines.append(

@@ -7,6 +7,8 @@ from sqlalchemy import bindparam, text
 
 logger = logging.getLogger("kcw.printout.enrich")
 
+from src.printout.schema import BLANK_OUTPUT_COLUMNS
+
 BCODE_COLUMN = "รหัสสินค้า"
 LOCATION1_COLUMN = "location1"
 _SAFE_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -91,6 +93,8 @@ def enrich_printout_rows(engine, extracted: dict[str, Any]) -> dict[str, Any]:
 
         enriched_row = dict(row)
         enriched_row[LOCATION1_COLUMN] = location1
+        for col in BLANK_OUTPUT_COLUMNS:
+            enriched_row[col] = ""
         enriched_rows.append(enriched_row)
 
     return {

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.printout.schema import PRINTOUT_COLUMN_LABELS, PRINTOUT_COLUMNS
+from src.printout.schema import BLANK_OUTPUT_COLUMNS, PRINTOUT_COLUMN_LABELS, PRINTOUT_COLUMNS
 
 BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
 
@@ -41,10 +41,15 @@ def render_printout_html(printout: dict[str, Any]) -> str:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        cells = "".join(
-            f"<td>{html.escape(str(row.get(col, '') or ''))}</td>"
-            for col in columns
-        )
+        cells = []
+        for col in columns:
+            if col in BLANK_OUTPUT_COLUMNS:
+                cells.append('<td class="blank-cell">&nbsp;</td>')
+            else:
+                cells.append(
+                    f"<td>{html.escape(str(row.get(col, '') or ''))}</td>"
+                )
+        cells = "".join(cells)
         body_rows.append(f"<tr>{cells}</tr>")
 
     warnings_html = ""
@@ -75,6 +80,19 @@ def render_printout_html(printout: dict[str, Any]) -> str:
         """
     else:
         table_html = '<p class="empty">ไม่พบข้อมูลตารางจากรูปนี้</p>'
+
+    signature_html = """
+    <section class="signature">
+      <div class="signature-box">
+        <div class="signature-title">ตรวจสอบสินค้าแล้ว</div>
+        <div class="signature-space"></div>
+        <div class="signature-meta">
+          <span>ลายเซ็น</span>
+          <span>วันที่</span>
+        </div>
+      </div>
+    </section>
+    """
 
     return f"""<!DOCTYPE html>
 <html lang="th">
@@ -124,6 +142,37 @@ def render_printout_html(printout: dict[str, Any]) -> str:
     th {{
       background: #efefef;
     }}
+    .blank-cell {{
+      min-width: 72px;
+      height: 28px;
+      background: #fff;
+    }}
+    .signature {{
+      margin-top: 32px;
+    }}
+    .signature-box {{
+      max-width: 360px;
+      margin-left: auto;
+      border: 1px solid #333;
+      padding: 16px;
+    }}
+    .signature-title {{
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-align: center;
+    }}
+    .signature-space {{
+      height: 72px;
+      border-bottom: 1px solid #333;
+      margin-bottom: 10px;
+    }}
+    .signature-meta {{
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #555;
+    }}
     .warnings {{
       margin-top: 20px;
       padding: 12px 16px;
@@ -172,6 +221,7 @@ def render_printout_html(printout: dict[str, Any]) -> str:
     {error_html}
     {table_html}
     {warnings_html}
+    {signature_html}
     <div class="actions">
       <button type="button" onclick="window.print()">พิมพ์</button>
     </div>

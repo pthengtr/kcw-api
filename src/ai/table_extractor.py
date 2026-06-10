@@ -5,7 +5,11 @@ import os
 import re
 from typing import Any
 
-from src.ai.openai_client import extract_text_from_response, get_openai_client
+from src.ai.openai_client import (
+    extract_text_from_response,
+    extract_usage_from_response,
+    get_openai_client,
+)
 from src.printout.schema import TABLE_COLUMNS, normalize_rows
 
 logger = logging.getLogger("kcw.table_extractor")
@@ -88,12 +92,16 @@ def _normalize_result(data: dict[str, Any]) -> dict[str, Any]:
     rows = normalize_rows(data.get("rows") or [])
     warnings = [str(w).strip() for w in (data.get("warnings") or []) if str(w).strip()]
 
-    return {
+    result = {
         "title": str(data.get("title") or "").strip(),
         "columns": list(TABLE_COLUMNS),
         "rows": rows,
         "warnings": warnings,
     }
+    usage = data.get("usage")
+    if isinstance(usage, dict) and usage.get("total_tokens"):
+        result["usage"] = usage
+    return result
 
 
 def extract_table_from_image(image_bytes: bytes, content_type: str | None = None) -> dict[str, Any]:
@@ -140,4 +148,5 @@ def extract_table_from_image(image_bytes: bytes, content_type: str | None = None
 
     raw_text = extract_text_from_response(resp)
     parsed = _safe_parse_json(raw_text)
+    parsed["usage"] = extract_usage_from_response(resp)
     return _normalize_result(parsed)
