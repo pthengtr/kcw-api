@@ -5,7 +5,8 @@ def format_daily_sales_message(sales: dict) -> str:
         f"ยอดขายวันที่ {sales['date']}\n"
         f"สำนักงานใหญ่: {sales['HQ']:,.0f}\n"
         f"สี่แยกพัฒนา: {sales['SYP']:,.0f}\n"
-        f"รวม: {sales['BOTH']:,.0f}\n"
+        f"ออนไลน์: {sales['ONLINE']:,.0f}\n"
+        f"รวมทั้งหมด: {sales['ALL']:,.0f}\n"
         f"(ไม่รวมส่วนลดท้ายบิล)"
     )
 
