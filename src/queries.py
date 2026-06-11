@@ -407,7 +407,10 @@ def get_daily_sales_summary(
         sql = text(f"""
             with filtered as (
                 select
-                    coalesce(trim("BRANCH"), '') as "BRANCH",
+                    case
+                        when upper(trim(coalesce("BILLNO", ''))) like 'TAD%' then 'ONLINE'
+                        else upper(trim(coalesce("BRANCH", '')))
+                    end as "SALES_CHANNEL",
                     case
                         when coalesce("TAXIC", '') = 'Y'
                             then cast(replace(coalesce("AMOUNT", '0'), ',', '') as numeric) / 1.07
@@ -419,13 +422,14 @@ def get_daily_sales_summary(
                     and coalesce("JOURMODE", '') <> '0'
                     and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
             )
-            select "BRANCH", sum(sale_net) as total_sale
+            select "SALES_CHANNEL", sum(sale_net) as total_sale
             from filtered
-            group by "BRANCH"
+            where "SALES_CHANNEL" in ('HQ', 'SYP', 'ONLINE')
+            group by "SALES_CHANNEL"
 
             union all
 
-            select 'BOTH' as "BRANCH", sum(sale_net) as total_sale
+            select 'ALL' as "SALES_CHANNEL", sum(sale_net) as total_sale
             from filtered
         """)
 
@@ -435,13 +439,14 @@ def get_daily_sales_summary(
         "date": str(target_date),
         "HQ": 0.0,
         "SYP": 0.0,
-        "BOTH": 0.0,
+        "ONLINE": 0.0,
+        "ALL": 0.0,
     }
 
-    for branch, value in rows:
-        branch = (branch or "").strip()
-        if branch in result:
-            result[branch] = float(value or 0)
+    for channel, value in rows:
+        channel = (channel or "").strip()
+        if channel in result:
+            result[channel] = float(value or 0)
 
     return result
 
