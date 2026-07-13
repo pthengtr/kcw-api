@@ -28,8 +28,10 @@ time. For an import-only smoke check, use non-secret placeholders or copy
 
 ```bash
 OPENAI_API_KEY="placeholder" \
+SUPABASE_URL="https://placeholder.supabase.co" \
 SUPABASE_DB_URL="https://placeholder.supabase.co" \
 SUPABASE_SERVICE_ROLE_KEY="placeholder" \
+TIGER_PAY_CLIENT_SECRET="placeholder" \
 python -c "from app.main import app; print(app.title)"
 ```
 
@@ -142,6 +144,12 @@ Do not commit real values.
 - `KB_AUTO_THRESHOLD`
 - `KB_MIN_GAP`
 - `KB_MAX_IMAGES`
+
+### Tiger Pay webhook
+
+- `TIGER_PAY_CLIENT_SECRET`
+- `TIGER_PAY_MAX_BODY_BYTES` (optional, default `5242880`)
+
 - `WORKER_NAME`
 - `WORKER_POLL_SECONDS`
 - `HEARTBEAT_INTERVAL_SECONDS`
