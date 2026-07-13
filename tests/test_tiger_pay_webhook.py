@@ -360,6 +360,27 @@ def test_supabase_failure_returns_500(client):
         assert response.json() == {"ok": False, "error": "Webhook processing failed"}
 
 
+def test_ingest_rpc_single_object_response_shape(client):
+    with patch("src.tiger_pay.service.ingest_webhook_sync") as mocked:
+        mocked.return_value = {
+            "event_id": 9,
+            "duplicate": False,
+            "transaction_updated": True,
+        }
+        body = compact_json(cash_payload())
+        response = post_webhook(client, body, authorization=make_authorization(body))
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+
+def test_parse_ingest_webhook_row_accepts_list_or_object():
+    from src.tiger_pay.client import _parse_ingest_webhook_row
+
+    row = {"event_id": 1, "duplicate": False, "transaction_updated": True}
+    assert _parse_ingest_webhook_row([row]) == row
+    assert _parse_ingest_webhook_row(row) == row
+
+
 def test_oversized_request_returns_413(client, monkeypatch):
     monkeypatch.setenv("TIGER_PAY_MAX_BODY_BYTES", "32")
     get_tiger_pay_settings.cache_clear()

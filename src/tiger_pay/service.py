@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from src.tiger_pay.auth import TigerPayAuthError, verify_webhook_authorization
-from src.tiger_pay.client import ingest_webhook_sync
+from src.tiger_pay.client import TigerPayIngestError, ingest_webhook_sync
 from src.tiger_pay.config import get_tiger_pay_settings
 from src.tiger_pay.digest import compute_body_sha256
 from src.tiger_pay.models import TigerPayIngestResult, TigerPayWebhookPayload
@@ -179,6 +179,15 @@ async def process_tiger_pay_webhook(request: Request) -> JSONResponse:
             (time.perf_counter() - started_at) * 1000,
         )
         return _error_response(exc.status_code, exc.error)
+
+    except TigerPayIngestError as exc:
+        logger.error(
+            "tiger_pay webhook ingest failed request_id=%s error_category=%s duration_ms=%.1f",
+            request_id,
+            exc.category,
+            (time.perf_counter() - started_at) * 1000,
+        )
+        return _error_response(500, "Webhook processing failed")
 
     except Exception:
         logger.exception(
