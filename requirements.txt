@@ -9,6 +9,10 @@ openai
 requests
 google-genai
 supabase
+PyJWT
+pydantic-settings
+pytest
+httpx
 
 aiohttp>=3.9,<4
 yarl>=1.20,<2

@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
 
@@ -9,6 +11,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
+
+from app.routers.health import router as health_router
+from app.routers.tiger_pay import router as tiger_pay_router
+from src.tiger_pay.config import get_tiger_pay_settings
 
 from src.db import get_engine
 from src.bot.line_bot import (
@@ -35,7 +41,15 @@ from src.access.helper import build_access_denied_message
 from src.ai.openai_kb import handle_kb_select_postback, openai_result_to_line_response
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    get_tiger_pay_settings()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(health_router)
+app.include_router(tiger_pay_router)
 
 
 @app.get("/printout/{token}")
