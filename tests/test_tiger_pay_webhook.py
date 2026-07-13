@@ -374,11 +374,27 @@ def test_ingest_rpc_single_object_response_shape(client):
 
 
 def test_parse_ingest_webhook_row_accepts_list_or_object():
-    from src.tiger_pay.client import _parse_ingest_webhook_row
+    from src.tiger_pay.client import _parse_ingest_webhook_row, normalize_ingest_result_row
 
     row = {"event_id": 1, "duplicate": False, "transaction_updated": True}
     assert _parse_ingest_webhook_row([row]) == row
     assert _parse_ingest_webhook_row(row) == row
+    assert normalize_ingest_result_row(row) == row
+
+
+def test_normalize_ingest_result_row_accepts_camel_case():
+    from src.tiger_pay.client import normalize_ingest_result_row
+
+    row = {
+        "eventId": "42",
+        "isDuplicate": "false",
+        "transactionUpdated": "true",
+    }
+    assert normalize_ingest_result_row(row) == {
+        "event_id": "42",
+        "duplicate": False,
+        "transaction_updated": True,
+    }
 
 
 def test_oversized_request_returns_413(client, monkeypatch):

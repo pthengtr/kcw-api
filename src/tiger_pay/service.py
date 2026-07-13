@@ -182,9 +182,18 @@ async def process_tiger_pay_webhook(request: Request) -> JSONResponse:
 
     except TigerPayIngestError as exc:
         logger.error(
-            "tiger_pay webhook ingest failed request_id=%s error_category=%s duration_ms=%.1f",
+            "tiger_pay webhook ingest failed request_id=%s error_category=%s supabase_code=%s duration_ms=%.1f",
             request_id,
             exc.category,
+            exc.supabase_code or "-",
+            (time.perf_counter() - started_at) * 1000,
+        )
+        return _error_response(500, "Webhook processing failed")
+
+    except ValidationError:
+        logger.error(
+            "tiger_pay webhook ingest failed request_id=%s error_category=ingest_result_invalid duration_ms=%.1f",
+            request_id,
             (time.perf_counter() - started_at) * 1000,
         )
         return _error_response(500, "Webhook processing failed")

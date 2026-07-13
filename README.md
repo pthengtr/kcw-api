@@ -58,6 +58,23 @@ export TIGER_PAY_WEBHOOK_TEST_URL=http://127.0.0.1:8000/webhooks/tiger-pay
 python scripts/send_tiger_pay_webhook.py
 ```
 
+### Troubleshooting `Webhook processing failed` (HTTP 500)
+
+This means JWT auth and payload validation succeeded, but the Supabase RPC step failed.
+
+1. In Supabase Dashboard → **Settings → API → Exposed schemas**, add `tiger_pay`.
+2. Confirm Railway `SUPABASE_URL` is the project API URL (`https://<ref>.supabase.co`), not the Postgres host.
+3. Confirm Railway `SUPABASE_SERVICE_ROLE_KEY` is the **service role** key.
+4. Check Railway logs for `error_category=supabase_rpc_failed` and `supabase_code=...`.
+5. Run the direct RPC diagnostic:
+
+```bash
+export TIGER_PAY_CLIENT_SECRET=your-dev-secret
+export SUPABASE_URL=https://<ref>.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+python scripts/diagnose_tiger_pay_supabase.py
+```
+
 ## Cursor Cloud checks
 
 See `docs/cloud-environment.md` for the Python 3.11 venv setup, app smoke
