@@ -7,15 +7,12 @@ REM - Ensures .env exists
 REM - Uses / creates .venv
 REM - Ensures requirements are installed
 REM - Starts uvicorn with reload on port 8000
-REM
-REM Note: do NOT rely on cmd.exe to parse .env into variables.
-REM uvicorn / pydantic-settings / python-dotenv load .env themselves.
 REM ==========================================================
 
 cd /d "%~dp0"
 
 if not exist ".env" (
-    echo .env not found.
+    echo .env not found in %CD%
     echo Copy .env.example to .env and fill in values first.
     pause
     exit /b 1
@@ -60,15 +57,8 @@ if errorlevel 1 (
 )
 
 echo Checking required .env keys via Python...
-"%VENV_PYTHON%" -c "from pathlib import Path; from dotenv import dotenv_values; p=Path('.env'); vals=dotenv_values(p); missing=[k for k in ('TIGER_PAY_CLIENT_SECRET','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY') if not (vals.get(k) or '').strip()]; import sys; print('Loaded .env from', p.resolve()); [print('Missing or empty:', k) for k in missing]; sys.exit(1 if missing else 0)"
+"%VENV_PYTHON%" scripts\check_env.py
 if errorlevel 1 (
-    echo.
-    echo Fix the keys above in .env then run again.
-    echo Tips:
-    echo   - Use SUPABASE_URL=https://xxxx.supabase.co  (no spaces around =)
-    echo   - Do not wrap values in quotes unless needed
-    echo   - Save .env as UTF-8 (not UTF-16)
-    echo   - SUPABASE_DB_URL is different from SUPABASE_URL
     pause
     exit /b 1
 )
