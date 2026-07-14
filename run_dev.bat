@@ -3,9 +3,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM ==========================================================
 REM KCW API local development server
-REM - Loads .env
+REM - Ensures .env exists
 REM - Uses / creates .venv
 REM - Starts uvicorn with reload on port 8000
+REM
+REM Note: do NOT rely on cmd.exe to parse .env into variables.
+REM uvicorn / pydantic-settings / python-dotenv load .env themselves.
 REM ==========================================================
 
 cd /d "%~dp0"
@@ -13,26 +16,6 @@ cd /d "%~dp0"
 if not exist ".env" (
     echo .env not found.
     echo Copy .env.example to .env and fill in values first.
-    pause
-    exit /b 1
-)
-
-call :load_env ".env"
-
-if "%TIGER_PAY_CLIENT_SECRET%"=="" (
-    echo Missing TIGER_PAY_CLIENT_SECRET in .env
-    pause
-    exit /b 1
-)
-
-if "%SUPABASE_URL%"=="" (
-    echo Missing SUPABASE_URL in .env
-    pause
-    exit /b 1
-)
-
-if "%SUPABASE_SERVICE_ROLE_KEY%"=="" (
-    echo Missing SUPABASE_SERVICE_ROLE_KEY in .env
     pause
     exit /b 1
 )
@@ -57,6 +40,20 @@ if not exist "%VENV_PYTHON%" (
     "%VENV_PYTHON%" -m pip install -r requirements.txt
 )
 
+echo Checking required .env keys via Python...
+"%VENV_PYTHON%" -c "from pathlib import Path; from dotenv import dotenv_values; p=Path('.env'); vals=dotenv_values(p); missing=[k for k in ('TIGER_PAY_CLIENT_SECRET','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY') if not (vals.get(k) or '').strip()]; import sys; print('Loaded .env from', p.resolve()); [print('Missing or empty:', k) for k in missing]; sys.exit(1 if missing else 0)"
+if errorlevel 1 (
+    echo.
+    echo Fix the keys above in .env then run again.
+    echo Tips:
+    echo   - Use SUPABASE_URL=https://xxxx.supabase.co  (no spaces around =)
+    echo   - Do not wrap values in quotes unless needed
+    echo   - Save .env as UTF-8 (not UTF-16)
+    echo   - SUPABASE_DB_URL is different from SUPABASE_URL
+    pause
+    exit /b 1
+)
+
 echo.
 echo Starting KCW API (dev)...
 echo   Swagger UI : http://127.0.0.1:8000/docs
@@ -72,21 +69,3 @@ echo.
 echo Server exited with code %EXIT_CODE%
 pause
 exit /b %EXIT_CODE%
-
-
-:load_env
-if not exist "%~1" (
-    echo .env not found: %~1
-    exit /b 0
-)
-
-for /f "usebackq tokens=1,* delims==" %%A in ("%~1") do (
-    set "key=%%A"
-    set "value=%%B"
-
-    if not "!key!"=="" if not "!key:~0,1!"=="#" (
-        set "!key!=!value!"
-    )
-)
-
-exit /b 0
