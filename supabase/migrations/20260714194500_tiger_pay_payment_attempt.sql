@@ -4,7 +4,7 @@
 create schema if not exists tiger_pay;
 
 create table if not exists tiger_pay.payment_attempt (
-    id uuid primary key,
+    id text primary key,
     pos_bill_id text not null,
     pos_bill_number text not null,
     amount numeric(18, 2) not null,
@@ -17,7 +17,8 @@ create table if not exists tiger_pay.payment_attempt (
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     last_polled_at timestamptz null,
-    constraint payment_attempt_amount_non_negative check (amount >= 0)
+    constraint payment_attempt_amount_non_negative check (amount >= 0),
+    constraint payment_attempt_id_max_len check (char_length(id) <= 20)
 );
 
 create unique index if not exists payment_attempt_one_active_per_bill_idx
@@ -35,7 +36,7 @@ create index if not exists payment_attempt_status_idx
 
 create table if not exists tiger_pay.payment_event (
     id bigserial primary key,
-    payment_attempt_id uuid not null
+    payment_attempt_id text not null
         references tiger_pay.payment_attempt (id) on delete cascade,
     source text not null,
     status text not null,

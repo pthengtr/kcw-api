@@ -1,6 +1,5 @@
 import json
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 
 import jwt
 import pytest
@@ -175,14 +174,15 @@ def test_send_payment_happy_path():
         "raw": {"data": {"id": 259}},
         "message": "Success",
     }
-    attempt_id = uuid4()
+    attempt_id = "a1b2c3d4e5f60718293a"
+    assert len(attempt_id) <= 20
     created_row = {
-        "id": str(attempt_id),
+        "id": attempt_id,
         "pos_bill_id": "bill-1001",
         "status": "sending",
     }
     updated_row = {
-        "id": str(attempt_id),
+        "id": attempt_id,
         "pos_bill_id": "bill-1001",
         "status": "pending",
         "tiger_payment_id": 259,
@@ -203,7 +203,10 @@ def test_send_payment_happy_path():
             "src.tiger_pay.payment_service.repos.update_payment_attempt",
             return_value=updated_row,
         ),
-        patch("src.tiger_pay.payment_service.uuid.uuid4", return_value=attempt_id),
+        patch(
+            "src.tiger_pay.payment_service.new_payment_attempt_id",
+            return_value=attempt_id,
+        ),
     ):
         result = send_payment_for_bill(engine, "bill-1001", open_api=open_api)
 
@@ -213,8 +216,17 @@ def test_send_payment_happy_path():
     open_api.create_payment.assert_called_once()
     kwargs = open_api.create_payment.call_args.kwargs
     assert kwargs["ref_no_1"] == "B2607140001"
-    assert kwargs["ref_no_2"] == str(attempt_id)
+    assert kwargs["ref_no_2"] == attempt_id
+    assert len(kwargs["ref_no_2"]) <= 20
     assert kwargs["payment_type"] == "cash"
+
+
+def test_new_payment_attempt_id_fits_tiger_refno2():
+    from src.tiger_pay.payment_service import new_payment_attempt_id
+
+    attempt_id = new_payment_attempt_id()
+    assert len(attempt_id) <= 20
+    assert attempt_id.isalnum()
 
 
 def test_cancel_keeps_cancelling_until_confirmed():

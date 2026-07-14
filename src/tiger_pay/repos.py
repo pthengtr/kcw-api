@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -19,9 +18,8 @@ def _row_to_attempt(row: Any) -> dict[str, Any]:
     amount = mapping.get("amount")
     if isinstance(amount, Decimal):
         mapping["amount"] = float(amount)
-    for key in ("id",):
-        if mapping.get(key) is not None:
-            mapping[key] = str(mapping[key])
+    if mapping.get("id") is not None:
+        mapping["id"] = str(mapping["id"])
     for key in ("created_at", "updated_at", "last_polled_at"):
         value = mapping.get(key)
         if isinstance(value, datetime):
@@ -42,13 +40,16 @@ def _row_to_event(row: Any) -> dict[str, Any]:
 def create_payment_attempt(
     engine: Engine,
     *,
-    attempt_id: uuid.UUID,
+    attempt_id: str,
     pos_bill_id: str,
     pos_bill_number: str,
     amount: Decimal | float | int | str,
     status: str,
     raw_status: str | None = None,
 ) -> dict[str, Any]:
+    if len(attempt_id) > 20:
+        raise ValueError("payment attempt id must be <= 20 characters for Tiger RefNo2")
+
     sql = text(
         """
         insert into tiger_pay.payment_attempt (
@@ -74,7 +75,7 @@ def create_payment_attempt(
         row = conn.execute(
             sql,
             {
-                "id": str(attempt_id),
+                "id": attempt_id,
                 "pos_bill_id": pos_bill_id,
                 "pos_bill_number": pos_bill_number,
                 "amount": str(amount),
@@ -85,7 +86,7 @@ def create_payment_attempt(
     return _row_to_attempt(row)
 
 
-def get_payment_attempt(engine: Engine, attempt_id: str | uuid.UUID) -> dict[str, Any] | None:
+def get_payment_attempt(engine: Engine, attempt_id: str) -> dict[str, Any] | None:
     sql = text(
         """
         select *
@@ -94,7 +95,7 @@ def get_payment_attempt(engine: Engine, attempt_id: str | uuid.UUID) -> dict[str
         """
     )
     with engine.connect() as conn:
-        row = conn.execute(sql, {"id": str(attempt_id)}).first()
+        row = conn.execute(sql, {"id": attempt_id}).first()
     return _row_to_attempt(row) if row else None
 
 
@@ -164,7 +165,7 @@ def find_attempt_by_tiger_or_ref(
         )
            or (
             :ref_no_2 is not null
-            and id::text = :ref_no_2
+            and id = :ref_no_2
         )
         order by updated_at desc
         limit 1
@@ -183,7 +184,7 @@ def find_attempt_by_tiger_or_ref(
 
 def update_payment_attempt(
     engine: Engine,
-    attempt_id: str | uuid.UUID,
+    attempt_id: str,
     *,
     status: str | None = None,
     raw_status: str | None = None,
@@ -195,7 +196,7 @@ def update_payment_attempt(
     clear_error: bool = False,
 ) -> dict[str, Any] | None:
     sets: list[str] = ["updated_at = now()"]
-    params: dict[str, Any] = {"id": str(attempt_id)}
+    params: dict[str, Any] = {"id": attempt_id}
 
     if status is not None:
         sets.append("status = :status")
@@ -236,7 +237,7 @@ def update_payment_attempt(
 def insert_payment_event(
     engine: Engine,
     *,
-    payment_attempt_id: str | uuid.UUID,
+    payment_attempt_id: str,
     source: str,
     status: str,
     payload: dict[str, Any] | None = None,
@@ -268,7 +269,7 @@ def insert_payment_event(
         row = conn.execute(
             sql,
             {
-                "payment_attempt_id": str(payment_attempt_id),
+                "payment_attempt_id": payment_attempt_id,
                 "source": source,
                 "status": status,
                 "payload": json.dumps(payload or {}),
@@ -280,7 +281,7 @@ def insert_payment_event(
 
 def list_payment_events(
     engine: Engine,
-    payment_attempt_id: str | uuid.UUID,
+    payment_attempt_id: str,
 ) -> list[dict[str, Any]]:
     sql = text(
         """
@@ -293,6 +294,6 @@ def list_payment_events(
     with engine.connect() as conn:
         rows = conn.execute(
             sql,
-            {"payment_attempt_id": str(payment_attempt_id)},
+            {"payment_attempt_id": payment_attempt_id},
         ).all()
     return [_row_to_event(row) for row in rows]

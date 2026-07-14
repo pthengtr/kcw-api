@@ -14,6 +14,13 @@ from src.tiger_pay.status import is_active_status, normalize_status
 
 logger = logging.getLogger("kcw.tiger_pay.payment_service")
 
+# Tiger Open API: RefNo2 max length is 20.
+TIGER_REF_NO2_MAX_LEN = 20
+
+
+def new_payment_attempt_id() -> str:
+    """Generate an internal attempt id that fits Tiger RefNo2 (<=20)."""
+    return uuid.uuid4().hex[:TIGER_REF_NO2_MAX_LEN]
 
 class PaymentServiceError(Exception):
     def __init__(
@@ -90,7 +97,7 @@ def send_payment_for_bill(
             code="tiger_busy",
         )
 
-    attempt_id = uuid.uuid4()
+    attempt_id = new_payment_attempt_id()
     try:
         attempt = repos.create_payment_attempt(
             engine,
