@@ -22,6 +22,7 @@ def new_payment_attempt_id() -> str:
     """Generate an internal attempt id that fits Tiger RefNo2 (<=20)."""
     return uuid.uuid4().hex[:TIGER_REF_NO2_MAX_LEN]
 
+
 class PaymentServiceError(Exception):
     def __init__(
         self,
