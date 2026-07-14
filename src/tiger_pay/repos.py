@@ -155,30 +155,31 @@ def find_attempt_by_tiger_or_ref(
     tiger_payment_id: int | None,
     ref_no_2: str | None,
 ) -> dict[str, Any] | None:
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+
+    if tiger_payment_id is not None:
+        clauses.append("tiger_payment_id = :tiger_payment_id")
+        params["tiger_payment_id"] = tiger_payment_id
+
+    if ref_no_2 is not None:
+        clauses.append("id = :ref_no_2")
+        params["ref_no_2"] = ref_no_2
+
+    if not clauses:
+        return None
+
     sql = text(
-        """
+        f"""
         select *
         from tiger_pay.payment_attempt
-        where (
-            :tiger_payment_id is not null
-            and tiger_payment_id = :tiger_payment_id
-        )
-           or (
-            :ref_no_2 is not null
-            and id = :ref_no_2
-        )
+        where {" or ".join(clauses)}
         order by updated_at desc
         limit 1
         """
     )
     with engine.connect() as conn:
-        row = conn.execute(
-            sql,
-            {
-                "tiger_payment_id": tiger_payment_id,
-                "ref_no_2": ref_no_2,
-            },
-        ).first()
+        row = conn.execute(sql, params).first()
     return _row_to_attempt(row) if row else None
 
 
