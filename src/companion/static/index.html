@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KCW Tiger Pay Companion</title>
+  <style>
+    :root {
+      --bg: #0f1720;
+      --panel: #182230;
+      --line: #2b3a4d;
+      --text: #e8eef6;
+      --muted: #9fb0c3;
+      --accent: #2f9e7b;
+      --danger: #c4544a;
+      --warn: #c4913a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at top left, #1b2a3a, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+    h1 { margin: 0; font-size: 1.25rem; font-weight: 650; }
+    .muted { color: #9fb0c3; font-size: 0.9rem; }
+    main {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 1rem;
+      padding: 1rem 1.5rem 2rem;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: color-mix(in srgb, var(--panel) 92%, black);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .panel h2 {
+      margin: 0;
+      padding: 0.85rem 1rem;
+      font-size: 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    th, td {
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+    th { color: #9fb0c3; font-weight: 600; }
+    tr.selected { background: #223246; }
+    tr:hover { background: #1e2d40; cursor: pointer; }
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 0.45rem 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn-send { background: var(--accent); color: #062218; }
+    .btn-cancel { background: var(--danger); color: #fff; }
+    .btn-refresh { background: #33465d; color: var(--text); }
+    .status-pill {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      background: #2a3a4f;
+    }
+    .status-success { background: #1f4a3a; color: #9de7c8; }
+    .status-failed, .status-cancelled { background: #4a2724; color: #f0b0aa; }
+    .status-pending, .status-paying, .status-sending, .status-cancelling, .status-changing {
+      background: #4a3b1f; color: #f0d59a;
+    }
+    #timeline {
+      list-style: none;
+      margin: 0;
+      padding: 0.5rem 0 1rem;
+      max-height: 70vh;
+      overflow: auto;
+    }
+    #timeline li {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    #timeline .meta { color: #9fb0c3; font-size: 0.8rem; margin-top: 0.25rem; }
+    #message {
+      min-height: 1.2rem;
+      padding: 0 1.5rem;
+      color: #f0d59a;
+      font-size: 0.9rem;
+    }
+    .empty { padding: 1rem; color: #9fb0c3; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>KCW Tiger Pay Companion</h1>
+      <div class="muted">Mock POS bills → Tiger Pay machine (Phase 1)</div>
+    </div>
+    <button class="btn-refresh" id="refreshBtn" type="button">Refresh</button>
+  </header>
+  <div id="message"></div>
+  <main>
+    <section class="panel">
+      <h2>Open POS bills</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Bill #</th>
+              <th>Amount</th>
+              <th>POS</th>
+              <th>Tiger status</th>
+              <th>Tiger pay #</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="billsBody"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Selected payment timeline</h2>
+      <ul id="timeline"><li class="empty">Select a bill with a payment attempt.</li></ul>
+    </section>
+  </main>
+  <script>
+    const state = {
+      bills: [],
+      selectedBillId: null,
+      selectedAttemptId: null,
+      sendInFlight: false,
+      pollTimer: null,
+    };
+
+    function setMessage(text) {
+      document.getElementById("message").textContent = text || "";
+    }
+
+    function statusClass(status) {
+      if (!status) return "status-pill";
+      return `status-pill status-${status}`;
+    }
+
+    function formatAmount(amount) {
+      return Number(amount).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+
+    function isActive(status) {
+      return ["sending", "pending", "paying", "changing", "cancelling"].includes(status);
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data.detail;
+        const message = (detail && detail.message) || data.message || res.statusText;
+        throw new Error(message);
+      }
+      return data;
+    }
+
+    async function loadBills() {
+      const data = await api("/companion/bills");
+      state.bills = data.bills || [];
+      renderBills();
+      if (state.selectedAttemptId) {
+        await loadTimeline(state.selectedAttemptId);
+      }
+      maybeStartPolling();
+    }
+
+    function renderBills() {
+      const body = document.getElementById("billsBody");
+      body.innerHTML = "";
+      if (!state.bills.length) {
+        body.innerHTML = `<tr><td colspan="6" class="empty">No open bills</td></tr>`;
+        return;
+      }
+      for (const bill of state.bills) {
+        const tr = document.createElement("tr");
+        if (bill.id === state.selectedBillId) tr.classList.add("selected");
+        tr.onclick = () => {
+          state.selectedBillId = bill.id;
+          state.selectedAttemptId = bill.payment_attempt_id || null;
+          renderBills();
+          if (state.selectedAttemptId) loadTimeline(state.selectedAttemptId);
+          else {
+            document.getElementById("timeline").innerHTML =
+              `<li class="empty">No payment attempt yet. Click Send Payment.</li>`;
+          }
+        };
+
+        const canSend = !bill.payment_attempt_active && !state.sendInFlight;
+        const canCancel = bill.payment_attempt_active && bill.payment_attempt_id;
+
+        tr.innerHTML = `
+          <td>${bill.bill_number}</td>
+          <td>${formatAmount(bill.amount)}</td>
+          <td>${bill.pos_status || "open"}</td>
+          <td><span class="${statusClass(bill.tiger_payment_status)}">${bill.tiger_payment_status || "—"}</span></td>
+          <td>${bill.tiger_payment_no || "—"}</td>
+          <td>
+            <button class="btn-send" type="button" data-action="send" data-id="${bill.id}" ${canSend ? "" : "disabled"}>Send Payment</button>
+            <button class="btn-cancel" type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${canCancel ? "" : "disabled"}>Cancel</button>
+          </td>
+        `;
+
+        tr.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("click", async (event) => {
+            event.stopPropagation();
+            const action = btn.getAttribute("data-action");
+            try {
+              if (action === "send") {
+                state.sendInFlight = true;
+                renderBills();
+                setMessage(`Sending bill ${bill.bill_number} to Tiger Pay...`);
+                const result = await api(`/companion/bills/${bill.id}/pay`, { method: "POST" });
+                state.selectedBillId = bill.id;
+                state.selectedAttemptId = result.attempt && result.attempt.id;
+                setMessage("Payment created on Tiger Pay.");
+              } else if (action === "cancel") {
+                const attemptId = btn.getAttribute("data-attempt");
+                setMessage("Cancellation requested...");
+                await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
+                state.selectedAttemptId = attemptId;
+                setMessage("Cancel requested. Waiting for Tiger confirmation...");
+              }
+            } catch (err) {
+              setMessage(err.message || String(err));
+            } finally {
+              state.sendInFlight = false;
+              await loadBills();
+            }
+          });
+        });
+
+        body.appendChild(tr);
+      }
+    }
+
+    async function loadTimeline(attemptId) {
+      if (!attemptId) return;
+      try {
+        const data = await api(`/companion/payments/${attemptId}`);
+        const events = data.events || [];
+        const list = document.getElementById("timeline");
+        if (!events.length) {
+          list.innerHTML = `<li class="empty">No events yet.</li>`;
+          return;
+        }
+        list.innerHTML = events.map((ev) => {
+          const action = (ev.payload && ev.payload.action) || ev.status;
+          return `<li>
+            <div><strong>${action}</strong> · ${ev.source} · <span class="${statusClass(ev.status)}">${ev.status}</span></div>
+            <div class="meta">${ev.created_at || ""}</div>
+          </li>`;
+        }).join("");
+      } catch (err) {
+        setMessage(err.message || String(err));
+      }
+    }
+
+    function maybeStartPolling() {
+      const anyActive = state.bills.some((b) => b.payment_attempt_active);
+      if (anyActive && !state.pollTimer) {
+        state.pollTimer = setInterval(async () => {
+          try { await loadBills(); } catch (err) { setMessage(err.message || String(err)); }
+        }, 1500);
+      } else if (!anyActive && state.pollTimer) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+      }
+    }
+
+    document.getElementById("refreshBtn").onclick = () => {
+      setMessage("");
+      loadBills().catch((err) => setMessage(err.message || String(err)));
+    };
+
+    loadBills().catch((err) => setMessage(err.message || String(err)));
+  </script>
+</body>
+</html>

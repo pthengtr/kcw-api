@@ -12,6 +12,55 @@ cp .env.example .env  # replace placeholders before using external services
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+On Windows, double-click or run:
+
+```bat
+run_dev.bat
+```
+
+This loads `.env`, creates `.venv` if needed, and starts uvicorn on port 8000.
+
+Useful URLs:
+
+- Companion UI: `http://127.0.0.1:8000/companion`
+- Swagger: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/health`
+
+## Tiger Pay companion (Phase 1)
+
+Flow: mock POS open bills → companion backend → Tiger Pay Open API
+(`POST/GET/PUT /api/open/v2/payment...`). Status stays almost live via:
+
+1. immediate API response
+2. existing `POST /webhooks/tiger-pay` reconcile into `payment_attempt`
+3. background polling of active attempts (every ~1.5s) when
+   `TIGER_PAY_API_HOST` and `TIGER_PAY_CLIENT_ID` are set
+
+### Supabase SQL (paste in SQL Editor)
+
+Run the paste-ready script once:
+
+[`docs/sql/tiger_pay_payment_attempt.sql`](docs/sql/tiger_pay_payment_attempt.sql)
+
+It creates `tiger_pay.payment_attempt` and `tiger_pay.payment_event` with
+duplicate-protection indexes. The same DDL is also in
+`supabase/migrations/`.
+
+### Companion env vars
+
+Required for outbound Open API + polling:
+
+- `TIGER_PAY_CLIENT_ID`
+- `TIGER_PAY_CLIENT_SECRET`
+- `TIGER_PAY_API_HOST` (include trailing slash, e.g. `http://192.168.1.50:8080/`)
+- Postgres via existing `SUPABASE_DB_*` (companion reads/writes payment tables)
+
+Optional:
+
+- `TIGER_PAY_POLL_INTERVAL_SECONDS` (default `1.5`)
+
+Frontend never calls Tiger Pay directly. Secrets stay server-side.
+
 ## Tiger Pay webhook
 
 - Endpoint: `POST /webhooks/tiger-pay`
@@ -26,6 +75,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 Optional:
 
 - `TIGER_PAY_MAX_BODY_BYTES` (default `5242880`)
+- `TIGER_PAY_CLIENT_ID` / `TIGER_PAY_API_HOST` (companion + poller)
 
 ### Railway deployment
 

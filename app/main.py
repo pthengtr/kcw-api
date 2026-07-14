@@ -12,9 +12,11 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 
+from app.routers.companion import router as companion_router
 from app.routers.health import router as health_router
 from app.routers.tiger_pay import router as tiger_pay_router
 from src.tiger_pay.config import get_tiger_pay_settings
+from src.tiger_pay.poller import payment_status_poller
 
 from src.db import get_engine
 from src.bot.line_bot import (
@@ -43,13 +45,19 @@ from src.ai.openai_kb import handle_kb_select_postback, openai_result_to_line_re
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    get_tiger_pay_settings()
-    yield
+    settings = get_tiger_pay_settings()
+    if settings.tiger_pay_api_host and settings.tiger_pay_client_id:
+        await payment_status_poller.start()
+    try:
+        yield
+    finally:
+        await payment_status_poller.stop()
 
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(tiger_pay_router)
+app.include_router(companion_router)
 
 
 @app.get("/printout/{token}")

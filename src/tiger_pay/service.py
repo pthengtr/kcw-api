@@ -10,6 +10,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from src.db import get_engine
 from src.tiger_pay.auth import TigerPayAuthError, verify_webhook_authorization
 from src.tiger_pay.client import TigerPayIngestError, ingest_webhook_sync
 from src.tiger_pay.config import get_tiger_pay_settings
@@ -23,6 +24,7 @@ from src.tiger_pay.normalize import (
     normalize_tiger_timestamp,
 )
 from src.tiger_pay.payload import sanitize_webhook_payload
+from src.tiger_pay.payment_service import reconcile_from_webhook_transaction
 
 logger = logging.getLogger("kcw.tiger_pay")
 
@@ -156,6 +158,22 @@ async def process_tiger_pay_webhook(request: Request) -> JSONResponse:
             sanitized_payload,
         )
         result = TigerPayIngestResult.model_validate(ingest_result)
+
+        try:
+            await asyncio.to_thread(
+                reconcile_from_webhook_transaction,
+                get_engine(),
+                transaction,
+                event_key=f"webhook:{event_key}",
+            )
+        except Exception:
+            # Ingest already succeeded; attempt reconcile is best-effort so
+            # polling can still recover if matching/update fails.
+            logger.exception(
+                "tiger_pay webhook attempt reconcile failed request_id=%s tiger_payment_id=%s",
+                request_id,
+                payment.id,
+            )
 
         logger.info(
             "tiger_pay webhook processed request_id=%s tiger_payment_id=%s payment_no=%s "
