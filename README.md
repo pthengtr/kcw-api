@@ -28,13 +28,63 @@ Useful URLs:
 
 ## Tiger Pay companion (Phase 1)
 
-Flow: mock POS open bills → companion backend → Tiger Pay Open API
+Flow: POS bills → companion backend → Tiger Pay Open API
 (`POST/GET/PUT /api/open/v2/payment...`). Status stays almost live via:
 
 1. immediate API response
 2. existing `POST /webhooks/tiger-pay` reconcile into `payment_attempt`
 3. background polling of active attempts (every ~1.5s) when
    `TIGER_PAY_API_HOST` and `TIGER_PAY_CLIENT_ID` are set
+
+### POS bill sources
+
+Set in `.env`:
+
+- `POS_BILL_SOURCE=mock` (default) — in-memory sample bills
+- `POS_BILL_SOURCE=csv` — read SIMAS export CSV (good for testing)
+- `POS_BILL_SOURCE=mssql` — query local SQL Server (`PARTS9` on `KSS`)
+
+Shared cash-bill mapping (CSV and MSSQL):
+
+- filter: `CASHED == Y`
+- exclude bill numbers starting with `TF` or `TFV`
+- `id` ← `ID`
+- `bill_number` ← `BILLNO`
+- `amount` ← `AFTERTAX`
+- `pos_status` ← `PAID`
+- `salesperson` ← `SALE`
+- `POS_BILLS_MODE=latest` + `POS_BILLS_LIMIT=10` for testing
+- `POS_BILLS_MODE=today` for same-day (MSSQL uses SQL Server `GETDATE()`)
+
+#### CSV (testing)
+
+```env
+POS_BILL_SOURCE=csv
+POS_BILLS_CSV_PATH=G:\Shared drives\KCW-Data\kcw_analytics\01_raw\raw_hq_simas_sales_bills.csv
+POS_BILLS_MODE=latest
+POS_BILLS_LIMIT=10
+```
+
+#### Local SQL Server (shop LAN)
+
+Requires [ODBC Driver 17 for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server) and `pyodbc` on the PC that runs the companion. Connection uses the same pattern as your notebook:
+
+`mssql+pyodbc:///?odbc_connect=` + `quote_plus(DRIVER=...;SERVER=KSS;DATABASE=PARTS9;UID=python_reader;PWD=...;TrustServerCertificate=yes;)`
+
+```env
+POS_BILL_SOURCE=mssql
+POS_MSSQL_SERVER=KSS
+POS_MSSQL_DATABASE=PARTS9
+POS_MSSQL_USERNAME=python_reader
+POS_MSSQL_PASSWORD=xxxxx
+POS_MSSQL_DRIVER=ODBC Driver 17 for SQL Server
+# Bill-header table/view with CSV-equivalent columns (ID, BILLNO, AFTERTAX, ...)
+POS_MSSQL_BILLS_TABLE=dbo.YourBillHeaderTable
+POS_BILLS_MODE=today
+POS_BILLS_LIMIT=50
+```
+
+Switch back to `POS_BILL_SOURCE=csv` anytime for offline testing without SQL Server.
 
 ### Supabase SQL (paste in SQL Editor)
 

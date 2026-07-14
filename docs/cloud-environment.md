@@ -155,6 +155,14 @@ Do not commit real values.
 
 Paste-ready companion tables: `docs/sql/tiger_pay_payment_attempt.sql`
 
+### Companion POS bill source (local Windows / shop LAN)
+
+- `POS_BILL_SOURCE` — `mock` | `csv` | `mssql`
+- `POS_BILLS_CSV_PATH` / `POS_BILLS_MODE` / `POS_BILLS_LIMIT` (csv + mssql filters)
+- `POS_MSSQL_SERVER` / `POS_MSSQL_DATABASE` / `POS_MSSQL_USERNAME` / `POS_MSSQL_PASSWORD`
+- `POS_MSSQL_DRIVER` (default `ODBC Driver 17 for SQL Server`)
+- `POS_MSSQL_BILLS_TABLE` — required when `POS_BILL_SOURCE=mssql`
+
 - `WORKER_NAME`
 - `WORKER_POLL_SECONDS`
 - `HEARTBEAT_INTERVAL_SECONDS`
