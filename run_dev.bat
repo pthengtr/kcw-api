@@ -5,6 +5,7 @@ REM ==========================================================
 REM KCW API local development server
 REM - Ensures .env exists
 REM - Uses / creates .venv
+REM - Ensures requirements are installed
 REM - Starts uvicorn with reload on port 8000
 REM
 REM Note: do NOT rely on cmd.exe to parse .env into variables.
@@ -35,9 +36,27 @@ if not exist "%VENV_PYTHON%" (
         pause
         exit /b 1
     )
-    echo Installing requirements...
-    "%VENV_PYTHON%" -m pip install --upgrade pip
-    "%VENV_PYTHON%" -m pip install -r requirements.txt
+)
+
+echo Ensuring Python dependencies are installed...
+"%VENV_PYTHON%" -m pip install --upgrade pip
+if errorlevel 1 (
+    echo pip upgrade failed
+    pause
+    exit /b 1
+)
+"%VENV_PYTHON%" -m pip install -r requirements.txt
+if errorlevel 1 (
+    echo pip install -r requirements.txt failed
+    pause
+    exit /b 1
+)
+
+"%VENV_PYTHON%" -c "import pydantic_settings, dotenv, fastapi, uvicorn; print('Dependencies OK')"
+if errorlevel 1 (
+    echo Required packages are still missing after pip install.
+    pause
+    exit /b 1
 )
 
 echo Checking required .env keys via Python...
