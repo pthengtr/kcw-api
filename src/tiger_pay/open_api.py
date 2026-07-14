@@ -68,6 +68,26 @@ def _parse_envelope(payload: Any) -> dict[str, Any] | None:
     return payload.get("data")
 
 
+def _tiger_error_message(payload: Any, default: str) -> str:
+    if isinstance(payload, dict):
+        for key in ("message", "error", "title", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return f"{default}: {value.strip()}"
+        # Some Tiger errors nest under data
+        data = payload.get("data")
+        if isinstance(data, dict):
+            nested = data.get("message") or data.get("error")
+            if isinstance(nested, str) and nested.strip():
+                return f"{default}: {nested.strip()}"
+        raw = payload.get("raw")
+        if isinstance(raw, str) and raw.strip():
+            return f"{default}: {raw.strip()[:300]}"
+    elif isinstance(payload, str) and payload.strip():
+        return f"{default}: {payload.strip()[:300]}"
+    return default
+
+
 class TigerPayOpenApiClient:
     def __init__(
         self,
@@ -125,7 +145,7 @@ class TigerPayOpenApiClient:
             return None
         if status_code >= 400:
             raise TigerPayOpenApiError(
-                "Failed to get current payment",
+                _tiger_error_message(payload, "Failed to get current payment"),
                 status_code=status_code,
                 payload=payload,
             )
@@ -138,7 +158,7 @@ class TigerPayOpenApiClient:
         )
         if status_code >= 400:
             raise TigerPayOpenApiError(
-                "Failed to get payment",
+                _tiger_error_message(payload, "Failed to get payment"),
                 status_code=status_code,
                 payload=payload,
             )
@@ -160,6 +180,10 @@ class TigerPayOpenApiClient:
         note: str,
         payment_type: str = "cash",
     ) -> dict[str, Any]:
+        # Tiger Postman examples use whole numbers; keep floats only when needed.
+        if isinstance(amount, float) and amount.is_integer():
+            amount = int(amount)
+
         body = {
             "type": payment_type,
             "amount": amount,
@@ -174,8 +198,14 @@ class TigerPayOpenApiClient:
             include_digest=True,
         )
         if status_code >= 400:
+            logger.warning(
+                "Tiger create payment failed status=%s payload=%s body=%s",
+                status_code,
+                payload,
+                body,
+            )
             raise TigerPayOpenApiError(
-                "Failed to create payment",
+                _tiger_error_message(payload, "Failed to create payment"),
                 status_code=status_code,
                 payload=payload,
             )
@@ -203,7 +233,7 @@ class TigerPayOpenApiClient:
         )
         if status_code >= 400:
             raise TigerPayOpenApiError(
-                "Failed to cancel payment",
+                _tiger_error_message(payload, "Failed to cancel payment"),
                 status_code=status_code,
                 payload=payload,
             )

@@ -26,8 +26,10 @@ def _http_error(exc: PaymentServiceError) -> HTTPException:
         status = 404
     elif exc.code in {"active_attempt_exists", "tiger_busy", "not_active"}:
         status = 409
-    return HTTPException(status_code=status, detail={"message": exc.message, "code": exc.code})
-
+    detail: dict = {"message": exc.message, "code": exc.code}
+    if exc.details:
+        detail["details"] = exc.details
+    return HTTPException(status_code=status, detail=detail)
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)

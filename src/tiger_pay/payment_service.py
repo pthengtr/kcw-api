@@ -16,9 +16,16 @@ logger = logging.getLogger("kcw.tiger_pay.payment_service")
 
 
 class PaymentServiceError(Exception):
-    def __init__(self, message: str, *, code: str = "payment_error") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "payment_error",
+        details: dict[str, Any] | None = None,
+    ) -> None:
         self.message = message
         self.code = code
+        self.details = details or {}
         super().__init__(message)
 
 
@@ -110,9 +117,12 @@ def send_payment_for_bill(
     )
 
     note = f"POS bill {bill.bill_number}"
+    amount_value: float | int = float(bill.amount)
+    if float(amount_value).is_integer():
+        amount_value = int(amount_value)
     try:
         create_result = client.create_payment(
-            amount=float(bill.amount),
+            amount=amount_value,
             ref_no_1=bill.bill_number,
             ref_no_2=str(attempt_id),
             note=note,
@@ -147,6 +157,7 @@ def send_payment_for_bill(
         raise PaymentServiceError(
             f"Tiger create payment failed: {exc.message}",
             code="tiger_create_failed",
+            details={"status_code": exc.status_code, "tiger": exc.payload},
         ) from exc
 
     data = create_result.get("data") or {}
