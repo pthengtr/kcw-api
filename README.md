@@ -46,6 +46,7 @@ Set in `.env`:
 CSV mapping (cash bills only):
 
 - filter: `CASHED == Y`
+- exclude bill numbers starting with `TF` or `TFV`
 - `id` ← `ID`
 - `bill_number` ← `BILLNO`
 - `amount` ← `AFTERTAX`

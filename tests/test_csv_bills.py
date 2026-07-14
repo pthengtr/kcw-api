@@ -22,7 +22,7 @@ def _settings(**overrides) -> CompanionBillSettings:
 
 def test_list_csv_bills_filters_cashed_y_and_orders_latest():
     bills = list_csv_bills(_settings(pos_bills_limit=10))
-    # CASHED=N row (104) excluded → 4 cash bills
+    # CASHED=N (104) and TF/TFV bill nos (106/107) excluded → 4 cash bills
     assert len(bills) == 4
     assert [b.bill_number for b in bills] == [
         "B2607140001",
@@ -33,6 +33,15 @@ def test_list_csv_bills_filters_cashed_y_and_orders_latest():
     assert bills[0].amount == Decimal("250.00")
     assert bills[0].pos_status == "N"
     assert bills[0].salesperson == "alice"
+
+
+def test_list_csv_bills_excludes_tf_and_tfv_prefixes():
+    bills = list_csv_bills(_settings(pos_bills_limit=20))
+    bill_numbers = [b.bill_number for b in bills]
+    assert "TF2607140006" not in bill_numbers
+    assert "TFV2607140007" not in bill_numbers
+    assert get_csv_bill("106", _settings()) is None
+    assert get_csv_bill("107", _settings()) is None
 
 
 def test_list_csv_bills_limit():

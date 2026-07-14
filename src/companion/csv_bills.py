@@ -32,6 +32,13 @@ def _normalize_flag(value: object) -> str:
     return str(value).strip().upper()
 
 
+def _is_excluded_bill_number(bill_number: object) -> bool:
+    """Exclude transfer-style bills (TF... / TFV...)."""
+    text = _blank(bill_number).upper()
+    # TFV is also covered by TF*, listed explicitly for clarity.
+    return text.startswith("TFV") or text.startswith("TF")
+
+
 def _blank(value: object) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
@@ -125,6 +132,7 @@ def _load_cash_frame(csv_path: Path) -> pd.DataFrame:
 
     frame = pd.read_csv(csv_path, usecols=usecols, dtype=str, keep_default_na=False)
     frame = frame[frame["CASHED"].map(_normalize_flag) == "Y"].copy()
+    frame = frame[~frame["BILLNO"].map(_is_excluded_bill_number)].copy()
     if frame.empty:
         frame["_created_at"] = []
         return frame
