@@ -6,6 +6,10 @@ import os
 import sys
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from dotenv import dotenv_values
 
 REQUIRED = (
@@ -27,7 +31,7 @@ def _source_label(key: str, file_vals: dict[str, str | None]) -> str:
 
 
 def main() -> int:
-    env_path = Path(__file__).resolve().parents[1] / ".env"
+    env_path = PROJECT_ROOT / ".env"
     if not env_path.is_file():
         print(f".env not found at {env_path}")
         return 1
@@ -51,7 +55,7 @@ def main() -> int:
         print("  - SUPABASE_URL=https://xxxx.supabase.co  (no spaces around =)")
         print("  - Save as UTF-8 (not UTF-16)")
         print("  - SUPABASE_DB_URL is different from SUPABASE_URL")
-        print("  - If process_env=empty, clear that Windows env var; it can override .env")
+        print("  - If process_env=empty, clear that Windows environment variable")
         return 1
 
     # Also prove pydantic settings can load the same values.
@@ -60,10 +64,16 @@ def main() -> int:
 
         get_tiger_pay_settings.cache_clear()
         settings = get_tiger_pay_settings()
-        print(f"Pydantic load OK (supabase_url host starts with {settings.supabase_url[:28]}...)")
+        print(
+            "Pydantic load OK "
+            f"(supabase_url starts with {settings.supabase_url[:28]}...)"
+        )
     except Exception as exc:
         print(f"Pydantic settings failed to load: {exc}")
-        print("If process_env shows empty for a key, remove/clear that Windows environment variable.")
+        print(
+            "If process_env shows empty for a key, remove/clear that "
+            "Windows environment variable."
+        )
         return 1
 
     return 0
