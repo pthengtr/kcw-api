@@ -1,9 +1,13 @@
--- Tiger Pay companion payment attempt tables (CLI migration mirror of
--- docs/sql/tiger_pay_payment_attempt.sql).
+-- Tiger Pay companion tables — RESET for RefNo2 <= 20
+-- Paste into Supabase SQL Editor and run once.
+-- WARNING: deletes existing payment_attempt / payment_event rows (Phase 1 OK).
 
 create schema if not exists tiger_pay;
 
-create table if not exists tiger_pay.payment_attempt (
+drop table if exists tiger_pay.payment_event cascade;
+drop table if exists tiger_pay.payment_attempt cascade;
+
+create table tiger_pay.payment_attempt (
     id text primary key,
     pos_bill_id text not null,
     pos_bill_number text not null,
@@ -21,20 +25,20 @@ create table if not exists tiger_pay.payment_attempt (
     constraint payment_attempt_id_max_len check (char_length(id) <= 20)
 );
 
-create unique index if not exists payment_attempt_one_active_per_bill_idx
+create unique index payment_attempt_one_active_per_bill_idx
     on tiger_pay.payment_attempt (pos_bill_id)
     where status in ('sending', 'pending', 'paying', 'changing', 'cancelling');
 
-create index if not exists payment_attempt_tiger_payment_id_idx
+create index payment_attempt_tiger_payment_id_idx
     on tiger_pay.payment_attempt (tiger_payment_id);
 
-create index if not exists payment_attempt_pos_bill_id_idx
+create index payment_attempt_pos_bill_id_idx
     on tiger_pay.payment_attempt (pos_bill_id);
 
-create index if not exists payment_attempt_status_idx
+create index payment_attempt_status_idx
     on tiger_pay.payment_attempt (status);
 
-create table if not exists tiger_pay.payment_event (
+create table tiger_pay.payment_event (
     id bigserial primary key,
     payment_attempt_id text not null
         references tiger_pay.payment_attempt (id) on delete cascade,
@@ -47,9 +51,9 @@ create table if not exists tiger_pay.payment_event (
         check (source in ('api', 'webhook', 'polling'))
 );
 
-create unique index if not exists payment_event_attempt_event_key_idx
+create unique index payment_event_attempt_event_key_idx
     on tiger_pay.payment_event (payment_attempt_id, event_key)
     where event_key is not null;
 
-create index if not exists payment_event_attempt_id_created_at_idx
+create index payment_event_attempt_id_created_at_idx
     on tiger_pay.payment_event (payment_attempt_id, created_at);

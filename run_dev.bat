@@ -3,36 +3,17 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM ==========================================================
 REM KCW API local development server
-REM - Loads .env
+REM - Ensures .env exists
 REM - Uses / creates .venv
+REM - Ensures requirements are installed
 REM - Starts uvicorn with reload on port 8000
 REM ==========================================================
 
 cd /d "%~dp0"
 
 if not exist ".env" (
-    echo .env not found.
+    echo .env not found in %CD%
     echo Copy .env.example to .env and fill in values first.
-    pause
-    exit /b 1
-)
-
-call :load_env ".env"
-
-if "%TIGER_PAY_CLIENT_SECRET%"=="" (
-    echo Missing TIGER_PAY_CLIENT_SECRET in .env
-    pause
-    exit /b 1
-)
-
-if "%SUPABASE_URL%"=="" (
-    echo Missing SUPABASE_URL in .env
-    pause
-    exit /b 1
-)
-
-if "%SUPABASE_SERVICE_ROLE_KEY%"=="" (
-    echo Missing SUPABASE_SERVICE_ROLE_KEY in .env
     pause
     exit /b 1
 )
@@ -52,9 +33,34 @@ if not exist "%VENV_PYTHON%" (
         pause
         exit /b 1
     )
-    echo Installing requirements...
-    "%VENV_PYTHON%" -m pip install --upgrade pip
-    "%VENV_PYTHON%" -m pip install -r requirements.txt
+)
+
+echo Ensuring Python dependencies are installed...
+"%VENV_PYTHON%" -m pip install --upgrade pip
+if errorlevel 1 (
+    echo pip upgrade failed
+    pause
+    exit /b 1
+)
+"%VENV_PYTHON%" -m pip install -r requirements.txt
+if errorlevel 1 (
+    echo pip install -r requirements.txt failed
+    pause
+    exit /b 1
+)
+
+"%VENV_PYTHON%" -c "import pydantic_settings, dotenv, fastapi, uvicorn; print('Dependencies OK')"
+if errorlevel 1 (
+    echo Required packages are still missing after pip install.
+    pause
+    exit /b 1
+)
+
+echo Checking required .env keys via Python...
+"%VENV_PYTHON%" scripts\check_env.py
+if errorlevel 1 (
+    pause
+    exit /b 1
 )
 
 echo.
@@ -72,21 +78,3 @@ echo.
 echo Server exited with code %EXIT_CODE%
 pause
 exit /b %EXIT_CODE%
-
-
-:load_env
-if not exist "%~1" (
-    echo .env not found: %~1
-    exit /b 0
-)
-
-for /f "usebackq tokens=1,* delims==" %%A in ("%~1") do (
-    set "key=%%A"
-    set "value=%%B"
-
-    if not "!key!"=="" if not "!key:~0,1!"=="#" (
-        set "!key!=!value!"
-    )
-)
-
-exit /b 0

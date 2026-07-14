@@ -1,15 +1,21 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = PROJECT_ROOT / ".env"
 
 
 class TigerPaySettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Absolute path so uvicorn --reload / different CWDs still find .env
+        env_file=str(ENV_FILE),
         env_file_encoding="utf-8",
+        # Empty Windows env vars must not override values from .env
+        env_ignore_empty=True,
         extra="ignore",
     )
 
