@@ -28,13 +28,40 @@ Useful URLs:
 
 ## Tiger Pay companion (Phase 1)
 
-Flow: mock POS open bills → companion backend → Tiger Pay Open API
+Flow: POS bills → companion backend → Tiger Pay Open API
 (`POST/GET/PUT /api/open/v2/payment...`). Status stays almost live via:
 
 1. immediate API response
 2. existing `POST /webhooks/tiger-pay` reconcile into `payment_attempt`
 3. background polling of active attempts (every ~1.5s) when
    `TIGER_PAY_API_HOST` and `TIGER_PAY_CLIENT_ID` are set
+
+### POS bill sources
+
+Set in `.env`:
+
+- `POS_BILL_SOURCE=mock` (default) — in-memory sample bills
+- `POS_BILL_SOURCE=csv` — read SIMAS export CSV
+
+CSV mapping (cash bills only):
+
+- filter: `CASHED == Y`
+- `id` ← `ID`
+- `bill_number` ← `BILLNO`
+- `amount` ← `AFTERTAX`
+- `pos_status` ← `PAID`
+- `salesperson` ← `SALE`
+- `POS_BILLS_MODE=latest` + `POS_BILLS_LIMIT=10` for testing
+- `POS_BILLS_MODE=today` for same-day production-shaped filtering
+
+Example:
+
+```env
+POS_BILL_SOURCE=csv
+POS_BILLS_CSV_PATH=G:\Shared drives\KCW-Data\kcw_analytics\01_raw\raw_hq_simas_sales_bills.csv
+POS_BILLS_MODE=latest
+POS_BILLS_LIMIT=10
+```
 
 ### Supabase SQL (paste in SQL Editor)
 
