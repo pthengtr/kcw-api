@@ -1,8 +1,9 @@
 -- Tiger Pay companion payment attempt tables
 -- Paste into Supabase Dashboard → SQL Editor and run once.
--- Idempotent for fresh installs. Includes a repair block for earlier uuid PKs.
 --
--- Tiger Open API constraint: RefNo2 max length is 20, so attempt ids are text <= 20.
+-- If you still see: invalid input syntax for type uuid
+-- run the hard reset instead:
+--   docs/sql/tiger_pay_payment_attempt_reset.sql
 
 create schema if not exists tiger_pay;
 
@@ -57,19 +58,23 @@ create unique index if not exists payment_event_attempt_event_key_idx
 create index if not exists payment_event_attempt_id_created_at_idx
     on tiger_pay.payment_event (payment_attempt_id, created_at);
 
--- Repair: convert earlier uuid PK installs to text (<=20 RefNo2 ids).
+-- Force-convert earlier uuid PK installs to text.
 do $$
+declare
+    id_type text;
 begin
-    if exists (
-        select 1
-        from information_schema.columns
-        where table_schema = 'tiger_pay'
-          and table_name = 'payment_attempt'
-          and column_name = 'id'
-          and data_type = 'uuid'
-    ) then
+    select data_type into id_type
+    from information_schema.columns
+    where table_schema = 'tiger_pay'
+      and table_name = 'payment_attempt'
+      and column_name = 'id';
+
+    if id_type = 'uuid' then
         alter table tiger_pay.payment_event
             drop constraint if exists payment_event_payment_attempt_id_fkey;
+
+        -- Clear old attempt rows so length<=20 check can apply cleanly.
+        truncate table tiger_pay.payment_event, tiger_pay.payment_attempt cascade;
 
         alter table tiger_pay.payment_attempt
             alter column id type text using id::text;
@@ -82,13 +87,13 @@ begin
             foreign key (payment_attempt_id)
             references tiger_pay.payment_attempt (id)
             on delete cascade;
-
-        begin
-            alter table tiger_pay.payment_attempt
-                add constraint payment_attempt_id_max_len
-                check (char_length(id) <= 20);
-        exception
-            when duplicate_object then null;
-        end;
     end if;
+
+    begin
+        alter table tiger_pay.payment_attempt
+            add constraint payment_attempt_id_max_len
+            check (char_length(id) <= 20);
+    exception
+        when duplicate_object then null;
+    end;
 end $$;
