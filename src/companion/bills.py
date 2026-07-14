@@ -67,6 +67,15 @@ def list_open_bills() -> list[PosBill]:
             logger.exception("Failed to load POS bills from CSV; returning empty list")
             return []
 
+    if source == "mssql":
+        from src.companion.mssql_bills import list_mssql_bills
+
+        try:
+            return list_mssql_bills(settings)
+        except Exception:
+            logger.exception("Failed to load POS bills from MSSQL; returning empty list")
+            return []
+
     return list(_MOCK_BILLS)
 
 
@@ -81,6 +90,15 @@ def get_open_bill(pos_bill_id: str) -> PosBill | None:
             return get_csv_bill(pos_bill_id, settings)
         except Exception:
             logger.exception("Failed to load POS bill %s from CSV", pos_bill_id)
+            return None
+
+    if source == "mssql":
+        from src.companion.mssql_bills import get_mssql_bill
+
+        try:
+            return get_mssql_bill(pos_bill_id, settings)
+        except Exception:
+            logger.exception("Failed to load POS bill %s from MSSQL", pos_bill_id)
             return None
 
     for bill in _MOCK_BILLS:

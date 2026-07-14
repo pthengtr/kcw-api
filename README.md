@@ -41,9 +41,10 @@ Flow: POS bills → companion backend → Tiger Pay Open API
 Set in `.env`:
 
 - `POS_BILL_SOURCE=mock` (default) — in-memory sample bills
-- `POS_BILL_SOURCE=csv` — read SIMAS export CSV
+- `POS_BILL_SOURCE=csv` — read SIMAS export CSV (good for testing)
+- `POS_BILL_SOURCE=mssql` — query local SQL Server (`PARTS9` on `KSS`)
 
-CSV mapping (cash bills only):
+Shared cash-bill mapping (CSV and MSSQL):
 
 - filter: `CASHED == Y`
 - exclude bill numbers starting with `TF` or `TFV`
@@ -53,9 +54,9 @@ CSV mapping (cash bills only):
 - `pos_status` ← `PAID`
 - `salesperson` ← `SALE`
 - `POS_BILLS_MODE=latest` + `POS_BILLS_LIMIT=10` for testing
-- `POS_BILLS_MODE=today` for same-day production-shaped filtering
+- `POS_BILLS_MODE=today` for same-day (MSSQL uses SQL Server `GETDATE()`)
 
-Example:
+#### CSV (testing)
 
 ```env
 POS_BILL_SOURCE=csv
@@ -63,6 +64,27 @@ POS_BILLS_CSV_PATH=G:\Shared drives\KCW-Data\kcw_analytics\01_raw\raw_hq_simas_s
 POS_BILLS_MODE=latest
 POS_BILLS_LIMIT=10
 ```
+
+#### Local SQL Server (shop LAN)
+
+Requires [ODBC Driver 17 for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server) and `pyodbc` on the PC that runs the companion. Connection uses the same pattern as your notebook:
+
+`mssql+pyodbc:///?odbc_connect=` + `quote_plus(DRIVER=...;SERVER=KSS;DATABASE=PARTS9;UID=python_reader;PWD=...;TrustServerCertificate=yes;)`
+
+```env
+POS_BILL_SOURCE=mssql
+POS_MSSQL_SERVER=KSS
+POS_MSSQL_DATABASE=PARTS9
+POS_MSSQL_USERNAME=python_reader
+POS_MSSQL_PASSWORD=xxxxx
+POS_MSSQL_DRIVER=ODBC Driver 17 for SQL Server
+# Bill-header table/view with CSV-equivalent columns (ID, BILLNO, AFTERTAX, ...)
+POS_MSSQL_BILLS_TABLE=dbo.YourBillHeaderTable
+POS_BILLS_MODE=today
+POS_BILLS_LIMIT=50
+```
+
+Switch back to `POS_BILL_SOURCE=csv` anytime for offline testing without SQL Server.
 
 ### Supabase SQL (paste in SQL Editor)
 
