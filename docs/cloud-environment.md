@@ -149,6 +149,11 @@ Do not commit real values.
 
 - `TIGER_PAY_CLIENT_SECRET`
 - `TIGER_PAY_MAX_BODY_BYTES` (optional, default `5242880`)
+- `TIGER_PAY_CLIENT_ID` (companion Open API)
+- `TIGER_PAY_API_HOST` (companion Open API host, trailing slash recommended)
+- `TIGER_PAY_POLL_INTERVAL_SECONDS` (optional, default `1.5`)
+
+Paste-ready companion tables: `docs/sql/tiger_pay_payment_attempt.sql`
 
 - `WORKER_NAME`
 - `WORKER_POLL_SECONDS`

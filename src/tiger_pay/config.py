@@ -14,6 +14,18 @@ class TigerPaySettings(BaseSettings):
     )
 
     tiger_pay_client_secret: str = Field(validation_alias="TIGER_PAY_CLIENT_SECRET")
+    tiger_pay_client_id: str = Field(
+        default="",
+        validation_alias="TIGER_PAY_CLIENT_ID",
+    )
+    tiger_pay_api_host: str = Field(
+        default="",
+        validation_alias="TIGER_PAY_API_HOST",
+    )
+    tiger_pay_poll_interval_seconds: float = Field(
+        default=1.5,
+        validation_alias="TIGER_PAY_POLL_INTERVAL_SECONDS",
+    )
     supabase_url: str = Field(validation_alias="SUPABASE_URL")
     supabase_service_role_key: str = Field(validation_alias="SUPABASE_SERVICE_ROLE_KEY")
     tiger_pay_max_body_bytes: int = Field(
@@ -32,6 +44,18 @@ class TigerPaySettings(BaseSettings):
         if not stripped:
             raise ValueError("must not be empty")
         return stripped
+
+    @field_validator("tiger_pay_client_id", "tiger_pay_api_host")
+    @classmethod
+    def strip_optional(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("tiger_pay_poll_interval_seconds")
+    @classmethod
+    def positive_poll_interval(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("must be greater than zero")
+        return value
 
     @field_validator("tiger_pay_max_body_bytes")
     @classmethod

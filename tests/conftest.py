@@ -3,6 +3,8 @@ import os
 import pytest
 
 os.environ.setdefault("TIGER_PAY_CLIENT_SECRET", "test-tiger-pay-secret")
+os.environ.setdefault("TIGER_PAY_CLIENT_ID", "test-client-id")
+os.environ.setdefault("TIGER_PAY_API_HOST", "")
 os.environ.setdefault("SUPABASE_URL", "https://placeholder.supabase.co")
 os.environ.setdefault("SUPABASE_DB_URL", "https://placeholder.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
