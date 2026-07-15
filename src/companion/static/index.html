@@ -453,6 +453,11 @@
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
           <span>ซ่อนยกเลิกแล้ว</span>
         </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="pendingOnly" />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          <span>เฉพาะรอดำเนินการ</span>
+        </label>
       </div>
       <div class="desktop-table">
         <div class="table-wrap">
@@ -501,7 +506,7 @@
     </section>
   </main>
   <script>
-    const STORAGE_KEY = "kcw.companion.ui.v2";
+    const STORAGE_KEY = "kcw.companion.ui.v3";
     const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
@@ -546,6 +551,7 @@
       limit: "10",
       hideSuccess: true,
       hideCancelled: true,
+      pendingOnly: false,
       timelineFilters: {
         request: true,
         response: true,
@@ -561,7 +567,10 @@
 
     function loadPrefs() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem("kcw.companion.ui.v1");
+        const raw =
+          localStorage.getItem(STORAGE_KEY) ||
+          localStorage.getItem("kcw.companion.ui.v2") ||
+          localStorage.getItem("kcw.companion.ui.v1");
         if (!raw) return defaultPrefs();
         const parsed = JSON.parse(raw);
         const hideSuccess = parsed.hideSuccess !== undefined
@@ -575,6 +584,7 @@
           limit: normalizeLimit(parsed.limit),
           hideSuccess,
           hideCancelled,
+          pendingOnly: parsed.pendingOnly === true,
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
             response: parsed.timelineFilters?.response !== false,
@@ -593,6 +603,7 @@
         limit: state.limit,
         hideSuccess: state.hideSuccess,
         hideCancelled: state.hideCancelled,
+        pendingOnly: state.pendingOnly,
         timelineFilters: state.timelineFilters,
       }));
     }
@@ -609,6 +620,7 @@
       limit: prefs.limit,
       hideSuccess: prefs.hideSuccess,
       hideCancelled: prefs.hideCancelled,
+      pendingOnly: prefs.pendingOnly,
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
@@ -798,6 +810,7 @@
       document.getElementById("limitSelect").value = state.limit;
       document.getElementById("hideSuccess").checked = state.hideSuccess;
       document.getElementById("hideCancelled").checked = state.hideCancelled;
+      document.getElementById("pendingOnly").checked = state.pendingOnly;
       document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
         const cat = chip.getAttribute("data-cat");
         chip.classList.toggle("active", !!state.timelineFilters[cat]);
@@ -805,10 +818,16 @@
       syncRefreshBtn();
     }
 
+    function isPendingStatus(status) {
+      return ACTIVE_STATUSES.has(status);
+    }
+
     function visibleBills() {
       return state.bills.filter((b) => {
-        if (state.hideSuccess && b.tiger_payment_status === "success") return false;
-        if (state.hideCancelled && b.tiger_payment_status === "cancelled") return false;
+        const status = b.tiger_payment_status;
+        if (state.pendingOnly) return isPendingStatus(status);
+        if (state.hideSuccess && status === "success") return false;
+        if (state.hideCancelled && status === "cancelled") return false;
         return true;
       });
     }
@@ -1077,6 +1096,11 @@
     };
     document.getElementById("hideCancelled").onchange = (event) => {
       state.hideCancelled = !!event.target.checked;
+      savePrefs();
+      renderBills();
+    };
+    document.getElementById("pendingOnly").onchange = (event) => {
+      state.pendingOnly = !!event.target.checked;
       savePrefs();
       renderBills();
     };
