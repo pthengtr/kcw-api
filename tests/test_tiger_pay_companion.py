@@ -320,9 +320,8 @@ def test_companion_ui_and_bills_route():
         assert 'lang="th"' in ui.text
         assert "ส่งชำระ" in ui.text
         assert "Request" in ui.text
-        assert "ซ่อนสำเร็จ" in ui.text
-        assert "ซ่อนยกเลิกแล้ว" in ui.text
-        assert "เฉพาะรอดำเนินการ" in ui.text
+        assert 'id="statusFilterSeg"' in ui.text
+        assert "รอดำเนินการ" in ui.text
         assert 'id="alertDialog"' in ui.text
         assert "ตกลง" in ui.text
         bills = client.get("/companion/bills")

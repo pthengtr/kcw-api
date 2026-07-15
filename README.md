@@ -42,8 +42,7 @@ Thai-language shop UI at `/companion` (mobile-friendly):
 
 - **ล่าสุด / วันนี้** — bill list mode (`GET /companion/bills?mode=latest|today`; overrides env `POS_BILLS_MODE` for that request)
 - **จำนวนสูงสุด** — `10` / `20` / ทั้งหมด (`GET /companion/bills?limit=10|20|all`; default `10`)
-- **ซ่อนสำเร็จ** / **ซ่อนยกเลิกแล้ว** — separate hide filters (both default on)
-- **เฉพาะรอดำเนินการ** — show only blocking/in-progress Tiger attempts (`sending` / `pending` / `paying` / `changing` / `cancelling`)
+- **สถานะ Tiger** segment — `ทั้งหมด` / `รอดำเนินการ` / `สำเร็จ` / `ยกเลิก` (single-select; default `ทั้งหมด`)
 - Send/Cancel buttons show loading while the request runs
 - Timeline filters: Request / Response / Webhook / Polling (color-coded), Bangkok timestamps, expandable payloads
 - Preferences (mode, limit, hide filters, timeline filters) persist in `localStorage`

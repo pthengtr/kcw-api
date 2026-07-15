@@ -443,21 +443,12 @@
             <option value="all">ทั้งหมด</option>
           </select>
         </label>
-        <label class="toggle-row">
-          <input type="checkbox" id="hideSuccess" />
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-          <span>ซ่อนสำเร็จ</span>
-        </label>
-        <label class="toggle-row">
-          <input type="checkbox" id="hideCancelled" />
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-          <span>ซ่อนยกเลิกแล้ว</span>
-        </label>
-        <label class="toggle-row">
-          <input type="checkbox" id="pendingOnly" />
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          <span>เฉพาะรอดำเนินการ</span>
-        </label>
+        <div class="seg" id="statusFilterSeg" role="group" aria-label="กรองสถานะ Tiger">
+          <button type="button" data-status-filter="all">ทั้งหมด</button>
+          <button type="button" data-status-filter="pending">รอดำเนินการ</button>
+          <button type="button" data-status-filter="success">สำเร็จ</button>
+          <button type="button" data-status-filter="cancelled">ยกเลิก</button>
+        </div>
       </div>
       <div class="desktop-table">
         <div class="table-wrap">
@@ -506,7 +497,8 @@
     </section>
   </main>
   <script>
-    const STORAGE_KEY = "kcw.companion.ui.v3";
+    const STORAGE_KEY = "kcw.companion.ui.v4";
+    const STATUS_FILTERS = new Set(["all", "pending", "success", "cancelled"]);
     const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
@@ -549,9 +541,7 @@
     const defaultPrefs = () => ({
       mode: "latest",
       limit: "10",
-      hideSuccess: true,
-      hideCancelled: true,
-      pendingOnly: false,
+      statusFilter: "all",
       timelineFilters: {
         request: true,
         response: true,
@@ -565,26 +555,25 @@
       return LIMIT_OPTIONS.has(raw) ? raw : "10";
     }
 
+    function normalizeStatusFilter(value, legacy = {}) {
+      if (STATUS_FILTERS.has(value)) return value;
+      if (legacy.pendingOnly === true) return "pending";
+      return "all";
+    }
+
     function loadPrefs() {
       try {
         const raw =
           localStorage.getItem(STORAGE_KEY) ||
+          localStorage.getItem("kcw.companion.ui.v3") ||
           localStorage.getItem("kcw.companion.ui.v2") ||
           localStorage.getItem("kcw.companion.ui.v1");
         if (!raw) return defaultPrefs();
         const parsed = JSON.parse(raw);
-        const hideSuccess = parsed.hideSuccess !== undefined
-          ? parsed.hideSuccess !== false
-          : parsed.hideSettled !== false;
-        const hideCancelled = parsed.hideCancelled !== undefined
-          ? parsed.hideCancelled !== false
-          : parsed.hideSettled !== false;
         return {
           mode: parsed.mode === "today" ? "today" : "latest",
           limit: normalizeLimit(parsed.limit),
-          hideSuccess,
-          hideCancelled,
-          pendingOnly: parsed.pendingOnly === true,
+          statusFilter: normalizeStatusFilter(parsed.statusFilter, parsed),
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
             response: parsed.timelineFilters?.response !== false,
@@ -601,9 +590,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         mode: state.mode,
         limit: state.limit,
-        hideSuccess: state.hideSuccess,
-        hideCancelled: state.hideCancelled,
-        pendingOnly: state.pendingOnly,
+        statusFilter: state.statusFilter,
         timelineFilters: state.timelineFilters,
       }));
     }
@@ -618,9 +605,7 @@
       refreshing: false,
       mode: prefs.mode,
       limit: prefs.limit,
-      hideSuccess: prefs.hideSuccess,
-      hideCancelled: prefs.hideCancelled,
-      pendingOnly: prefs.pendingOnly,
+      statusFilter: prefs.statusFilter,
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
@@ -808,9 +793,9 @@
       document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
       document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
       document.getElementById("limitSelect").value = state.limit;
-      document.getElementById("hideSuccess").checked = state.hideSuccess;
-      document.getElementById("hideCancelled").checked = state.hideCancelled;
-      document.getElementById("pendingOnly").checked = state.pendingOnly;
+      document.querySelectorAll("#statusFilterSeg [data-status-filter]").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-status-filter") === state.statusFilter);
+      });
       document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
         const cat = chip.getAttribute("data-cat");
         chip.classList.toggle("active", !!state.timelineFilters[cat]);
@@ -825,9 +810,10 @@
     function visibleBills() {
       return state.bills.filter((b) => {
         const status = b.tiger_payment_status;
-        if (state.pendingOnly) return isPendingStatus(status);
-        if (state.hideSuccess && status === "success") return false;
-        if (state.hideCancelled && status === "cancelled") return false;
+        if (state.statusFilter === "all") return true;
+        if (state.statusFilter === "pending") return isPendingStatus(status);
+        if (state.statusFilter === "success") return status === "success";
+        if (state.statusFilter === "cancelled") return status === "cancelled";
         return true;
       });
     }
@@ -1089,21 +1075,15 @@
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
-    document.getElementById("hideSuccess").onchange = (event) => {
-      state.hideSuccess = !!event.target.checked;
-      savePrefs();
-      renderBills();
-    };
-    document.getElementById("hideCancelled").onchange = (event) => {
-      state.hideCancelled = !!event.target.checked;
-      savePrefs();
-      renderBills();
-    };
-    document.getElementById("pendingOnly").onchange = (event) => {
-      state.pendingOnly = !!event.target.checked;
-      savePrefs();
-      renderBills();
-    };
+    document.querySelectorAll("#statusFilterSeg [data-status-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const next = btn.getAttribute("data-status-filter");
+        state.statusFilter = normalizeStatusFilter(next);
+        savePrefs();
+        syncToolbar();
+        renderBills();
+      });
+    });
     document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
       chip.addEventListener("click", () => {
         const cat = chip.getAttribute("data-cat");
