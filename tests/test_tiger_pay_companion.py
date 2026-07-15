@@ -310,7 +310,7 @@ def test_companion_ui_and_bills_route():
         ) as list_bills,
         patch(
             "app.routers.companion.get_companion_bill_settings",
-            return_value=MagicMock(pos_bills_mode="latest"),
+            return_value=MagicMock(pos_bills_mode="latest", pos_bills_limit=10),
         ),
     ):
         client = TestClient(app)
@@ -319,15 +319,21 @@ def test_companion_ui_and_bills_route():
         assert "Tiger Pay Companion" in ui.text
         assert 'lang="th"' in ui.text
         assert "ส่งชำระ" in ui.text
+        assert "Request" in ui.text
+        assert "ซ่อนสำเร็จ" in ui.text
+        assert "ซ่อนยกเลิกแล้ว" in ui.text
         bills = client.get("/companion/bills")
         assert bills.status_code == 200
         payload = bills.json()
         assert payload["bills"][0]["id"] == "bill-1001"
         assert payload["mode"] == "latest"
-        today = client.get("/companion/bills?mode=today")
+        assert payload["limit"] == 10
+        today = client.get("/companion/bills?mode=today&limit=all")
         assert today.status_code == 200
         assert today.json()["mode"] == "today"
+        assert today.json()["limit"] == "all"
         assert list_bills.call_args_list[-1].kwargs.get("mode") == "today"
+        assert list_bills.call_args_list[-1].kwargs.get("limit") == "all"
 
 
 def test_companion_pay_conflict():

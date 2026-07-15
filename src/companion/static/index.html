@@ -93,6 +93,25 @@
       height: 1.1rem;
       accent-color: var(--accent);
     }
+    .limit-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      min-height: var(--touch);
+    }
+    .limit-wrap select {
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+      background: #223246;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: var(--touch);
+      padding: 0.35rem 0.65rem;
+    }
     main {
       display: grid;
       grid-template-columns: 1.4fr 1fr;
@@ -317,9 +336,21 @@
           <button type="button" id="modeLatest" data-mode="latest">ล่าสุด</button>
           <button type="button" id="modeToday" data-mode="today">วันนี้</button>
         </div>
+        <label class="limit-wrap" for="limitSelect">
+          <span>จำนวนสูงสุด</span>
+          <select id="limitSelect" aria-label="จำนวนบิลสูงสุด">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="all">ทั้งหมด</option>
+          </select>
+        </label>
         <label class="toggle-row">
-          <input type="checkbox" id="hideSettled" />
-          <span>ซ่อนสำเร็จ/ยกเลิกแล้ว</span>
+          <input type="checkbox" id="hideSuccess" />
+          <span>ซ่อนสำเร็จ</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="hideCancelled" />
+          <span>ซ่อนยกเลิกแล้ว</span>
         </label>
       </div>
       <div class="desktop-table">
@@ -345,17 +376,16 @@
     <section class="panel">
       <h2>ไทม์ไลน์การชำระที่เลือก</h2>
       <div class="chip-bar" id="timelineChips">
-        <button type="button" class="chip active" data-cat="request">คำขอ</button>
-        <button type="button" class="chip active" data-cat="response">ตอบกลับ</button>
+        <button type="button" class="chip active" data-cat="request">Request</button>
+        <button type="button" class="chip active" data-cat="response">Response</button>
         <button type="button" class="chip active" data-cat="webhook">Webhook</button>
-        <button type="button" class="chip active" data-cat="polling">โพลลิ่ง</button>
+        <button type="button" class="chip active" data-cat="polling">Polling</button>
       </div>
       <ul id="timeline"><li class="empty">เลือกบิลที่มีรายการชำระ</li></ul>
     </section>
   </main>
   <script>
-    const STORAGE_KEY = "kcw.companion.ui.v1";
-    const SETTLED = new Set(["success", "cancelled"]);
+    const STORAGE_KEY = "kcw.companion.ui.v2";
     const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
@@ -364,11 +394,12 @@
       "cancel_api_failed",
     ]);
     const CAT_LABEL = {
-      request: "คำขอ",
-      response: "ตอบกลับ",
+      request: "Request",
+      response: "Response",
       webhook: "Webhook",
-      polling: "โพลลิ่ง",
+      polling: "Polling",
     };
+    const LIMIT_OPTIONS = new Set(["10", "20", "all"]);
     const STATUS_LABEL = {
       success: "สำเร็จ",
       failed: "ล้มเหลว",
@@ -382,7 +413,9 @@
 
     const defaultPrefs = () => ({
       mode: "latest",
-      hideSettled: true,
+      limit: "10",
+      hideSuccess: true,
+      hideCancelled: true,
       timelineFilters: {
         request: true,
         response: true,
@@ -391,15 +424,27 @@
       },
     });
 
+    function normalizeLimit(value) {
+      const raw = String(value ?? "10");
+      return LIMIT_OPTIONS.has(raw) ? raw : "10";
+    }
+
     function loadPrefs() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem("kcw.companion.ui.v1");
         if (!raw) return defaultPrefs();
         const parsed = JSON.parse(raw);
-        const base = defaultPrefs();
+        const hideSuccess = parsed.hideSuccess !== undefined
+          ? parsed.hideSuccess !== false
+          : parsed.hideSettled !== false;
+        const hideCancelled = parsed.hideCancelled !== undefined
+          ? parsed.hideCancelled !== false
+          : parsed.hideSettled !== false;
         return {
           mode: parsed.mode === "today" ? "today" : "latest",
-          hideSettled: parsed.hideSettled !== false,
+          limit: normalizeLimit(parsed.limit),
+          hideSuccess,
+          hideCancelled,
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
             response: parsed.timelineFilters?.response !== false,
@@ -415,7 +460,9 @@
     function savePrefs() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         mode: state.mode,
-        hideSettled: state.hideSettled,
+        limit: state.limit,
+        hideSuccess: state.hideSuccess,
+        hideCancelled: state.hideCancelled,
         timelineFilters: state.timelineFilters,
       }));
     }
@@ -428,7 +475,9 @@
       actionInFlight: null, // { type: 'send'|'cancel', billId, attemptId }
       pollTimer: null,
       mode: prefs.mode,
-      hideSettled: prefs.hideSettled,
+      limit: prefs.limit,
+      hideSuccess: prefs.hideSuccess,
+      hideCancelled: prefs.hideCancelled,
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
@@ -525,7 +574,9 @@
     function syncToolbar() {
       document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
       document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
-      document.getElementById("hideSettled").checked = state.hideSettled;
+      document.getElementById("limitSelect").value = state.limit;
+      document.getElementById("hideSuccess").checked = state.hideSuccess;
+      document.getElementById("hideCancelled").checked = state.hideCancelled;
       document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
         const cat = chip.getAttribute("data-cat");
         chip.classList.toggle("active", !!state.timelineFilters[cat]);
@@ -533,8 +584,11 @@
     }
 
     function visibleBills() {
-      if (!state.hideSettled) return state.bills;
-      return state.bills.filter((b) => !SETTLED.has(b.tiger_payment_status));
+      return state.bills.filter((b) => {
+        if (state.hideSuccess && b.tiger_payment_status === "success") return false;
+        if (state.hideCancelled && b.tiger_payment_status === "cancelled") return false;
+        return true;
+      });
     }
 
     function buttonHtml(bill) {
@@ -701,10 +755,17 @@
     }
 
     async function loadBills() {
-      const data = await api(`/companion/bills?mode=${encodeURIComponent(state.mode)}`);
+      const qs = new URLSearchParams({
+        mode: state.mode,
+        limit: state.limit,
+      });
+      const data = await api(`/companion/bills?${qs.toString()}`);
       state.bills = data.bills || [];
       if (data.mode === "latest" || data.mode === "today") {
         state.mode = data.mode;
+      }
+      if (data.limit === "all" || data.limit === 10 || data.limit === 20) {
+        state.limit = String(data.limit);
       }
       syncToolbar();
       renderBills();
@@ -754,8 +815,19 @@
       syncToolbar();
       loadBills().catch((err) => setMessage(err.message || String(err)));
     };
-    document.getElementById("hideSettled").onchange = (event) => {
-      state.hideSettled = !!event.target.checked;
+    document.getElementById("limitSelect").onchange = (event) => {
+      state.limit = normalizeLimit(event.target.value);
+      savePrefs();
+      syncToolbar();
+      loadBills().catch((err) => setMessage(err.message || String(err)));
+    };
+    document.getElementById("hideSuccess").onchange = (event) => {
+      state.hideSuccess = !!event.target.checked;
+      savePrefs();
+      renderBills();
+    };
+    document.getElementById("hideCancelled").onchange = (event) => {
+      state.hideCancelled = !!event.target.checked;
       savePrefs();
       renderBills();
     };

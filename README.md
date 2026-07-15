@@ -41,10 +41,11 @@ Flow: POS bills → companion backend → Tiger Pay Open API
 Thai-language shop UI at `/companion` (mobile-friendly):
 
 - **ล่าสุด / วันนี้** — bill list mode (`GET /companion/bills?mode=latest|today`; overrides env `POS_BILLS_MODE` for that request)
-- **ซ่อนสำเร็จ/ยกเลิกแล้ว** — hide settled Tiger attempts (default on)
+- **จำนวนสูงสุด** — `10` / `20` / ทั้งหมด (`GET /companion/bills?limit=10|20|all`; default `10`)
+- **ซ่อนสำเร็จ** / **ซ่อนยกเลิกแล้ว** — separate hide filters (both default on)
 - Send/Cancel buttons show loading while the request runs
-- Timeline filters: คำขอ / ตอบกลับ / Webhook / โพลลิ่ง (color-coded), Bangkok timestamps, expandable payloads
-- Preferences (mode, hide settled, timeline filters) persist in `localStorage`
+- Timeline filters: Request / Response / Webhook / Polling (color-coded), Bangkok timestamps, expandable payloads
+- Preferences (mode, limit, hide filters, timeline filters) persist in `localStorage`
 
 ### POS bill sources
 

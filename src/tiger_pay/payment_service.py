@@ -41,8 +41,9 @@ def list_bills_with_payment_status(
     engine: Engine,
     *,
     mode: str | None = None,
+    limit: int | str | None = None,
 ) -> list[dict[str, Any]]:
-    bills = list_open_bills(mode=mode)
+    bills = list_open_bills(mode=mode, limit=limit)
     latest_by_bill = repos.list_latest_attempts_by_bill_ids(
         engine,
         [bill.id for bill in bills],

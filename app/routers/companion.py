@@ -47,14 +47,23 @@ async def companion_bills(
         default=None,
         description="Override POS_BILLS_MODE for this request (latest or today).",
     ),
+    limit: Literal["10", "20", "all"] | None = Query(
+        default=None,
+        description="Override POS_BILLS_LIMIT for this request (10, 20, or all).",
+    ),
 ) -> dict:
     engine = get_engine()
     try:
-        bills = list_bills_with_payment_status(engine, mode=mode)
+        bills = list_bills_with_payment_status(engine, mode=mode, limit=limit)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail={"message": str(exc), "code": "bad_mode"}) from exc
-    effective_mode = mode or get_companion_bill_settings().pos_bills_mode
-    return {"bills": bills, "mode": effective_mode}
+        raise HTTPException(status_code=400, detail={"message": str(exc), "code": "bad_query"}) from exc
+    settings = get_companion_bill_settings()
+    effective_mode = mode or settings.pos_bills_mode
+    if limit is not None:
+        effective_limit: int | str = "all" if limit == "all" else int(limit)
+    else:
+        effective_limit = int(settings.pos_bills_limit)
+    return {"bills": bills, "mode": effective_mode, "limit": effective_limit}
 
 
 @router.post("/bills/{pos_bill_id}/pay")
