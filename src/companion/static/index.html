@@ -665,8 +665,8 @@
     function buttonHtml(bill) {
       const sendLoading = isSendLoading(bill.id);
       const cancelLoading = isCancelLoading(bill.payment_attempt_id);
-      const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight || state.refreshing;
-      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight || state.refreshing;
+      const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight;
+      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight;
       const sendLabel = sendLoading
         ? `${ICONS.spinner} กำลังส่ง…`
         : `${ICONS.send} ส่งชำระ`;
@@ -854,6 +854,8 @@
         if (showRefresh) {
           state.refreshing = false;
           syncRefreshBtn();
+          // Re-render so Send/Cancel are not left disabled from the in-flight refresh pass.
+          renderBills();
         }
       }
     }
