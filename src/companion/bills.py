@@ -54,8 +54,63 @@ _MOCK_BILLS: tuple[PosBill, ...] = (
 )
 
 
-def list_open_bills() -> list[PosBill]:
+# Practical ceiling when the UI asks for "all" bills.
+_ALL_BILLS_LIMIT = 1_000_000
+
+
+def _settings_with_overrides(
+    *,
+    mode: str | None = None,
+    limit: int | str | None = None,
+):
     settings = get_companion_bill_settings()
+    updates: dict[str, object] = {}
+
+    if mode is not None:
+        normalized_mode = mode.strip().lower()
+        if normalized_mode not in {"latest", "today"}:
+            raise ValueError("mode must be 'latest' or 'today'")
+        if normalized_mode != settings.pos_bills_mode:
+            updates["pos_bills_mode"] = normalized_mode
+
+    if limit is not None:
+        if isinstance(limit, str) and limit.strip().lower() == "all":
+            updates["pos_bills_limit"] = _ALL_BILLS_LIMIT
+        else:
+            try:
+                parsed_limit = int(limit)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("limit must be 10, 20, or all") from exc
+            if parsed_limit <= 0:
+                raise ValueError("limit must be greater than zero")
+            if parsed_limit != settings.pos_bills_limit:
+                updates["pos_bills_limit"] = parsed_limit
+
+    if not updates:
+        return settings
+    return settings.model_copy(update=updates)
+
+
+def _filter_mock_bills(mode: str, *, limit: int) -> list[PosBill]:
+    bills = list(_MOCK_BILLS)
+    if mode == "today":
+        from src.companion.bill_mapping import BANGKOK_TZ
+
+        today = datetime.now(BANGKOK_TZ).date()
+        bills = [
+            bill
+            for bill in bills
+            if bill.created_at.astimezone(BANGKOK_TZ).date() == today
+        ]
+    return bills[:limit]
+
+
+def list_open_bills(
+    *,
+    mode: str | None = None,
+    limit: int | str | None = None,
+) -> list[PosBill]:
+    settings = _settings_with_overrides(mode=mode, limit=limit)
     source = settings.pos_bill_source
 
     if source == "csv":
@@ -76,7 +131,10 @@ def list_open_bills() -> list[PosBill]:
             logger.exception("Failed to load POS bills from MSSQL; returning empty list")
             return []
 
-    return list(_MOCK_BILLS)
+    return _filter_mock_bills(
+        settings.pos_bills_mode,
+        limit=int(settings.pos_bills_limit),
+    )
 
 
 def get_open_bill(pos_bill_id: str) -> PosBill | None:

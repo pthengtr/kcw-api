@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
+from src.companion.config import get_companion_bill_settings
 from src.db import get_engine
 from src.tiger_pay.payment_service import (
     PaymentServiceError,
@@ -40,10 +42,28 @@ async def companion_ui() -> HTMLResponse:
 
 
 @router.get("/bills")
-async def companion_bills() -> dict:
+async def companion_bills(
+    mode: Literal["latest", "today"] | None = Query(
+        default=None,
+        description="Override POS_BILLS_MODE for this request (latest or today).",
+    ),
+    limit: Literal["10", "20", "all"] | None = Query(
+        default=None,
+        description="Override POS_BILLS_LIMIT for this request (10, 20, or all).",
+    ),
+) -> dict:
     engine = get_engine()
-    bills = list_bills_with_payment_status(engine)
-    return {"bills": bills}
+    try:
+        bills = list_bills_with_payment_status(engine, mode=mode, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc), "code": "bad_query"}) from exc
+    settings = get_companion_bill_settings()
+    effective_mode = mode or settings.pos_bills_mode
+    if limit is not None:
+        effective_limit: int | str = "all" if limit == "all" else int(limit)
+    else:
+        effective_limit = int(settings.pos_bills_limit)
+    return {"bills": bills, "mode": effective_mode, "limit": effective_limit}
 
 
 @router.post("/bills/{pos_bill_id}/pay")

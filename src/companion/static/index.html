@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>KCW Tiger Pay Companion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
       --bg: #0f1720;
@@ -14,30 +17,125 @@
       --accent: #2f9e7b;
       --danger: #c4544a;
       --warn: #c4913a;
+      --request: #3b82c4;
+      --response: #2f9e7b;
+      --webhook: #c4913a;
+      --polling: #8b7bb8;
+      --touch: 44px;
+      --font: "Prompt", "Noto Sans Thai", "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
+      font-family: var(--font);
       background: radial-gradient(circle at top left, #1b2a3a, var(--bg) 55%);
       color: var(--text);
       min-height: 100vh;
     }
     header {
-      padding: 1.25rem 1.5rem;
+      padding: 0.9rem 1rem;
       border-bottom: 1px solid var(--line);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 1rem;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: color-mix(in srgb, var(--bg) 92%, transparent);
+      backdrop-filter: blur(8px);
     }
-    h1 { margin: 0; font-size: 1.25rem; font-weight: 650; }
-    .muted { color: #9fb0c3; font-size: 0.9rem; }
+    h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .muted { color: var(--muted); font-size: 0.88rem; }
+    .icon {
+      width: 1.05em;
+      height: 1.05em;
+      display: inline-block;
+      flex-shrink: 0;
+      vertical-align: -0.15em;
+    }
+    .icon-lg { width: 1.25em; height: 1.25em; }
+    .icon-spin { animation: spin 0.7s linear infinite; }
+    .chip .icon { width: 0.95em; height: 0.95em; }
+    #message {
+      min-height: 1.2rem;
+      padding: 0.35rem 1rem;
+      color: #f0d59a;
+      font-size: 0.9rem;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .seg button {
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      min-height: var(--touch);
+      padding: 0.4rem 0.85rem;
+    }
+    .seg button.active {
+      background: #2a3f57;
+      color: var(--text);
+    }
+    .toggle-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      min-height: var(--touch);
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-row input {
+      width: 1.1rem;
+      height: 1.1rem;
+      accent-color: var(--accent);
+    }
+    .limit-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      min-height: var(--touch);
+    }
+    .limit-wrap select {
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+      background: #223246;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: var(--touch);
+      padding: 0.35rem 0.65rem;
+    }
     main {
       display: grid;
       grid-template-columns: 1.4fr 1fr;
       gap: 1rem;
-      padding: 1rem 1.5rem 2rem;
+      padding: 1rem;
+      padding-bottom: 2rem;
     }
     @media (max-width: 960px) {
       main { grid-template-columns: 1fr; }
@@ -47,12 +145,16 @@
       border: 1px solid var(--line);
       border-radius: 10px;
       overflow: hidden;
+      min-width: 0;
     }
     .panel h2 {
       margin: 0;
       padding: 0.85rem 1rem;
       font-size: 1rem;
       border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
     }
     table {
       width: 100%;
@@ -65,15 +167,26 @@
       text-align: left;
       vertical-align: middle;
     }
-    th { color: #9fb0c3; font-weight: 600; }
+    th { color: var(--muted); font-weight: 600; }
     tr.selected { background: #223246; }
     tr:hover { background: #1e2d40; cursor: pointer; }
+    .actions-cell {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
     button {
       border: 0;
-      border-radius: 6px;
-      padding: 0.45rem 0.75rem;
+      border-radius: 8px;
+      padding: 0.5rem 0.85rem;
       font-weight: 600;
+      font-family: inherit;
       cursor: pointer;
+      min-height: var(--touch);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
     }
     button:disabled {
       opacity: 0.45;
@@ -81,19 +194,101 @@
     }
     .btn-send { background: var(--accent); color: #062218; }
     .btn-cancel { background: var(--danger); color: #fff; }
-    .btn-refresh { background: #33465d; color: var(--text); }
+    .btn-refresh { background: #33465d; color: var(--text); min-width: var(--touch); }
+    .btn-link {
+      background: transparent;
+      color: var(--muted);
+      min-height: auto;
+      padding: 0.25rem 0;
+      font-weight: 500;
+      font-size: 0.85rem;
+      text-decoration: underline;
+    }
+    .spinner {
+      width: 0.95rem;
+      height: 0.95rem;
+      border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .status-pill {
       display: inline-block;
       padding: 0.15rem 0.5rem;
       border-radius: 999px;
       font-size: 0.78rem;
       background: #2a3a4f;
+      white-space: nowrap;
     }
     .status-success { background: #1f4a3a; color: #9de7c8; }
     .status-failed, .status-cancelled { background: #4a2724; color: #f0b0aa; }
     .status-pending, .status-paying, .status-sending, .status-cancelling, .status-changing {
       background: #4a3b1f; color: #f0d59a;
     }
+    .desktop-table { display: block; }
+    .desktop-table .table-wrap { overflow-x: auto; }
+    .mobile-cards { display: none; }
+    .bill-card {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+    }
+    .bill-card.selected { background: #223246; }
+    .bill-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.75rem;
+      margin-bottom: 0.45rem;
+    }
+    .bill-card-no { font-weight: 700; font-size: 1.05rem; }
+    .bill-card-amount { font-weight: 700; color: #9de7c8; }
+    .bill-card-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.35rem 0.75rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+    .bill-card-meta strong { color: var(--text); font-weight: 600; }
+    .bill-card-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+    .bill-card-actions button { width: 100%; }
+    @media (max-width: 720px) {
+      .desktop-table { display: none; }
+      .mobile-cards { display: block; }
+      header { padding: 0.75rem; }
+      main { padding: 0.75rem; }
+      .toolbar { padding: 0.65rem 0.75rem; }
+    }
+    .chip-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .chip {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      border-radius: 999px;
+      min-height: 2rem;
+      padding: 0.25rem 0.7rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .chip.active { color: var(--text); }
+    .chip[data-cat="request"].active { background: color-mix(in srgb, var(--request) 28%, transparent); border-color: var(--request); }
+    .chip[data-cat="response"].active { background: color-mix(in srgb, var(--response) 28%, transparent); border-color: var(--response); }
+    .chip[data-cat="webhook"].active { background: color-mix(in srgb, var(--webhook) 28%, transparent); border-color: var(--webhook); }
+    .chip[data-cat="polling"].active { background: color-mix(in srgb, var(--polling) 28%, transparent); border-color: var(--polling); }
     #timeline {
       list-style: none;
       margin: 0;
@@ -104,58 +299,250 @@
     #timeline li {
       padding: 0.75rem 1rem;
       border-bottom: 1px solid var(--line);
+      border-left: 4px solid var(--line);
     }
-    #timeline .meta { color: #9fb0c3; font-size: 0.8rem; margin-top: 0.25rem; }
-    #message {
-      min-height: 1.2rem;
-      padding: 0 1.5rem;
-      color: #f0d59a;
-      font-size: 0.9rem;
+    #timeline li.cat-request { border-left-color: var(--request); }
+    #timeline li.cat-response { border-left-color: var(--response); }
+    #timeline li.cat-webhook { border-left-color: var(--webhook); }
+    #timeline li.cat-polling { border-left-color: var(--polling); }
+    #timeline .row-top {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
     }
-    .empty { padding: 1rem; color: #9fb0c3; }
+    .cat-badge {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .cat-badge.request { background: color-mix(in srgb, var(--request) 30%, transparent); color: #b7d4f0; }
+    .cat-badge.response { background: color-mix(in srgb, var(--response) 30%, transparent); color: #9de7c8; }
+    .cat-badge.webhook { background: color-mix(in srgb, var(--webhook) 30%, transparent); color: #f0d59a; }
+    .cat-badge.polling { background: color-mix(in srgb, var(--polling) 30%, transparent); color: #d5c9ef; }
+    #timeline .meta { color: var(--muted); font-size: 0.8rem; margin-top: 0.35rem; }
+    #timeline .payload {
+      margin-top: 0.5rem;
+      padding: 0.65rem;
+      background: #101820;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 220px;
+      overflow: auto;
+      color: #c9d6e5;
+    }
+    .empty { padding: 1rem; color: var(--muted); }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>KCW Tiger Pay Companion</h1>
-      <div class="muted">POS cash bills → Tiger Pay machine</div>
+      <h1>
+        <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+        KCW Tiger Pay Companion
+      </h1>
+      <div class="muted">บิลเงินสด POS → เครื่อง Tiger Pay</div>
     </div>
-    <button class="btn-refresh" id="refreshBtn" type="button">Refresh</button>
+    <button class="btn-refresh" id="refreshBtn" type="button">รีเฟรช</button>
   </header>
   <div id="message"></div>
   <main>
     <section class="panel">
-      <h2>Open POS bills</h2>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Bill #</th>
-              <th>Amount</th>
-              <th>PAID</th>
-              <th>Sale</th>
-              <th>Tiger status</th>
-              <th>Tiger pay #</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="billsBody"></tbody>
-        </table>
+      <h2>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+        บิล POS ที่เปิดอยู่
+      </h2>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="โหมดรายการบิล">
+          <button type="button" id="modeLatest" data-mode="latest">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            ล่าสุด
+          </button>
+          <button type="button" id="modeToday" data-mode="today">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+            วันนี้
+          </button>
+        </div>
+        <label class="limit-wrap" for="limitSelect">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+          <span>จำนวนสูงสุด</span>
+          <select id="limitSelect" aria-label="จำนวนบิลสูงสุด">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="all">ทั้งหมด</option>
+          </select>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="hideSuccess" />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>ซ่อนสำเร็จ</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="hideCancelled" />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+          <span>ซ่อนยกเลิกแล้ว</span>
+        </label>
       </div>
+      <div class="desktop-table">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>เลขที่บิล</th>
+                <th>ยอดเงิน</th>
+                <th>PAID</th>
+                <th>พนักงานขาย</th>
+                <th>สถานะ Tiger</th>
+                <th>เลขชำระ Tiger</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="billsBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mobile-cards" id="billsCards"></div>
     </section>
     <section class="panel">
-      <h2>Selected payment timeline</h2>
-      <ul id="timeline"><li class="empty">Select a bill with a payment attempt.</li></ul>
+      <h2>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg>
+        ไทม์ไลน์การชำระที่เลือก
+      </h2>
+      <div class="chip-bar" id="timelineChips">
+        <button type="button" class="chip active" data-cat="request">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          Request
+        </button>
+        <button type="button" class="chip active" data-cat="response">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          Response
+        </button>
+        <button type="button" class="chip active" data-cat="webhook">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 16.5a4.5 4.5 0 1 0-6.3-6.3"/><path d="M6 7.5a4.5 4.5 0 1 0 6.3 6.3"/><path d="M12 12v.01"/></svg>
+          Webhook
+        </button>
+        <button type="button" class="chip active" data-cat="polling">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+          Polling
+        </button>
+      </div>
+      <ul id="timeline"><li class="empty">เลือกบิลที่มีรายการชำระ</li></ul>
     </section>
   </main>
   <script>
+    const STORAGE_KEY = "kcw.companion.ui.v2";
+    const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
+    const RESPONSE_ACTIONS = new Set([
+      "api_response_received",
+      "create_failed",
+      "cancel_api_response",
+      "cancel_api_failed",
+    ]);
+    const CAT_LABEL = {
+      request: "Request",
+      response: "Response",
+      webhook: "Webhook",
+      polling: "Polling",
+    };
+    const LIMIT_OPTIONS = new Set(["10", "20", "all"]);
+    const ICONS = {
+      refresh: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>`,
+      spinner: `<svg class="icon icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
+      send: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>`,
+      cancel: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>`,
+      chevronDown: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`,
+      chevronUp: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>`,
+      receipt: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>`,
+      inbox: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
+    };
+    const STATUS_LABEL = {
+      success: "สำเร็จ",
+      failed: "ล้มเหลว",
+      cancelled: "ยกเลิกแล้ว",
+      pending: "รอดำเนินการ",
+      paying: "กำลังชำระ",
+      sending: "กำลังส่ง",
+      cancelling: "กำลังยกเลิก",
+      changing: "กำลังเปลี่ยน",
+    };
+
+    const defaultPrefs = () => ({
+      mode: "latest",
+      limit: "10",
+      hideSuccess: true,
+      hideCancelled: true,
+      timelineFilters: {
+        request: true,
+        response: true,
+        webhook: true,
+        polling: true,
+      },
+    });
+
+    function normalizeLimit(value) {
+      const raw = String(value ?? "10");
+      return LIMIT_OPTIONS.has(raw) ? raw : "10";
+    }
+
+    function loadPrefs() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem("kcw.companion.ui.v1");
+        if (!raw) return defaultPrefs();
+        const parsed = JSON.parse(raw);
+        const hideSuccess = parsed.hideSuccess !== undefined
+          ? parsed.hideSuccess !== false
+          : parsed.hideSettled !== false;
+        const hideCancelled = parsed.hideCancelled !== undefined
+          ? parsed.hideCancelled !== false
+          : parsed.hideSettled !== false;
+        return {
+          mode: parsed.mode === "today" ? "today" : "latest",
+          limit: normalizeLimit(parsed.limit),
+          hideSuccess,
+          hideCancelled,
+          timelineFilters: {
+            request: parsed.timelineFilters?.request !== false,
+            response: parsed.timelineFilters?.response !== false,
+            webhook: parsed.timelineFilters?.webhook !== false,
+            polling: parsed.timelineFilters?.polling !== false,
+          },
+        };
+      } catch (_) {
+        return defaultPrefs();
+      }
+    }
+
+    function savePrefs() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        mode: state.mode,
+        limit: state.limit,
+        hideSuccess: state.hideSuccess,
+        hideCancelled: state.hideCancelled,
+        timelineFilters: state.timelineFilters,
+      }));
+    }
+
+    const prefs = loadPrefs();
     const state = {
       bills: [],
       selectedBillId: null,
       selectedAttemptId: null,
-      sendInFlight: false,
+      actionInFlight: null, // { type: 'send'|'cancel', billId, attemptId }
       pollTimer: null,
+      refreshing: false,
+      mode: prefs.mode,
+      limit: prefs.limit,
+      hideSuccess: prefs.hideSuccess,
+      hideCancelled: prefs.hideCancelled,
+      timelineFilters: prefs.timelineFilters,
+      events: [],
+      expandedPayload: new Set(),
     };
 
     function setMessage(text) {
@@ -167,15 +554,69 @@
       return `status-pill status-${status}`;
     }
 
+    function statusLabel(status) {
+      if (!status) return "—";
+      return STATUS_LABEL[status] || status;
+    }
+
     function formatAmount(amount) {
-      return Number(amount).toLocaleString(undefined, {
+      return Number(amount).toLocaleString("th-TH", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
     }
 
-    function isActive(status) {
-      return ["sending", "pending", "paying", "changing", "cancelling"].includes(status);
+    function formatBangkokTime(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return new Intl.DateTimeFormat("th-TH", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(date);
+    }
+
+    function isSendLoading(billId) {
+      return state.actionInFlight?.type === "send" && state.actionInFlight.billId === billId;
+    }
+
+    function isCancelLoading(attemptId) {
+      return state.actionInFlight?.type === "cancel" && state.actionInFlight.attemptId === attemptId;
+    }
+
+    function eventCategory(ev) {
+      const source = String(ev.source || "").toLowerCase();
+      if (source === "webhook") return "webhook";
+      if (source === "polling") return "polling";
+      const action = (ev.payload && ev.payload.action) || "";
+      if (REQUEST_ACTIONS.has(action)) return "request";
+      if (RESPONSE_ACTIONS.has(action)) return "response";
+      if (source === "api") {
+        if (String(action).includes("fail") || String(action).includes("response")) return "response";
+        return "request";
+      }
+      return "response";
+    }
+
+    function actionLabel(ev) {
+      const action = (ev.payload && ev.payload.action) || ev.status || "event";
+      const map = {
+        payment_created: "สร้างรายการชำระ",
+        api_response_received: "ได้รับตอบกลับจาก API",
+        create_failed: "สร้างรายการล้มเหลว",
+        cancellation_requested: "ส่งคำขอยกเลิก",
+        cancel_api_response: "ตอบกลับการยกเลิก",
+        cancel_api_failed: "ยกเลิกล้มเหลว",
+        webhook_update: "อัปเดตจาก Webhook",
+        polling_update: "อัปเดตจากโพลลิ่ง",
+      };
+      return map[action] || action;
     }
 
     async function api(path, options = {}) {
@@ -187,88 +628,233 @@
       if (!res.ok) {
         const detail = data.detail;
         const message = (detail && detail.message) || data.message || res.statusText;
-        throw new Error(message);
+        throw new Error(`เกิดข้อผิดพลาด: ${message}`);
       }
       return data;
     }
 
-    async function loadBills() {
-      const data = await api("/companion/bills");
-      state.bills = data.bills || [];
+    function syncRefreshBtn() {
+      const btn = document.getElementById("refreshBtn");
+      btn.disabled = state.refreshing;
+      btn.innerHTML = state.refreshing
+        ? `${ICONS.spinner} กำลังโหลด…`
+        : `${ICONS.refresh} รีเฟรช`;
+    }
+
+    function syncToolbar() {
+      document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
+      document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
+      document.getElementById("limitSelect").value = state.limit;
+      document.getElementById("hideSuccess").checked = state.hideSuccess;
+      document.getElementById("hideCancelled").checked = state.hideCancelled;
+      document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
+        const cat = chip.getAttribute("data-cat");
+        chip.classList.toggle("active", !!state.timelineFilters[cat]);
+      });
+      syncRefreshBtn();
+    }
+
+    function visibleBills() {
+      return state.bills.filter((b) => {
+        if (state.hideSuccess && b.tiger_payment_status === "success") return false;
+        if (state.hideCancelled && b.tiger_payment_status === "cancelled") return false;
+        return true;
+      });
+    }
+
+    function buttonHtml(bill) {
+      const sendLoading = isSendLoading(bill.id);
+      const cancelLoading = isCancelLoading(bill.payment_attempt_id);
+      const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight || state.refreshing;
+      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight || state.refreshing;
+      const sendLabel = sendLoading
+        ? `${ICONS.spinner} กำลังส่ง…`
+        : `${ICONS.send} ส่งชำระ`;
+      const cancelLabel = cancelLoading
+        ? `${ICONS.spinner} กำลังยกเลิก…`
+        : `${ICONS.cancel} ยกเลิก`;
+      return `
+        <button class="btn-send" type="button" data-action="send" data-id="${bill.id}" ${sendDisabled ? "disabled" : ""}>${sendLabel}</button>
+        <button class="btn-cancel" type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
+      `;
+    }
+
+    function bindActionButtons(root, bill) {
+      root.querySelectorAll("button[data-action]").forEach((btn) => {
+        btn.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          const action = btn.getAttribute("data-action");
+          try {
+            if (action === "send") {
+              state.actionInFlight = { type: "send", billId: bill.id };
+              renderBills();
+              setMessage(`กำลังส่งบิล ${bill.bill_number} ไปยัง Tiger Pay...`);
+              const result = await api(`/companion/bills/${bill.id}/pay`, { method: "POST" });
+              state.selectedBillId = bill.id;
+              state.selectedAttemptId = result.attempt && result.attempt.id;
+              setMessage("สร้างรายการชำระบน Tiger Pay แล้ว");
+            } else if (action === "cancel") {
+              const attemptId = btn.getAttribute("data-attempt");
+              state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
+              renderBills();
+              setMessage("กำลังขอยกเลิก...");
+              await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
+              state.selectedAttemptId = attemptId;
+              setMessage("ส่งคำขอยกเลิกแล้ว รอการยืนยันจาก Tiger...");
+            }
+          } catch (err) {
+            setMessage(err.message || String(err));
+          } finally {
+            state.actionInFlight = null;
+            await loadBills();
+          }
+        });
+      });
+    }
+
+    function selectBill(bill) {
+      state.selectedBillId = bill.id;
+      state.selectedAttemptId = bill.payment_attempt_id || null;
+      state.expandedPayload = new Set();
       renderBills();
-      if (state.selectedAttemptId) {
-        await loadTimeline(state.selectedAttemptId);
+      if (state.selectedAttemptId) loadTimeline(state.selectedAttemptId);
+      else {
+        state.events = [];
+        document.getElementById("timeline").innerHTML =
+          `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งชำระ」</li>`;
       }
-      maybeStartPolling();
     }
 
     function renderBills() {
+      const bills = visibleBills();
       const body = document.getElementById("billsBody");
+      const cards = document.getElementById("billsCards");
       body.innerHTML = "";
-      if (!state.bills.length) {
-        body.innerHTML = `<tr><td colspan="7" class="empty">No open bills</td></tr>`;
+      cards.innerHTML = "";
+
+      if (!bills.length) {
+        const empty = `<div class="empty">${ICONS.inbox} ไม่มีบิลที่แสดง</div>`;
+        body.innerHTML = `<tr><td colspan="7">${empty}</td></tr>`;
+        cards.innerHTML = empty;
         return;
       }
-      for (const bill of state.bills) {
+
+      for (const bill of bills) {
         const tr = document.createElement("tr");
         if (bill.id === state.selectedBillId) tr.classList.add("selected");
-        tr.onclick = () => {
-          state.selectedBillId = bill.id;
-          state.selectedAttemptId = bill.payment_attempt_id || null;
-          renderBills();
-          if (state.selectedAttemptId) loadTimeline(state.selectedAttemptId);
-          else {
-            document.getElementById("timeline").innerHTML =
-              `<li class="empty">No payment attempt yet. Click Send Payment.</li>`;
-          }
-        };
-
-        const canSend = !bill.payment_attempt_active && !state.sendInFlight;
-        const canCancel = bill.payment_attempt_active && bill.payment_attempt_id;
-
+        tr.onclick = () => selectBill(bill);
         tr.innerHTML = `
           <td>${bill.bill_number}</td>
           <td>${formatAmount(bill.amount)}</td>
           <td>${bill.pos_status || "—"}</td>
           <td>${bill.salesperson || "—"}</td>
-          <td><span class="${statusClass(bill.tiger_payment_status)}">${bill.tiger_payment_status || "—"}</span></td>
+          <td><span class="${statusClass(bill.tiger_payment_status)}">${statusLabel(bill.tiger_payment_status)}</span></td>
           <td>${bill.tiger_payment_no || "—"}</td>
-          <td>
-            <button class="btn-send" type="button" data-action="send" data-id="${bill.id}" ${canSend ? "" : "disabled"}>Send Payment</button>
-            <button class="btn-cancel" type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${canCancel ? "" : "disabled"}>Cancel</button>
-          </td>
+          <td><div class="actions-cell">${buttonHtml(bill)}</div></td>
         `;
-
-        tr.querySelectorAll("button").forEach((btn) => {
-          btn.addEventListener("click", async (event) => {
-            event.stopPropagation();
-            const action = btn.getAttribute("data-action");
-            try {
-              if (action === "send") {
-                state.sendInFlight = true;
-                renderBills();
-                setMessage(`Sending bill ${bill.bill_number} to Tiger Pay...`);
-                const result = await api(`/companion/bills/${bill.id}/pay`, { method: "POST" });
-                state.selectedBillId = bill.id;
-                state.selectedAttemptId = result.attempt && result.attempt.id;
-                setMessage("Payment created on Tiger Pay.");
-              } else if (action === "cancel") {
-                const attemptId = btn.getAttribute("data-attempt");
-                setMessage("Cancellation requested...");
-                await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
-                state.selectedAttemptId = attemptId;
-                setMessage("Cancel requested. Waiting for Tiger confirmation...");
-              }
-            } catch (err) {
-              setMessage(err.message || String(err));
-            } finally {
-              state.sendInFlight = false;
-              await loadBills();
-            }
-          });
-        });
-
+        bindActionButtons(tr, bill);
         body.appendChild(tr);
+
+        const card = document.createElement("div");
+        card.className = "bill-card" + (bill.id === state.selectedBillId ? " selected" : "");
+        card.onclick = () => selectBill(bill);
+        card.innerHTML = `
+          <div class="bill-card-top">
+            <div class="bill-card-no">${bill.bill_number}</div>
+            <div class="bill-card-amount">${formatAmount(bill.amount)}</div>
+          </div>
+          <div class="bill-card-meta">
+            <div>สถานะ Tiger: <strong><span class="${statusClass(bill.tiger_payment_status)}">${statusLabel(bill.tiger_payment_status)}</span></strong></div>
+            <div>PAID: <strong>${bill.pos_status || "—"}</strong></div>
+            <div>พนักงานขาย: <strong>${bill.salesperson || "—"}</strong></div>
+            <div>เลขชำระ: <strong>${bill.tiger_payment_no || "—"}</strong></div>
+          </div>
+          <div class="bill-card-actions">${buttonHtml(bill)}</div>
+        `;
+        bindActionButtons(card, bill);
+        cards.appendChild(card);
+      }
+    }
+
+    function renderTimeline() {
+      const list = document.getElementById("timeline");
+      if (!state.selectedAttemptId) {
+        list.innerHTML = `<li class="empty">เลือกบิลที่มีรายการชำระ</li>`;
+        return;
+      }
+      const filtered = state.events.filter((ev) => state.timelineFilters[eventCategory(ev)]);
+      if (!state.events.length) {
+        list.innerHTML = `<li class="empty">ยังไม่มีเหตุการณ์</li>`;
+        return;
+      }
+      if (!filtered.length) {
+        list.innerHTML = `<li class="empty">ไม่มีเหตุการณ์ตามตัวกรองที่เลือก</li>`;
+        return;
+      }
+      list.innerHTML = filtered.map((ev, idx) => {
+        const cat = eventCategory(ev);
+        const key = `${ev.created_at || ""}:${ev.source || ""}:${idx}`;
+        const expanded = state.expandedPayload.has(key);
+        const payloadJson = JSON.stringify(ev.payload ?? {}, null, 2);
+        return `<li class="cat-${cat}" data-key="${key}">
+          <div class="row-top">
+            <span class="cat-badge ${cat}">${CAT_LABEL[cat]}</span>
+            <strong>${actionLabel(ev)}</strong>
+            <span class="${statusClass(ev.status)}">${statusLabel(ev.status)}</span>
+          </div>
+          <div class="meta">${formatBangkokTime(ev.created_at)} · ${ev.source || "—"}</div>
+          <button type="button" class="btn-link" data-toggle-payload="${key}">${expanded ? `${ICONS.chevronUp} ซ่อนข้อมูล` : `${ICONS.chevronDown} แสดงข้อมูล`}</button>
+          ${expanded ? `<pre class="payload">${escapeHtml(payloadJson)}</pre>` : ""}
+        </li>`;
+      }).join("");
+
+      list.querySelectorAll("[data-toggle-payload]").forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const key = btn.getAttribute("data-toggle-payload");
+          if (state.expandedPayload.has(key)) state.expandedPayload.delete(key);
+          else state.expandedPayload.add(key);
+          renderTimeline();
+        });
+      });
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    async function loadBills({ showRefresh = false } = {}) {
+      if (showRefresh) {
+        state.refreshing = true;
+        syncRefreshBtn();
+      }
+      try {
+        const qs = new URLSearchParams({
+          mode: state.mode,
+          limit: state.limit,
+        });
+        const data = await api(`/companion/bills?${qs.toString()}`);
+        state.bills = data.bills || [];
+        if (data.mode === "latest" || data.mode === "today") {
+          state.mode = data.mode;
+        }
+        if (data.limit === "all" || data.limit === 10 || data.limit === 20) {
+          state.limit = String(data.limit);
+        }
+        syncToolbar();
+        renderBills();
+        if (state.selectedAttemptId) {
+          await loadTimeline(state.selectedAttemptId);
+        }
+        maybeStartPolling();
+      } finally {
+        if (showRefresh) {
+          state.refreshing = false;
+          syncRefreshBtn();
+        }
       }
     }
 
@@ -276,19 +862,8 @@
       if (!attemptId) return;
       try {
         const data = await api(`/companion/payments/${attemptId}`);
-        const events = data.events || [];
-        const list = document.getElementById("timeline");
-        if (!events.length) {
-          list.innerHTML = `<li class="empty">No events yet.</li>`;
-          return;
-        }
-        list.innerHTML = events.map((ev) => {
-          const action = (ev.payload && ev.payload.action) || ev.status;
-          return `<li>
-            <div><strong>${action}</strong> · ${ev.source} · <span class="${statusClass(ev.status)}">${ev.status}</span></div>
-            <div class="meta">${ev.created_at || ""}</div>
-          </li>`;
-        }).join("");
+        state.events = data.events || [];
+        renderTimeline();
       } catch (err) {
         setMessage(err.message || String(err));
       }
@@ -308,10 +883,49 @@
 
     document.getElementById("refreshBtn").onclick = () => {
       setMessage("");
-      loadBills().catch((err) => setMessage(err.message || String(err)));
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
 
-    loadBills().catch((err) => setMessage(err.message || String(err)));
+    document.getElementById("modeLatest").onclick = () => {
+      state.mode = "latest";
+      savePrefs();
+      syncToolbar();
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
+    };
+    document.getElementById("modeToday").onclick = () => {
+      state.mode = "today";
+      savePrefs();
+      syncToolbar();
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
+    };
+    document.getElementById("limitSelect").onchange = (event) => {
+      state.limit = normalizeLimit(event.target.value);
+      savePrefs();
+      syncToolbar();
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
+    };
+    document.getElementById("hideSuccess").onchange = (event) => {
+      state.hideSuccess = !!event.target.checked;
+      savePrefs();
+      renderBills();
+    };
+    document.getElementById("hideCancelled").onchange = (event) => {
+      state.hideCancelled = !!event.target.checked;
+      savePrefs();
+      renderBills();
+    };
+    document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const cat = chip.getAttribute("data-cat");
+        state.timelineFilters[cat] = !state.timelineFilters[cat];
+        savePrefs();
+        syncToolbar();
+        renderTimeline();
+      });
+    });
+
+    syncToolbar();
+    loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
   </script>
 </body>
 </html>
