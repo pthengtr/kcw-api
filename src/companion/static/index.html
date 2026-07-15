@@ -338,9 +338,74 @@
       color: #c9d6e5;
     }
     .empty { padding: 1rem; color: var(--muted); }
+    dialog.alert-dialog {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 0;
+      max-width: min(420px, calc(100vw - 2rem));
+      width: 100%;
+      background: #132033;
+      color: var(--text);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    }
+    dialog.alert-dialog::backdrop {
+      background: rgba(6, 12, 20, 0.72);
+      backdrop-filter: blur(2px);
+    }
+    .alert-dialog-inner {
+      padding: 1.25rem 1.25rem 1rem;
+    }
+    .alert-dialog-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.75rem;
+    }
+    .alert-dialog-icon .icon { width: 1.35rem; height: 1.35rem; }
+    .alert-dialog-icon.success { background: #1f4a3a; color: #9de7c8; }
+    .alert-dialog-icon.error { background: #4a2724; color: #f0b0aa; }
+    .alert-dialog-icon.info { background: #4a3b1f; color: #f0d59a; }
+    .alert-dialog h3 {
+      margin: 0 0 0.45rem;
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    .alert-dialog p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .alert-dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0 1.25rem 1.15rem;
+    }
+    .btn-dialog-ok {
+      background: var(--accent);
+      color: #062218;
+      min-width: 6.5rem;
+      font-size: 1rem;
+    }
   </style>
 </head>
 <body>
+  <dialog class="alert-dialog" id="alertDialog" aria-labelledby="alertDialogTitle">
+    <div class="alert-dialog-inner">
+      <div class="alert-dialog-icon" id="alertDialogIcon" aria-hidden="true"></div>
+      <h3 id="alertDialogTitle"></h3>
+      <p id="alertDialogBody"></p>
+    </div>
+    <div class="alert-dialog-actions">
+      <button type="button" class="btn-dialog-ok" id="alertDialogOk">ตกลง</button>
+    </div>
+  </dialog>
   <header>
     <div>
       <h1>
@@ -459,8 +524,12 @@
       chevronDown: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`,
       chevronUp: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>`,
       receipt: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>`,
+      check: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
+      alert: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+      info: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
       inbox: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
     };
+    const ACTIVE_STATUSES = new Set(["sending", "pending", "paying", "changing", "cancelling"]);
     const STATUS_LABEL = {
       success: "สำเร็จ",
       failed: "ล้มเหลว",
@@ -543,10 +612,92 @@
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
+      statusByBillId: {},
+      statusSnapshotReady: false,
     };
 
     function setMessage(text) {
       document.getElementById("message").textContent = text || "";
+    }
+
+    function closeAlertDialog() {
+      const dialog = document.getElementById("alertDialog");
+      if (dialog.open) dialog.close();
+    }
+
+    function showAlertDialog({ type = "info", title, message }) {
+      const dialog = document.getElementById("alertDialog");
+      const iconEl = document.getElementById("alertDialogIcon");
+      const titleEl = document.getElementById("alertDialogTitle");
+      const bodyEl = document.getElementById("alertDialogBody");
+      const kind = ["success", "error", "info"].includes(type) ? type : "info";
+      const icon = kind === "success" ? ICONS.check : kind === "error" ? ICONS.alert : ICONS.info;
+      iconEl.className = `alert-dialog-icon ${kind}`;
+      iconEl.innerHTML = icon;
+      titleEl.textContent = title || "";
+      bodyEl.textContent = message || "";
+      setMessage(message || title || "");
+      if (typeof dialog.showModal === "function") {
+        if (!dialog.open) dialog.showModal();
+      } else {
+        window.alert(`${title || ""}\n${message || ""}`.trim());
+      }
+    }
+
+    function friendlyErrorMessage(err) {
+      const raw = (err && err.message) || String(err || "");
+      const cleaned = raw.replace(/^เกิดข้อผิดพลาด:\s*/i, "").trim();
+      const lower = cleaned.toLowerCase();
+      if (lower.includes("active") || lower.includes("busy") || lower.includes("already")) {
+        return "มีรายการชำระที่กำลังดำเนินการอยู่แล้ว หรือเครื่อง Tiger ไม่ว่างในตอนนี้";
+      }
+      if (lower.includes("not_active") || lower.includes("not active")) {
+        return "รายการนี้ไม่ได้อยู่ในสถานะที่สามารถยกเลิกได้";
+      }
+      if (lower.includes("not found") || lower.includes("bill_not_found")) {
+        return "ไม่พบบิลหรือรายการชำระนี้";
+      }
+      return cleaned || "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
+    }
+
+    function maybeNotifyStatusTransitions(bills) {
+      const nextMap = {};
+      const transitions = [];
+      for (const bill of bills) {
+        const status = bill.tiger_payment_status || null;
+        nextMap[bill.id] = status;
+        if (!state.statusSnapshotReady) continue;
+        const prev = state.statusByBillId[bill.id];
+        if (!prev || prev === status) continue;
+        if (ACTIVE_STATUSES.has(prev) && (status === "success" || status === "cancelled" || status === "failed")) {
+          transitions.push({ bill, prev, status });
+        }
+      }
+      state.statusByBillId = nextMap;
+      state.statusSnapshotReady = true;
+      if (!transitions.length) return;
+      // Prefer the selected bill if several settle in one poll tick.
+      const chosen = transitions.find((t) => t.bill.id === state.selectedBillId) || transitions[0];
+      const billNo = chosen.bill.bill_number;
+      if (chosen.status === "success") {
+        showAlertDialog({
+          type: "success",
+          title: "ชำระเงินสำเร็จ",
+          message: `บิล ${billNo} ชำระผ่าน Tiger Pay เรียบร้อยแล้ว`,
+        });
+      } else if (chosen.status === "cancelled") {
+        showAlertDialog({
+          type: "info",
+          title: "ยกเลิกรายการแล้ว",
+          message: `บิล ${billNo} ถูกยกเลิกเรียบร้อยแล้ว`,
+        });
+      } else {
+        showAlertDialog({
+          type: "error",
+          title: "รายการล้มเหลว",
+          message: `บิล ${billNo} ไม่สำเร็จ (${statusLabel(chosen.status)})`,
+        });
+      }
     }
 
     function statusClass(status) {
@@ -692,7 +843,11 @@
               const result = await api(`/companion/bills/${bill.id}/pay`, { method: "POST" });
               state.selectedBillId = bill.id;
               state.selectedAttemptId = result.attempt && result.attempt.id;
-              setMessage("สร้างรายการชำระบน Tiger Pay แล้ว");
+              showAlertDialog({
+                type: "success",
+                title: "ส่งชำระสำเร็จ",
+                message: `ส่งบิล ${bill.bill_number} ไปยังเครื่อง Tiger Pay แล้ว\nรอลูกค้าชำระที่เครื่อง`,
+              });
             } else if (action === "cancel") {
               const attemptId = btn.getAttribute("data-attempt");
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
@@ -700,10 +855,18 @@
               setMessage("กำลังขอยกเลิก...");
               await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
               state.selectedAttemptId = attemptId;
-              setMessage("ส่งคำขอยกเลิกแล้ว รอการยืนยันจาก Tiger...");
+              showAlertDialog({
+                type: "info",
+                title: "ส่งคำขอยกเลิกแล้ว",
+                message: `ส่งคำขอยกเลิกบิล ${bill.bill_number} แล้ว\nรอการยืนยันจาก Tiger Pay`,
+              });
             }
           } catch (err) {
-            setMessage(err.message || String(err));
+            showAlertDialog({
+              type: "error",
+              title: "ไม่สามารถดำเนินการได้",
+              message: friendlyErrorMessage(err),
+            });
           } finally {
             state.actionInFlight = null;
             await loadBills();
@@ -844,6 +1007,7 @@
         if (data.limit === "all" || data.limit === 10 || data.limit === 20) {
           state.limit = String(data.limit);
         }
+        maybeNotifyStatusTransitions(state.bills);
         syncToolbar();
         renderBills();
         if (state.selectedAttemptId) {
@@ -924,6 +1088,12 @@
         syncToolbar();
         renderTimeline();
       });
+    });
+
+    document.getElementById("alertDialogOk").onclick = () => closeAlertDialog();
+    document.getElementById("alertDialog").addEventListener("cancel", (event) => {
+      // Allow Esc to close; default dialog behavior already closes it.
+      event.stopPropagation();
     });
 
     syncToolbar();

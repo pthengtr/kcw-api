@@ -322,6 +322,8 @@ def test_companion_ui_and_bills_route():
         assert "Request" in ui.text
         assert "ซ่อนสำเร็จ" in ui.text
         assert "ซ่อนยกเลิกแล้ว" in ui.text
+        assert 'id="alertDialog"' in ui.text
+        assert "ตกลง" in ui.text
         bills = client.get("/companion/bills")
         assert bills.status_code == 200
         payload = bills.json()

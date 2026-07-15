@@ -46,6 +46,7 @@ Thai-language shop UI at `/companion` (mobile-friendly):
 - Send/Cancel buttons show loading while the request runs
 - Timeline filters: Request / Response / Webhook / Polling (color-coded), Bangkok timestamps, expandable payloads
 - Preferences (mode, limit, hide filters, timeline filters) persist in `localStorage`
+- Modal dialogs for send/cancel success, blocking errors (e.g. machine busy), and payment completion
 
 ### POS bill sources
 
