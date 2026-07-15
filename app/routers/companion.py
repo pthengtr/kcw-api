@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
+from src.companion.config import get_companion_bill_settings
 from src.db import get_engine
 from src.tiger_pay.payment_service import (
     PaymentServiceError,
@@ -40,10 +42,19 @@ async def companion_ui() -> HTMLResponse:
 
 
 @router.get("/bills")
-async def companion_bills() -> dict:
+async def companion_bills(
+    mode: Literal["latest", "today"] | None = Query(
+        default=None,
+        description="Override POS_BILLS_MODE for this request (latest or today).",
+    ),
+) -> dict:
     engine = get_engine()
-    bills = list_bills_with_payment_status(engine)
-    return {"bills": bills}
+    try:
+        bills = list_bills_with_payment_status(engine, mode=mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc), "code": "bad_mode"}) from exc
+    effective_mode = mode or get_companion_bill_settings().pos_bills_mode
+    return {"bills": bills, "mode": effective_mode}
 
 
 @router.post("/bills/{pos_bill_id}/pay")

@@ -36,6 +36,16 @@ Flow: POS bills → companion backend → Tiger Pay Open API
 3. background polling of active attempts (every ~1.5s) when
    `TIGER_PAY_API_HOST` and `TIGER_PAY_CLIENT_ID` are set
 
+### Companion UI
+
+Thai-language shop UI at `/companion` (mobile-friendly):
+
+- **ล่าสุด / วันนี้** — bill list mode (`GET /companion/bills?mode=latest|today`; overrides env `POS_BILLS_MODE` for that request)
+- **ซ่อนสำเร็จ/ยกเลิกแล้ว** — hide settled Tiger attempts (default on)
+- Send/Cancel buttons show loading while the request runs
+- Timeline filters: คำขอ / ตอบกลับ / Webhook / โพลลิ่ง (color-coded), Bangkok timestamps, expandable payloads
+- Preferences (mode, hide settled, timeline filters) persist in `localStorage`
+
 ### POS bill sources
 
 Set in `.env`:

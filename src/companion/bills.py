@@ -54,8 +54,33 @@ _MOCK_BILLS: tuple[PosBill, ...] = (
 )
 
 
-def list_open_bills() -> list[PosBill]:
+def _settings_with_mode(mode: str | None):
     settings = get_companion_bill_settings()
+    if mode is None:
+        return settings
+    normalized = mode.strip().lower()
+    if normalized not in {"latest", "today"}:
+        raise ValueError("mode must be 'latest' or 'today'")
+    if normalized == settings.pos_bills_mode:
+        return settings
+    return settings.model_copy(update={"pos_bills_mode": normalized})
+
+
+def _filter_mock_bills(mode: str) -> list[PosBill]:
+    if mode != "today":
+        return list(_MOCK_BILLS)
+    from src.companion.bill_mapping import BANGKOK_TZ
+
+    today = datetime.now(BANGKOK_TZ).date()
+    return [
+        bill
+        for bill in _MOCK_BILLS
+        if bill.created_at.astimezone(BANGKOK_TZ).date() == today
+    ]
+
+
+def list_open_bills(*, mode: str | None = None) -> list[PosBill]:
+    settings = _settings_with_mode(mode)
     source = settings.pos_bill_source
 
     if source == "csv":
@@ -76,7 +101,7 @@ def list_open_bills() -> list[PosBill]:
             logger.exception("Failed to load POS bills from MSSQL; returning empty list")
             return []
 
-    return list(_MOCK_BILLS)
+    return _filter_mock_bills(settings.pos_bills_mode)
 
 
 def get_open_bill(pos_bill_id: str) -> PosBill | None:
