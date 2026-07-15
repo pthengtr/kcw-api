@@ -80,7 +80,7 @@ def _settings_with_overrides(
             try:
                 parsed_limit = int(limit)
             except (TypeError, ValueError) as exc:
-                raise ValueError("limit must be 10, 20, or all") from exc
+                raise ValueError("limit must be 10, 20, 50, 100, or all") from exc
             if parsed_limit <= 0:
                 raise ValueError("limit must be greater than zero")
             if parsed_limit != settings.pos_bills_limit:

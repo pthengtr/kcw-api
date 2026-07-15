@@ -289,6 +289,11 @@
     .chip[data-cat="response"].active { background: color-mix(in srgb, var(--response) 28%, transparent); border-color: var(--response); }
     .chip[data-cat="webhook"].active { background: color-mix(in srgb, var(--webhook) 28%, transparent); border-color: var(--webhook); }
     .chip[data-cat="polling"].active { background: color-mix(in srgb, var(--polling) 28%, transparent); border-color: var(--polling); }
+    .chip[data-status="unsent"].active { background: color-mix(in srgb, var(--muted) 28%, transparent); border-color: #7f93a8; }
+    .chip[data-status="pending"].active { background: color-mix(in srgb, var(--warn) 28%, transparent); border-color: var(--warn); }
+    .chip[data-status="success"].active { background: color-mix(in srgb, var(--accent) 28%, transparent); border-color: var(--accent); }
+    .chip[data-status="cancelled"].active { background: color-mix(in srgb, var(--danger) 28%, transparent); border-color: var(--danger); }
+    .toolbar + .chip-bar { border-top: 0; }
     #timeline {
       list-style: none;
       margin: 0;
@@ -338,9 +343,74 @@
       color: #c9d6e5;
     }
     .empty { padding: 1rem; color: var(--muted); }
+    dialog.alert-dialog {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 0;
+      max-width: min(420px, calc(100vw - 2rem));
+      width: 100%;
+      background: #132033;
+      color: var(--text);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    }
+    dialog.alert-dialog::backdrop {
+      background: rgba(6, 12, 20, 0.72);
+      backdrop-filter: blur(2px);
+    }
+    .alert-dialog-inner {
+      padding: 1.25rem 1.25rem 1rem;
+    }
+    .alert-dialog-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.75rem;
+    }
+    .alert-dialog-icon .icon { width: 1.35rem; height: 1.35rem; }
+    .alert-dialog-icon.success { background: #1f4a3a; color: #9de7c8; }
+    .alert-dialog-icon.error { background: #4a2724; color: #f0b0aa; }
+    .alert-dialog-icon.info { background: #4a3b1f; color: #f0d59a; }
+    .alert-dialog h3 {
+      margin: 0 0 0.45rem;
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    .alert-dialog p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .alert-dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0 1.25rem 1.15rem;
+    }
+    .btn-dialog-ok {
+      background: var(--accent);
+      color: #062218;
+      min-width: 6.5rem;
+      font-size: 1rem;
+    }
   </style>
 </head>
 <body>
+  <dialog class="alert-dialog" id="alertDialog" aria-labelledby="alertDialogTitle">
+    <div class="alert-dialog-inner">
+      <div class="alert-dialog-icon" id="alertDialogIcon" aria-hidden="true"></div>
+      <h3 id="alertDialogTitle"></h3>
+      <p id="alertDialogBody"></p>
+    </div>
+    <div class="alert-dialog-actions">
+      <button type="button" class="btn-dialog-ok" id="alertDialogOk">ตกลง</button>
+    </div>
+  </dialog>
   <header>
     <div>
       <h1>
@@ -372,22 +442,14 @@
         <label class="limit-wrap" for="limitSelect">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
           <span>จำนวนสูงสุด</span>
-          <select id="limitSelect" aria-label="จำนวนบิลสูงสุด">
-            <option value="10">10</option>
-            <option value="20">20</option>
-            <option value="all">ทั้งหมด</option>
-          </select>
+          <select id="limitSelect" aria-label="จำนวนบิลสูงสุด"></select>
         </label>
-        <label class="toggle-row">
-          <input type="checkbox" id="hideSuccess" />
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-          <span>ซ่อนสำเร็จ</span>
-        </label>
-        <label class="toggle-row">
-          <input type="checkbox" id="hideCancelled" />
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-          <span>ซ่อนยกเลิกแล้ว</span>
-        </label>
+      </div>
+      <div class="chip-bar" id="statusChips" role="group" aria-label="กรองสถานะ Tiger">
+        <button type="button" class="chip active" data-status="unsent">ยังไม่ส่ง</button>
+        <button type="button" class="chip active" data-status="pending">รอดำเนินการ</button>
+        <button type="button" class="chip active" data-status="success">สำเร็จ</button>
+        <button type="button" class="chip active" data-status="cancelled">ยกเลิก</button>
       </div>
       <div class="desktop-table">
         <div class="table-wrap">
@@ -436,7 +498,8 @@
     </section>
   </main>
   <script>
-    const STORAGE_KEY = "kcw.companion.ui.v2";
+    const STORAGE_KEY = "kcw.companion.ui.v5";
+    const STATUS_FILTER_KEYS = ["unsent", "pending", "success", "cancelled"];
     const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
@@ -450,7 +513,10 @@
       webhook: "Webhook",
       polling: "Polling",
     };
-    const LIMIT_OPTIONS = new Set(["10", "20", "all"]);
+    const LIMIT_OPTIONS_BY_MODE = {
+      latest: ["10", "20", "50", "100"],
+      today: ["10", "20", "50", "all"],
+    };
     const ICONS = {
       refresh: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>`,
       spinner: `<svg class="icon icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
@@ -459,8 +525,12 @@
       chevronDown: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`,
       chevronUp: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>`,
       receipt: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>`,
+      check: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
+      alert: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+      info: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
       inbox: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
     };
+    const ACTIVE_STATUSES = new Set(["sending", "pending", "paying", "changing", "cancelling"]);
     const STATUS_LABEL = {
       success: "สำเร็จ",
       failed: "ล้มเหลว",
@@ -475,8 +545,12 @@
     const defaultPrefs = () => ({
       mode: "latest",
       limit: "10",
-      hideSuccess: true,
-      hideCancelled: true,
+      statusFilters: {
+        unsent: true,
+        pending: true,
+        success: true,
+        cancelled: true,
+      },
       timelineFilters: {
         request: true,
         response: true,
@@ -485,27 +559,71 @@
       },
     });
 
-    function normalizeLimit(value) {
+    function limitOptionsForMode(mode) {
+      return LIMIT_OPTIONS_BY_MODE[mode === "today" ? "today" : "latest"];
+    }
+
+    function normalizeLimit(value, mode = "latest") {
+      const options = limitOptionsForMode(mode);
       const raw = String(value ?? "10");
-      return LIMIT_OPTIONS.has(raw) ? raw : "10";
+      if (options.includes(raw)) return raw;
+      // When switching modes, map invalid choices to the closest allowed option.
+      if (mode === "latest" && raw === "all") return "100";
+      if (mode === "today" && raw === "100") return "50";
+      return "10";
+    }
+
+    function syncLimitOptions() {
+      const select = document.getElementById("limitSelect");
+      const options = limitOptionsForMode(state.mode);
+      state.limit = normalizeLimit(state.limit, state.mode);
+      select.innerHTML = options.map((value) => {
+        const label = value === "all" ? "ทั้งหมด" : value;
+        return `<option value="${value}">${label}</option>`;
+      }).join("");
+      select.value = state.limit;
+    }
+
+    function normalizeStatusFilters(parsed = {}) {
+      const defaults = defaultPrefs().statusFilters;
+      // Migrate older single-select statusFilter values.
+      if (typeof parsed.statusFilter === "string") {
+        const single = parsed.statusFilter;
+        if (single === "all") return { ...defaults };
+        if (STATUS_FILTER_KEYS.includes(single)) {
+          return {
+            unsent: single === "unsent",
+            pending: single === "pending",
+            success: single === "success",
+            cancelled: single === "cancelled",
+          };
+        }
+      }
+      if (parsed.pendingOnly === true) {
+        return { unsent: false, pending: true, success: false, cancelled: false };
+      }
+      return {
+        unsent: parsed.statusFilters?.unsent !== false,
+        pending: parsed.statusFilters?.pending !== false,
+        success: parsed.statusFilters?.success !== false,
+        cancelled: parsed.statusFilters?.cancelled !== false,
+      };
     }
 
     function loadPrefs() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem("kcw.companion.ui.v1");
+        const raw =
+          localStorage.getItem(STORAGE_KEY) ||
+          localStorage.getItem("kcw.companion.ui.v4") ||
+          localStorage.getItem("kcw.companion.ui.v3") ||
+          localStorage.getItem("kcw.companion.ui.v2") ||
+          localStorage.getItem("kcw.companion.ui.v1");
         if (!raw) return defaultPrefs();
         const parsed = JSON.parse(raw);
-        const hideSuccess = parsed.hideSuccess !== undefined
-          ? parsed.hideSuccess !== false
-          : parsed.hideSettled !== false;
-        const hideCancelled = parsed.hideCancelled !== undefined
-          ? parsed.hideCancelled !== false
-          : parsed.hideSettled !== false;
         return {
           mode: parsed.mode === "today" ? "today" : "latest",
-          limit: normalizeLimit(parsed.limit),
-          hideSuccess,
-          hideCancelled,
+          limit: normalizeLimit(parsed.limit, parsed.mode === "today" ? "today" : "latest"),
+          statusFilters: normalizeStatusFilters(parsed),
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
             response: parsed.timelineFilters?.response !== false,
@@ -522,8 +640,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         mode: state.mode,
         limit: state.limit,
-        hideSuccess: state.hideSuccess,
-        hideCancelled: state.hideCancelled,
+        statusFilters: state.statusFilters,
         timelineFilters: state.timelineFilters,
       }));
     }
@@ -538,15 +655,96 @@
       refreshing: false,
       mode: prefs.mode,
       limit: prefs.limit,
-      hideSuccess: prefs.hideSuccess,
-      hideCancelled: prefs.hideCancelled,
+      statusFilters: prefs.statusFilters,
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
+      statusByBillId: {},
+      statusSnapshotReady: false,
     };
 
     function setMessage(text) {
       document.getElementById("message").textContent = text || "";
+    }
+
+    function closeAlertDialog() {
+      const dialog = document.getElementById("alertDialog");
+      if (dialog.open) dialog.close();
+    }
+
+    function showAlertDialog({ type = "info", title, message }) {
+      const dialog = document.getElementById("alertDialog");
+      const iconEl = document.getElementById("alertDialogIcon");
+      const titleEl = document.getElementById("alertDialogTitle");
+      const bodyEl = document.getElementById("alertDialogBody");
+      const kind = ["success", "error", "info"].includes(type) ? type : "info";
+      const icon = kind === "success" ? ICONS.check : kind === "error" ? ICONS.alert : ICONS.info;
+      iconEl.className = `alert-dialog-icon ${kind}`;
+      iconEl.innerHTML = icon;
+      titleEl.textContent = title || "";
+      bodyEl.textContent = message || "";
+      setMessage(message || title || "");
+      if (typeof dialog.showModal === "function") {
+        if (!dialog.open) dialog.showModal();
+      } else {
+        window.alert(`${title || ""}\n${message || ""}`.trim());
+      }
+    }
+
+    function friendlyErrorMessage(err) {
+      const raw = (err && err.message) || String(err || "");
+      const cleaned = raw.replace(/^เกิดข้อผิดพลาด:\s*/i, "").trim();
+      const lower = cleaned.toLowerCase();
+      if (lower.includes("active") || lower.includes("busy") || lower.includes("already")) {
+        return "มีรายการชำระที่กำลังดำเนินการอยู่แล้ว หรือเครื่อง Tiger ไม่ว่างในตอนนี้";
+      }
+      if (lower.includes("not_active") || lower.includes("not active")) {
+        return "รายการนี้ไม่ได้อยู่ในสถานะที่สามารถยกเลิกได้";
+      }
+      if (lower.includes("not found") || lower.includes("bill_not_found")) {
+        return "ไม่พบบิลหรือรายการชำระนี้";
+      }
+      return cleaned || "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
+    }
+
+    function maybeNotifyStatusTransitions(bills) {
+      const nextMap = {};
+      const transitions = [];
+      for (const bill of bills) {
+        const status = bill.tiger_payment_status || null;
+        nextMap[bill.id] = status;
+        if (!state.statusSnapshotReady) continue;
+        const prev = state.statusByBillId[bill.id];
+        if (!prev || prev === status) continue;
+        if (ACTIVE_STATUSES.has(prev) && (status === "success" || status === "cancelled" || status === "failed")) {
+          transitions.push({ bill, prev, status });
+        }
+      }
+      state.statusByBillId = nextMap;
+      state.statusSnapshotReady = true;
+      if (!transitions.length) return;
+      // Prefer the selected bill if several settle in one poll tick.
+      const chosen = transitions.find((t) => t.bill.id === state.selectedBillId) || transitions[0];
+      const billNo = chosen.bill.bill_number;
+      if (chosen.status === "success") {
+        showAlertDialog({
+          type: "success",
+          title: "ชำระเงินสำเร็จ",
+          message: `บิล ${billNo} ชำระผ่าน Tiger Pay เรียบร้อยแล้ว`,
+        });
+      } else if (chosen.status === "cancelled") {
+        showAlertDialog({
+          type: "info",
+          title: "ยกเลิกรายการแล้ว",
+          message: `บิล ${billNo} ถูกยกเลิกเรียบร้อยแล้ว`,
+        });
+      } else {
+        showAlertDialog({
+          type: "error",
+          title: "รายการล้มเหลว",
+          message: `บิล ${billNo} ไม่สำเร็จ (${statusLabel(chosen.status)})`,
+        });
+      }
     }
 
     function statusClass(status) {
@@ -644,9 +842,11 @@
     function syncToolbar() {
       document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
       document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
-      document.getElementById("limitSelect").value = state.limit;
-      document.getElementById("hideSuccess").checked = state.hideSuccess;
-      document.getElementById("hideCancelled").checked = state.hideCancelled;
+      syncLimitOptions();
+      document.querySelectorAll("#statusChips .chip").forEach((chip) => {
+        const key = chip.getAttribute("data-status");
+        chip.classList.toggle("active", !!state.statusFilters[key]);
+      });
       document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
         const cat = chip.getAttribute("data-cat");
         chip.classList.toggle("active", !!state.timelineFilters[cat]);
@@ -654,12 +854,21 @@
       syncRefreshBtn();
     }
 
+    function isPendingStatus(status) {
+      return ACTIVE_STATUSES.has(status);
+    }
+
+    function billStatusBucket(bill) {
+      const status = bill.tiger_payment_status;
+      if (!status && !bill.payment_attempt_id) return "unsent";
+      if (isPendingStatus(status) || status === "failed") return "pending";
+      if (status === "success") return "success";
+      if (status === "cancelled") return "cancelled";
+      return "pending";
+    }
+
     function visibleBills() {
-      return state.bills.filter((b) => {
-        if (state.hideSuccess && b.tiger_payment_status === "success") return false;
-        if (state.hideCancelled && b.tiger_payment_status === "cancelled") return false;
-        return true;
-      });
+      return state.bills.filter((b) => !!state.statusFilters[billStatusBucket(b)]);
     }
 
     function buttonHtml(bill) {
@@ -692,7 +901,11 @@
               const result = await api(`/companion/bills/${bill.id}/pay`, { method: "POST" });
               state.selectedBillId = bill.id;
               state.selectedAttemptId = result.attempt && result.attempt.id;
-              setMessage("สร้างรายการชำระบน Tiger Pay แล้ว");
+              showAlertDialog({
+                type: "success",
+                title: "ส่งชำระสำเร็จ",
+                message: `ส่งบิล ${bill.bill_number} ไปยังเครื่อง Tiger Pay แล้ว\nรอลูกค้าชำระที่เครื่อง`,
+              });
             } else if (action === "cancel") {
               const attemptId = btn.getAttribute("data-attempt");
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
@@ -700,10 +913,18 @@
               setMessage("กำลังขอยกเลิก...");
               await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
               state.selectedAttemptId = attemptId;
-              setMessage("ส่งคำขอยกเลิกแล้ว รอการยืนยันจาก Tiger...");
+              showAlertDialog({
+                type: "info",
+                title: "ส่งคำขอยกเลิกแล้ว",
+                message: `ส่งคำขอยกเลิกบิล ${bill.bill_number} แล้ว\nรอการยืนยันจาก Tiger Pay`,
+              });
             }
           } catch (err) {
-            setMessage(err.message || String(err));
+            showAlertDialog({
+              type: "error",
+              title: "ไม่สามารถดำเนินการได้",
+              message: friendlyErrorMessage(err),
+            });
           } finally {
             state.actionInFlight = null;
             await loadBills();
@@ -841,9 +1062,10 @@
         if (data.mode === "latest" || data.mode === "today") {
           state.mode = data.mode;
         }
-        if (data.limit === "all" || data.limit === 10 || data.limit === 20) {
-          state.limit = String(data.limit);
+        if (data.limit === "all" || data.limit === 10 || data.limit === 20 || data.limit === 50 || data.limit === 100) {
+          state.limit = normalizeLimit(String(data.limit), state.mode);
         }
+        maybeNotifyStatusTransitions(state.bills);
         syncToolbar();
         renderBills();
         if (state.selectedAttemptId) {
@@ -890,32 +1112,33 @@
 
     document.getElementById("modeLatest").onclick = () => {
       state.mode = "latest";
+      state.limit = normalizeLimit(state.limit, "latest");
       savePrefs();
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
     document.getElementById("modeToday").onclick = () => {
       state.mode = "today";
+      state.limit = normalizeLimit(state.limit, "today");
       savePrefs();
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
     document.getElementById("limitSelect").onchange = (event) => {
-      state.limit = normalizeLimit(event.target.value);
+      state.limit = normalizeLimit(event.target.value, state.mode);
       savePrefs();
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
-    document.getElementById("hideSuccess").onchange = (event) => {
-      state.hideSuccess = !!event.target.checked;
-      savePrefs();
-      renderBills();
-    };
-    document.getElementById("hideCancelled").onchange = (event) => {
-      state.hideCancelled = !!event.target.checked;
-      savePrefs();
-      renderBills();
-    };
+    document.querySelectorAll("#statusChips .chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const key = chip.getAttribute("data-status");
+        state.statusFilters[key] = !state.statusFilters[key];
+        savePrefs();
+        syncToolbar();
+        renderBills();
+      });
+    });
     document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
       chip.addEventListener("click", () => {
         const cat = chip.getAttribute("data-cat");
@@ -924,6 +1147,12 @@
         syncToolbar();
         renderTimeline();
       });
+    });
+
+    document.getElementById("alertDialogOk").onclick = () => closeAlertDialog();
+    document.getElementById("alertDialog").addEventListener("cancel", (event) => {
+      // Allow Esc to close; default dialog behavior already closes it.
+      event.stopPropagation();
     });
 
     syncToolbar();

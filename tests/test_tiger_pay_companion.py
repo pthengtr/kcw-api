@@ -320,8 +320,11 @@ def test_companion_ui_and_bills_route():
         assert 'lang="th"' in ui.text
         assert "ส่งชำระ" in ui.text
         assert "Request" in ui.text
-        assert "ซ่อนสำเร็จ" in ui.text
-        assert "ซ่อนยกเลิกแล้ว" in ui.text
+        assert 'id="statusChips"' in ui.text
+        assert "ยังไม่ส่ง" in ui.text
+        assert "รอดำเนินการ" in ui.text
+        assert 'id="alertDialog"' in ui.text
+        assert "ตกลง" in ui.text
         bills = client.get("/companion/bills")
         assert bills.status_code == 200
         payload = bills.json()
@@ -334,6 +337,10 @@ def test_companion_ui_and_bills_route():
         assert today.json()["limit"] == "all"
         assert list_bills.call_args_list[-1].kwargs.get("mode") == "today"
         assert list_bills.call_args_list[-1].kwargs.get("limit") == "all"
+        latest = client.get("/companion/bills?mode=latest&limit=100")
+        assert latest.status_code == 200
+        assert latest.json()["limit"] == 100
+        assert list_bills.call_args_list[-1].kwargs.get("limit") == "100"
 
 
 def test_companion_pay_conflict():
