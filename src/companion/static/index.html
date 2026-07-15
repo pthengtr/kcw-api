@@ -445,6 +445,7 @@
         </label>
         <div class="seg" id="statusFilterSeg" role="group" aria-label="กรองสถานะ Tiger">
           <button type="button" data-status-filter="all">ทั้งหมด</button>
+          <button type="button" data-status-filter="unsent">ยังไม่ส่ง</button>
           <button type="button" data-status-filter="pending">รอดำเนินการ</button>
           <button type="button" data-status-filter="success">สำเร็จ</button>
           <button type="button" data-status-filter="cancelled">ยกเลิก</button>
@@ -498,7 +499,7 @@
   </main>
   <script>
     const STORAGE_KEY = "kcw.companion.ui.v4";
-    const STATUS_FILTERS = new Set(["all", "pending", "success", "cancelled"]);
+    const STATUS_FILTERS = new Set(["all", "unsent", "pending", "success", "cancelled"]);
     const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
@@ -811,6 +812,7 @@
       return state.bills.filter((b) => {
         const status = b.tiger_payment_status;
         if (state.statusFilter === "all") return true;
+        if (state.statusFilter === "unsent") return !status && !b.payment_attempt_id;
         if (state.statusFilter === "pending") return isPendingStatus(status);
         if (state.statusFilter === "success") return status === "success";
         if (state.statusFilter === "cancelled") return status === "cancelled";

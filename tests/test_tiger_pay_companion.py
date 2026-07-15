@@ -321,6 +321,7 @@ def test_companion_ui_and_bills_route():
         assert "ส่งชำระ" in ui.text
         assert "Request" in ui.text
         assert 'id="statusFilterSeg"' in ui.text
+        assert "ยังไม่ส่ง" in ui.text
         assert "รอดำเนินการ" in ui.text
         assert 'id="alertDialog"' in ui.text
         assert "ตกลง" in ui.text
