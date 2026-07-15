@@ -47,9 +47,9 @@ async def companion_bills(
         default=None,
         description="Override POS_BILLS_MODE for this request (latest or today).",
     ),
-    limit: Literal["10", "20", "all"] | None = Query(
+    limit: Literal["10", "20", "50", "100", "all"] | None = Query(
         default=None,
-        description="Override POS_BILLS_LIMIT for this request (10, 20, or all).",
+        description="Override POS_BILLS_LIMIT for this request (10, 20, 50, 100, or all).",
     ),
 ) -> dict:
     engine = get_engine()

@@ -337,6 +337,10 @@ def test_companion_ui_and_bills_route():
         assert today.json()["limit"] == "all"
         assert list_bills.call_args_list[-1].kwargs.get("mode") == "today"
         assert list_bills.call_args_list[-1].kwargs.get("limit") == "all"
+        latest = client.get("/companion/bills?mode=latest&limit=100")
+        assert latest.status_code == 200
+        assert latest.json()["limit"] == 100
+        assert list_bills.call_args_list[-1].kwargs.get("limit") == "100"
 
 
 def test_companion_pay_conflict():

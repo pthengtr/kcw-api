@@ -442,11 +442,7 @@
         <label class="limit-wrap" for="limitSelect">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
           <span>จำนวนสูงสุด</span>
-          <select id="limitSelect" aria-label="จำนวนบิลสูงสุด">
-            <option value="10">10</option>
-            <option value="20">20</option>
-            <option value="all">ทั้งหมด</option>
-          </select>
+          <select id="limitSelect" aria-label="จำนวนบิลสูงสุด"></select>
         </label>
       </div>
       <div class="chip-bar" id="statusChips" role="group" aria-label="กรองสถานะ Tiger">
@@ -517,7 +513,10 @@
       webhook: "Webhook",
       polling: "Polling",
     };
-    const LIMIT_OPTIONS = new Set(["10", "20", "all"]);
+    const LIMIT_OPTIONS_BY_MODE = {
+      latest: ["10", "20", "50", "100"],
+      today: ["10", "20", "50", "all"],
+    };
     const ICONS = {
       refresh: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>`,
       spinner: `<svg class="icon icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
@@ -560,9 +559,29 @@
       },
     });
 
-    function normalizeLimit(value) {
+    function limitOptionsForMode(mode) {
+      return LIMIT_OPTIONS_BY_MODE[mode === "today" ? "today" : "latest"];
+    }
+
+    function normalizeLimit(value, mode = "latest") {
+      const options = limitOptionsForMode(mode);
       const raw = String(value ?? "10");
-      return LIMIT_OPTIONS.has(raw) ? raw : "10";
+      if (options.includes(raw)) return raw;
+      // When switching modes, map invalid choices to the closest allowed option.
+      if (mode === "latest" && raw === "all") return "100";
+      if (mode === "today" && raw === "100") return "50";
+      return "10";
+    }
+
+    function syncLimitOptions() {
+      const select = document.getElementById("limitSelect");
+      const options = limitOptionsForMode(state.mode);
+      state.limit = normalizeLimit(state.limit, state.mode);
+      select.innerHTML = options.map((value) => {
+        const label = value === "all" ? "ทั้งหมด" : value;
+        return `<option value="${value}">${label}</option>`;
+      }).join("");
+      select.value = state.limit;
     }
 
     function normalizeStatusFilters(parsed = {}) {
@@ -603,7 +622,7 @@
         const parsed = JSON.parse(raw);
         return {
           mode: parsed.mode === "today" ? "today" : "latest",
-          limit: normalizeLimit(parsed.limit),
+          limit: normalizeLimit(parsed.limit, parsed.mode === "today" ? "today" : "latest"),
           statusFilters: normalizeStatusFilters(parsed),
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
@@ -823,7 +842,7 @@
     function syncToolbar() {
       document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
       document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
-      document.getElementById("limitSelect").value = state.limit;
+      syncLimitOptions();
       document.querySelectorAll("#statusChips .chip").forEach((chip) => {
         const key = chip.getAttribute("data-status");
         chip.classList.toggle("active", !!state.statusFilters[key]);
@@ -1043,8 +1062,8 @@
         if (data.mode === "latest" || data.mode === "today") {
           state.mode = data.mode;
         }
-        if (data.limit === "all" || data.limit === 10 || data.limit === 20) {
-          state.limit = String(data.limit);
+        if (data.limit === "all" || data.limit === 10 || data.limit === 20 || data.limit === 50 || data.limit === 100) {
+          state.limit = normalizeLimit(String(data.limit), state.mode);
         }
         maybeNotifyStatusTransitions(state.bills);
         syncToolbar();
@@ -1093,18 +1112,20 @@
 
     document.getElementById("modeLatest").onclick = () => {
       state.mode = "latest";
+      state.limit = normalizeLimit(state.limit, "latest");
       savePrefs();
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
     document.getElementById("modeToday").onclick = () => {
       state.mode = "today";
+      state.limit = normalizeLimit(state.limit, "today");
       savePrefs();
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
     document.getElementById("limitSelect").onchange = (event) => {
-      state.limit = normalizeLimit(event.target.value);
+      state.limit = normalizeLimit(event.target.value, state.mode);
       savePrefs();
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
