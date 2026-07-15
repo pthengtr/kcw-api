@@ -854,6 +854,8 @@
         if (showRefresh) {
           state.refreshing = false;
           syncRefreshBtn();
+          // Re-render so Send/Cancel are not left disabled from the in-flight refresh pass.
+          renderBills();
         }
       }
     }
