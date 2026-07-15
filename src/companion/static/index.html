@@ -45,8 +45,30 @@
       background: color-mix(in srgb, var(--bg) 92%, transparent);
       backdrop-filter: blur(8px);
     }
-    h1 { margin: 0; font-size: 1.15rem; font-weight: 700; }
+    h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
     .muted { color: var(--muted); font-size: 0.88rem; }
+    .icon {
+      width: 1.05em;
+      height: 1.05em;
+      display: inline-block;
+      flex-shrink: 0;
+      vertical-align: -0.15em;
+    }
+    .icon-lg { width: 1.25em; height: 1.25em; }
+    .icon-spin { animation: spin 0.7s linear infinite; }
+    .panel h2 {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .chip .icon { width: 0.95em; height: 0.95em; }
     #message {
       min-height: 1.2rem;
       padding: 0.35rem 1rem;
@@ -134,6 +156,9 @@
       padding: 0.85rem 1rem;
       font-size: 1rem;
       border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
     }
     table {
       width: 100%;
@@ -322,7 +347,10 @@
 <body>
   <header>
     <div>
-      <h1>KCW Tiger Pay Companion</h1>
+      <h1>
+        <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+        KCW Tiger Pay Companion
+      </h1>
       <div class="muted">บิลเงินสด POS → เครื่อง Tiger Pay</div>
     </div>
     <button class="btn-refresh" id="refreshBtn" type="button">รีเฟรช</button>
@@ -330,13 +358,23 @@
   <div id="message"></div>
   <main>
     <section class="panel">
-      <h2>บิล POS ที่เปิดอยู่</h2>
+      <h2>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+        บิล POS ที่เปิดอยู่
+      </h2>
       <div class="toolbar">
         <div class="seg" role="group" aria-label="โหมดรายการบิล">
-          <button type="button" id="modeLatest" data-mode="latest">ล่าสุด</button>
-          <button type="button" id="modeToday" data-mode="today">วันนี้</button>
+          <button type="button" id="modeLatest" data-mode="latest">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            ล่าสุด
+          </button>
+          <button type="button" id="modeToday" data-mode="today">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+            วันนี้
+          </button>
         </div>
         <label class="limit-wrap" for="limitSelect">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
           <span>จำนวนสูงสุด</span>
           <select id="limitSelect" aria-label="จำนวนบิลสูงสุด">
             <option value="10">10</option>
@@ -346,10 +384,12 @@
         </label>
         <label class="toggle-row">
           <input type="checkbox" id="hideSuccess" />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
           <span>ซ่อนสำเร็จ</span>
         </label>
         <label class="toggle-row">
           <input type="checkbox" id="hideCancelled" />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
           <span>ซ่อนยกเลิกแล้ว</span>
         </label>
       </div>
@@ -374,12 +414,27 @@
       <div class="mobile-cards" id="billsCards"></div>
     </section>
     <section class="panel">
-      <h2>ไทม์ไลน์การชำระที่เลือก</h2>
+      <h2>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg>
+        ไทม์ไลน์การชำระที่เลือก
+      </h2>
       <div class="chip-bar" id="timelineChips">
-        <button type="button" class="chip active" data-cat="request">Request</button>
-        <button type="button" class="chip active" data-cat="response">Response</button>
-        <button type="button" class="chip active" data-cat="webhook">Webhook</button>
-        <button type="button" class="chip active" data-cat="polling">Polling</button>
+        <button type="button" class="chip active" data-cat="request">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          Request
+        </button>
+        <button type="button" class="chip active" data-cat="response">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          Response
+        </button>
+        <button type="button" class="chip active" data-cat="webhook">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 16.5a4.5 4.5 0 1 0-6.3-6.3"/><path d="M6 7.5a4.5 4.5 0 1 0 6.3 6.3"/><path d="M12 12v.01"/></svg>
+          Webhook
+        </button>
+        <button type="button" class="chip active" data-cat="polling">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+          Polling
+        </button>
       </div>
       <ul id="timeline"><li class="empty">เลือกบิลที่มีรายการชำระ</li></ul>
     </section>
@@ -400,6 +455,16 @@
       polling: "Polling",
     };
     const LIMIT_OPTIONS = new Set(["10", "20", "all"]);
+    const ICONS = {
+      refresh: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>`,
+      spinner: `<svg class="icon icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
+      send: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>`,
+      cancel: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>`,
+      chevronDown: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`,
+      chevronUp: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>`,
+      receipt: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>`,
+      inbox: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
+    };
     const STATUS_LABEL = {
       success: "สำเร็จ",
       failed: "ล้มเหลว",
@@ -474,6 +539,7 @@
       selectedAttemptId: null,
       actionInFlight: null, // { type: 'send'|'cancel', billId, attemptId }
       pollTimer: null,
+      refreshing: false,
       mode: prefs.mode,
       limit: prefs.limit,
       hideSuccess: prefs.hideSuccess,
@@ -571,6 +637,14 @@
       return data;
     }
 
+    function syncRefreshBtn() {
+      const btn = document.getElementById("refreshBtn");
+      btn.disabled = state.refreshing;
+      btn.innerHTML = state.refreshing
+        ? `${ICONS.spinner} กำลังโหลด…`
+        : `${ICONS.refresh} รีเฟรช`;
+    }
+
     function syncToolbar() {
       document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
       document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
@@ -581,6 +655,7 @@
         const cat = chip.getAttribute("data-cat");
         chip.classList.toggle("active", !!state.timelineFilters[cat]);
       });
+      syncRefreshBtn();
     }
 
     function visibleBills() {
@@ -594,14 +669,14 @@
     function buttonHtml(bill) {
       const sendLoading = isSendLoading(bill.id);
       const cancelLoading = isCancelLoading(bill.payment_attempt_id);
-      const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight;
-      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight;
+      const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight || state.refreshing;
+      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight || state.refreshing;
       const sendLabel = sendLoading
-        ? `<span class="spinner"></span>กำลังส่ง…`
-        : "ส่งชำระ";
+        ? `${ICONS.spinner} กำลังส่ง…`
+        : `${ICONS.send} ส่งชำระ`;
       const cancelLabel = cancelLoading
-        ? `<span class="spinner"></span>กำลังยกเลิก…`
-        : "ยกเลิก";
+        ? `${ICONS.spinner} กำลังยกเลิก…`
+        : `${ICONS.cancel} ยกเลิก`;
       return `
         <button class="btn-send" type="button" data-action="send" data-id="${bill.id}" ${sendDisabled ? "disabled" : ""}>${sendLabel}</button>
         <button class="btn-cancel" type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
@@ -662,8 +737,9 @@
       cards.innerHTML = "";
 
       if (!bills.length) {
-        body.innerHTML = `<tr><td colspan="7" class="empty">ไม่มีบิลที่แสดง</td></tr>`;
-        cards.innerHTML = `<div class="empty">ไม่มีบิลที่แสดง</div>`;
+        const empty = `<div class="empty">${ICONS.inbox} ไม่มีบิลที่แสดง</div>`;
+        body.innerHTML = `<tr><td colspan="7">${empty}</td></tr>`;
+        cards.innerHTML = empty;
         return;
       }
 
@@ -731,7 +807,7 @@
             <span class="${statusClass(ev.status)}">${statusLabel(ev.status)}</span>
           </div>
           <div class="meta">${formatBangkokTime(ev.created_at)} · ${ev.source || "—"}</div>
-          <button type="button" class="btn-link" data-toggle-payload="${key}">${expanded ? "ซ่อนข้อมูล" : "แสดงข้อมูล"}</button>
+          <button type="button" class="btn-link" data-toggle-payload="${key}">${expanded ? `${ICONS.chevronUp} ซ่อนข้อมูล` : `${ICONS.chevronDown} แสดงข้อมูล`}</button>
           ${expanded ? `<pre class="payload">${escapeHtml(payloadJson)}</pre>` : ""}
         </li>`;
       }).join("");
@@ -754,25 +830,36 @@
         .replaceAll(">", "&gt;");
     }
 
-    async function loadBills() {
-      const qs = new URLSearchParams({
-        mode: state.mode,
-        limit: state.limit,
-      });
-      const data = await api(`/companion/bills?${qs.toString()}`);
-      state.bills = data.bills || [];
-      if (data.mode === "latest" || data.mode === "today") {
-        state.mode = data.mode;
+    async function loadBills({ showRefresh = false } = {}) {
+      if (showRefresh) {
+        state.refreshing = true;
+        syncRefreshBtn();
       }
-      if (data.limit === "all" || data.limit === 10 || data.limit === 20) {
-        state.limit = String(data.limit);
+      try {
+        const qs = new URLSearchParams({
+          mode: state.mode,
+          limit: state.limit,
+        });
+        const data = await api(`/companion/bills?${qs.toString()}`);
+        state.bills = data.bills || [];
+        if (data.mode === "latest" || data.mode === "today") {
+          state.mode = data.mode;
+        }
+        if (data.limit === "all" || data.limit === 10 || data.limit === 20) {
+          state.limit = String(data.limit);
+        }
+        syncToolbar();
+        renderBills();
+        if (state.selectedAttemptId) {
+          await loadTimeline(state.selectedAttemptId);
+        }
+        maybeStartPolling();
+      } finally {
+        if (showRefresh) {
+          state.refreshing = false;
+          syncRefreshBtn();
+        }
       }
-      syncToolbar();
-      renderBills();
-      if (state.selectedAttemptId) {
-        await loadTimeline(state.selectedAttemptId);
-      }
-      maybeStartPolling();
     }
 
     async function loadTimeline(attemptId) {
@@ -800,26 +887,26 @@
 
     document.getElementById("refreshBtn").onclick = () => {
       setMessage("");
-      loadBills().catch((err) => setMessage(err.message || String(err)));
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
 
     document.getElementById("modeLatest").onclick = () => {
       state.mode = "latest";
       savePrefs();
       syncToolbar();
-      loadBills().catch((err) => setMessage(err.message || String(err)));
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
     document.getElementById("modeToday").onclick = () => {
       state.mode = "today";
       savePrefs();
       syncToolbar();
-      loadBills().catch((err) => setMessage(err.message || String(err)));
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
     document.getElementById("limitSelect").onchange = (event) => {
       state.limit = normalizeLimit(event.target.value);
       savePrefs();
       syncToolbar();
-      loadBills().catch((err) => setMessage(err.message || String(err)));
+      loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
     document.getElementById("hideSuccess").onchange = (event) => {
       state.hideSuccess = !!event.target.checked;
@@ -842,7 +929,7 @@
     });
 
     syncToolbar();
-    loadBills().catch((err) => setMessage(err.message || String(err)));
+    loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
   </script>
 </body>
 </html>
