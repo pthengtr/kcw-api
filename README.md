@@ -45,7 +45,8 @@ Thai-language shop UI at `/companion` (mobile-friendly):
 - **สถานะ Tiger** chips — `ยังไม่ส่ง` / `รอดำเนินการ` / `สำเร็จ` / `ยกเลิก` (multi-select, same pattern as timeline chips; all on by default)
 - Send/Cancel buttons show loading while the request runs
 - Timeline filters: Request / Response / Webhook / Polling (color-coded), Bangkok timestamps, expandable payloads
-- Preferences (mode, limit, hide filters, timeline filters) persist in `localStorage`
+- Dark / light theme toggle (persisted; defaults to system preference)
+- Preferences (mode, limit, theme, status/timeline filters) persist in `localStorage`
 - Modal dialogs for send/cancel success, blocking errors (e.g. machine busy), and payment completion
 
 ### POS bill sources

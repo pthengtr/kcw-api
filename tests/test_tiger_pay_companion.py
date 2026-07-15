@@ -324,6 +324,8 @@ def test_companion_ui_and_bills_route():
         assert "ยังไม่ส่ง" in ui.text
         assert "รอดำเนินการ" in ui.text
         assert 'id="alertDialog"' in ui.text
+        assert 'id="themeBtn"' in ui.text
+        assert 'data-theme' in ui.text
         assert "ตกลง" in ui.text
         bills = client.get("/companion/bills")
         assert bills.status_code == 200
