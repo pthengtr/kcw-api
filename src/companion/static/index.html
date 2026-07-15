@@ -289,6 +289,11 @@
     .chip[data-cat="response"].active { background: color-mix(in srgb, var(--response) 28%, transparent); border-color: var(--response); }
     .chip[data-cat="webhook"].active { background: color-mix(in srgb, var(--webhook) 28%, transparent); border-color: var(--webhook); }
     .chip[data-cat="polling"].active { background: color-mix(in srgb, var(--polling) 28%, transparent); border-color: var(--polling); }
+    .chip[data-status="unsent"].active { background: color-mix(in srgb, var(--muted) 28%, transparent); border-color: #7f93a8; }
+    .chip[data-status="pending"].active { background: color-mix(in srgb, var(--warn) 28%, transparent); border-color: var(--warn); }
+    .chip[data-status="success"].active { background: color-mix(in srgb, var(--accent) 28%, transparent); border-color: var(--accent); }
+    .chip[data-status="cancelled"].active { background: color-mix(in srgb, var(--danger) 28%, transparent); border-color: var(--danger); }
+    .toolbar + .chip-bar { border-top: 0; }
     #timeline {
       list-style: none;
       margin: 0;
@@ -443,13 +448,12 @@
             <option value="all">ทั้งหมด</option>
           </select>
         </label>
-        <div class="seg" id="statusFilterSeg" role="group" aria-label="กรองสถานะ Tiger">
-          <button type="button" data-status-filter="all">ทั้งหมด</button>
-          <button type="button" data-status-filter="unsent">ยังไม่ส่ง</button>
-          <button type="button" data-status-filter="pending">รอดำเนินการ</button>
-          <button type="button" data-status-filter="success">สำเร็จ</button>
-          <button type="button" data-status-filter="cancelled">ยกเลิก</button>
-        </div>
+      </div>
+      <div class="chip-bar" id="statusChips" role="group" aria-label="กรองสถานะ Tiger">
+        <button type="button" class="chip active" data-status="unsent">ยังไม่ส่ง</button>
+        <button type="button" class="chip active" data-status="pending">รอดำเนินการ</button>
+        <button type="button" class="chip active" data-status="success">สำเร็จ</button>
+        <button type="button" class="chip active" data-status="cancelled">ยกเลิก</button>
       </div>
       <div class="desktop-table">
         <div class="table-wrap">
@@ -498,8 +502,8 @@
     </section>
   </main>
   <script>
-    const STORAGE_KEY = "kcw.companion.ui.v4";
-    const STATUS_FILTERS = new Set(["all", "unsent", "pending", "success", "cancelled"]);
+    const STORAGE_KEY = "kcw.companion.ui.v5";
+    const STATUS_FILTER_KEYS = ["unsent", "pending", "success", "cancelled"];
     const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
@@ -542,7 +546,12 @@
     const defaultPrefs = () => ({
       mode: "latest",
       limit: "10",
-      statusFilter: "all",
+      statusFilters: {
+        unsent: true,
+        pending: true,
+        success: true,
+        cancelled: true,
+      },
       timelineFilters: {
         request: true,
         response: true,
@@ -556,16 +565,37 @@
       return LIMIT_OPTIONS.has(raw) ? raw : "10";
     }
 
-    function normalizeStatusFilter(value, legacy = {}) {
-      if (STATUS_FILTERS.has(value)) return value;
-      if (legacy.pendingOnly === true) return "pending";
-      return "all";
+    function normalizeStatusFilters(parsed = {}) {
+      const defaults = defaultPrefs().statusFilters;
+      // Migrate older single-select statusFilter values.
+      if (typeof parsed.statusFilter === "string") {
+        const single = parsed.statusFilter;
+        if (single === "all") return { ...defaults };
+        if (STATUS_FILTER_KEYS.includes(single)) {
+          return {
+            unsent: single === "unsent",
+            pending: single === "pending",
+            success: single === "success",
+            cancelled: single === "cancelled",
+          };
+        }
+      }
+      if (parsed.pendingOnly === true) {
+        return { unsent: false, pending: true, success: false, cancelled: false };
+      }
+      return {
+        unsent: parsed.statusFilters?.unsent !== false,
+        pending: parsed.statusFilters?.pending !== false,
+        success: parsed.statusFilters?.success !== false,
+        cancelled: parsed.statusFilters?.cancelled !== false,
+      };
     }
 
     function loadPrefs() {
       try {
         const raw =
           localStorage.getItem(STORAGE_KEY) ||
+          localStorage.getItem("kcw.companion.ui.v4") ||
           localStorage.getItem("kcw.companion.ui.v3") ||
           localStorage.getItem("kcw.companion.ui.v2") ||
           localStorage.getItem("kcw.companion.ui.v1");
@@ -574,7 +604,7 @@
         return {
           mode: parsed.mode === "today" ? "today" : "latest",
           limit: normalizeLimit(parsed.limit),
-          statusFilter: normalizeStatusFilter(parsed.statusFilter, parsed),
+          statusFilters: normalizeStatusFilters(parsed),
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
             response: parsed.timelineFilters?.response !== false,
@@ -591,7 +621,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         mode: state.mode,
         limit: state.limit,
-        statusFilter: state.statusFilter,
+        statusFilters: state.statusFilters,
         timelineFilters: state.timelineFilters,
       }));
     }
@@ -606,7 +636,7 @@
       refreshing: false,
       mode: prefs.mode,
       limit: prefs.limit,
-      statusFilter: prefs.statusFilter,
+      statusFilters: prefs.statusFilters,
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
@@ -794,8 +824,9 @@
       document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
       document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
       document.getElementById("limitSelect").value = state.limit;
-      document.querySelectorAll("#statusFilterSeg [data-status-filter]").forEach((btn) => {
-        btn.classList.toggle("active", btn.getAttribute("data-status-filter") === state.statusFilter);
+      document.querySelectorAll("#statusChips .chip").forEach((chip) => {
+        const key = chip.getAttribute("data-status");
+        chip.classList.toggle("active", !!state.statusFilters[key]);
       });
       document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
         const cat = chip.getAttribute("data-cat");
@@ -808,16 +839,17 @@
       return ACTIVE_STATUSES.has(status);
     }
 
+    function billStatusBucket(bill) {
+      const status = bill.tiger_payment_status;
+      if (!status && !bill.payment_attempt_id) return "unsent";
+      if (isPendingStatus(status) || status === "failed") return "pending";
+      if (status === "success") return "success";
+      if (status === "cancelled") return "cancelled";
+      return "pending";
+    }
+
     function visibleBills() {
-      return state.bills.filter((b) => {
-        const status = b.tiger_payment_status;
-        if (state.statusFilter === "all") return true;
-        if (state.statusFilter === "unsent") return !status && !b.payment_attempt_id;
-        if (state.statusFilter === "pending") return isPendingStatus(status);
-        if (state.statusFilter === "success") return status === "success";
-        if (state.statusFilter === "cancelled") return status === "cancelled";
-        return true;
-      });
+      return state.bills.filter((b) => !!state.statusFilters[billStatusBucket(b)]);
     }
 
     function buttonHtml(bill) {
@@ -1077,10 +1109,10 @@
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
-    document.querySelectorAll("#statusFilterSeg [data-status-filter]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const next = btn.getAttribute("data-status-filter");
-        state.statusFilter = normalizeStatusFilter(next);
+    document.querySelectorAll("#statusChips .chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const key = chip.getAttribute("data-status");
+        state.statusFilters[key] = !state.statusFilters[key];
         savePrefs();
         syncToolbar();
         renderBills();

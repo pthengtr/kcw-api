@@ -320,7 +320,7 @@ def test_companion_ui_and_bills_route():
         assert 'lang="th"' in ui.text
         assert "ส่งชำระ" in ui.text
         assert "Request" in ui.text
-        assert 'id="statusFilterSeg"' in ui.text
+        assert 'id="statusChips"' in ui.text
         assert "ยังไม่ส่ง" in ui.text
         assert "รอดำเนินการ" in ui.text
         assert 'id="alertDialog"' in ui.text
