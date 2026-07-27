@@ -226,3 +226,32 @@ def enqueue_sync_pomas_podet_jobs(
         jobs.append(job)
 
     return jobs
+
+
+def enqueue_bank_statement_import_jobs(
+    engine,
+    requested_by: str | None = None,
+    source: str | None = None,
+    allowed_workers: set[str] | None = None,
+) -> list[dict]:
+    """Enqueue one unassigned job; any online worker can claim it."""
+    known_workers = {"HQ-PC", "SYP-PC"}
+
+    if allowed_workers is not None:
+        eligible = known_workers & allowed_workers
+        if not eligible:
+            return []
+
+    batch_id = str(uuid4())
+    job = enqueue_job(
+        engine=engine,
+        job_type="bank_statement_import",
+        payload={
+            "task": "bank_statement_import",
+        },
+        worker_name=None,
+        requested_by=requested_by,
+        source=source,
+        batch_id=batch_id,
+    )
+    return [job]
