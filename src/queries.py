@@ -408,7 +408,9 @@ def get_daily_sales_summary(
             with filtered as (
                 select
                     case
-                        when upper(trim(coalesce("BILLNO", ''))) like 'TAD%' then 'ONLINE'
+                        when upper(trim(coalesce("BILLNO", ''))) like 'TAD%'
+                            or upper(trim(coalesce("BILLNO", ''))) like 'CNTAD%'
+                            then 'ONLINE'
                         else upper(trim(coalesce("BRANCH", '')))
                     end as "SALES_CHANNEL",
                     case
