@@ -190,3 +190,39 @@ def enqueue_hq_full_jobs(
         source=source,
         allowed_workers=allowed_workers,
     )
+
+
+def enqueue_sync_pomas_podet_jobs(
+    engine,
+    requested_by: str | None = None,
+    source: str | None = None,
+    allowed_workers: set[str] | None = None,
+) -> list[dict]:
+    jobs = []
+    batch_id = str(uuid4())
+
+    targets = [
+        {"site": "HQ", "worker_name": "HQ-PC"},
+        {"site": "SYP", "worker_name": "SYP-PC"},
+    ]
+
+    for target in targets:
+        if allowed_workers is not None and target["worker_name"] not in allowed_workers:
+            continue
+
+        job = enqueue_job(
+            engine=engine,
+            job_type="sync_pomas_podet",
+            payload={
+                "task": "sync_pomas_podet",
+                "site": target["site"],
+            },
+            worker_name=target["worker_name"],
+            requested_by=requested_by,
+            source=source,
+            batch_id=batch_id,
+        )
+
+        jobs.append(job)
+
+    return jobs
