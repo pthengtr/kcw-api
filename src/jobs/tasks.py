@@ -291,3 +291,32 @@ def enqueue_bank_statement_import_jobs(
         batch_id=batch_id,
     )
     return [job]
+
+
+def enqueue_sync_po_related_jobs(
+    engine,
+    requested_by: str | None = None,
+    source: str | None = None,
+    allowed_workers: set[str] | None = None,
+) -> list[dict]:
+    """Enqueue one unassigned job; any online worker can claim it."""
+    known_workers = {"HQ-PC", "SYP-PC"}
+
+    if allowed_workers is not None:
+        eligible = known_workers & allowed_workers
+        if not eligible:
+            return []
+
+    batch_id = str(uuid4())
+    job = enqueue_job(
+        engine=engine,
+        job_type="sync_po_related",
+        payload={
+            "task": "sync_po_related",
+        },
+        worker_name=None,
+        requested_by=requested_by,
+        source=source,
+        batch_id=batch_id,
+    )
+    return [job]

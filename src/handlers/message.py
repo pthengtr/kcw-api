@@ -96,6 +96,7 @@ GREETING_MESSAGE = """เฮียช้าเวอร์ชันบอทค�
 • อัปเดตรูปสินค้า
 • อัปเดตออนไลน์
 • อัปเดตใบสั่งซื้อ
+• อัปเดตporelated / sync po related
 • อัปเดตiclow
 • อัปเดตธนาคาร
 • run syp / run syp raw / รัน สาขา
