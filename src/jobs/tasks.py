@@ -270,27 +270,17 @@ def enqueue_bank_statement_import_jobs(
     source: str | None = None,
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
-    """Enqueue one unassigned job; any online worker can claim it."""
-    known_workers = {"HQ-PC", "SYP-PC"}
-
-    if allowed_workers is not None:
-        eligible = known_workers & allowed_workers
-        if not eligible:
-            return []
-
-    batch_id = str(uuid4())
-    job = enqueue_job(
-        engine=engine,
+    """Enqueue one job assigned to HQ-PC only."""
+    return _enqueue_single_worker_job(
+        engine,
         job_type="bank_statement_import",
-        payload={
-            "task": "bank_statement_import",
-        },
-        worker_name=None,
+        site="HQ",
+        worker_name="HQ-PC",
+        task="bank_statement_import",
         requested_by=requested_by,
         source=source,
-        batch_id=batch_id,
+        allowed_workers=allowed_workers,
     )
-    return [job]
 
 
 def enqueue_sync_po_related_jobs(

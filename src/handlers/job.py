@@ -738,7 +738,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
             quick_reply=build_job_status_quick_reply(jobs),
         )
 
-    # bank statement import — any online HQ/SYP worker can claim
+    # bank statement import — HQ-PC only
     if is_bank_statement_import_request(text_lower):
         rows = get_all_worker_status(engine, offline_after_seconds=30)
         online_workers = {
@@ -757,14 +757,15 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         if not jobs:
             return text_response(
                 "ยังอัปเดตธนาคารไม่ได้ครับ\n"
-                "ไม่พบ worker ที่ออนไลน์สำหรับงานนี้"
+                "ไม่พบ HQ-PC ออนไลน์สำหรับงานนี้"
             )
 
-        lines = ["ได้เลย เดี๋ยวจ๋าไปดึง statement ธนาคารให้นะ ✅"]
+        lines = ["ได้เลย เดี๋ยวจ๋าไปดึง statement ธนาคารที่ HQ ให้นะ ✅"]
 
         for job in jobs:
             lines.append(
-                f"- job_id {job['id']} -> worker ว่างเครื่องแรกที่รับงาน"
+                f"- {job['payload'].get('site')}: "
+                f"job_id {job['id']} -> {job.get('worker_name', '-')}"
             )
 
         lines.append("")
