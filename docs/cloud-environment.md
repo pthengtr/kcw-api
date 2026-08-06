@@ -155,6 +155,8 @@ Do not commit real values.
 
 Paste-ready companion tables: `docs/sql/tiger_pay_payment_attempt.sql`
 
+API capability summary (Open API Payment v2 + Voucher): `docs/tiger-pay-api.md`
+
 ### Companion POS bill source (local Windows / shop LAN)
 
 - `POS_BILL_SOURCE` — `mock` | `csv` | `mssql`
