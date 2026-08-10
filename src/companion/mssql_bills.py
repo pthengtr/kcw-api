@@ -67,6 +67,8 @@ def _base_where_sql(*, today_only: bool) -> str:
     clauses = [
         "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
         "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'TF%'",
+        "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'SA%'",
+        "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3SA%'",
     ]
     if today_only:
         # Assumes SQL Server local clock matches shop timezone (Thailand).

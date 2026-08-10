@@ -91,6 +91,7 @@ def get_latest_sale_by_bcode(engine, bcode: str) -> dict | None:
         where coalesce("CANCELED", '') <> 'Y'
           and coalesce("JOURMODE", '') <> '0'
           and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
+          and upper(btrim("BILLNO")) !~ '^(3)?SA'
         order by "BILLDATE" desc, "BILLNO" desc, "BRANCH" asc
         limit 1
     """)
@@ -306,6 +307,7 @@ def get_sales_history_by_bcode(
             where coalesce("CANCELED", '') <> 'Y'
               and coalesce("JOURMODE", '') <> '0'
               and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
+              and upper(btrim("BILLNO")) !~ '^(3)?SA'
         ),
         ranked as (
             select
@@ -423,6 +425,7 @@ def get_daily_sales_summary(
                     "BILLDATE"::date = :target_date
                     and coalesce("JOURMODE", '') <> '0'
                     and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
+                    and upper(btrim("BILLNO")) !~ '^(3)?SA'
             )
             select "SALES_CHANNEL", sum(sale_net) as total_sale
             from filtered
@@ -676,6 +679,7 @@ def get_recent_sale_signal_by_bcode(engine, bcode: str, months: int = 6) -> dict
             where coalesce("CANCELED", '') <> 'Y'
               and coalesce("JOURMODE", '') <> '0'
               and coalesce("BILLTYPE_STD", '') not in ('DN', 'TAR', 'TF', 'TFV')
+              and upper(btrim("BILLNO")) !~ '^(3)?SA'
               and "BILLDATE_DT" >= current_date - (:months || ' months')::interval
         ),
         latest_row as (

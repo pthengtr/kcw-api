@@ -253,6 +253,8 @@ async def submit_product(
     source: str = Form("batch"),
     counted_qty: str = Form(""),
     difference: str = Form(""),
+    diff_amount: str = Form(""),
+    diff_dir: str = Form(""),
     notes: str = Form(""),
     mark_correct: str = Form(""),
 ):
@@ -269,10 +271,17 @@ async def submit_product(
             "mark_correct": mark_correct == "1",
         }
         if not kwargs["mark_correct"]:
-            if counted_qty.strip():
-                kwargs["counted_qty"] = float(counted_qty)
-            elif difference.strip():
-                kwargs["difference"] = float(difference)
+            counted_raw = counted_qty.strip().replace(",", ".")
+            diff_raw = difference.strip().replace(",", ".")
+            amount_raw = diff_amount.strip().replace(",", ".")
+            if counted_raw:
+                kwargs["counted_qty"] = float(counted_raw)
+            elif amount_raw:
+                abs_amt = abs(float(amount_raw))
+                sign = -1.0 if (diff_dir or "minus").lower() in {"minus", "-", "dec", "ลด"} else 1.0
+                kwargs["difference"] = sign * abs_amt
+            elif diff_raw:
+                kwargs["difference"] = float(diff_raw)
             else:
                 raise ValueError("กรอกจำนวนนับหรือส่วนต่าง")
         result = service.submit_count(**kwargs)
