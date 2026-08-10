@@ -30,6 +30,7 @@ from src.handlers.product import (
     is_product_search_next_postback,
 )
 from src.handlers.image import handle_line_image_message
+from src.handlers.product_scan import handle_product_scan_image
 from src.handlers.table_printout import (
     handle_table_printout_image,
     build_printout_page,
@@ -197,6 +198,13 @@ async def line_webhook(request: Request):
                         message_id=message_id,
                         engine=engine,
                     )
+                    if reply_payload is None:
+                        reply_payload = handle_product_scan_image(
+                            engine=engine,
+                            line_user_id=line_user_id,
+                            message_id=message_id,
+                            access=access,
+                        )
                     if reply_payload is None:
                         reply_payload = handle_line_image_message(
                             line_user_id=line_user_id,

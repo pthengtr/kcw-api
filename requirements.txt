@@ -13,6 +13,8 @@ PyJWT
 pydantic-settings
 pytest
 httpx
+pillow
+pyzbar
 
 # Optional: local POS SQL Server bill source (POS_BILL_SOURCE=mssql)
 pyodbc

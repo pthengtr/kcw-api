@@ -14,6 +14,12 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Product barcode decode (`pyzbar`) needs the system ZBar library:
+
+```bash
+sudo apt-get install -y libzbar0
+```
+
 Useful checks that do not need production credentials:
 
 ```bash
@@ -134,6 +140,7 @@ Do not commit real values.
 
 - `LINE_CHANNEL_SECRET`
 - `LINE_CHANNEL_ACCESS_TOKEN`
+- `PRODUCT_SCAN_SESSION_TTL_SECONDS` (optional, default `600`)
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `OPENAI_EMBED_MODEL`
