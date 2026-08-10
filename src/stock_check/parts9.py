@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
-from math import log1p
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -57,14 +55,30 @@ def _odbc_url(settings: StockCheckSettings, *, writer: bool = False) -> str:
     return "mssql+pyodbc:///?odbc_connect=" + quote_plus(odbc)
 
 
-@lru_cache(maxsize=2)
+_engines: dict[bool, Engine] = {}
+
+
 def get_parts9_engine(*, writer: bool = False) -> Engine:
-    settings = get_stock_check_settings()
-    return create_engine(_odbc_url(settings, writer=writer), pool_pre_ping=True)
+    if writer not in _engines:
+        settings = get_stock_check_settings()
+        _engines[writer] = create_engine(
+            _odbc_url(settings, writer=writer),
+            pool_pre_ping=True,
+            pool_size=2,
+            max_overflow=1,
+            pool_timeout=30,
+            connect_args={"timeout": 30},
+        )
+    return _engines[writer]
 
 
 def clear_parts9_engine_cache() -> None:
-    get_parts9_engine.cache_clear()
+    for eng in list(_engines.values()):
+        try:
+            eng.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+    _engines.clear()
 
 
 def _parse_qty(value: Any) -> float:
@@ -148,21 +162,80 @@ def lookup_products(query: str, *, limit: int = 20, engine: Engine | None = None
     return [_row_to_product(r) for r in rows]
 
 
-def list_candidate_products(
+def get_products_by_bcodes(
+    bcodes: set[str] | list[str],
     *,
-    exclude_bcodes: set[str],
-    with_stock_only: bool = True,
-    limit_scan: int = 5000,
+    engine: Engine | None = None,
+    chunk_size: int = 400,
+) -> list[ProductRow]:
+    codes = sorted({str(b).strip() for b in bcodes if str(b).strip()})
+    if not codes:
+        return []
+    eng = engine or get_parts9_engine(writer=False)
+    out: list[ProductRow] = []
+    size = max(50, min(int(chunk_size), 800))
+    with eng.connect() as conn:
+        for i in range(0, len(codes), size):
+            chunk = codes[i : i + size]
+            placeholders = ", ".join(f":b{j}" for j in range(len(chunk)))
+            sql = text(
+                _PRODUCT_SELECT
+                + f"""
+                WHERE UPPER(LTRIM(RTRIM(COALESCE(CANCELED,'')))) <> 'Y'
+                  AND LTRIM(RTRIM(BCODE)) IN ({placeholders})
+                """
+            )
+            params = {f"b{j}": code for j, code in enumerate(chunk)}
+            rows = conn.execute(sql, params).mappings().fetchall()
+            for row in rows:
+                product = _row_to_product(row)
+                if product.bcode:
+                    out.append(product)
+    return out
+
+
+def list_negative_stock_products(
+    *,
+    exclude_bcodes: set[str] | None = None,
     engine: Engine | None = None,
 ) -> list[ProductRow]:
     eng = engine or get_parts9_engine(writer=False)
-    limit = max(1, min(int(limit_scan), 20000))
+    exclude = exclude_bcodes or set()
+    sql = text(
+        _PRODUCT_SELECT
+        + """
+        WHERE UPPER(LTRIM(RTRIM(COALESCE(CANCELED,'')))) <> 'Y'
+          AND ISNUMERIC(REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) = 1
+          AND CONVERT(float, REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) < 0
+        """
+    )
+    with eng.connect() as conn:
+        rows = conn.execute(sql).mappings().fetchall()
+    out: list[ProductRow] = []
+    for row in rows:
+        product = _row_to_product(row)
+        if product.bcode and product.bcode not in exclude:
+            out.append(product)
+    return out
+
+
+def list_never_counted_stock_products(
+    *,
+    audited_bcodes: set[str],
+    exclude_bcodes: set[str],
+    limit: int = 200,
+    engine: Engine | None = None,
+) -> list[ProductRow]:
+    eng = engine or get_parts9_engine(writer=False)
+    limit = max(1, min(int(limit), 2000))
     sql = text(
         f"""
-        SELECT TOP {limit}
+        SELECT TOP {limit * 3}
           BCODE, DESCR, PCODE, MCODE, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED
         FROM dbo.ICMAS
         WHERE UPPER(LTRIM(RTRIM(COALESCE(CANCELED,'')))) <> 'Y'
+          AND ISNUMERIC(REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) = 1
+          AND CONVERT(float, REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) > 0
         ORDER BY LOCATION1, BCODE
         """
     )
@@ -173,72 +246,9 @@ def list_candidate_products(
         product = _row_to_product(row)
         if not product.bcode or product.bcode in exclude_bcodes:
             continue
-        if with_stock_only and product.qtyoh2 <= 0:
+        if product.bcode in audited_bcodes:
             continue
         out.append(product)
-    return out
-
-
-def score_product(
-    product: ProductRow,
-    *,
-    last_audited_at: float | None,
-    now: float,
-) -> float:
-    """Higher = pick sooner. Local-only scoring (no cloud sales in v1)."""
-    score = 0.0
-    if last_audited_at is None:
-        score += 500.0
-    else:
-        days = max(0.0, (now - last_audited_at) / 86400.0)
-        score += min(400.0, days * 1.5)
-    score += min(60.0, log1p(max(0.0, product.qtyoh2)) * 8.0)
-    # Soft prefer items that have a location filled
-    if product.location1:
-        score += 5.0
-    return score
-
-
-def pick_top_products(
-    products: list[ProductRow],
-    *,
-    audits: dict[str, dict],
-    count: int,
-    now: float,
-) -> list[ProductRow]:
-    ranked: list[tuple[float, str, ProductRow]] = []
-    for product in products:
-        audit = audits.get(product.bcode)
-        last_at = float(audit["last_audited_at"]) if audit else None
-        score = score_product(product, last_audited_at=last_at, now=now)
-        loc = product.location1 or ""
-        ranked.append((score, loc, product))
-    # High score first; within similar scores, cluster by location
-    ranked.sort(key=lambda item: (-item[0], item[1], item[2].bcode))
-    # Soft location clustering: take top score then prefer same location block
-    if not ranked:
-        return []
-    chosen: list[ProductRow] = []
-    used: set[str] = set()
-    # First pass: greedily by score but boost continuity of location
-    current_loc = ranked[0][1]
-    while len(chosen) < count and len(used) < len(ranked):
-        best_idx = None
-        best_key = None
-        for idx, (score, loc, product) in enumerate(ranked):
-            if product.bcode in used:
-                continue
-            # Prefer same location lightly
-            adj = score + (25.0 if loc and loc == current_loc else 0.0)
-            key = (adj, loc == current_loc, -idx)
-            if best_key is None or key > best_key:
-                best_key = key
-                best_idx = idx
-        if best_idx is None:
+        if len(out) >= limit:
             break
-        _score, loc, product = ranked[best_idx]
-        chosen.append(product)
-        used.add(product.bcode)
-        if loc:
-            current_loc = loc
-    return chosen
+    return out
