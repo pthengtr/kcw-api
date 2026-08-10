@@ -12,13 +12,17 @@ cp .env.example .env  # replace placeholders before using external services
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-On Windows, double-click or run:
+On Windows:
 
 ```bat
-run_dev.bat
+run_tiger_pay.bat
 ```
 
-This loads `.env`, creates `.venv` if needed, and starts uvicorn on port 8000.
+Starts the **Tiger Pay companion** FastAPI app on port 8000 (loads `.env`, creates `.venv` if needed).  
+`run_dev.bat` still works but is a deprecated alias for the same script.
+
+LINE live webhook traffic normally hits the deployed host — do not treat this bat as “the LINE bot.”  
+Branch stock-check LAN UI is separate: `run_stock_check.bat` (port 8787).
 
 Useful URLs:
 

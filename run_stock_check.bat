@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM ==========================================================
 REM KCW Stock Check local server (HQ / SYP LAN)
-REM Separate from Tiger Pay companion (run_dev.bat on :8000)
+REM Separate from Tiger Pay companion (run_tiger_pay.bat on :8000)
 REM Default port: 8787
 REM ==========================================================
 
@@ -17,7 +17,7 @@ if not exist ".env" (
 
 set "VENV_PYTHON=%~dp0.venv\Scripts\python.exe"
 if not exist "%VENV_PYTHON%" (
-    echo Missing .venv — run run_dev.bat once to create it, or: python -m venv .venv
+    echo Missing .venv — run run_tiger_pay.bat once to create it, or: python -m venv .venv
     pause
     exit /b 1
 )
@@ -38,7 +38,7 @@ echo   Health : http://127.0.0.1:%STOCK_CHECK_LISTEN_PORT%/health
 echo   App    : http://127.0.0.1:%STOCK_CHECK_LISTEN_PORT%/stock-check/
 echo   Docs   : http://127.0.0.1:%STOCK_CHECK_LISTEN_PORT%/docs
 echo.
-echo Companion / Tiger Pay stays on run_dev.bat (:8000) — this is separate.
+echo Companion / Tiger Pay stays on run_tiger_pay.bat (:8000) — this is separate.
 echo Press Ctrl+C to stop.
 echo.
 

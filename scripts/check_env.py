@@ -51,7 +51,7 @@ def main() -> int:
         for key in missing:
             print(f"  - {key}")
         print("Tips:")
-        print("  - Put .env in the repo root next to run_dev.bat")
+        print("  - Put .env in the repo root next to run_tiger_pay.bat")
         print("  - SUPABASE_URL=https://xxxx.supabase.co  (no spaces around =)")
         print("  - Save as UTF-8 (not UTF-16)")
         print("  - SUPABASE_DB_URL is different from SUPABASE_URL")
