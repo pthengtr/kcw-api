@@ -4,6 +4,8 @@ from datetime import datetime
 from html import escape
 from typing import Any
 
+from src.stock_check.daily_pick import POOL_INFO
+
 
 def _fmt_ts(ts: float | None) -> str:
     if not ts:
@@ -15,6 +17,32 @@ def _nav_active(path: str, current: str) -> str:
     return "active" if path == current else ""
 
 
+def _pool_info_json() -> str:
+    import json
+
+    payload = {str(k): v for k, v in POOL_INFO.items()}
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _pool_badge_html(item: dict[str, Any]) -> str:
+    raw = item.get("pick_priority")
+    if raw is None:
+        return ""
+    try:
+        pool = int(raw)
+    except (TypeError, ValueError):
+        return ""
+    info = POOL_INFO.get(pool)
+    if not info:
+        return ""
+    risk = " risk" if pool in (1, 2, 3) else ""
+    label = f"{pool} · {info['short']}"
+    return (
+        f"<button type='button' class='pool-badge{risk}' data-pool='{pool}' "
+        f"aria-label='อธิบายกลุ่ม {escape(info['title'])}'>{escape(label)}</button>"
+    )
+
+
 def page(
     title: str,
     body: str,
@@ -23,6 +51,7 @@ def page(
     nav: str = "/",
     eyebrow: str | None = None,
     browser_entry_url: str | None = None,
+    lease_heartbeat: bool = False,
 ) -> str:
     who = ""
     if user:
@@ -194,6 +223,36 @@ def page(
       cursor: pointer; box-shadow: 0 6px 16px rgba(37,99,235,.28);
     }}
     button:active {{ transform: translateY(1px); }}
+    button:disabled, .btn:disabled, input[type=submit]:disabled {{
+      opacity: .55; cursor: not-allowed; transform: none;
+      box-shadow: none;
+    }}
+    #busy-overlay {{
+      position: fixed; inset: 0; z-index: 40;
+      display: grid; place-items: center;
+      background: rgba(15, 23, 42, .42);
+      backdrop-filter: blur(2px);
+      padding: 24px;
+    }}
+    #busy-overlay .busy-card {{
+      background: #fff; border-radius: 18px;
+      padding: 22px 26px; min-width: min(260px, 86vw);
+      box-shadow: 0 18px 40px rgba(15,23,42,.22);
+      display: grid; justify-items: center; gap: 12px;
+      text-align: center;
+    }}
+    #busy-overlay .spinner {{
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 3px solid var(--accent-soft);
+      border-top-color: var(--accent);
+      animation: spin .7s linear infinite;
+    }}
+    #busy-overlay .busy-text {{
+      font-size: .95rem; font-weight: 600; color: var(--ink);
+    }}
+    @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+    body.is-busy {{ overflow: hidden; }}
+    body.is-busy nav.bottom {{ pointer-events: none; opacity: .45; }}
     button.secondary {{
       background: #1e293b; box-shadow: none;
     }}
@@ -298,6 +357,65 @@ def page(
       font-size: .75rem; font-weight: 600;
     }}
     .pill.warn {{ background: var(--warn-soft); color: var(--warn); }}
+    .pool-badge {{
+      all: unset; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: 999px;
+      background: var(--accent-soft); color: var(--accent);
+      font-size: .72rem; font-weight: 700; letter-spacing: .01em;
+      border: 1px solid rgba(37,99,235,.18);
+    }}
+    .pool-badge:active {{ transform: scale(.97); }}
+    .pool-badge.risk {{
+      background: var(--danger-soft); color: var(--danger);
+      border-color: rgba(180,35,24,.18);
+    }}
+    .pool-help {{
+      all: unset; cursor: pointer;
+      font-size: .78rem; font-weight: 600; color: var(--accent);
+      text-decoration: underline; text-underline-offset: 2px;
+    }}
+    #pool-dialog {{
+      border: 0; border-radius: 18px; padding: 0;
+      width: min(420px, calc(100vw - 28px));
+      max-height: min(80vh, 640px);
+      box-shadow: 0 22px 50px rgba(15,23,42,.28);
+    }}
+    #pool-dialog::backdrop {{ background: rgba(15,23,42,.45); }}
+    #pool-dialog .dlg {{
+      padding: 18px 18px 14px;
+    }}
+    #pool-dialog h2 {{
+      margin: 0 0 6px; font-size: 1.1rem; font-weight: 700;
+    }}
+    #pool-dialog .dlg-body {{
+      color: var(--muted); font-size: .9rem; line-height: 1.45;
+      margin: 0 0 14px;
+    }}
+    #pool-dialog .pool-list {{
+      display: grid; gap: 10px; margin: 0 0 14px;
+    }}
+    #pool-dialog .pool-item {{
+      padding: 10px 12px; border-radius: 12px;
+      background: #f8fafc; border: 1px solid var(--line);
+    }}
+    #pool-dialog .pool-item strong {{
+      display: block; font-size: .9rem; color: var(--ink); margin-bottom: 2px;
+    }}
+    #pool-dialog .pool-item span {{
+      font-size: .82rem; color: var(--muted); line-height: 1.4;
+    }}
+    #pool-dialog .dlg-close {{
+      width: 100%;
+    }}
+    .item-wrap {{
+      margin-bottom: 12px;
+    }}
+    .item-wrap .card {{ margin-bottom: 0; }}
+    .item-top {{
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 8px; margin-bottom: 8px; padding: 0 2px;
+    }}
     .flash {{
       padding: 12px 14px; border-radius: 14px; margin-bottom: 12px;
       background: var(--ok-soft); color: var(--ok); font-weight: 500;
@@ -345,8 +463,115 @@ def page(
     <a class="{_nav_active('/approve', nav)}" href="/stock-check/approve"><span class="ico">✓</span>อนุมัติ</a>
     <a class="{_nav_active('/end', nav)}" href="/stock-check/end"><span class="ico">⎋</span>จบงาน</a>
   </nav>
+  <div id="busy-overlay" hidden aria-live="assertive" aria-busy="true">
+    <div class="busy-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="busy-text">กำลังดำเนินการ…</div>
+    </div>
+  </div>
+  <dialog id="pool-dialog">
+    <div class="dlg">
+      <h2 id="pool-dialog-title">กลุ่มงาน Take N</h2>
+      <p class="dlg-body" id="pool-dialog-body">
+        รับงานจะกระจายสล็อตตามกลุ่มด้านล่าง (4→5→6 แล้ว 1→2→3)
+        กดหมายเลขกลุ่มบนการ์ดเพื่ออ่านรายละเอียด
+      </p>
+      <div class="pool-list" id="pool-dialog-list"></div>
+      <button type="button" class="dlg-close" id="pool-dialog-close">ปิด</button>
+    </div>
+  </dialog>
   <script>
   (function () {{
+    var busy = false;
+    function showBusy() {{
+      if (busy) return;
+      busy = true;
+      document.body.classList.add("is-busy");
+      var overlay = document.getElementById("busy-overlay");
+      if (overlay) overlay.hidden = false;
+      setTimeout(function () {{
+        document.querySelectorAll("button, input[type=submit]").forEach(function (el) {{
+          if (el.id === "pool-dialog-close") return;
+          el.disabled = true;
+        }});
+      }}, 0);
+    }}
+    document.addEventListener("submit", function (ev) {{
+      if (ev.defaultPrevented) return;
+      if (busy) {{
+        ev.preventDefault();
+        return;
+      }}
+      showBusy();
+    }});
+
+    var POOL_INFO = {_pool_info_json()};
+    var dlg = document.getElementById("pool-dialog");
+    var dlgTitle = document.getElementById("pool-dialog-title");
+    var dlgBody = document.getElementById("pool-dialog-body");
+    var dlgList = document.getElementById("pool-dialog-list");
+    var dlgClose = document.getElementById("pool-dialog-close");
+    function renderPoolList(focus) {{
+      if (!dlgList) return;
+      var html = "";
+      [4,5,6,1,2,3].forEach(function (n) {{
+        var info = POOL_INFO[String(n)] || POOL_INFO[n];
+        if (!info) return;
+        var hl = (focus && Number(focus) === n) ? " style='border-color:rgba(37,99,235,.45);background:#eff6ff'" : "";
+        html += "<div class='pool-item'" + hl + "><strong>" + info.title + "</strong><span>" + info.body + "</span></div>";
+      }});
+      dlgList.innerHTML = html;
+    }}
+    function openPoolDialog(pool) {{
+      if (!dlg) return;
+      var info = pool ? (POOL_INFO[String(pool)] || POOL_INFO[pool]) : null;
+      if (info) {{
+        dlgTitle.textContent = info.title;
+        dlgBody.textContent = info.body;
+      }} else {{
+        dlgTitle.textContent = "กลุ่มงาน Take N";
+        dlgBody.textContent = "รับงานจะกระจายสล็อตตามกลุ่มด้านล่าง (4→5→6 แล้ว 1→2→3) — กดหมายเลขกลุ่มบนการ์ดเพื่อโฟกัสรายละเอียด";
+      }}
+      renderPoolList(pool || null);
+      if (typeof dlg.showModal === "function") dlg.showModal();
+      else dlg.setAttribute("open", "open");
+    }}
+    document.addEventListener("click", function (ev) {{
+      var t = ev.target;
+      if (!t) return;
+      var badge = t.closest ? t.closest("[data-pool]") : null;
+      if (badge) {{
+        ev.preventDefault();
+        ev.stopPropagation();
+        openPoolDialog(badge.getAttribute("data-pool"));
+        return;
+      }}
+      if (t.id === "pool-help-all" || (t.closest && t.closest("#pool-help-all"))) {{
+        ev.preventDefault();
+        openPoolDialog(null);
+      }}
+    }});
+    if (dlgClose) dlgClose.addEventListener("click", function () {{
+      if (typeof dlg.close === "function") dlg.close();
+      else dlg.removeAttribute("open");
+    }});
+
+    var leaseHeartbeat = {"true" if lease_heartbeat else "false"};
+    if (leaseHeartbeat) {{
+      function ping() {{
+        if (document.hidden) return;
+        fetch("/stock-check/heartbeat", {{
+          method: "POST",
+          credentials: "same-origin",
+          headers: {{ "Accept": "application/json" }}
+        }}).catch(function () {{}});
+      }}
+      setInterval(ping, 60000);
+      document.addEventListener("visibilitychange", function () {{
+        if (!document.hidden) ping();
+      }});
+    }}
+
     var ua = navigator.userAgent || "";
     var isLine = /Line\\//i.test(ua);
     var isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
@@ -398,36 +623,43 @@ def page(
 
 def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> str:
     loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
-    reasons = item.get("pick_reasons") or []
-    reason_bit = ""
-    if reasons:
-        label = ", ".join(str(r) for r in reasons[:3])
-        abc = item.get("abc_class")
-        if abc:
-            label = f"ABC {abc} · {label}"
-        reason_bit = f"<div class='muted' style='margin-top:6px;font-size:0.78rem'>{escape(label)}</div>"
+    badge = _pool_badge_html(item)
+    top = ""
+    if badge or flag:
+        top = f"<div class='item-top'>{badge or '<span></span>'}{flag}</div>"
+    abc = item.get("abc_class")
+    abc_bit = ""
+    if abc and abc != "N":
+        days = item.get("sales_days_90")
+        days_bit = f" · {days} วันขาย" if days is not None else ""
+        abc_bit = (
+            f"<div class='muted' style='margin-top:6px;font-size:0.78rem'>"
+            f"ABC {escape(str(abc))}{escape(str(days_bit))}</div>"
+        )
     return f"""
-    <a class="item card" href="{href}">
-      <div class="row">
-        <div class="loc">{escape(loc)}</div>
-        {flag}
-      </div>
-      <div class="row" style="margin-top:10px">
-        <div style="min-width:0">
-          <div class="bcode">{escape(item['bcode'])}</div>
-          <div class="descr">{escape(item.get('descr') or '')}</div>
-          {reason_bit}
+    <div class="item-wrap">
+      {top}
+      <a class="item card" href="{href}">
+        <div class="row">
+          <div class="loc">{escape(loc)}</div>
         </div>
-        <div class="qty-block">
-          <div class="qty">{item.get('qtyoh2', 0):.0f}</div>
-          <div class="qty-label">คงเหลือ</div>
+        <div class="row" style="margin-top:10px">
+          <div style="min-width:0">
+            <div class="bcode">{escape(item['bcode'])}</div>
+            <div class="descr">{escape(item.get('descr') or '')}</div>
+            {abc_bit}
+          </div>
+          <div class="qty-block">
+            <div class="qty">{item.get('qtyoh2', 0):.0f}</div>
+            <div class="qty-label">คงเหลือ</div>
+          </div>
         </div>
-      </div>
-      <div class="meta-row">
-        <span>ตรวจล่าสุด {_fmt_ts(item.get('last_audited_at'))}</span>
-        <span>แตะเพื่อนับ →</span>
-      </div>
-    </a>
+        <div class="meta-row">
+          <span>ตรวจล่าสุด {_fmt_ts(item.get('last_audited_at'))}</span>
+          <span>แตะเพื่อนับ →</span>
+        </div>
+      </a>
+    </div>
     """
 
 
@@ -458,6 +690,10 @@ def home_page(
               <button type="submit">รับงาน</button>
             </div>
           </form>
+          <p class="hint" style="color:rgba(255,255,255,.85);margin-top:12px">
+            <button type="button" class="pool-help" id="pool-help-all" style="color:#fff">กลุ่มงาน Take N คืออะไร?</button>
+            · คิวค้างจะคืนอัตโนมัติถ้าไม่ทำอะไร ~5 นาที
+          </p>
         </div>
         """
     )
@@ -483,6 +719,7 @@ def home_page(
         nav="/",
         eyebrow="KCW Stock Check",
         browser_entry_url=browser_entry_url,
+        lease_heartbeat=bool(items),
     )
 
 
@@ -496,8 +733,11 @@ def product_page(
     loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
     qty = float(item.get("qtyoh2", 0) or 0)
     qty_disp = f"{qty:.3g}"
+    badge = _pool_badge_html(item)
+    badge_row = f"<div style='margin-bottom:10px'>{badge}</div>" if badge else ""
     body = f"""
     <div class="card soft">
+      {badge_row}
       <div class="loc">{escape(loc)}</div>
       <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(item['bcode'])}</div>
       <div class="descr" style="-webkit-line-clamp:4">{escape(item.get('descr') or '')}</div>
@@ -633,6 +873,7 @@ def product_page(
         nav="/",
         eyebrow=loc,
         browser_entry_url=browser_entry_url,
+        lease_heartbeat=True,
     )
 
 

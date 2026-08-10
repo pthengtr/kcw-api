@@ -33,6 +33,50 @@ PRIORITY_YESTERDAY = 4
 PRIORITY_ABC_DUE = 5
 PRIORITY_NEVER = 6
 
+# Fill Take N with weight across groups; routine (4–6) before risk (1–3).
+GROUP_FILL_ORDER = (
+    PRIORITY_YESTERDAY,
+    PRIORITY_ABC_DUE,
+    PRIORITY_NEVER,
+    PRIORITY_NEGATIVE,
+    PRIORITY_MISMATCH,
+    PRIORITY_SA_ADJUST,
+)
+
+# UI labels / helper copy for pool badges (Thai).
+POOL_INFO: dict[int, dict[str, str]] = {
+    PRIORITY_NEGATIVE: {
+        "short": "ติดลบ",
+        "title": "1 · สต็อกติดลบ",
+        "body": "จำนวนคงเหลือในระบบติดลบ — ต้องตรวจก่อนเพื่อกันขายผิด",
+    },
+    PRIORITY_MISMATCH: {
+        "short": "ไม่ตรง",
+        "title": "2 · นับแล้วไม่ตรง",
+        "body": "เคยนับแล้วได้ผล adjusted (ต่างจากระบบ) — ควรตรวจซ้ำ",
+    },
+    PRIORITY_SA_ADJUST: {
+        "short": "เคย SA",
+        "title": "3 · เคยปรับด้วย SA",
+        "body": "เคยมีบิลปรับสต็อก SA/3SA ในช่วงที่ผ่านมา — เสี่ยงเพี้ยนซ้ำ",
+    },
+    PRIORITY_YESTERDAY: {
+        "short": "ขายเมื่อวาน",
+        "title": "4 · ขายเมื่อวาน",
+        "body": "มียอดขายเมื่อวาน — เดินตามของที่เพิ่งเคลื่อนไหว (ข้ามถ้า QTYMIN<0 ไม่สั่งซื้อแล้ว)",
+    },
+    PRIORITY_ABC_DUE: {
+        "short": "รอบ ABC",
+        "title": "5 · ครบรอบ ABC",
+        "body": "ครบรอบนับตามความถี่ขาย (A 21 วัน / B 45 วัน / C 90 วัน) — ข้ามถ้า QTYMIN<0",
+    },
+    PRIORITY_NEVER: {
+        "short": "ไม่เคยนับ",
+        "title": "6 · ไม่เคยนับ",
+        "body": "ยังไม่เคยบันทึกการนับในเครื่องนี้ และยังอยู่ในรายการสั่งซื้อ (QTYMIN≥0)",
+    },
+}
+
 _SALES_EXCLUDE_SQL = """
   AND UPPER(LTRIM(RTRIM(m.BILLNO))) NOT LIKE 'DN%'
   AND UPPER(LTRIM(RTRIM(m.BILLNO))) NOT LIKE 'TAR%'
@@ -205,6 +249,17 @@ def passes_repeat_gap(flags: CandidateFlags, today: date) -> bool:
     return True
 
 
+def passes_restock_policy(product: ProductRow, flags: CandidateFlags) -> bool:
+    """Routine pools skip QTYMIN<0 (do-not-restock); risk pools still run."""
+    if flags.priority in (
+        PRIORITY_NEGATIVE,
+        PRIORITY_MISMATCH,
+        PRIORITY_SA_ADJUST,
+    ):
+        return True
+    return not product.do_not_restock
+
+
 def clear_sales_signals_cache() -> None:
     global _signals_cache
     _signals_cache = None
@@ -312,6 +367,55 @@ def fetch_sales_signals(
     return signals
 
 
+def allocate_group_quotas(count: int) -> dict[int, int]:
+    """Spread ``count`` slots across groups in GROUP_FILL_ORDER (round-robin)."""
+    quotas = {group: 0 for group in GROUP_FILL_ORDER}
+    n = max(0, int(count))
+    if not GROUP_FILL_ORDER or n <= 0:
+        return quotas
+    for i in range(n):
+        quotas[GROUP_FILL_ORDER[i % len(GROUP_FILL_ORDER)]] += 1
+    return quotas
+
+
+def _pick_from_group(
+    pool: list[tuple[str, str, ProductRow, CandidateFlags]],
+    *,
+    need: int,
+    used: set[str],
+    prefer_loc: str,
+) -> list[tuple[ProductRow, CandidateFlags]]:
+    """Take up to ``need`` from one group.
+
+    Soft-prefer the current LOCATION1 walk cluster, then any non-empty
+    location (blank bins sort last — many ICMAS rows have no LOCATION1).
+    """
+    if need <= 0 or not pool:
+        return []
+    chosen: list[tuple[ProductRow, CandidateFlags]] = []
+    current_loc = prefer_loc
+    while len(chosen) < need:
+        best_idx = None
+        best_key = None
+        for idx, (loc, bcode, _product, _flags) in enumerate(pool):
+            if bcode in used:
+                continue
+            same_loc = 0 if (current_loc and loc == current_loc) else 1
+            blank_loc = 0 if loc else 1
+            key = (same_loc, blank_loc, loc, bcode, idx)
+            if best_key is None or key < best_key:
+                best_key = key
+                best_idx = idx
+        if best_idx is None:
+            break
+        loc, bcode, product, flags = pool[best_idx]
+        chosen.append((product, flags))
+        used.add(bcode)
+        if loc:
+            current_loc = loc
+    return chosen
+
+
 def pick_daily_products(
     *,
     count: int,
@@ -321,7 +425,16 @@ def pick_daily_products(
     engine: Engine | None = None,
     signals: SalesSignals | None = None,
 ) -> list[tuple[ProductRow, CandidateFlags]]:
-    """Build today's list: one row per SKU, highest matching priority wins."""
+    """
+    Build today's list with weighted slots across 6 groups.
+
+    Fill order (list order + quota round-robin): yesterday → ABC due → never
+    → negative → mismatch → SA. Each SKU is assigned to exactly one group
+    (risk flags win membership so negatives stay in the risk bucket).
+    Routine pools skip QTYMIN < 0 (legacy do-not-restock / no ICLOW);
+    risk pools (negative / mismatch / SA) still include those SKUs.
+    Leasing is applied by the caller after this returns.
+    """
     count = max(1, min(int(count), 50))
     eng = engine or get_parts9_engine(writer=False)
     today = bangkok_today(now)
@@ -339,7 +452,6 @@ def pick_daily_products(
     seed_bcodes |= set(sig.sa_bcodes)
     seed_bcodes |= mismatch_bcodes
 
-    # ABC-due: rank by sales_days (higher first), cap how many we hydrate from ICMAS
     abc_due_ranked: list[tuple[int, str]] = []
     for bcode, days in sig.sales_days_90.items():
         klass = abc_class(days)
@@ -366,7 +478,9 @@ def pick_daily_products(
     ):
         products_by_code[product.bcode] = product
 
-    ranked: list[tuple[int, str, str, ProductRow, CandidateFlags]] = []
+    pools: dict[int, list[tuple[str, str, ProductRow, CandidateFlags]]] = {
+        group: [] for group in GROUP_FILL_ORDER
+    }
     for product in products_by_code.values():
         if product.bcode in exclude_bcodes:
             continue
@@ -380,31 +494,47 @@ def pick_daily_products(
             continue
         if not passes_repeat_gap(flags, today):
             continue
-        ranked.append(
-            (flags.priority, product.location1 or "", product.bcode, product, flags)
-        )
+        if not passes_restock_policy(product, flags):
+            continue
+        group = flags.priority
+        if group not in pools:
+            continue
+        pools[group].append((product.location1 or "", product.bcode, product, flags))
 
-    ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+    for group, pool in pools.items():
+        # Non-empty LOCATION1 first so blank bins are not the default walk path.
+        pool.sort(key=lambda item: (0 if item[0] else 1, item[0], item[1]))
 
+    quotas = allocate_group_quotas(count)
     chosen: list[tuple[ProductRow, CandidateFlags]] = []
     used: set[str] = set()
-    current_loc = ranked[0][1] if ranked else ""
-    while len(chosen) < count and len(used) < len(ranked):
-        best_idx = None
-        best_key = None
-        for idx, (prio, loc, bcode, _product, _flags) in enumerate(ranked):
-            if bcode in used:
-                continue
-            key = (prio, 0 if (loc and loc == current_loc) else 1, idx)
-            if best_key is None or key < best_key:
-                best_key = key
-                best_idx = idx
-        if best_idx is None:
-            break
-        _prio, loc, bcode, product, flags = ranked[best_idx]
-        chosen.append((product, flags))
-        used.add(bcode)
-        if loc:
-            current_loc = loc
+    current_loc = ""
+
+    # Pass 1: honor per-group quotas in fill order (4–6 then 1–3).
+    for group in GROUP_FILL_ORDER:
+        picked = _pick_from_group(
+            pools[group],
+            need=quotas.get(group, 0),
+            used=used,
+            prefer_loc=current_loc,
+        )
+        chosen.extend(picked)
+        if picked:
+            current_loc = picked[-1][0].location1 or current_loc
+
+    # Pass 2: spill leftover slots to later groups so Take N still fills.
+    if len(chosen) < count:
+        for group in GROUP_FILL_ORDER:
+            if len(chosen) >= count:
+                break
+            picked = _pick_from_group(
+                pools[group],
+                need=count - len(chosen),
+                used=used,
+                prefer_loc=current_loc,
+            )
+            chosen.extend(picked)
+            if picked:
+                current_loc = picked[-1][0].location1 or current_loc
 
     return chosen

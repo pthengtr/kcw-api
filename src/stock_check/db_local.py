@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 import uuid
@@ -28,6 +29,10 @@ CREATE TABLE IF NOT EXISTS leases (
   leased_at REAL NOT NULL,
   expires_at REAL NOT NULL,
   status TEXT NOT NULL DEFAULT 'leased',
+  pick_priority INTEGER,
+  pick_reasons TEXT,
+  abc_class TEXT,
+  sales_days_90 INTEGER,
   UNIQUE(session_id, bcode)
 );
 
@@ -85,6 +90,20 @@ class LocalStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(leases)").fetchall()}
+        alterations = {
+            "pick_priority": "ALTER TABLE leases ADD COLUMN pick_priority INTEGER",
+            "pick_reasons": "ALTER TABLE leases ADD COLUMN pick_reasons TEXT",
+            "abc_class": "ALTER TABLE leases ADD COLUMN abc_class TEXT",
+            "sales_days_90": "ALTER TABLE leases ADD COLUMN sales_days_90 INTEGER",
+        }
+        for name, sql in alterations.items():
+            if name not in cols:
+                conn.execute(sql)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -131,20 +150,37 @@ class LocalStore:
             )
         return session_id
 
-    def touch_session(self, session_id: str, *, now: float | None = None, lease_ttl: int = 1200) -> None:
+    def touch_session(self, session_id: str, *, now: float | None = None) -> None:
+        """Bump session last_seen only — does not extend leases."""
         ts = now if now is not None else time.time()
         with self.connect() as conn:
             conn.execute(
                 "UPDATE sessions SET last_seen_at = ? WHERE id = ? AND ended_at IS NULL",
                 (ts, session_id),
             )
+
+    def extend_leases(
+        self,
+        session_id: str,
+        *,
+        lease_ttl: int,
+        now: float | None = None,
+    ) -> int:
+        """Refresh expires_at for this session's active leases (activity / heartbeat)."""
+        ts = now if now is not None else time.time()
+        with self.connect() as conn:
             conn.execute(
+                "UPDATE sessions SET last_seen_at = ? WHERE id = ? AND ended_at IS NULL",
+                (ts, session_id),
+            )
+            cur = conn.execute(
                 """
                 UPDATE leases SET expires_at = ?
                 WHERE session_id = ? AND status = 'leased'
                 """,
-                (ts + lease_ttl, session_id),
+                (ts + int(lease_ttl), session_id),
             )
+            return cur.rowcount
 
     def end_session(self, session_id: str, *, now: float | None = None) -> int:
         ts = now if now is not None else time.time()
@@ -208,12 +244,17 @@ class LocalStore:
         self,
         *,
         session_id: str,
-        bcodes: list[str],
+        bcodes: list[str] | None = None,
+        lease_items: list[dict[str, Any]] | None = None,
         lease_ttl: int,
         now: float | None = None,
     ) -> list[str]:
         ts = now if now is not None else time.time()
-        expires = ts + lease_ttl
+        expires = ts + int(lease_ttl)
+        if lease_items is not None:
+            items = lease_items
+        else:
+            items = [{"bcode": b} for b in (bcodes or [])]
         claimed: list[str] = []
         with self.connect() as conn:
             held = {
@@ -222,17 +263,36 @@ class LocalStore:
                     "SELECT bcode FROM leases WHERE status = 'leased'"
                 ).fetchall()
             }
-            for bcode in bcodes:
-                if bcode in held:
+            for item in items:
+                bcode = str(item.get("bcode") or "").strip()
+                if not bcode or bcode in held:
                     continue
                 lease_id = str(uuid.uuid4())
+                reasons = item.get("pick_reasons") or []
+                if isinstance(reasons, str):
+                    reasons_json = reasons
+                else:
+                    reasons_json = json.dumps(list(reasons), ensure_ascii=False)
                 try:
                     conn.execute(
                         """
-                        INSERT INTO leases (id, session_id, bcode, leased_at, expires_at, status)
-                        VALUES (?, ?, ?, ?, ?, 'leased')
+                        INSERT INTO leases (
+                          id, session_id, bcode, leased_at, expires_at, status,
+                          pick_priority, pick_reasons, abc_class, sales_days_90
+                        )
+                        VALUES (?, ?, ?, ?, ?, 'leased', ?, ?, ?, ?)
                         """,
-                        (lease_id, session_id, bcode, ts, expires),
+                        (
+                            lease_id,
+                            session_id,
+                            bcode,
+                            ts,
+                            expires,
+                            item.get("pick_priority"),
+                            reasons_json,
+                            item.get("abc_class"),
+                            item.get("sales_days_90"),
+                        ),
                     )
                 except sqlite3.IntegrityError:
                     continue
