@@ -1,1 +1,1 @@
-"""LIFF rich-action contracts shared between LINE bot and kcw-v2."""
+"""Legacy LIFF contracts (product scan now uses LINE camera in kcw-api)."""

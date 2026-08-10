@@ -214,8 +214,18 @@ def extract_image_key(text: str) -> str | None:
     return parts[1].strip()
 
 
+def _clear_product_scan_session_if_any(line_user_id: str):
+    try:
+        from src.handlers.product_scan import clear_product_scan_session
+
+        clear_product_scan_session(line_user_id)
+    except Exception as e:
+        print("CLEAR PRODUCT SCAN SESSION ERROR:", e)
+
+
 def _start_upload_session(line_user_id: str, bcode: str):
     _clear_session(DELETE_SESSIONS, line_user_id)
+    _clear_product_scan_session_if_any(line_user_id)
 
     UPLOAD_SESSIONS[line_user_id] = {
         "bcode": bcode,
@@ -226,6 +236,7 @@ def _start_upload_session(line_user_id: str, bcode: str):
 
 def _start_delete_session(line_user_id: str, bcode: str, image_paths: list[str]):
     _clear_session(UPLOAD_SESSIONS, line_user_id)
+    _clear_product_scan_session_if_any(line_user_id)
 
     DELETE_SESSIONS[line_user_id] = {
         "bcode": bcode,

@@ -19,6 +19,7 @@ from src.handlers.product_scan import (
     is_product_scan_command,
     handle_product_scan_callback,
     handle_product_scan_command,
+    handle_product_scan_session_text,
 )
 
 
@@ -35,9 +36,19 @@ def route_user_text(
     if image_session_reply is not None:
         return image_session_reply
 
-    # LIFF product-scan callback must be handled deterministically before AI / search.
+    # Product-scan camera session blocks free-text until user cancels / finishes.
+    product_scan_session_reply = handle_product_scan_session_text(line_user_id, text)
+    if product_scan_session_reply is not None:
+        return product_scan_session_reply
+
+    # Legacy LIFF callback text → product search (same as typing the barcode).
     if is_product_scan_callback(text):
-        return handle_product_scan_callback(engine, text)
+        return handle_product_scan_callback(
+            engine,
+            text,
+            access=access,
+            line_user_id=line_user_id,
+        )
 
     if is_help_request(user_text):
         return {"type": "text", "text": GREETING_MESSAGE}
@@ -45,10 +56,9 @@ def route_user_text(
     if is_image_command(text):
         return handle_image_command(text, line_user_id=line_user_id)
 
-    # Open LIFF product scanner ("สแกน", "สแกนสินค้า", …).
+    # Open LINE camera / photo product scanner ("สแกน", "สแกนสินค้า", …).
     if is_product_scan_command(text):
-        return handle_product_scan_command()
-
+        return handle_product_scan_command(line_user_id=line_user_id)
     if is_job_request(text):
         return handle_job_query(engine, text, access=access)
 
