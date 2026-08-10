@@ -1,0 +1,275 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from urllib.parse import quote
+
+from src.stock_check.audit_mirror import flush_audit_outbox
+from src.stock_check.auth import TokenError, verify_access_token
+from src.stock_check.config import get_stock_check_settings
+from src.stock_check.service import StockCheckService
+from src.stock_check import ui
+
+router = APIRouter(prefix="/stock-check", tags=["stock-check"])
+
+SESSION_COOKIE = "kcw_stock_check_session"
+
+
+def _q(msg: str) -> str:
+    return quote(str(msg), safe="")
+
+
+
+def _service() -> StockCheckService:
+    return StockCheckService()
+
+
+def _settings():
+    return get_stock_check_settings()
+
+
+def _user_from_request(request: Request, service: StockCheckService) -> dict | None:
+    session_id = request.cookies.get(SESSION_COOKIE)
+    if not session_id:
+        return None
+    session = service.store.get_session(session_id)
+    if not session:
+        return None
+    service.store.touch_session(
+        session_id,
+        lease_ttl=service.settings.stock_check_lease_ttl_seconds,
+    )
+    return session
+
+
+def _require_user(request: Request, service: StockCheckService):
+    user = _user_from_request(request, service)
+    if not user:
+        return None, HTMLResponse(
+            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ เช็คสต็อก ในแชทแล้วกดลิงก์สาขา</p>",
+            status_code=401,
+        )
+    return user, None
+
+
+@router.get("/", response_class=HTMLResponse)
+async def home(request: Request, t: str | None = None):
+    settings = _settings()
+    if not settings.stock_check_enabled:
+        return HTMLResponse("stock check disabled", status_code=404)
+    service = _service()
+    service.expire()
+    flush_audit_outbox(service.store, branch=settings.stock_check_branch)
+
+    if t:
+        try:
+            identity = verify_access_token(
+                t,
+                secret=settings.stock_check_token_secret,
+                expected_branch=settings.stock_check_branch,
+                approver_ids=settings.approver_ids,
+            )
+        except TokenError as exc:
+            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+        session_id = service.store.create_session(
+            line_user_id=identity.line_user_id,
+            display_name=identity.display_name,
+            is_approver=identity.is_approver,
+        )
+        resp = RedirectResponse(url="/stock-check/", status_code=303)
+        resp.set_cookie(
+            SESSION_COOKIE,
+            session_id,
+            httponly=True,
+            samesite="lax",
+            max_age=settings.stock_check_lease_ttl_seconds * 4,
+        )
+        return resp
+
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    flash = request.query_params.get("ok")
+    error = request.query_params.get("err")
+    items = service.leased_list(user["id"])
+    return HTMLResponse(ui.home_page(user=user, items=items, flash=flash, error=error))
+
+
+@router.post("/take")
+async def take(request: Request, count: int = Form(10)):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        claimed = service.take_n(user["id"], count)
+        msg = f"รับงาน {len(claimed)} รายการ"
+        return RedirectResponse(url=f"/stock-check/?ok={_q(msg)}", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(url=f"/stock-check/?err={_q(exc)}", status_code=303)
+
+
+@router.get("/ondemand", response_class=HTMLResponse)
+async def ondemand(request: Request, q: str = ""):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    results = service.lookup(q) if q.strip() else []
+    return HTMLResponse(ui.ondemand_page(user=user, results=results, q=q))
+
+
+@router.get("/product/{bcode}", response_class=HTMLResponse)
+async def product(request: Request, bcode: str, source: str = "batch"):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    item = service.product_detail(bcode)
+    if not item:
+        return HTMLResponse("ไม่พบสินค้า", status_code=404)
+    return HTMLResponse(ui.product_page(user=user, item=item, source=source))
+
+
+@router.post("/product/{bcode}/submit")
+async def submit_product(
+    request: Request,
+    bcode: str,
+    source: str = Form("batch"),
+    counted_qty: str = Form(""),
+    difference: str = Form(""),
+    notes: str = Form(""),
+    mark_correct: str = Form(""),
+):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        kwargs = {
+            "session": user,
+            "bcode": bcode,
+            "source": source if source in {"batch", "ondemand", "manual"} else "ondemand",
+            "notes": notes or None,
+            "mark_correct": mark_correct == "1",
+        }
+        if not kwargs["mark_correct"]:
+            if counted_qty.strip():
+                kwargs["counted_qty"] = float(counted_qty)
+            elif difference.strip():
+                kwargs["difference"] = float(difference)
+            else:
+                raise ValueError("กรอกจำนวนนับหรือส่วนต่าง")
+        result = service.submit_count(**kwargs)
+        if result["status"] == "completed":
+            msg = "บันทึกถูกต้อง (auto)"
+        else:
+            msg = f"ส่งรออนุมัติ ต่าง {result['variance']:+.3g}"
+        return RedirectResponse(url=f"/stock-check/?ok={_q(msg)}", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(url=f"/stock-check/?err={_q(exc)}", status_code=303)
+
+
+@router.post("/product/{bcode}/skip")
+async def skip_product(request: Request, bcode: str):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    service.skip_item(user["id"], bcode)
+    return RedirectResponse(url=f"/stock-check/?ok={_q('ข้ามแล้ว')}", status_code=303)
+
+
+@router.get("/approve", response_class=HTMLResponse)
+async def approve_list(request: Request):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    drafts = service.store.list_pending_drafts()
+    return HTMLResponse(
+        ui.approve_page(
+            user=user,
+            drafts=drafts,
+            flash=request.query_params.get("ok"),
+            error=request.query_params.get("err"),
+        )
+    )
+
+
+@router.post("/approve/{draft_id}")
+async def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        result = service.approve_draft(
+            draft_id=draft_id,
+            approver_session=user,
+            confirm_drift=confirm_drift == "1",
+        )
+        if not result.get("ok"):
+            return RedirectResponse(
+                url=f"/stock-check/approve?err={_q(result.get('message') or result.get('code'))}",
+                status_code=303,
+            )
+        bill = result.get("billno")
+        msg = f"โพสต์แล้ว {bill}" if bill else "เสร็จสิ้น"
+        flush_audit_outbox(service.store, branch=service.settings.stock_check_branch)
+        return RedirectResponse(url=f"/stock-check/approve?ok={_q(msg)}", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(url=f"/stock-check/approve?err={_q(exc)}", status_code=303)
+
+
+@router.post("/reject/{draft_id}")
+async def reject_one(request: Request, draft_id: str):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        service.reject_draft(draft_id=draft_id, approver_session=user)
+        return RedirectResponse(url=f"/stock-check/approve?ok={_q('ปฏิเสธแล้ว')}", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(url=f"/stock-check/approve?err={_q(exc)}", status_code=303)
+
+
+@router.get("/end")
+@router.post("/end")
+async def end_session(request: Request):
+    service = _service()
+    user = _user_from_request(request, service)
+    if user:
+        n = service.store.end_session(user["id"])
+        msg = f"จบงาน คืนคิว {n} รายการ"
+    else:
+        msg = "ไม่มีเซสชัน"
+    resp = RedirectResponse(url=f"/stock-check/?ok={msg}", status_code=303)
+    resp.delete_cookie(SESSION_COOKIE)
+    # After deleting cookie, home will 401 — better show a simple goodbye
+    return HTMLResponse(
+        f"<h1>จบงานแล้ว</h1><p>{msg}</p><p>เปิดลิงก์จาก LINE อีกครั้งเพื่อเริ่มใหม่</p>"
+    )
+
+
+@router.get("/api/health")
+async def health():
+    settings = _settings()
+    return {
+        "enabled": settings.stock_check_enabled,
+        "branch": settings.stock_check_branch,
+        "bill_prefix": settings.bill_prefix,
+        "public_base_url": settings.resolved_public_base_url,
+    }
+
+
+@router.get("/api/write-access")
+async def write_access():
+    from src.stock_check.sa_writer import describe_write_access
+
+    settings = _settings()
+    try:
+        return describe_write_access(settings)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)

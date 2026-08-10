@@ -7,6 +7,7 @@ def upsert_worker_heartbeat(
     worker_name: str,
     hostname: str | None = None,
     status: str = "idle",
+    public_base_url: str | None = None,
 ) -> None:
     hostname = hostname or socket.gethostname()
 
@@ -16,6 +17,7 @@ def upsert_worker_heartbeat(
             last_seen,
             hostname,
             status,
+            public_base_url,
             updated_at
         )
         values (
@@ -23,6 +25,7 @@ def upsert_worker_heartbeat(
             now(),
             :hostname,
             :status,
+            :public_base_url,
             now()
         )
         on conflict (worker_name)
@@ -30,6 +33,7 @@ def upsert_worker_heartbeat(
             last_seen = now(),
             hostname = excluded.hostname,
             status = excluded.status,
+            public_base_url = coalesce(excluded.public_base_url, ops.worker_heartbeat.public_base_url),
             updated_at = now()
     """)
 
@@ -40,6 +44,7 @@ def upsert_worker_heartbeat(
                 "worker_name": worker_name,
                 "hostname": hostname,
                 "status": status,
+                "public_base_url": (public_base_url or "").strip() or None,
             },
         )
 
@@ -50,6 +55,7 @@ def get_all_worker_status(engine, offline_after_seconds: int = 30) -> list[dict]
             worker_name,
             hostname,
             status as worker_state,
+            public_base_url,
             last_seen,
             case
                 when last_seen >= now() - (:offline_after_seconds || ' seconds')::interval
