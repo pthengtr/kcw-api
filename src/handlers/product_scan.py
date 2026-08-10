@@ -12,7 +12,12 @@ from __future__ import annotations
 import os
 import time
 
-from src.barcode import decode_barcodes_from_image, pick_best_barcode, sanitize_barcode
+from src.barcode import (
+    BarcodeDecodeUnavailable,
+    decode_barcodes_from_image,
+    pick_best_barcode,
+    sanitize_barcode,
+)
 from src.bot.line_bot import download_line_message_content
 from src.handlers.product import handle_product_query_response
 
@@ -350,6 +355,18 @@ def handle_product_scan_image(
         image_bytes, _content_type = download_line_message_content(message_id or "")
         raw_codes = decode_barcodes_from_image(image_bytes)
         barcode = pick_best_barcode(raw_codes)
+    except BarcodeDecodeUnavailable as e:
+        print("PRODUCT SCAN DECODER UNAVAILABLE:", e)
+        _extend_session(session)
+        return {
+            "type": "text",
+            "text": (
+                "ระบบอ่านบาร์โค้ดยังไม่พร้อมใช้งานชั่วคราวครับ\n"
+                "กรุณาพิมพ์รหัสสินค้าแทน หรือลองใหม่ภายหลัง\n"
+                'หรือพิมพ์ "ยกเลิก" เพื่อออก'
+            ),
+            "quickReply": _build_session_quick_reply(),
+        }
     except Exception as e:
         print("PRODUCT SCAN IMAGE ERROR:", e)
         _extend_session(session)

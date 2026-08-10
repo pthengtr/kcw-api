@@ -38,7 +38,8 @@ Quick-reply actions used:
 | `LINE_CHANNEL_SECRET` | … | Webhook signature verification |
 | `LINE_CHANNEL_ACCESS_TOKEN` | … | Download image content + Reply API |
 
-System dependency for barcode decode: `libzbar0` (Debian/Ubuntu) so `pyzbar` can load.
+System dependency for barcode decode: `libzbar0` (Debian/Ubuntu) or Nix `zbar`
+so `pyzbar` can load. Railway installs these via `nixpacks.toml`.
 
 Python packages: `pillow`, `pyzbar` (see `requirements.txt`).
 

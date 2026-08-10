@@ -20,6 +20,9 @@ Product barcode decode (`pyzbar`) needs the system ZBar library:
 sudo apt-get install -y libzbar0
 ```
 
+Railway/Nixpacks installs this automatically from `nixpacks.toml`
+(`zbar` nix package + `libzbar0` apt package).
+
 Useful checks that do not need production credentials:
 
 ```bash
