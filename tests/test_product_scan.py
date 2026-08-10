@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from src.barcode import pick_best_barcode, sanitize_barcode
-from src.barcode.decode import decode_barcodes_from_image
+from src.barcode.decode import BarcodeDecodeUnavailable, decode_barcodes_from_image
 from src.handlers.product_scan import (
     PRODUCT_SCAN_SESSIONS,
     clear_product_scan_session,
@@ -271,6 +271,38 @@ def test_handle_product_scan_image_no_barcode():
 
     assert "ไม่พบ" in result["text"]
     assert result["quickReply"]["items"][0]["action"]["type"] == "camera"
+
+
+def test_handle_product_scan_image_decoder_unavailable():
+    handle_product_scan_command(line_user_id=USER)
+
+    with (
+        patch(
+            "src.handlers.product_scan.download_line_message_content",
+            return_value=(b"fake-image", "image/jpeg"),
+        ),
+        patch(
+            "src.handlers.product_scan.decode_barcodes_from_image",
+            side_effect=BarcodeDecodeUnavailable("missing zbar"),
+        ),
+    ):
+        result = handle_product_scan_image(
+            MagicMock(),
+            line_user_id=USER,
+            message_id="mid-3",
+            access=ACCESS,
+        )
+
+    assert "ยังไม่พร้อม" in result["text"]
+    assert USER in PRODUCT_SCAN_SESSIONS
+
+
+def test_zbar_not_loaded_at_import():
+    import src.barcode.decode as decode_mod
+
+    decode_mod._load_zbar.cache_clear()
+    # Importing the module must not require libzbar.
+    assert decode_mod.decode_barcodes_from_image.__name__ == "decode_barcodes_from_image"
 
 
 def test_decode_barcodes_from_blank_image_returns_empty():

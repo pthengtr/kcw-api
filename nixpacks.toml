@@ -1,0 +1,7 @@
+# Railway / Nixpacks build config.
+# pyzbar needs the ZBar shared library at runtime for barcode decode.
+
+[phases.setup]
+nixPkgs = ["...", "zbar"]
+nixLibs = ["...", "zbar"]
+aptPkgs = ["...", "libzbar0"]
