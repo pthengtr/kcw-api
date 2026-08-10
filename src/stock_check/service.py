@@ -272,6 +272,7 @@ class StockCheckService:
                 product=product,
                 variance=variance,
                 operator_name=draft["operator_name"],
+                approver_name=approver_session.get("display_name"),
             )
         except Parts9WriteError as exc:
             self.store.update_draft(draft_id, post_error=str(exc))
