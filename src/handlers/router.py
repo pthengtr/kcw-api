@@ -21,6 +21,10 @@ from src.handlers.product_scan import (
     handle_product_scan_command,
     handle_product_scan_session_text,
 )
+from src.handlers.stock_check_entry import (
+    is_stock_check_command,
+    handle_stock_check_command,
+)
 
 
 def route_user_text(
@@ -52,6 +56,15 @@ def route_user_text(
 
     if is_help_request(user_text):
         return {"type": "text", "text": GREETING_MESSAGE}
+
+    if is_stock_check_command(text):
+        return handle_stock_check_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+        )
 
     if is_image_command(text):
         return handle_image_command(text, line_user_id=line_user_id)

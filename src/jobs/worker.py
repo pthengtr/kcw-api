@@ -17,6 +17,12 @@ from src.jobs.heartbeat import upsert_worker_heartbeat
 load_dotenv()
 
 
+def _public_base_url() -> str | None:
+    # Stock-check only — do not reuse companion PUBLIC_BASE_URL.
+    value = (os.getenv("STOCK_CHECK_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    return value or None
+
+
 def process_job(job: dict) -> str:
     return run_configured_command(job)
 
@@ -27,10 +33,12 @@ def run_worker_forever():
     worker_name = os.getenv("WORKER_NAME", "unknown-worker")
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "3"))
     heartbeat_interval_seconds = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "10"))
+    public_base_url = _public_base_url()
 
     print(f"[START] worker={worker_name}")
     print(f"[START] poll_seconds={poll_seconds}")
     print(f"[START] heartbeat_interval_seconds={heartbeat_interval_seconds}")
+    print(f"[START] public_base_url={public_base_url or '-'}")
     print("[START] command source=.env WORKER_JOB_<JOB_TYPE>_COMMAND")
 
     last_heartbeat_at = 0.0
@@ -44,6 +52,7 @@ def run_worker_forever():
                     engine=engine,
                     worker_name=worker_name,
                     status="idle",
+                    public_base_url=public_base_url,
                 )
                 last_heartbeat_at = now_ts
 
