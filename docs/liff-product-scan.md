@@ -32,6 +32,9 @@ LIFF apps **cannot** be added to a Messaging API channel anymore. Create / use a
 4. Copy the LIFF ID / LIFF URL (`https://liff.line.me/<LIFF_ID>`).
 5. Keep the bot webhook on the **Messaging API** channel as today. The Login channel is only for LIFF; no need to move the bot.
 
+LINE command aliases that open the scanner: `สแกน`, `สแกนสินค้า`, `สแกนบาร์โค้ด`, `scan`.
+(The old table-printout flow is no longer started from LINE text commands.)
+
 LINE MINI App is recommended by LINE for some regions (Japan / approved Taiwan). If that doesn't apply, continue with LIFF on a LINE Login channel.
 
 Without `chat_message.write`, the scanner UI can decode barcodes but cannot post the result back into the chat.

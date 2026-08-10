@@ -13,7 +13,6 @@ TABLE_PRINTOUT_SESSION_TTL_SECONDS = int(
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
 
 TABLE_PRINTOUT_COMMANDS = {
-    "สแกน",
     "สแกนตาราง",
     "printout",
     "พิมพ์ตาราง",
@@ -31,7 +30,6 @@ CONTINUE_SESSION_WORDS = {
     "สแกนต่อ",
     "ต่อ",
     "continue",
-    "สแกน",
 }
 
 TABLE_PRINTOUT_SESSIONS: dict[str, dict] = {}

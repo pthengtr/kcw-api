@@ -79,7 +79,7 @@ def handle_product_scan_callback(engine, user_text: str) -> dict:
             "type": "text",
             "text": (
                 "อ่านรหัสจากสแกนไม่สำเร็จครับ\n"
-                "กรุณาพิมพ์ สแกนสินค้า แล้วลองใหม่"
+                "กรุณาพิมพ์ สแกน แล้วลองใหม่"
             ),
         }
 
