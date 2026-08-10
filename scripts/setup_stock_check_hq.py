@@ -15,7 +15,8 @@ STOCK_KEYS = {
     "STOCK_CHECK_ENABLED": "true",
     "STOCK_CHECK_BRANCH": "HQ",
     "STOCK_CHECK_LISTEN_PORT": "8787",
-    "STOCK_CHECK_PUBLIC_BASE_URL": "http://192.168.1.19:8787",
+    # Empty = auto-detect LAN IP on each worker heartbeat
+    "STOCK_CHECK_PUBLIC_BASE_URL": "",
     "STOCK_CHECK_TOKEN_TTL_SECONDS": "900",
     "STOCK_CHECK_LEASE_TTL_SECONDS": "1200",
     "STOCK_CHECK_DATA_DIR": ".stock_check",

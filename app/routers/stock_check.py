@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from urllib.parse import quote
 
+from src.barcode import (
+    BarcodeDecodeUnavailable,
+    decode_barcodes_from_image,
+    pick_best_barcode,
+    sanitize_barcode,
+)
 from src.stock_check.audit_mirror import flush_audit_outbox
-from src.stock_check.auth import TokenError, verify_access_token
+from src.stock_check.auth import TokenError, build_entry_url, mint_access_token, verify_access_token
 from src.stock_check.config import get_stock_check_settings
 from src.stock_check.service import StockCheckService
 from src.stock_check import ui
@@ -26,6 +32,22 @@ def _service() -> StockCheckService:
 
 def _settings():
     return get_stock_check_settings()
+
+
+def _browser_entry_url(user: dict) -> str:
+    """Fresh ?t= link for opening outside LINE (LINE's own open-in-browser drops the token)."""
+    settings = _settings()
+    try:
+        token = mint_access_token(
+            secret=settings.stock_check_token_secret,
+            line_user_id=user["line_user_id"],
+            display_name=user.get("display_name") or "",
+            branch=settings.stock_check_branch,
+            ttl_seconds=settings.stock_check_token_ttl_seconds,
+        )
+    except TokenError:
+        return ""
+    return build_entry_url(settings.resolved_public_base_url, token)
 
 
 def _user_from_request(request: Request, service: StockCheckService) -> dict | None:
@@ -92,7 +114,15 @@ async def home(request: Request, t: str | None = None):
     flash = request.query_params.get("ok")
     error = request.query_params.get("err")
     items = service.leased_list(user["id"])
-    return HTMLResponse(ui.home_page(user=user, items=items, flash=flash, error=error))
+    return HTMLResponse(
+        ui.home_page(
+            user=user,
+            items=items,
+            flash=flash,
+            error=error,
+            browser_entry_url=_browser_entry_url(user),
+        )
+    )
 
 
 @router.post("/take")
@@ -116,7 +146,85 @@ async def ondemand(request: Request, q: str = ""):
     if err:
         return err
     results = service.lookup(q) if q.strip() else []
-    return HTMLResponse(ui.ondemand_page(user=user, results=results, q=q))
+    return HTMLResponse(
+        ui.ondemand_page(
+            user=user,
+            results=results,
+            q=q,
+            flash=request.query_params.get("ok"),
+            error=request.query_params.get("err"),
+            browser_entry_url=_browser_entry_url(user),
+        )
+    )
+
+
+@router.post("/ondemand/upload", response_class=HTMLResponse)
+async def ondemand_upload(request: Request, image: UploadFile = File(...)):
+    """Photo / camera-roll barcode decode — same idea as LINE upload scan."""
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        raw = await image.read()
+        if not raw:
+            raise ValueError("ไม่พบไฟล์รูป")
+        if len(raw) > 12 * 1024 * 1024:
+            raise ValueError("ไฟล์ใหญ่เกินไป (สูงสุด 12MB)")
+        try:
+            codes = decode_barcodes_from_image(raw)
+        except BarcodeDecodeUnavailable as exc:
+            raise ValueError(str(exc)) from exc
+        cleaned: list[str] = []
+        for code in codes:
+            safe = sanitize_barcode(code)
+            if safe:
+                cleaned.append(safe)        # de-dupe preserve order
+        seen: set[str] = set()
+        decoded = []
+        for code in cleaned:
+            if code not in seen:
+                seen.add(code)
+                decoded.append(code)
+        if not decoded:
+            return HTMLResponse(
+                ui.ondemand_page(
+                    user=user,
+                    error="อ่านบาร์โค้ดจากรูปไม่ได้ — ลองใหม่ให้ชัดขึ้น หรือพิมพ์รหัส",
+                    browser_entry_url=_browser_entry_url(user),
+                )
+            )
+        best = pick_best_barcode(decoded) or decoded[0]
+        # Prefer single hit → product page; multiple → list
+        if len(decoded) == 1:
+            return RedirectResponse(
+                url=f"/stock-check/product/{_q(best)}?source=ondemand",
+                status_code=303,
+            )
+        results = []
+        for code in decoded:
+            results.extend(service.lookup(code))
+        # unique by bcode
+        by_b: dict[str, dict] = {}
+        for row in results:
+            by_b[row["bcode"]] = row
+        return HTMLResponse(
+            ui.ondemand_page(
+                user=user,
+                results=list(by_b.values()),
+                decoded=decoded,
+                flash=f"พบ {len(decoded)} รหัสในรูป",
+                browser_entry_url=_browser_entry_url(user),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        return HTMLResponse(
+            ui.ondemand_page(
+                user=user,
+                error=str(exc),
+                browser_entry_url=_browser_entry_url(user),
+            )
+        )
 
 
 @router.get("/product/{bcode}", response_class=HTMLResponse)
@@ -128,7 +236,14 @@ async def product(request: Request, bcode: str, source: str = "batch"):
     item = service.product_detail(bcode)
     if not item:
         return HTMLResponse("ไม่พบสินค้า", status_code=404)
-    return HTMLResponse(ui.product_page(user=user, item=item, source=source))
+    return HTMLResponse(
+        ui.product_page(
+            user=user,
+            item=item,
+            source=source,
+            browser_entry_url=_browser_entry_url(user),
+        )
+    )
 
 
 @router.post("/product/{bcode}/submit")
@@ -193,6 +308,7 @@ async def approve_list(request: Request):
             drafts=drafts,
             flash=request.query_params.get("ok"),
             error=request.query_params.get("err"),
+            browser_entry_url=_browser_entry_url(user),
         )
     )
 
