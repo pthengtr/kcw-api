@@ -104,13 +104,14 @@ class StockCheckSettings(BaseSettings):
 
     @property
     def resolved_public_base_url(self) -> str:
-        for candidate in (
-            self.stock_check_public_base_url,
-            self.public_base_url,
-        ):
-            value = (candidate or "").strip().rstrip("/")
-            if value:
-                return value
+        from src.stock_check.net import resolve_stock_check_public_base_url
+
+        detected = resolve_stock_check_public_base_url(
+            explicit=self.stock_check_public_base_url,
+            port=self.stock_check_listen_port,
+        )
+        if detected:
+            return detected
         return f"http://127.0.0.1:{self.stock_check_listen_port}"
 
 

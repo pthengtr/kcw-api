@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.stock_check.auth import mint_access_token, verify_access_token
 from src.stock_check.db_local import LocalStore
+from src.stock_check.net import resolve_stock_check_public_base_url
 from src.stock_check.parts9 import ProductRow, pick_top_products, score_product
 
 
@@ -27,6 +28,26 @@ def test_token_roundtrip():
     assert ident.line_user_id == "U123"
     assert ident.display_name == "Tester"
     assert ident.is_approver is False
+
+
+def test_resolve_url_prefers_explicit(monkeypatch):
+    monkeypatch.delenv("STOCK_CHECK_PUBLIC_BASE_URL", raising=False)
+    url = resolve_stock_check_public_base_url(
+        explicit="http://fixed.example:8787",
+        port=8787,
+    )
+    assert url == "http://fixed.example:8787"
+
+
+def test_resolve_url_autodetect(monkeypatch):
+    monkeypatch.delenv("STOCK_CHECK_PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setenv("STOCK_CHECK_LISTEN_PORT", "8787")
+    monkeypatch.setattr(
+        "src.stock_check.net.detect_lan_ipv4",
+        lambda: "192.168.1.50",
+    )
+    url = resolve_stock_check_public_base_url(explicit="", port=None)
+    assert url == "http://192.168.1.50:8787"
 
 
 def test_approver_flag():
@@ -79,3 +100,16 @@ def test_pick_prefers_never_audited():
     assert score2 > score1
     picked = pick_top_products(products, audits=audits, count=1, now=now)
     assert picked[0].bcode == "2"
+
+
+def test_stock_check_command_variants():
+    from src.handlers.stock_check_entry import is_stock_check_command
+
+    assert is_stock_check_command("เช็คสต็อก")
+    assert is_stock_check_command("เช็กสตอก")
+    assert is_stock_check_command("เช็คของ")
+    assert is_stock_check_command("เช็ค สินค้า")
+    assert is_stock_check_command("นับของ")
+    assert is_stock_check_command("Check Stock")
+    assert not is_stock_check_command("เช็คราคา")
+    assert not is_stock_check_command("update")

@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import os
+import socket
+
+
+def detect_lan_ipv4() -> str | None:
+    """Best-effort primary LAN IPv4 (skips loopback)."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # No packets sent; OS picks the interface for the default route.
+            sock.connect(("8.8.8.8", 80))
+            ip = sock.getsockname()[0]
+        finally:
+            sock.close()
+        if ip and not ip.startswith("127."):
+            return ip
+    except OSError:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, family=socket.AF_INET):
+            ip = info[4][0]
+            if ip and not ip.startswith("127."):
+                return ip
+    except OSError:
+        pass
+    return None
+
+
+def resolve_stock_check_public_base_url(
+    *,
+    explicit: str | None = None,
+    port: int | None = None,
+) -> str | None:
+    """
+    Prefer STOCK_CHECK_PUBLIC_BASE_URL override; else http://<lan-ip>:<port>.
+
+    Re-call on each heartbeat so DHCP IP changes propagate without restart.
+    """
+    value = (explicit if explicit is not None else os.getenv("STOCK_CHECK_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if value:
+        return value
+    ip = detect_lan_ipv4()
+    if not ip:
+        return None
+    listen_port = port
+    if listen_port is None:
+        try:
+            listen_port = int(os.getenv("STOCK_CHECK_LISTEN_PORT") or "8787")
+        except ValueError:
+            listen_port = 8787
+    return f"http://{ip}:{listen_port}"
