@@ -48,10 +48,20 @@ Operators type `เช็คสต็อก`, `เช็กสตอก`, `เ�
 
 ## Flow
 
+Everyday **Take N** batch uses ABC + risk priority (see below).
+
 1. Take N → leased pick list with LOCATION1/2 → open product → count  
 2. Variance 0 → auto complete + audit mirror  
 3. Variance ≠ 0 → pending draft → approver posts SA/3SA (fails clearly until writer login)  
 4. End session releases unfinished leases  
+
+### Everyday pick rules
+
+1. **Candidates** — yesterday sales · negative stock · prior mismatch (`adjusted`) · prior SA/3SA · ABC cycle due · never counted  
+2. **ABC** from 90-day **sales days** (exclude bill prefixes DN / TAR / TF / TFV / SA / 3SA): A≥30, B 10–29, C 1–9, N=0  
+3. **Cycles** — A 21d · B 45d · C 90d · N only via risk / never pools  
+4. **Repeat gap** — skip if counted within 14 days, unless negative stock (override)  
+5. **Priority** (high→low) — negative → mismatch → SA history → yesterday → ABC due → never; one row per SKU  
 
 Ondemand search supports typed BCODE/MCODE/PCODE **or photo upload** (same
 server-side pyzbar decode as LINE camera / album scan). LIFF is not used.

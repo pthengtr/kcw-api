@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from src.stock_check.auth import mint_access_token, verify_access_token
+from src.stock_check.daily_pick import (
+    CandidateFlags,
+    SalesSignals,
+    abc_class,
+    build_flags,
+    is_abc_due,
+    passes_repeat_gap,
+    within_repeat_gap,
+)
 from src.stock_check.db_local import LocalStore
 from src.stock_check.net import resolve_stock_check_public_base_url
-from src.stock_check.parts9 import ProductRow, pick_top_products, score_product
+from src.stock_check.parts9 import ProductRow
+
+BANGKOK = ZoneInfo("Asia/Bangkok")
 
 
 def test_token_roundtrip():
@@ -88,18 +101,81 @@ def test_lease_ttl_expiry(tmp_path: Path):
     assert store.active_leased_bcodes() == set()
 
 
-def test_pick_prefers_never_audited():
-    now = time.time()
-    products = [
-        ProductRow("1", "a", "", "", "L1", "", 5, "u", 1, "N"),
-        ProductRow("2", "b", "", "", "L1", "", 5, "u", 1, "N"),
-    ]
-    audits = {"1": {"last_audited_at": now - 100}}
-    score1 = score_product(products[0], last_audited_at=audits["1"]["last_audited_at"], now=now)
-    score2 = score_product(products[1], last_audited_at=None, now=now)
-    assert score2 > score1
-    picked = pick_top_products(products, audits=audits, count=1, now=now)
-    assert picked[0].bcode == "2"
+def test_abc_class_thresholds():
+    assert abc_class(0) == "N"
+    assert abc_class(1) == "C"
+    assert abc_class(9) == "C"
+    assert abc_class(10) == "B"
+    assert abc_class(29) == "B"
+    assert abc_class(30) == "A"
+
+
+def test_abc_due_cycles():
+    today = date(2026, 8, 11)
+    assert is_abc_due(klass="A", last_count=None, today=today) is True
+    assert is_abc_due(klass="A", last_count=today - timedelta(days=20), today=today) is False
+    assert is_abc_due(klass="A", last_count=today - timedelta(days=21), today=today) is True
+    assert is_abc_due(klass="B", last_count=today - timedelta(days=44), today=today) is False
+    assert is_abc_due(klass="B", last_count=today - timedelta(days=45), today=today) is True
+    assert is_abc_due(klass="C", last_count=today - timedelta(days=90), today=today) is True
+    assert is_abc_due(klass="N", last_count=None, today=today) is False
+
+
+def test_repeat_gap_and_negative_override():
+    today = date(2026, 8, 11)
+    assert within_repeat_gap(today - timedelta(days=14), today) is True
+    assert within_repeat_gap(today - timedelta(days=15), today) is False
+
+    recent = CandidateFlags(
+        last_count_date=today - timedelta(days=3),
+        sold_yesterday=True,
+        reasons=["sold_yesterday"],
+    )
+    assert passes_repeat_gap(recent, today) is False
+
+    negative = CandidateFlags(
+        negative_or_anomaly=True,
+        last_count_date=today - timedelta(days=1),
+        reasons=["negative_stock"],
+    )
+    assert passes_repeat_gap(negative, today) is True
+
+
+def test_priority_prefers_negative_over_never():
+    today = date(2026, 8, 11)
+    product = ProductRow("X1", "neg", "", "", "L1", "", -2.0, "u", 1.0, "N")
+    signals = SalesSignals(
+        as_of=today,
+        yesterday_bcodes=frozenset(),
+        sales_days_90={},
+        sa_bcodes=frozenset(),
+    )
+    flags = build_flags(product=product, audit=None, signals=signals, today=today)
+    assert flags.negative_or_anomaly is True
+    assert flags.never_counted is True
+    assert flags.priority == 1
+    assert "negative_stock" in flags.reasons
+
+
+def test_priority_mismatch_beats_yesterday():
+    today = date(2026, 8, 11)
+    now = datetime(2026, 7, 1, tzinfo=BANGKOK).timestamp()
+    product = ProductRow("X2", "m", "", "", "L1", "", 5.0, "u", 1.0, "N")
+    signals = SalesSignals(
+        as_of=today,
+        yesterday_bcodes=frozenset({"X2"}),
+        sales_days_90={"X2": 12},
+        sa_bcodes=frozenset(),
+    )
+    flags = build_flags(
+        product=product,
+        audit={"last_audited_at": now, "last_outcome": "adjusted"},
+        signals=signals,
+        today=today,
+    )
+    assert flags.prior_mismatch is True
+    assert flags.sold_yesterday is True
+    assert flags.priority == 2
 
 
 def test_stock_check_command_variants():

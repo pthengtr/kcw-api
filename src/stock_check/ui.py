@@ -398,6 +398,14 @@ def page(
 
 def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> str:
     loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
+    reasons = item.get("pick_reasons") or []
+    reason_bit = ""
+    if reasons:
+        label = ", ".join(str(r) for r in reasons[:3])
+        abc = item.get("abc_class")
+        if abc:
+            label = f"ABC {abc} · {label}"
+        reason_bit = f"<div class='muted' style='margin-top:6px;font-size:0.78rem'>{escape(label)}</div>"
     return f"""
     <a class="item card" href="{href}">
       <div class="row">
@@ -408,6 +416,7 @@ def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> st
         <div style="min-width:0">
           <div class="bcode">{escape(item['bcode'])}</div>
           <div class="descr">{escape(item.get('descr') or '')}</div>
+          {reason_bit}
         </div>
         <div class="qty-block">
           <div class="qty">{item.get('qtyoh2', 0):.0f}</div>

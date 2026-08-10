@@ -5,12 +5,11 @@ import time
 from typing import Any
 
 from src.stock_check.config import StockCheckSettings, get_stock_check_settings
+from src.stock_check.daily_pick import pick_daily_products
 from src.stock_check.db_local import LocalStore
 from src.stock_check.parts9 import (
     get_product_by_bcode,
-    list_candidate_products,
     lookup_products,
-    pick_top_products,
 )
 from src.stock_check.sa_writer import Parts9WriteError, post_stock_adjustment
 
@@ -28,34 +27,45 @@ class StockCheckService:
         self.store.expire_stale_leases()
 
     def take_n(self, session_id: str, count: int, *, with_stock_only: bool = True) -> list[dict[str, Any]]:
+        """Lease next SKUs using everyday ABC / risk priority rules.
+
+        ``with_stock_only`` is kept for API compatibility; negative-stock
+        anomalies are always eligible (override).
+        """
+        del with_stock_only  # daily rules decide stock filters
         self.expire()
         count = max(1, min(int(count), 50))
         held = self.store.active_leased_bcodes()
-        # Also skip pending approval drafts
         pending = {d["bcode"] for d in self.store.list_pending_drafts()}
         exclude = held | pending
-        candidates = list_candidate_products(
-            exclude_bcodes=exclude,
-            with_stock_only=with_stock_only,
-        )
         now = time.time()
         audits = self.store.get_local_audits()
-        # Skip recently audited in last 7 days
-        fresh = {
-            bcode
-            for bcode, row in audits.items()
-            if now - float(row["last_audited_at"]) < 7 * 86400
-        }
-        candidates = [p for p in candidates if p.bcode not in fresh]
-        picked = pick_top_products(candidates, audits=audits, count=count, now=now)
+        picked = pick_daily_products(
+            count=count,
+            exclude_bcodes=exclude,
+            audits=audits,
+            now=now,
+        )
         claimed = self.store.claim_leases(
             session_id=session_id,
-            bcodes=[p.bcode for p in picked],
+            bcodes=[p.bcode for p, _flags in picked],
             lease_ttl=self.settings.stock_check_lease_ttl_seconds,
             now=now,
         )
-        by_code = {p.bcode: p for p in picked}
-        return [self._product_card(by_code[b], audits.get(b)) for b in claimed if b in by_code]
+        by_code = {p.bcode: (p, flags) for p, flags in picked}
+        cards: list[dict[str, Any]] = []
+        for bcode in claimed:
+            item = by_code.get(bcode)
+            if not item:
+                continue
+            product, flags = item
+            card = self._product_card(product, audits.get(bcode))
+            card["pick_priority"] = flags.priority
+            card["pick_reasons"] = list(flags.reasons)
+            card["abc_class"] = flags.abc_class
+            card["sales_days_90"] = flags.sales_days_90
+            cards.append(card)
+        return cards
 
     def leased_list(self, session_id: str) -> list[dict[str, Any]]:
         self.expire()
