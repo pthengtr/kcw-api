@@ -22,10 +22,14 @@ ACCESS = {"access_group": "staff"}
 
 def test_product_scan_command_aliases():
     for text in (
+        "สแกน",
+        " สแกน ",
         "สแกนสินค้า",
         " สแกนสินค้า ",
         "สแกน บาร์โค้ด",
         "สแกนบาร์โค้ด",
+        "scan",
+        "Scan",
         "scan product",
         "Scan Product",
         "scanproduct",
@@ -37,7 +41,6 @@ def test_product_scan_command_aliases():
 
 def test_product_scan_command_does_not_match_unrelated():
     for text in (
-        "สแกน",
         "สแกนตาราง",
         "เช็ค 22010585",
         "สินค้า 22010585",
@@ -47,6 +50,17 @@ def test_product_scan_command_does_not_match_unrelated():
     ):
         assert not is_product_scan_command(text), text
 
+
+def test_router_bare_scan_opens_liff_not_table_printout():
+    with patch(
+        "src.handlers.product_scan.KCW_LIFF_PRODUCT_SCANNER_URL",
+        "https://liff.line.me/test-liff",
+    ):
+        result = route_user_text(MagicMock(), "สแกน", ACCESS)
+
+    assert result["type"] == "messages"
+    assert result["messages"][0]["type"] == "template"
+    assert result["messages"][0]["template"]["actions"][0]["type"] == "uri"
 
 def test_format_and_parse_callback_roundtrip():
     msg = format_product_scan_callback("8851234567890")
@@ -66,6 +80,7 @@ def test_sanitize_barcode_rejects_bad_values():
     assert sanitize_barcode("emoji😀") is None
     assert sanitize_barcode("x" * 65) is None
     assert sanitize_barcode("22010585") == "22010585"
+    assert sanitize_barcode("*22010585*") == "22010585"
     assert sanitize_barcode("SKU_01.2-A") == "SKU_01.2-A"
 
 

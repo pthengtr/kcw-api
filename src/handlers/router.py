@@ -14,11 +14,6 @@ from src.handlers.product_snapshot import is_product_snapshot_request
 from src.access.helper import can_execute
 from src.handlers.location import is_location_request, handle_location_query
 from src.handlers.check import is_check_request, handle_check_response
-from src.handlers.table_printout import (
-    is_table_printout_command,
-    handle_table_printout_command,
-    handle_table_printout_session_text,
-)
 from src.handlers.product_scan import (
     is_product_scan_callback,
     is_product_scan_command,
@@ -40,10 +35,6 @@ def route_user_text(
     if image_session_reply is not None:
         return image_session_reply
 
-    table_printout_session_reply = handle_table_printout_session_text(line_user_id, text)
-    if table_printout_session_reply is not None:
-        return table_printout_session_reply
-
     # LIFF product-scan callback must be handled deterministically before AI / search.
     if is_product_scan_callback(text):
         return handle_product_scan_callback(engine, text)
@@ -54,15 +45,9 @@ def route_user_text(
     if is_image_command(text):
         return handle_image_command(text, line_user_id=line_user_id)
 
-    # Open LIFF scanner (before bare "สแกน" table-printout command).
+    # Open LIFF product scanner ("สแกน", "สแกนสินค้า", …).
     if is_product_scan_command(text):
         return handle_product_scan_command()
-
-    if is_table_printout_command(text):
-        cmd = "สแกนตาราง"
-        if not can_execute(access["access_group"], cmd):
-            return {"type": "text", "text": "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"}
-        return handle_table_printout_command(line_user_id)
 
     if is_job_request(text):
         return handle_job_query(engine, text, access=access)

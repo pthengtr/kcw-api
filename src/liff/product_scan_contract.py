@@ -21,12 +21,15 @@ _CALLBACK_PREFIXES = (
 
 # Compact command aliases (whitespace stripped, lowercased for Latin).
 PRODUCT_SCAN_COMMANDS = {
+    "สแกน",
     "สแกนสินค้า",
     "สแกนบาร์โค้ด",
     "สแกนบาร์โคด",
+    "scan",
     "scanproduct",
     "scanbarcode",
-    "scan product",  # kept for clarity; compact form is used for match
+    "scan product",
+    "scan barcode",
 }
 
 _BARCODE_RE = re.compile(r"^[A-Za-z0-9\-_.]{1,64}$")
@@ -44,7 +47,8 @@ def sanitize_barcode(raw: str | None) -> str | None:
     """Validate/sanitize a scanned barcode/SKU value."""
     if raw is None:
         return None
-    code = str(raw).strip()
+    # Code 39 sometimes wraps values with *; strip those only.
+    code = str(raw).strip().strip("*").strip()
     if not code:
         return None
     # Reject control / whitespace / emoji clutter inside the code itself.
