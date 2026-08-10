@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -37,9 +38,11 @@ def blank(value: object) -> str:
 
 
 def is_excluded_bill_number(bill_number: object) -> bool:
-    """Exclude transfer-style bills (TF... / TFV...)."""
+    """Exclude transfers (TF/TFV) and stock-check adjustments (SA/3SA)."""
     text = blank(bill_number).upper()
-    return text.startswith("TFV") or text.startswith("TF")
+    if text.startswith("TFV") or text.startswith("TF"):
+        return True
+    return bool(re.match(r"^(3)?SA", text))
 
 
 def parse_bill_datetime(bill_date: object, bill_time: object) -> datetime:

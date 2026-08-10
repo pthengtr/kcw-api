@@ -9,6 +9,7 @@ from src.jobs.tasks import (
     enqueue_sync_online_sales_jobs,
     enqueue_sync_pomas_podet_jobs,
     enqueue_sync_iclow_jobs,
+    enqueue_sync_icmas_jobs,
     enqueue_bank_statement_import_jobs,
     enqueue_sync_po_related_jobs,
     enqueue_syp_raw_jobs,
@@ -51,6 +52,7 @@ def build_update_menu_quick_reply() -> dict:
             _qr_message("อัปเดตใบสั่งซื้อ", "อัปเดตใบสั่งซื้อ"),
             _qr_message("อัปเดตporelated", "อัปเดตporelated"),
             _qr_message("อัปเดตiclow", "อัปเดตiclow"),
+            _qr_message("อัปเดตicmas", "อัปเดตicmas"),
             _qr_message("อัปเดตธนาคาร", "อัปเดตธนาคาร"),
             _qr_message("สถานะเครื่อง", "worker status"),
         ]
@@ -277,6 +279,37 @@ def is_sync_iclow_request(text: str) -> bool:
         }
     )
 
+def is_sync_icmas_request(text: str) -> bool:
+    t = (text or "").strip().lower()
+    compact = "".join(t.split())
+
+    return (
+        compact
+        in {
+            "อัปเดตicmas",
+            "อัพเดตicmas",
+            "อัปเดทicmas",
+            "อัพเดทicmas",
+            "syncicmas",
+            "updateicmas",
+            "อัปเดตข้อมูลสินค้า",
+            "อัพเดตข้อมูลสินค้า",
+            "อัปเดทข้อมูลสินค้า",
+            "อัพเดทข้อมูลสินค้า",
+        }
+        or t
+        in {
+            "sync icmas",
+            "sync-icmas",
+            "update icmas",
+            "icmas sync",
+            "update product master",
+            "sync product master",
+            "update products master",
+            "sync products master",
+        }
+    )
+
 def is_sync_po_related_request(text: str) -> bool:
     t = (text or "").strip().lower()
     compact = "".join(ch for ch in t if not ch.isspace() and ch != "-")
@@ -438,6 +471,7 @@ def is_job_request(text: str) -> bool:
         or is_sync_pomas_podet_request(t)
         or is_sync_po_related_request(t)
         or is_sync_iclow_request(t)
+        or is_sync_icmas_request(t)
         or is_bank_statement_import_request(t)
         or is_sync_inventory_request(t)
         or is_syp_raw_request(t)
@@ -723,6 +757,45 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
             )
 
         lines = ["ได้เลย เดี๋ยวจ๋าไปอัปเดต iClow ให้นะ ✅"]
+
+        for job in jobs:
+            lines.append(
+                f"- {job['payload'].get('site')}: "
+                f"job_id {job['id']} -> {job.get('worker_name', '-')}"
+            )
+
+        lines.append("")
+        lines.append("กดปุ่มด้านล่างเพื่อเช็คสถานะต่อได้เลย")
+
+        return text_response(
+            "\n".join(lines),
+            quick_reply=build_job_status_quick_reply(jobs),
+        )
+
+    # sync ICMAS product masters
+    # Must be checked before inventory sync because old inventory trigger accepts "sync ..." and "อัปเดต..."
+    if is_sync_icmas_request(text_lower):
+        rows = get_all_worker_status(engine, offline_after_seconds=30)
+        online_workers = {
+            r["worker_name"]
+            for r in rows
+            if r["online_status"] == "online"
+        }
+
+        jobs = enqueue_sync_icmas_jobs(
+            engine=engine,
+            requested_by=access.get("line_user_id"),
+            source="line",
+            allowed_workers=online_workers,
+        )
+
+        if not jobs:
+            return text_response(
+                "ยังอัปเดต ICMAS ไม่ได้ครับ\n"
+                "ไม่พบ worker ที่ออนไลน์สำหรับงานนี้"
+            )
+
+        lines = ["ได้เลย เดี๋ยวจ๋าไปอัปเดตข้อมูลสินค้า (ICMAS) ให้นะ ✅"]
 
         for job in jobs:
             lines.append(

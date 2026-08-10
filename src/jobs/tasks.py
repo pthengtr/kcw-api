@@ -264,6 +264,42 @@ def enqueue_sync_iclow_jobs(
     return jobs
 
 
+def enqueue_sync_icmas_jobs(
+    engine,
+    requested_by: str | None = None,
+    source: str | None = None,
+    allowed_workers: set[str] | None = None,
+) -> list[dict]:
+    jobs = []
+    batch_id = str(uuid4())
+
+    targets = [
+        {"site": "HQ", "worker_name": "HQ-PC"},
+        {"site": "SYP", "worker_name": "SYP-PC"},
+    ]
+
+    for target in targets:
+        if allowed_workers is not None and target["worker_name"] not in allowed_workers:
+            continue
+
+        job = enqueue_job(
+            engine=engine,
+            job_type="sync_icmas",
+            payload={
+                "task": "sync_icmas",
+                "site": target["site"],
+            },
+            worker_name=target["worker_name"],
+            requested_by=requested_by,
+            source=source,
+            batch_id=batch_id,
+        )
+
+        jobs.append(job)
+
+    return jobs
+
+
 def enqueue_bank_statement_import_jobs(
     engine,
     requested_by: str | None = None,

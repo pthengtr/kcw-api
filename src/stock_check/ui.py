@@ -239,6 +239,39 @@ def page(
     }}
     .stat b {{ display: block; font-size: 1.15rem; font-weight: 700; }}
     .stat span {{ font-size: .72rem; color: var(--muted); font-weight: 500; }}
+    .seg {{
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+      padding: 4px; margin: 8px 0 4px;
+      background: #e8eef7; border-radius: 14px;
+    }}
+    .seg button {{
+      width: auto; padding: 10px 8px; font-size: .9rem; font-weight: 600;
+      background: transparent; color: var(--muted); box-shadow: none;
+    }}
+    .seg button.active {{
+      background: #fff; color: var(--accent);
+      box-shadow: 0 2px 8px rgba(37,99,235,.12);
+    }}
+    .dir-row {{
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px;
+    }}
+    .dir-row button {{
+      width: auto; padding: 12px 8px; font-size: .95rem; box-shadow: none;
+      background: #fff; color: var(--ink); border: 1.5px solid var(--line);
+    }}
+    .dir-row button.active.minus {{
+      background: var(--danger-soft); color: var(--danger);
+      border-color: rgba(180,35,24,.25);
+    }}
+    .dir-row button.active.plus {{
+      background: var(--ok-soft); color: var(--ok);
+      border-color: rgba(6,118,71,.25);
+    }}
+    .preview {{
+      margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+      background: var(--accent-soft); color: var(--accent);
+      font-size: .9rem; font-weight: 500;
+    }}
     nav.bottom {{
       position: fixed; left: 0; right: 0; bottom: 0;
       height: calc(var(--nav-h) + env(safe-area-inset-bottom));
@@ -452,37 +485,137 @@ def product_page(
     browser_entry_url: str | None = None,
 ) -> str:
     loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
-    qty = item.get("qtyoh2", 0)
+    qty = float(item.get("qtyoh2", 0) or 0)
+    qty_disp = f"{qty:.3g}"
     body = f"""
     <div class="card soft">
       <div class="loc">{escape(loc)}</div>
       <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(item['bcode'])}</div>
       <div class="descr" style="-webkit-line-clamp:4">{escape(item.get('descr') or '')}</div>
       <div class="stats">
-        <div class="stat"><b>{qty:.3g}</b><span>ระบบ</span></div>
+        <div class="stat"><b>{qty_disp}</b><span>ระบบ</span></div>
         <div class="stat"><b>{_fmt_ts(item.get('last_audited_at'))}</b><span>ตรวจล่าสุด</span></div>
         <div class="stat"><b>{escape(source)}</b><span>ที่มา</span></div>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="count-card" data-system-qty="{qty}">
       <div class="section-title" style="margin:0 0 4px">บันทึกการนับ</div>
-      <form method="post" action="/stock-check/product/{escape(item['bcode'])}/submit">
+      <p class="hint" style="margin-top:0">เลือกอย่างใดอย่างหนึ่ง — ไม่ต้องกรอกทั้งสองช่อง</p>
+      <div class="seg" role="tablist">
+        <button type="button" class="active" data-mode="total" id="mode-total-btn">นับได้ทั้งหมด</button>
+        <button type="button" data-mode="diff" id="mode-diff-btn">ส่วนต่าง</button>
+      </div>
+      <form method="post" action="/stock-check/product/{escape(item['bcode'])}/submit" id="count-form">
         <input type="hidden" name="source" value="{escape(source)}"/>
-        <label>นับได้ทั้งหมด</label>
-        <input type="number" step="any" name="counted_qty" inputmode="decimal" placeholder="เช่น {qty:.0f}"/>
-        <label>หรือส่วนต่าง (+เพิ่ม / −ลด)</label>
-        <input type="number" step="any" name="difference" inputmode="decimal" placeholder="เช่น -2"/>
+        <input type="hidden" name="diff_dir" id="diff-dir" value="minus"/>
+        <div id="panel-total">
+          <label>นับได้กี่ชิ้น</label>
+          <input type="text" name="counted_qty" id="counted-qty"
+            inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*"
+            autocomplete="off" placeholder="เช่น {qty:.0f}"/>
+          <p class="hint">พิมพ์ตัวเลขอย่างเดียว (คีย์บอร์ดโทรศัพท์ใช้ได้)</p>
+        </div>
+        <div id="panel-diff" hidden>
+          <label>ของจริงต่างจากระบบ</label>
+          <div class="dir-row">
+            <button type="button" class="minus active" data-dir="minus" id="dir-minus">− ลด</button>
+            <button type="button" class="plus" data-dir="plus" id="dir-plus">+ เพิ่ม</button>
+          </div>
+          <label>จำนวนที่ต่าง (ไม่ติดลบ)</label>
+          <input type="text" name="diff_amount" id="diff-amount"
+            inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*"
+            autocomplete="off" placeholder="เช่น 2"/>
+          <div class="preview" id="diff-preview">ระบบ {qty_disp} → จะได้ …</div>
+        </div>
         <label>หมายเหตุ</label>
         <input type="text" name="notes" maxlength="120" placeholder="ถ้ามี"/>
         <div style="height:12px"></div>
-        <button type="submit">บันทึกผลนับ</button>
+        <button type="submit" id="save-btn">บันทึกผลนับ</button>
         <div style="height:8px"></div>
-        <button class="secondary" type="submit" name="mark_correct" value="1">ถูกต้องตามระบบ</button>
+        <button class="secondary" type="submit" name="mark_correct" value="1">ถูกต้องตามระบบ ({qty_disp})</button>
       </form>
       <form method="post" action="/stock-check/product/{escape(item['bcode'])}/skip" style="margin-top:8px">
         <button class="ghost" type="submit">ข้าม / คืนคิว</button>
       </form>
     </div>
+    <script>
+    (function () {{
+      var card = document.getElementById("count-card");
+      if (!card) return;
+      var systemQty = parseFloat(card.getAttribute("data-system-qty") || "0") || 0;
+      var panelTotal = document.getElementById("panel-total");
+      var panelDiff = document.getElementById("panel-diff");
+      var counted = document.getElementById("counted-qty");
+      var amount = document.getElementById("diff-amount");
+      var dirInput = document.getElementById("diff-dir");
+      var preview = document.getElementById("diff-preview");
+      var mode = "total";
+      var dir = "minus";
+
+      function setMode(next) {{
+        mode = next;
+        document.getElementById("mode-total-btn").classList.toggle("active", mode === "total");
+        document.getElementById("mode-diff-btn").classList.toggle("active", mode === "diff");
+        panelTotal.hidden = mode !== "total";
+        panelDiff.hidden = mode !== "diff";
+        if (mode === "total") {{
+          amount.value = "";
+        }} else {{
+          counted.value = "";
+          updatePreview();
+        }}
+      }}
+      function setDir(next) {{
+        dir = next;
+        dirInput.value = dir;
+        document.getElementById("dir-minus").classList.toggle("active", dir === "minus");
+        document.getElementById("dir-plus").classList.toggle("active", dir === "plus");
+        updatePreview();
+      }}
+      function parseNum(raw) {{
+        if (!raw) return null;
+        var n = parseFloat(String(raw).replace(",", "."));
+        return isFinite(n) ? n : null;
+      }}
+      function updatePreview() {{
+        var abs = parseNum(amount && amount.value);
+        if (abs === null || abs < 0) {{
+          preview.textContent = "ระบบ " + systemQty + " → จะได้ …";
+          return;
+        }}
+        var signed = dir === "minus" ? -abs : abs;
+        var next = systemQty + signed;
+        var label = dir === "minus" ? ("−" + abs) : ("+" + abs);
+        preview.textContent = "ระบบ " + systemQty + " " + label + " → จะได้ " + next;
+      }}
+
+      document.getElementById("mode-total-btn").addEventListener("click", function () {{ setMode("total"); }});
+      document.getElementById("mode-diff-btn").addEventListener("click", function () {{ setMode("diff"); }});
+      document.getElementById("dir-minus").addEventListener("click", function () {{ setDir("minus"); }});
+      document.getElementById("dir-plus").addEventListener("click", function () {{ setDir("plus"); }});
+      if (amount) amount.addEventListener("input", updatePreview);
+
+      document.getElementById("count-form").addEventListener("submit", function (ev) {{
+        var mark = ev.submitter && ev.submitter.name === "mark_correct";
+        if (mark) return;
+        if (mode === "total") {{
+          amount.value = "";
+          var n = parseNum(counted.value);
+          if (n === null || n < 0) {{
+            ev.preventDefault();
+            alert("กรอกจำนวนที่นับได้");
+          }}
+        }} else {{
+          counted.value = "";
+          var abs = parseNum(amount.value);
+          if (abs === null || abs < 0) {{
+            ev.preventDefault();
+            alert("กรอกจำนวนส่วนต่าง (ตัวเลขบวก)");
+          }}
+        }}
+      }});
+    }})();
+    </script>
     """
     return page(
         "นับสินค้า",
