@@ -27,10 +27,12 @@ class StockCheckService:
         self.store.expire_stale_leases()
 
     def take_n(self, session_id: str, count: int, *, with_stock_only: bool = True) -> list[dict[str, Any]]:
-        """Lease next SKUs using everyday ABC / risk priority rules.
+        """Lease next SKUs using weighted everyday ABC / risk groups.
 
         ``with_stock_only`` is kept for API compatibility; negative-stock
-        anomalies are always eligible (override).
+        anomalies are always eligible (override). Active leases and pending
+        drafts are excluded; returned SKUs are claim_lease'd for this session.
+        Idle TTL starts now and is refreshed by count activity / heartbeat.
         """
         del with_stock_only  # daily rules decide stock filters
         self.expire()
@@ -46,12 +48,25 @@ class StockCheckService:
             audits=audits,
             now=now,
         )
+        idle = self.settings.lease_idle_seconds
+        lease_items = [
+            {
+                "bcode": p.bcode,
+                "pick_priority": flags.priority,
+                "pick_reasons": list(flags.reasons),
+                "abc_class": flags.abc_class,
+                "sales_days_90": flags.sales_days_90,
+            }
+            for p, flags in picked
+        ]
         claimed = self.store.claim_leases(
             session_id=session_id,
-            bcodes=[p.bcode for p, _flags in picked],
-            lease_ttl=self.settings.stock_check_lease_ttl_seconds,
+            lease_items=lease_items,
+            lease_ttl=idle,
             now=now,
         )
+        # Keep any prior unfinished leases alive while taking more.
+        self.store.extend_leases(session_id, lease_ttl=idle, now=now)
         by_code = {p.bcode: (p, flags) for p, flags in picked}
         cards: list[dict[str, Any]] = []
         for bcode in claimed:
@@ -67,20 +82,53 @@ class StockCheckService:
             cards.append(card)
         return cards
 
+    def bump_leases(self, session_id: str) -> int:
+        """Refresh idle timer for this session's active leases."""
+        self.expire()
+        return self.store.extend_leases(
+            session_id,
+            lease_ttl=self.settings.lease_idle_seconds,
+        )
+
     def leased_list(self, session_id: str) -> list[dict[str, Any]]:
         self.expire()
         leases = self.store.list_leases_for_session(session_id)
         if not leases:
             return []
+        self.store.extend_leases(session_id, lease_ttl=self.settings.lease_idle_seconds)
         audits = self.store.get_local_audits([row["bcode"] for row in leases])
         cards: list[dict[str, Any]] = []
         for row in leases:
             product = get_product_by_bcode(row["bcode"])
             if not product:
                 continue
-            cards.append(self._product_card(product, audits.get(product.bcode)))
-        cards.sort(key=lambda c: (c.get("location1") or "", c["bcode"]))
+            card = self._product_card(product, audits.get(product.bcode))
+            self._apply_lease_pick_meta(card, row)
+            cards.append(card)
+        # Keep take order (leased_at), not location sort — location walk is in picker.
         return cards
+
+    @staticmethod
+    def _apply_lease_pick_meta(card: dict[str, Any], lease: dict[str, Any]) -> None:
+        prio = lease.get("pick_priority")
+        if prio is not None:
+            try:
+                card["pick_priority"] = int(prio)
+            except (TypeError, ValueError):
+                pass
+        raw_reasons = lease.get("pick_reasons")
+        if raw_reasons:
+            if isinstance(raw_reasons, list):
+                card["pick_reasons"] = raw_reasons
+            else:
+                try:
+                    card["pick_reasons"] = json.loads(str(raw_reasons))
+                except json.JSONDecodeError:
+                    card["pick_reasons"] = [str(raw_reasons)]
+        if lease.get("abc_class"):
+            card["abc_class"] = lease["abc_class"]
+        if lease.get("sales_days_90") is not None:
+            card["sales_days_90"] = lease["sales_days_90"]
 
     def _product_card(self, product, audit: dict | None) -> dict[str, Any]:
         data = product.as_dict()
@@ -94,12 +142,19 @@ class StockCheckService:
             data["last_outcome"] = None
         return data
 
-    def product_detail(self, bcode: str) -> dict[str, Any] | None:
+    def product_detail(self, bcode: str, *, session_id: str | None = None) -> dict[str, Any] | None:
         product = get_product_by_bcode(bcode)
         if not product:
             return None
         audit = self.store.get_local_audits([product.bcode]).get(product.bcode)
-        return self._product_card(product, audit)
+        card = self._product_card(product, audit)
+        if session_id:
+            self.bump_leases(session_id)
+            for row in self.store.list_leases_for_session(session_id):
+                if row["bcode"] == product.bcode:
+                    self._apply_lease_pick_meta(card, row)
+                    break
+        return card
 
     def lookup(self, query: str) -> list[dict[str, Any]]:
         products = lookup_products(query)
@@ -144,6 +199,7 @@ class StockCheckService:
         variance = counted - system_qty
         operator_id = session["line_user_id"]
         operator_name = session["display_name"]
+        self.bump_leases(session["id"])
 
         if abs(variance) < 1e-9:
             draft_id = self.store.create_draft(
@@ -211,6 +267,7 @@ class StockCheckService:
 
     def skip_item(self, session_id: str, bcode: str) -> None:
         self.store.release_one_lease(session_id, bcode)
+        self.bump_leases(session_id)
 
     def approve_draft(
         self,

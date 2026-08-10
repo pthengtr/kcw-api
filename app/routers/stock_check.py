@@ -57,10 +57,7 @@ def _user_from_request(request: Request, service: StockCheckService) -> dict | N
     session = service.store.get_session(session_id)
     if not session:
         return None
-    service.store.touch_session(
-        session_id,
-        lease_ttl=service.settings.stock_check_lease_ttl_seconds,
-    )
+    service.store.touch_session(session_id)
     return session
 
 
@@ -104,7 +101,7 @@ async def home(request: Request, t: str | None = None):
             session_id,
             httponly=True,
             samesite="lax",
-            max_age=settings.stock_check_lease_ttl_seconds * 4,
+            max_age=max(settings.lease_idle_seconds * 48, 86_400),
         )
         return resp
 
@@ -137,6 +134,23 @@ async def take(request: Request, count: int = Form(10)):
         return RedirectResponse(url=f"/stock-check/?ok={_q(msg)}", status_code=303)
     except Exception as exc:  # noqa: BLE001
         return RedirectResponse(url=f"/stock-check/?err={_q(exc)}", status_code=303)
+
+
+@router.post("/heartbeat")
+async def heartbeat(request: Request):
+    """Keep unfinished leases alive while the operator is actively counting."""
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    n = service.bump_leases(user["id"])
+    return JSONResponse(
+        {
+            "ok": True,
+            "extended": n,
+            "idle_seconds": service.settings.lease_idle_seconds,
+        }
+    )
 
 
 @router.get("/ondemand", response_class=HTMLResponse)
@@ -233,7 +247,7 @@ async def product(request: Request, bcode: str, source: str = "batch"):
     user, err = _require_user(request, service)
     if err:
         return err
-    item = service.product_detail(bcode)
+    item = service.product_detail(bcode, session_id=user["id"])
     if not item:
         return HTMLResponse("ไม่พบสินค้า", status_code=404)
     return HTMLResponse(

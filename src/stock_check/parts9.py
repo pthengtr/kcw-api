@@ -22,6 +22,8 @@ class ProductRow:
     ui1: str
     mtp2: float
     canceled: str
+    # Legacy PARTS9: QTYMIN < 0 (usually -1) = do not restock / skip ICLOW.
+    qtymin: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -35,7 +37,13 @@ class ProductRow:
             "ui1": self.ui1,
             "mtp2": self.mtp2,
             "canceled": self.canceled,
+            "qtymin": self.qtymin,
         }
+
+    @property
+    def do_not_restock(self) -> bool:
+        """True when operators marked the SKU off the buy list (QTYMIN < 0)."""
+        return self.qtymin < 0
 
 
 def _odbc_url(settings: StockCheckSettings, *, writer: bool = False) -> str:
@@ -107,12 +115,13 @@ def _row_to_product(row: Any) -> ProductRow:
         ui1=str(row["UI1"] or "").strip(),
         mtp2=_parse_qty(row["MTP2"]) or 1.0,
         canceled=str(row["CANCELED"] or "N").strip().upper() or "N",
+        qtymin=_parse_qty(row["QTYMIN"]) if "QTYMIN" in row.keys() else 0.0,
     )
 
 
 _PRODUCT_SELECT = """
 SELECT
-  BCODE, DESCR, PCODE, MCODE, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED
+  BCODE, DESCR, PCODE, MCODE, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED, QTYMIN
 FROM dbo.ICMAS
 """
 
@@ -231,11 +240,12 @@ def list_never_counted_stock_products(
     sql = text(
         f"""
         SELECT TOP {limit * 3}
-          BCODE, DESCR, PCODE, MCODE, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED
+          BCODE, DESCR, PCODE, MCODE, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED, QTYMIN
         FROM dbo.ICMAS
         WHERE UPPER(LTRIM(RTRIM(COALESCE(CANCELED,'')))) <> 'Y'
           AND ISNUMERIC(REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) = 1
           AND CONVERT(float, REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) > 0
+          AND (QTYMIN IS NULL OR QTYMIN >= 0)
         ORDER BY LOCATION1, BCODE
         """
     )

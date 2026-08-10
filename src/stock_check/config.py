@@ -24,8 +24,14 @@ class StockCheckSettings(BaseSettings):
         default=900,
         validation_alias="STOCK_CHECK_TOKEN_TTL_SECONDS",
     )
+    # Idle window for unfinished leases; extended on count activity / heartbeat.
+    stock_check_lease_idle_seconds: int = Field(
+        default=300,
+        validation_alias="STOCK_CHECK_LEASE_IDLE_SECONDS",
+    )
+    # Legacy alias — used only if STOCK_CHECK_LEASE_IDLE_SECONDS is unset in older envs.
     stock_check_lease_ttl_seconds: int = Field(
-        default=1200,
+        default=300,
         validation_alias="STOCK_CHECK_LEASE_TTL_SECONDS",
     )
     stock_check_approver_line_user_ids: str = Field(
@@ -85,6 +91,12 @@ class StockCheckSettings(BaseSettings):
     def approver_ids(self) -> set[str]:
         raw = self.stock_check_approver_line_user_ids or ""
         return {part.strip() for part in raw.split(",") if part.strip()}
+
+    @property
+    def lease_idle_seconds(self) -> int:
+        """Seconds without activity before unfinished leases return to the pool."""
+        raw = self.stock_check_lease_idle_seconds or self.stock_check_lease_ttl_seconds or 300
+        return max(60, int(raw))
 
     @property
     def bill_prefix(self) -> str:
