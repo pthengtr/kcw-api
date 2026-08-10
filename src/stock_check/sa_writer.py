@@ -56,12 +56,21 @@ def _next_billno(conn, prefix: str, when: datetime) -> str:
     return candidate
 
 
+def _sa_remarks(operator_name: str, approver_name: str | None = None) -> str:
+    """SIMAS.REMARKS is typically short (~30); encode counter + approver."""
+    op = (operator_name or "STOCK").strip() or "STOCK"
+    ap = (approver_name or "").strip()
+    raw = f"SC:{op}/{ap}" if ap else f"SC:{op}"
+    return raw[:30]
+
+
 def post_stock_adjustment(
     *,
     settings: StockCheckSettings,
     product: ProductRow,
     variance: float,
     operator_name: str,
+    approver_name: str | None = None,
     engine: Engine | None = None,
 ) -> PostedAdjustment:
     """
@@ -70,6 +79,8 @@ def post_stock_adjustment(
     variance = counted - system:
       < 0 → BILLTYPE 1, +abs qty (stock out)
       > 0 → BILLTYPE 2, -abs qty (stock in)
+
+    SALE = operator; REMARKS = SC:{operator}/{approver} (truncated to 30).
     """
     if abs(variance) < 1e-9:
         raise Parts9WriteError("variance is zero; no bill", code="zero_variance")
@@ -89,7 +100,7 @@ def post_stock_adjustment(
         qty_signed = -abs_qty
 
     jourmode = "2"  # non-VAT path like many zero-amount docs
-    remarks = f"SC:{operator_name}"[:30]
+    remarks = _sa_remarks(operator_name, approver_name)
     new_qty = float(product.qtyoh2) + float(variance)
 
     try:
