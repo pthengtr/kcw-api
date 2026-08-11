@@ -735,9 +735,16 @@ def product_page(
     qty_disp = f"{qty:.3g}"
     badge = _pool_badge_html(item)
     badge_row = f"<div style='margin-bottom:10px'>{badge}</div>" if badge else ""
+    blocked = bool(item.get("submit_blocked"))
+    block_reason = item.get("block_reason") or ""
+    block_banner = ""
+    if blocked and block_reason:
+        block_banner = f"<div class='flash err' style='margin-bottom:12px'>{escape(block_reason)}</div>"
+    disabled_attr = " disabled" if blocked else ""
     body = f"""
     <div class="card soft">
       {badge_row}
+      {block_banner}
       <div class="loc">{escape(loc)}</div>
       <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(item['bcode'])}</div>
       <div class="descr" style="-webkit-line-clamp:4">{escape(item.get('descr') or '')}</div>
@@ -761,7 +768,7 @@ def product_page(
           <label>นับได้กี่ชิ้น</label>
           <input type="text" name="counted_qty" id="counted-qty"
             inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*"
-            autocomplete="off" placeholder="เช่น {qty:.0f}"/>
+            autocomplete="off" placeholder="เช่น {qty:.0f}"{disabled_attr}/>
           <p class="hint">พิมพ์ตัวเลขอย่างเดียว (คีย์บอร์ดโทรศัพท์ใช้ได้)</p>
         </div>
         <div id="panel-diff" hidden>
@@ -773,18 +780,18 @@ def product_page(
           <label>จำนวนที่ต่าง (ไม่ติดลบ)</label>
           <input type="text" name="diff_amount" id="diff-amount"
             inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*"
-            autocomplete="off" placeholder="เช่น 2"/>
+            autocomplete="off" placeholder="เช่น 2"{disabled_attr}/>
           <div class="preview" id="diff-preview">ระบบ {qty_disp} → จะได้ …</div>
         </div>
         <label>หมายเหตุ</label>
-        <input type="text" name="notes" maxlength="120" placeholder="ถ้ามี"/>
+        <input type="text" name="notes" maxlength="120" placeholder="ถ้ามี"{disabled_attr}/>
         <div style="height:12px"></div>
-        <button type="submit" id="save-btn">บันทึกผลนับ</button>
+        <button type="submit" id="save-btn"{disabled_attr}>บันทึกผลนับ</button>
         <div style="height:8px"></div>
-        <button class="secondary" type="submit" name="mark_correct" value="1">ถูกต้องตามระบบ ({qty_disp})</button>
+        <button class="secondary" type="submit" name="mark_correct" value="1"{disabled_attr}>ถูกต้องตามระบบ ({qty_disp})</button>
       </form>
       <form method="post" action="/stock-check/product/{escape(item['bcode'])}/skip" style="margin-top:8px">
-        <button class="ghost" type="submit">ข้าม / คืนคิว</button>
+        <button class="ghost" type="submit"{disabled_attr}>ข้าม / คืนคิว</button>
       </form>
     </div>
     <script>
@@ -940,9 +947,12 @@ def ondemand_page(
     if results:
         bits.append("<div class='section-title'>ผลค้นหา</div>")
     for item in results or []:
-        flag = ""
-        if item.get("leased_elsewhere"):
-            flag = "<span class='pill warn'>มีคนถืออยู่</span>"
+        flags: list[str] = []
+        if item.get("has_pending_draft"):
+            flags.append("<span class='pill warn'>รออนุมัติ</span>")
+        elif item.get("leased_elsewhere"):
+            flags.append("<span class='pill warn'>มีคนถืออยู่</span>")
+        flag = " ".join(flags)
         bits.append(
             _product_card_html(
                 item,

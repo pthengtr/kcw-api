@@ -406,6 +406,38 @@ class LocalStore:
             )
         return draft_id
 
+    def pending_bcodes(self) -> set[str]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT bcode FROM drafts WHERE status = 'pending'"
+            ).fetchall()
+            return {r["bcode"] for r in rows}
+
+    def get_pending_draft_for_bcode(self, bcode: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM drafts
+                WHERE bcode = ? AND status = 'pending'
+                ORDER BY created_at
+                LIMIT 1
+                """,
+                (bcode,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_active_lease_for_bcode(self, bcode: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM leases
+                WHERE bcode = ? AND status = 'leased'
+                LIMIT 1
+                """,
+                (bcode,),
+            ).fetchone()
+            return dict(row) if row else None
+
     def list_pending_drafts(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
