@@ -5,6 +5,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from src.stock_check.auth import mint_access_token, verify_access_token
 from src.stock_check.daily_pick import (
     CandidateFlags,
@@ -322,3 +324,140 @@ def test_stock_check_command_variants():
     assert is_stock_check_command("Check Stock")
     assert not is_stock_check_command("เช็คราคา")
     assert not is_stock_check_command("update")
+
+
+def _sample_product(bcode: str = "P1", qty: float = 10.0) -> ProductRow:
+    return ProductRow(
+        bcode,
+        "sample",
+        "",
+        "",
+        "A-01",
+        "",
+        qty,
+        "u",
+        1.0,
+        "N",
+    )
+
+
+def test_pending_draft_lookup(tmp_path: Path):
+    store = LocalStore(tmp_path / "pending.sqlite3")
+    assert store.get_pending_draft_for_bcode("P1") is None
+    assert store.pending_bcodes() == set()
+    store.create_draft(
+        {
+            "bcode": "P1",
+            "descr": "x",
+            "location1": "",
+            "location2": "",
+            "system_qty": 5.0,
+            "counted_qty": 3.0,
+            "variance": -2.0,
+            "entry_mode": "total",
+            "source": "ondemand",
+            "status": "pending",
+            "operator_line_user_id": "U1",
+            "operator_name": "A",
+            "notes": None,
+            "completed_at": None,
+        }
+    )
+    assert store.pending_bcodes() == {"P1"}
+    row = store.get_pending_draft_for_bcode("P1")
+    assert row is not None
+    assert row["operator_name"] == "A"
+
+
+def test_submit_blocked_when_pending_draft(tmp_path: Path, monkeypatch):
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "block_pending.sqlite3")
+    sid = store.create_session(line_user_id="U2", display_name="B", is_approver=False, now=1000)
+    store.create_draft(
+        {
+            "bcode": "P1",
+            "descr": "x",
+            "location1": "",
+            "location2": "",
+            "system_qty": 5.0,
+            "counted_qty": 3.0,
+            "variance": -2.0,
+            "entry_mode": "total",
+            "source": "batch",
+            "status": "pending",
+            "operator_line_user_id": "U1",
+            "operator_name": "A",
+            "notes": None,
+            "completed_at": None,
+        }
+    )
+    product = _sample_product()
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: product if bcode == "P1" else None,
+    )
+    svc = StockCheckService(store=store)
+    session = store.get_session(sid)
+    with pytest.raises(ValueError, match="รออนุมัติ"):
+        svc.submit_count(session=session, bcode="P1", difference=-1.0)
+
+
+def test_submit_blocked_when_leased_elsewhere(tmp_path: Path, monkeypatch):
+    from src.stock_check.service import StockCheckService
+
+    now = time.time()
+    store = LocalStore(tmp_path / "block_lease.sqlite3")
+    sid_a = store.create_session(line_user_id="U1", display_name="A", is_approver=False, now=now)
+    sid_b = store.create_session(line_user_id="U2", display_name="B", is_approver=False, now=now)
+    store.claim_leases(session_id=sid_a, bcodes=["P1"], lease_ttl=300, now=now)
+    product = _sample_product()
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: product if bcode == "P1" else None,
+    )
+    svc = StockCheckService(store=store)
+    session_b = store.get_session(sid_b)
+    with pytest.raises(ValueError, match="คนอื่น"):
+        svc.submit_count(session=session_b, bcode="P1", difference=-1.0)
+
+
+def test_submit_allowed_for_lease_holder(tmp_path: Path, monkeypatch):
+    from src.stock_check.service import StockCheckService
+
+    now = time.time()
+    store = LocalStore(tmp_path / "allow_lease.sqlite3")
+    sid = store.create_session(line_user_id="U1", display_name="A", is_approver=False, now=now)
+    store.claim_leases(session_id=sid, bcodes=["P1"], lease_ttl=300, now=now)
+    product = _sample_product()
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: product if bcode == "P1" else None,
+    )
+    svc = StockCheckService(store=store)
+    session = store.get_session(sid)
+    result = svc.submit_count(session=session, bcode="P1", difference=-1.0)
+    assert result["status"] == "pending"
+    assert store.get_pending_draft_for_bcode("P1") is not None
+
+
+def test_submission_flags_on_product_detail(tmp_path: Path, monkeypatch):
+    from src.stock_check.service import StockCheckService
+
+    now = time.time()
+    store = LocalStore(tmp_path / "flags.sqlite3")
+    sid = store.create_session(line_user_id="U1", display_name="A", is_approver=False, now=now)
+    store.claim_leases(session_id=sid, bcodes=["P1"], lease_ttl=300, now=now)
+    product = _sample_product()
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: product if bcode == "P1" else None,
+    )
+    svc = StockCheckService(store=store)
+    card = svc.product_detail("P1", session_id=sid)
+    assert card["submit_blocked"] is False
+
+    sid_b = store.create_session(line_user_id="U2", display_name="B", is_approver=False, now=now + 1)
+    card_b = svc.product_detail("P1", session_id=sid_b)
+    assert card_b["leased_elsewhere"] is True
+    assert card_b["submit_blocked"] is True

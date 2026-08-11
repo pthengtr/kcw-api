@@ -130,6 +130,33 @@ class StockCheckService:
         if lease.get("sales_days_90") is not None:
             card["sales_days_90"] = lease["sales_days_90"]
 
+    def _assert_can_submit(self, *, session_id: str, bcode: str) -> None:
+        if self.store.get_pending_draft_for_bcode(bcode):
+            raise ValueError("สินค้านี้รออนุมัติอยู่แล้ว — รอผู้อนุมัติก่อน")
+        lease = self.store.get_active_lease_for_bcode(bcode)
+        if lease and lease["session_id"] != session_id:
+            raise ValueError("มีพนักงานคนอื่นกำลังนับสินค้านี้อยู่")
+
+    def _submission_flags(self, bcode: str, session_id: str | None) -> dict[str, Any]:
+        pending = self.store.get_pending_draft_for_bcode(bcode)
+        lease = self.store.get_active_lease_for_bcode(bcode)
+        leased_elsewhere = bool(
+            lease and session_id and lease["session_id"] != session_id
+        )
+        has_pending = pending is not None
+        blocked = has_pending or leased_elsewhere
+        reason = None
+        if has_pending:
+            reason = "สินค้านี้รออนุมัติอยู่แล้ว — รอผู้อนุมัติก่อน"
+        elif leased_elsewhere:
+            reason = "มีพนักงานคนอื่นกำลังนับสินค้านี้อยู่"
+        return {
+            "leased_elsewhere": leased_elsewhere,
+            "has_pending_draft": has_pending,
+            "submit_blocked": blocked,
+            "block_reason": reason,
+        }
+
     def _product_card(self, product, audit: dict | None) -> dict[str, Any]:
         data = product.as_dict()
         if audit:
@@ -154,16 +181,16 @@ class StockCheckService:
                 if row["bcode"] == product.bcode:
                     self._apply_lease_pick_meta(card, row)
                     break
+            card.update(self._submission_flags(product.bcode, session_id))
         return card
 
-    def lookup(self, query: str) -> list[dict[str, Any]]:
+    def lookup(self, query: str, *, session_id: str | None = None) -> list[dict[str, Any]]:
         products = lookup_products(query)
         audits = self.store.get_local_audits([p.bcode for p in products])
-        held = self.store.active_leased_bcodes()
         out = []
         for product in products:
             card = self._product_card(product, audits.get(product.bcode))
-            card["leased_elsewhere"] = product.bcode in held
+            card.update(self._submission_flags(product.bcode, session_id))
             out.append(card)
         return out
 
@@ -182,6 +209,8 @@ class StockCheckService:
         product = get_product_by_bcode(bcode)
         if not product:
             raise ValueError("product not found")
+
+        self._assert_can_submit(session_id=session["id"], bcode=product.bcode)
 
         system_qty = float(product.qtyoh2)
         if mark_correct:

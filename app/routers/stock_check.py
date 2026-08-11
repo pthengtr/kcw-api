@@ -159,7 +159,7 @@ async def ondemand(request: Request, q: str = ""):
     user, err = _require_user(request, service)
     if err:
         return err
-    results = service.lookup(q) if q.strip() else []
+    results = service.lookup(q, session_id=user["id"]) if q.strip() else []
     return HTMLResponse(
         ui.ondemand_page(
             user=user,
