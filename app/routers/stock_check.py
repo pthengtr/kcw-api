@@ -72,7 +72,7 @@ def _require_user(request: Request, service: StockCheckService):
 
 
 @router.get("/", response_class=HTMLResponse)
-async def home(request: Request, t: str | None = None):
+def home(request: Request, t: str | None = None):
     settings = _settings()
     if not settings.stock_check_enabled:
         return HTMLResponse("stock check disabled", status_code=404)
@@ -123,7 +123,7 @@ async def home(request: Request, t: str | None = None):
 
 
 @router.post("/take")
-async def take(request: Request, count: int = Form(10)):
+def take(request: Request, count: int = Form(10)):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -137,7 +137,7 @@ async def take(request: Request, count: int = Form(10)):
 
 
 @router.post("/heartbeat")
-async def heartbeat(request: Request):
+def heartbeat(request: Request):
     """Keep unfinished leases alive while the operator is actively counting."""
     service = _service()
     user, err = _require_user(request, service)
@@ -154,7 +154,7 @@ async def heartbeat(request: Request):
 
 
 @router.get("/ondemand", response_class=HTMLResponse)
-async def ondemand(request: Request, q: str = ""):
+def ondemand(request: Request, q: str = ""):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -173,14 +173,15 @@ async def ondemand(request: Request, q: str = ""):
 
 
 @router.post("/ondemand/upload", response_class=HTMLResponse)
-async def ondemand_upload(request: Request, image: UploadFile = File(...)):
+def ondemand_upload(request: Request, image: UploadFile = File(...)):
     """Photo / camera-roll barcode decode — same idea as LINE upload scan."""
     service = _service()
     user, err = _require_user(request, service)
     if err:
         return err
     try:
-        raw = await image.read()
+        # Sync route so PARTS9/sqlite work does not block the event loop.
+        raw = image.file.read()
         if not raw:
             raise ValueError("ไม่พบไฟล์รูป")
         if len(raw) > 12 * 1024 * 1024:
@@ -242,7 +243,7 @@ async def ondemand_upload(request: Request, image: UploadFile = File(...)):
 
 
 @router.get("/product/{bcode}", response_class=HTMLResponse)
-async def product(request: Request, bcode: str, source: str = "batch"):
+def product(request: Request, bcode: str, source: str = "batch"):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -261,7 +262,7 @@ async def product(request: Request, bcode: str, source: str = "batch"):
 
 
 @router.post("/product/{bcode}/submit")
-async def submit_product(
+def submit_product(
     request: Request,
     bcode: str,
     source: str = Form("batch"),
@@ -309,7 +310,7 @@ async def submit_product(
 
 
 @router.post("/product/{bcode}/skip")
-async def skip_product(request: Request, bcode: str):
+def skip_product(request: Request, bcode: str):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -319,7 +320,7 @@ async def skip_product(request: Request, bcode: str):
 
 
 @router.get("/approve", response_class=HTMLResponse)
-async def approve_list(request: Request):
+def approve_list(request: Request):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -337,7 +338,7 @@ async def approve_list(request: Request):
 
 
 @router.post("/approve/{draft_id}")
-async def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
+def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -362,7 +363,7 @@ async def approve_one(request: Request, draft_id: str, confirm_drift: str = Form
 
 
 @router.post("/reject/{draft_id}")
-async def reject_one(request: Request, draft_id: str):
+def reject_one(request: Request, draft_id: str):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -376,7 +377,7 @@ async def reject_one(request: Request, draft_id: str):
 
 @router.get("/end")
 @router.post("/end")
-async def end_session(request: Request):
+def end_session(request: Request):
     service = _service()
     user = _user_from_request(request, service)
     if user:
@@ -393,7 +394,7 @@ async def end_session(request: Request):
 
 
 @router.get("/api/health")
-async def health():
+def health():
     settings = _settings()
     return {
         "enabled": settings.stock_check_enabled,
@@ -404,7 +405,7 @@ async def health():
 
 
 @router.get("/api/write-access")
-async def write_access():
+def write_access():
     from src.stock_check.sa_writer import describe_write_access
 
     settings = _settings()
