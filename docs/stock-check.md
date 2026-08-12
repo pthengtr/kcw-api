@@ -27,8 +27,10 @@ WORKER_NAME=HQ-PC
 Start **only** the stock-check server (does not run Tiger Pay / companion):
 
 ```bat
-run_stock_check.bat
+run_stock_check.vbs
 ```
+
+Or `run_stock_check.bat` directly. The bat is a **supervisor**: it restarts uvicorn if the process exits. Use `stop_stock_check.bat` to quit, `restart_stock_check.bat` to bounce uvicorn under the same supervisor. Prefer the `.vbs` so the process survives SSH disconnect.
 
 Listens on `STOCK_CHECK_LISTEN_PORT` (default **8787**). Routes under `/stock-check/`.
 
