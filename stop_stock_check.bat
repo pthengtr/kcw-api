@@ -18,6 +18,9 @@ echo Stop file created:
 echo %STOP_FILE%
 echo.
 
+echo Stopping scheduled task KCW_StockCheck (if present)...
+schtasks /End /TN "KCW_StockCheck" >nul 2>&1
+
 if exist "%PID_FILE%" (
     set /p STOCK_PID=<"%PID_FILE%"
     if not "!STOCK_PID!"=="" (

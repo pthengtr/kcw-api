@@ -30,7 +30,9 @@ Start **only** the stock-check server (does not run Tiger Pay / companion):
 run_stock_check.vbs
 ```
 
-Or `run_stock_check.bat` directly. The bat is a **supervisor**: it restarts uvicorn if the process exits. Use `stop_stock_check.bat` to quit, `restart_stock_check.bat` to bounce uvicorn under the same supervisor. Prefer the `.vbs` so the process survives SSH disconnect.
+Or `run_stock_check.bat` directly. The bat is a **supervisor**: it restarts uvicorn if the process exits. Use `stop_stock_check.bat` to quit, `restart_stock_check.bat` to bounce uvicorn under the same supervisor.
+
+Prefer `run_stock_check.vbs` over the bat (and over starting from an SSH shell). The VBS registers/runs Windows scheduled task **`KCW_StockCheck`**, which is outside OpenSSH’s kill-on-disconnect job — plain `WshShell.Run` alone is still killed when the SSH session ends.
 
 Listens on `STOCK_CHECK_LISTEN_PORT` (default **8787**). Routes under `/stock-check/`.
 
