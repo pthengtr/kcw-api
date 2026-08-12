@@ -58,7 +58,11 @@ def _user_from_request(request: Request, service: StockCheckService) -> dict | N
     if not session:
         return None
     service.store.touch_session(session_id)
-    return session
+    # Re-evaluate from live config so STOCK_CHECK_APPROVER_LINE_USER_IDS
+    # updates apply without forcing users to open a fresh LINE link.
+    user = dict(session)
+    user["is_approver"] = 1 if user.get("line_user_id") in _settings().approver_ids else 0
+    return user
 
 
 def _require_user(request: Request, service: StockCheckService):
