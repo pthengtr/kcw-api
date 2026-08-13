@@ -134,3 +134,9 @@ def get_stock_check_settings() -> StockCheckSettings:
 
 def clear_stock_check_settings_cache() -> None:
     get_stock_check_settings.cache_clear()
+
+
+def get_live_approver_ids() -> set[str]:
+    """Approver LINE user ids from current env / .env (not process-start cache)."""
+    clear_stock_check_settings_cache()
+    return get_stock_check_settings().approver_ids

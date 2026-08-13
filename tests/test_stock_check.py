@@ -461,3 +461,62 @@ def test_submission_flags_on_product_detail(tmp_path: Path, monkeypatch):
     card_b = svc.product_detail("P1", session_id=sid_b)
     assert card_b["leased_elsewhere"] is True
     assert card_b["submit_blocked"] is True
+
+
+def test_live_approver_ids_refreshes_after_env_change(monkeypatch):
+    from src.stock_check.config import (
+        clear_stock_check_settings_cache,
+        get_live_approver_ids,
+        get_stock_check_settings,
+    )
+
+    monkeypatch.setenv("STOCK_CHECK_APPROVER_LINE_USER_IDS", "U111")
+    clear_stock_check_settings_cache()
+    assert get_stock_check_settings().approver_ids == {"U111"}
+
+    monkeypatch.setenv("STOCK_CHECK_APPROVER_LINE_USER_IDS", "U111,U222")
+    # Cached settings still hold the old list until we ask for live ids.
+    assert get_stock_check_settings().approver_ids == {"U111"}
+    assert get_live_approver_ids() == {"U111", "U222"}
+
+
+def test_approve_page_refreshes_approver_role(tmp_path: Path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.routers import stock_check as sc_router
+    from app.stock_check_app import app
+    from src.stock_check.config import clear_stock_check_settings_cache
+    from src.stock_check.db_local import LocalStore
+    from src.stock_check.service import StockCheckService
+
+    data_dir = tmp_path / "sc_data"
+    monkeypatch.setenv("STOCK_CHECK_ENABLED", "true")
+    monkeypatch.setenv("STOCK_CHECK_BRANCH", "HQ")
+    monkeypatch.setenv("STOCK_CHECK_TOKEN_SECRET", "test-secret")
+    monkeypatch.setenv("STOCK_CHECK_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("STOCK_CHECK_APPROVER_LINE_USER_IDS", "")
+    clear_stock_check_settings_cache()
+
+    store = LocalStore(data_dir / "stock_check.sqlite3")
+    monkeypatch.setattr(sc_router, "_service", lambda: StockCheckService(store=store))
+
+    session_id = store.create_session(
+        line_user_id="Uapprover",
+        display_name="Bellla",
+        is_approver=False,
+        now=1000,
+    )
+    client = TestClient(app)
+    client.cookies.set(sc_router.SESSION_COOKIE, session_id)
+
+    denied = client.get("/stock-check/approve")
+    assert denied.status_code == 200
+    assert "ไม่มีสิทธิ์อนุมัติ" in denied.text
+    assert "ผู้ตรวจ" in denied.text
+
+    monkeypatch.setenv("STOCK_CHECK_APPROVER_LINE_USER_IDS", "Uapprover")
+    allowed = client.get("/stock-check/approve")
+    assert allowed.status_code == 200
+    assert "ไม่มีสิทธิ์อนุมัติ" not in allowed.text
+    assert "ผู้อนุมัติ" in allowed.text
+    assert "คิวว่าง" in allowed.text

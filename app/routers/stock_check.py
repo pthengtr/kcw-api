@@ -12,7 +12,7 @@ from src.barcode import (
 )
 from src.stock_check.audit_mirror import flush_audit_outbox
 from src.stock_check.auth import TokenError, build_entry_url, mint_access_token, verify_access_token
-from src.stock_check.config import get_stock_check_settings
+from src.stock_check.config import get_live_approver_ids, get_stock_check_settings
 from src.stock_check.service import StockCheckService
 from src.stock_check import ui
 
@@ -58,10 +58,11 @@ def _user_from_request(request: Request, service: StockCheckService) -> dict | N
     if not session:
         return None
     service.store.touch_session(session_id)
-    # Re-evaluate from live config so STOCK_CHECK_APPROVER_LINE_USER_IDS
-    # updates apply without forcing users to open a fresh LINE link.
+    # Re-evaluate from live env/.env so STOCK_CHECK_APPROVER_LINE_USER_IDS
+    # updates apply without restart or a fresh LINE link.
     user = dict(session)
-    user["is_approver"] = 1 if user.get("line_user_id") in _settings().approver_ids else 0
+    line_uid = str(user.get("line_user_id") or "").strip()
+    user["is_approver"] = 1 if line_uid in get_live_approver_ids() else 0
     return user
 
 
@@ -90,7 +91,7 @@ def home(request: Request, t: str | None = None):
                 t,
                 secret=settings.stock_check_token_secret,
                 expected_branch=settings.stock_check_branch,
-                approver_ids=settings.approver_ids,
+                approver_ids=get_live_approver_ids(),
             )
         except TokenError as exc:
             return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
