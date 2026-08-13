@@ -6,6 +6,11 @@ from urllib.parse import quote
 from supabase import create_client, Client
 
 from src.bot.line_bot import download_line_message_content
+from src.repos.product_image_events import (
+    EVENT_DELETE,
+    event_type_for_upload,
+    record_product_image_event,
+)
 
 
 SUPABASE_URL = os.getenv("SUPABASE_DB_URL", "").rstrip("/")
@@ -97,6 +102,17 @@ def _clear_session(store: dict[str, dict], line_user_id: str | None):
     line_user_id = (line_user_id or "").strip()
     if line_user_id:
         store.pop(line_user_id, None)
+
+
+def _display_name_from_access(access: dict | None, line_user_id: str | None = None) -> str:
+    access = access or {}
+    name = (
+        access.get("display_name")
+        or access.get("line_display_name")
+        or line_user_id
+        or ""
+    )
+    return str(name).strip()
 
 
 def _extend_session(session: dict):
@@ -477,7 +493,11 @@ def upload_product_image(bcode: str, image_bytes: bytes, content_type: str | Non
     }
 
 
-def handle_image_session_text(line_user_id: str | None, text: str) -> dict | None:
+def handle_image_session_text(
+    line_user_id: str | None,
+    text: str,
+    access: dict | None = None,
+) -> dict | None:
     """
     Intercept text while user is inside image upload/delete session.
 
@@ -522,6 +542,15 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
                     "text": "ลบรูปไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง",
                     "quickReply": _build_delete_quick_reply(len(image_paths)),
                 }
+
+            record_product_image_event(
+                line_user_id=line_user_id,
+                display_name=_display_name_from_access(access, line_user_id),
+                event_type=EVENT_DELETE,
+                bcode=bcode,
+                storage_path=path,
+                bucket=SUPABASE_IMAGE_BUCKET,
+            )
 
             # Refresh current images after deletion
             refreshed_items = _list_expected_image_items(bcode)
@@ -592,7 +621,11 @@ def handle_image_session_text(line_user_id: str | None, text: str) -> dict | Non
     return None
 
 
-def handle_line_image_message(line_user_id: str | None, message_id: str | None) -> dict:
+def handle_line_image_message(
+    line_user_id: str | None,
+    message_id: str | None,
+    access: dict | None = None,
+) -> dict:
     line_user_id = (line_user_id or "").strip()
 
     upload_session = _get_active_session(UPLOAD_SESSIONS, line_user_id)
@@ -623,6 +656,15 @@ def handle_line_image_message(line_user_id: str | None, message_id: str | None) 
             ),
             "quickReply": _build_upload_session_quick_reply(bcode),
         }
+
+    record_product_image_event(
+        line_user_id=line_user_id,
+        display_name=_display_name_from_access(access, line_user_id),
+        event_type=event_type_for_upload(replaced=bool(result.get("replaced"))),
+        bcode=bcode,
+        storage_path=result.get("path"),
+        bucket=SUPABASE_IMAGE_BUCKET,
+    )
 
     upload_session["uploaded_count"] = int(upload_session.get("uploaded_count") or 0) + 1
     _extend_session(upload_session)

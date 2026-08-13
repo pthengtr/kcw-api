@@ -36,7 +36,11 @@ def route_user_text(
     text = (user_text or "").strip()
 
     # Image upload/delete session should block normal text routing until user types "เสร็จ".
-    image_session_reply = handle_image_session_text(line_user_id, text)
+    image_session_reply = handle_image_session_text(
+        line_user_id,
+        text,
+        access=access,
+    )
     if image_session_reply is not None:
         return image_session_reply
 

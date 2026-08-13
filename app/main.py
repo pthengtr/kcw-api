@@ -209,6 +209,7 @@ async def line_webhook(request: Request):
                         reply_payload = handle_line_image_message(
                             line_user_id=line_user_id,
                             message_id=message_id,
+                            access=access,
                         )
 
                 else:
