@@ -2,6 +2,8 @@
 
 Mobile stock-count app on HQ/SYP local servers. Posts invented `SA` / `3SA` bills into PARTS9 `SIMAS`+`SIDET` and updates `ICMAS.QTYOH2` on approve.
 
+**Units:** counts and `QTYOH2` are always in the smallest unit (`ICMAS.UI1`). SA `SIDET` lines use `UI=UI1` and **`MTP=1`** (never `ICMAS.MTP2`). PARTS9 applies stock as `QTY×MTP`; stamping the pack factor blows up on-hand for multi-pack SKUs.
+
 ## Enable on a branch PC
 
 ```env
