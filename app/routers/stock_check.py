@@ -14,6 +14,7 @@ from src.stock_check.audit_mirror import flush_audit_outbox
 from src.stock_check.auth import TokenError, build_entry_url, mint_access_token, verify_access_token
 from src.stock_check.config import get_stock_check_settings
 from src.stock_check.service import StockCheckService
+from src.stock_check.work_mirror import flush_work_outbox
 from src.stock_check import ui
 
 router = APIRouter(prefix="/stock-check", tags=["stock-check"])
@@ -25,7 +26,6 @@ def _q(msg: str) -> str:
     return quote(str(msg), safe="")
 
 
-
 def _service() -> StockCheckService:
     return StockCheckService()
 
@@ -35,7 +35,6 @@ def _settings():
 
 
 def _browser_entry_url(user: dict) -> str:
-    """Fresh ?t= link for opening outside LINE (LINE's own open-in-browser drops the token)."""
     settings = _settings()
     try:
         token = mint_access_token(
@@ -58,11 +57,7 @@ def _user_from_request(request: Request, service: StockCheckService) -> dict | N
     if not session:
         return None
     service.store.touch_session(session_id)
-    # Re-evaluate from live config so STOCK_CHECK_APPROVER_LINE_USER_IDS
-    # updates apply without forcing users to open a fresh LINE link.
-    user = dict(session)
-    user["is_approver"] = 1 if user.get("line_user_id") in _settings().approver_ids else 0
-    return user
+    return dict(session)
 
 
 def _require_user(request: Request, service: StockCheckService):
@@ -75,6 +70,12 @@ def _require_user(request: Request, service: StockCheckService):
     return user, None
 
 
+def _flush_outboxes(service: StockCheckService) -> None:
+    branch = service.settings.stock_check_branch
+    flush_audit_outbox(service.store, branch=branch)
+    flush_work_outbox(service.store, branch=branch)
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, t: str | None = None):
     settings = _settings()
@@ -82,7 +83,7 @@ def home(request: Request, t: str | None = None):
         return HTMLResponse("stock check disabled", status_code=404)
     service = _service()
     service.expire()
-    flush_audit_outbox(service.store, branch=settings.stock_check_branch)
+    _flush_outboxes(service)
 
     if t:
         try:
@@ -90,14 +91,13 @@ def home(request: Request, t: str | None = None):
                 t,
                 secret=settings.stock_check_token_secret,
                 expected_branch=settings.stock_check_branch,
-                approver_ids=settings.approver_ids,
             )
         except TokenError as exc:
             return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
         session_id = service.store.create_session(
             line_user_id=identity.line_user_id,
             display_name=identity.display_name,
-            is_approver=identity.is_approver,
+            is_approver=False,
         )
         resp = RedirectResponse(url="/stock-check/", status_code=303)
         resp.set_cookie(
@@ -142,7 +142,6 @@ def take(request: Request, count: int = Form(10)):
 
 @router.post("/heartbeat")
 def heartbeat(request: Request):
-    """Keep unfinished leases alive while the operator is actively counting."""
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -178,13 +177,11 @@ def ondemand(request: Request, q: str = ""):
 
 @router.post("/ondemand/upload", response_class=HTMLResponse)
 def ondemand_upload(request: Request, image: UploadFile = File(...)):
-    """Photo / camera-roll barcode decode — same idea as LINE upload scan."""
     service = _service()
     user, err = _require_user(request, service)
     if err:
         return err
     try:
-        # Sync route so PARTS9/sqlite work does not block the event loop.
         raw = image.file.read()
         if not raw:
             raise ValueError("ไม่พบไฟล์รูป")
@@ -198,7 +195,7 @@ def ondemand_upload(request: Request, image: UploadFile = File(...)):
         for code in codes:
             safe = sanitize_barcode(code)
             if safe:
-                cleaned.append(safe)        # de-dupe preserve order
+                cleaned.append(safe)
         seen: set[str] = set()
         decoded = []
         for code in cleaned:
@@ -214,7 +211,6 @@ def ondemand_upload(request: Request, image: UploadFile = File(...)):
                 )
             )
         best = pick_best_barcode(decoded) or decoded[0]
-        # Prefer single hit → product page; multiple → list
         if len(decoded) == 1:
             return RedirectResponse(
                 url=f"/stock-check/product/{_q(best)}?source=ondemand",
@@ -223,7 +219,6 @@ def ondemand_upload(request: Request, image: UploadFile = File(...)):
         results = []
         for code in decoded:
             results.extend(service.lookup(code))
-        # unique by bcode
         by_b: dict[str, dict] = {}
         for row in results:
             by_b[row["bcode"]] = row
@@ -341,6 +336,31 @@ def approve_list(request: Request):
     )
 
 
+@router.get("/approve/{draft_id}/review", response_class=HTMLResponse)
+def approve_review(request: Request, draft_id: str):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        review = service.drift_review(draft_id)
+        draft = review["draft"]
+        if str(draft.get("operator_line_user_id") or "").strip() == str(user.get("line_user_id") or "").strip():
+            return RedirectResponse(
+                url=f"/stock-check/approve?err={_q('ไม่สามารถอนุมัติรายการของตัวเอง')}",
+                status_code=303,
+            )
+        return HTMLResponse(
+            ui.drift_review_page(
+                user=user,
+                review=review,
+                browser_entry_url=_browser_entry_url(user),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(url=f"/stock-check/approve?err={_q(exc)}", status_code=303)
+
+
 @router.post("/approve/{draft_id}")
 def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
     service = _service()
@@ -353,6 +373,11 @@ def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
             approver_session=user,
             confirm_drift=confirm_drift == "1",
         )
+        if not result.get("ok") and result.get("code") == "qty_drift":
+            return RedirectResponse(
+                url=f"/stock-check/approve/{draft_id}/review",
+                status_code=303,
+            )
         if not result.get("ok"):
             return RedirectResponse(
                 url=f"/stock-check/approve?err={_q(result.get('message') or result.get('code'))}",
@@ -360,7 +385,7 @@ def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
             )
         bill = result.get("billno")
         msg = f"โพสต์แล้ว {bill}" if bill else "เสร็จสิ้น"
-        flush_audit_outbox(service.store, branch=service.settings.stock_check_branch)
+        _flush_outboxes(service)
         return RedirectResponse(url=f"/stock-check/approve?ok={_q(msg)}", status_code=303)
     except Exception as exc:  # noqa: BLE001
         return RedirectResponse(url=f"/stock-check/approve?err={_q(exc)}", status_code=303)
@@ -374,9 +399,75 @@ def reject_one(request: Request, draft_id: str):
         return err
     try:
         service.reject_draft(draft_id=draft_id, approver_session=user)
+        _flush_outboxes(service)
         return RedirectResponse(url=f"/stock-check/approve?ok={_q('ปฏิเสธแล้ว')}", status_code=303)
     except Exception as exc:  # noqa: BLE001
         return RedirectResponse(url=f"/stock-check/approve?err={_q(exc)}", status_code=303)
+
+
+@router.get("/draft/{draft_id}/edit", response_class=HTMLResponse)
+def edit_draft_page(request: Request, draft_id: str):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    draft = service.store.get_draft(draft_id)
+    if not draft or draft["status"] != "pending":
+        return HTMLResponse("ไม่พบรายการหรือไม่อยู่ในสถานะรออนุมัติ", status_code=404)
+    if str(draft.get("operator_line_user_id") or "").strip() != str(user.get("line_user_id") or "").strip():
+        return HTMLResponse("แก้ไขได้เฉพาะรายการของตัวเอง", status_code=403)
+    product = service.product_detail(draft["bcode"])
+    if not product:
+        return HTMLResponse("ไม่พบสินค้า", status_code=404)
+    return HTMLResponse(
+        ui.draft_edit_page(
+            user=user,
+            draft=draft,
+            product=product,
+            flash=request.query_params.get("ok"),
+            error=request.query_params.get("err"),
+            browser_entry_url=_browser_entry_url(user),
+        )
+    )
+
+
+@router.post("/draft/{draft_id}/edit")
+def edit_draft_submit(
+    request: Request,
+    draft_id: str,
+    counted_qty: str = Form(""),
+    difference: str = Form(""),
+    diff_amount: str = Form(""),
+    diff_dir: str = Form(""),
+    notes: str = Form(""),
+):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        kwargs: dict = {"draft_id": draft_id, "session": user, "notes": notes or None}
+        counted_raw = counted_qty.strip().replace(",", ".")
+        amount_raw = diff_amount.strip().replace(",", ".")
+        diff_raw = difference.strip().replace(",", ".")
+        if counted_raw:
+            kwargs["counted_qty"] = float(counted_raw)
+        elif amount_raw:
+            abs_amt = abs(float(amount_raw))
+            sign = -1.0 if (diff_dir or "minus").lower() in {"minus", "-", "dec", "ลด"} else 1.0
+            kwargs["difference"] = sign * abs_amt
+        elif diff_raw:
+            kwargs["difference"] = float(diff_raw)
+        else:
+            raise ValueError("กรอกจำนวนนับหรือส่วนต่าง")
+        result = service.edit_pending_draft(**kwargs)
+        msg = f"แก้ไขแล้ว ต่าง {result['variance']:+.3g}"
+        return RedirectResponse(url=f"/stock-check/approve?ok={_q(msg)}", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(
+            url=f"/stock-check/draft/{draft_id}/edit?err={_q(exc)}",
+            status_code=303,
+        )
 
 
 @router.get("/end")
@@ -391,7 +482,6 @@ def end_session(request: Request):
         msg = "ไม่มีเซสชัน"
     resp = RedirectResponse(url=f"/stock-check/?ok={msg}", status_code=303)
     resp.delete_cookie(SESSION_COOKIE)
-    # After deleting cookie, home will 401 — better show a simple goodbye
     return HTMLResponse(
         f"<h1>จบงานแล้ว</h1><p>{msg}</p><p>เปิดลิงก์จาก LINE อีกครั้งเพื่อเริ่มใหม่</p>"
     )
@@ -405,6 +495,23 @@ def health():
         "branch": settings.stock_check_branch,
         "bill_prefix": settings.bill_prefix,
         "public_base_url": settings.resolved_public_base_url,
+    }
+
+
+@router.get("/api/work-summary")
+def work_summary(request: Request):
+    """JSON work KPI rollup for kcw-v2 dashboards."""
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    summary = service.work_summary_today(str(user.get("line_user_id") or ""))
+    return {
+        "ok": True,
+        "branch": service.settings.stock_check_branch,
+        "line_user_id": user.get("line_user_id"),
+        "display_name": user.get("display_name"),
+        "summary": summary,
     }
 
 

@@ -81,6 +81,30 @@ CREATE TABLE IF NOT EXISTS audit_outbox (
   last_error TEXT,
   attempts INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS work_events (
+  id TEXT PRIMARY KEY,
+  line_user_id TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  bcode TEXT,
+  draft_id TEXT,
+  variance REAL,
+  source TEXT,
+  created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS work_events_user_created_idx
+  ON work_events(line_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS work_outbox (
+  id TEXT PRIMARY KEY,
+  payload_json TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  sent_at REAL,
+  last_error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -104,6 +128,10 @@ class LocalStore:
         for name, sql in alterations.items():
             if name not in cols:
                 conn.execute(sql)
+
+        draft_cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(drafts)").fetchall()}
+        if "edit_count" not in draft_cols:
+            conn.execute("ALTER TABLE drafts ADD COLUMN edit_count INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -500,6 +528,122 @@ class LocalStore:
             conn.execute(
                 """
                 UPDATE audit_outbox
+                SET attempts = attempts + 1, last_error = ?
+                WHERE id = ?
+                """,
+                (error[:500], item_id),
+            )
+
+    def record_work_event(
+        self,
+        *,
+        line_user_id: str,
+        display_name: str,
+        event_type: str,
+        bcode: str | None = None,
+        draft_id: str | None = None,
+        variance: float | None = None,
+        source: str | None = None,
+        now: float | None = None,
+    ) -> str:
+        ts = now if now is not None else time.time()
+        event_id = str(uuid.uuid4())
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO work_events (
+                  id, line_user_id, display_name, event_type,
+                  bcode, draft_id, variance, source, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    line_user_id,
+                    display_name,
+                    event_type,
+                    bcode,
+                    draft_id,
+                    variance,
+                    source,
+                    ts,
+                ),
+            )
+        payload = {
+            "id": event_id,
+            "line_user_id": line_user_id,
+            "display_name": display_name,
+            "event_type": event_type,
+            "bcode": bcode,
+            "draft_id": draft_id,
+            "variance": variance,
+            "source": source,
+            "created_at": ts,
+        }
+        self.enqueue_work_outbox(json.dumps(payload, ensure_ascii=False))
+        return event_id
+
+    def summarize_work_events(
+        self,
+        *,
+        line_user_id: str,
+        since_ts: float,
+        until_ts: float | None = None,
+    ) -> dict[str, int]:
+        until = until_ts if until_ts is not None else time.time()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT event_type, COUNT(*) AS n
+                FROM work_events
+                WHERE line_user_id = ?
+                  AND created_at >= ?
+                  AND created_at < ?
+                GROUP BY event_type
+                """,
+                (line_user_id, since_ts, until),
+            ).fetchall()
+        out: dict[str, int] = {}
+        for row in rows:
+            out[str(row["event_type"])] = int(row["n"])
+        return out
+
+    def enqueue_work_outbox(self, payload_json: str) -> str:
+        item_id = str(uuid.uuid4())
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO work_outbox (id, payload_json, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (item_id, payload_json, time.time()),
+            )
+        return item_id
+
+    def list_unsent_work_outbox(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM work_outbox
+                WHERE sent_at IS NULL
+                ORDER BY created_at
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def mark_work_outbox_sent(self, item_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE work_outbox SET sent_at = ?, last_error = NULL WHERE id = ?",
+                (time.time(), item_id),
+            )
+
+    def mark_work_outbox_error(self, item_id: str, error: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE work_outbox
                 SET attempts = attempts + 1, last_error = ?
                 WHERE id = ?
                 """,

@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from src.stock_check.config import StockCheckSettings, get_stock_check_settings
 from src.stock_check.daily_pick import pick_daily_products
 from src.stock_check.db_local import LocalStore
 from src.stock_check.parts9 import (
     get_product_by_bcode,
+    list_stock_movements,
     lookup_products,
 )
 from src.stock_check.sa_writer import Parts9WriteError, post_stock_adjustment
+
+BANGKOK = ZoneInfo("Asia/Bangkok")
 
 
 class StockCheckService:
@@ -23,18 +28,41 @@ class StockCheckService:
         self.settings = settings or get_stock_check_settings()
         self.store = store or LocalStore(self.settings.sqlite_path)
 
+    @staticmethod
+    def _line_id(session: dict[str, Any]) -> str:
+        return str(session.get("line_user_id") or "").strip()
+
+    @staticmethod
+    def _assert_can_approve(draft: dict[str, Any], session: dict[str, Any]) -> None:
+        if StockCheckService._line_id(session) == str(draft.get("operator_line_user_id") or "").strip():
+            raise PermissionError("cannot approve own draft")
+
+    def _record_work(
+        self,
+        session: dict[str, Any],
+        event_type: str,
+        *,
+        bcode: str | None = None,
+        draft_id: str | None = None,
+        variance: float | None = None,
+        source: str | None = None,
+    ) -> None:
+        self.store.record_work_event(
+            line_user_id=self._line_id(session),
+            display_name=str(session.get("display_name") or ""),
+            event_type=event_type,
+            bcode=bcode,
+            draft_id=draft_id,
+            variance=variance,
+            source=source,
+        )
+
     def expire(self) -> None:
         self.store.expire_stale_leases()
 
     def take_n(self, session_id: str, count: int, *, with_stock_only: bool = True) -> list[dict[str, Any]]:
-        """Lease next SKUs using weighted everyday ABC / risk groups.
-
-        ``with_stock_only`` is kept for API compatibility; negative-stock
-        anomalies are always eligible (override). Active leases and pending
-        drafts are excluded; returned SKUs are claim_lease'd for this session.
-        Idle TTL starts now and is refreshed by count activity / heartbeat.
-        """
-        del with_stock_only  # daily rules decide stock filters
+        """Lease next SKUs using weighted everyday ABC / risk groups."""
+        del with_stock_only
         self.expire()
         count = max(1, min(int(count), 50))
         held = self.store.active_leased_bcodes()
@@ -65,7 +93,6 @@ class StockCheckService:
             lease_ttl=idle,
             now=now,
         )
-        # Keep any prior unfinished leases alive while taking more.
         self.store.extend_leases(session_id, lease_ttl=idle, now=now)
         by_code = {p.bcode: (p, flags) for p, flags in picked}
         cards: list[dict[str, Any]] = []
@@ -83,7 +110,6 @@ class StockCheckService:
         return cards
 
     def bump_leases(self, session_id: str) -> int:
-        """Refresh idle timer for this session's active leases."""
         self.expire()
         return self.store.extend_leases(
             session_id,
@@ -105,7 +131,6 @@ class StockCheckService:
             card = self._product_card(product, audits.get(product.bcode))
             self._apply_lease_pick_meta(card, row)
             cards.append(card)
-        # Keep take order (leased_at), not location sort — location walk is in picker.
         return cards
 
     @staticmethod
@@ -226,7 +251,7 @@ class StockCheckService:
             raise ValueError("provide counted_qty, difference, or mark_correct")
 
         variance = counted - system_qty
-        operator_id = session["line_user_id"]
+        operator_id = self._line_id(session)
         operator_name = session["display_name"]
         self.bump_leases(session["id"])
 
@@ -264,6 +289,14 @@ class StockCheckService:
                 source=source,
                 billno=None,
             )
+            self._record_work(
+                session,
+                "count_correct",
+                bcode=product.bcode,
+                draft_id=draft_id,
+                variance=0.0,
+                source=source,
+            )
             return {"ok": True, "status": "completed", "draft_id": draft_id, "variance": 0.0}
 
         draft_id = self.store.create_draft(
@@ -285,6 +318,14 @@ class StockCheckService:
             }
         )
         self.store.mark_lease_done(session["id"], product.bcode)
+        self._record_work(
+            session,
+            "count_variance",
+            bcode=product.bcode,
+            draft_id=draft_id,
+            variance=variance,
+            source=source,
+        )
         return {
             "ok": True,
             "status": "pending",
@@ -292,6 +333,106 @@ class StockCheckService:
             "variance": variance,
             "system_qty": system_qty,
             "counted_qty": counted,
+        }
+
+    def edit_pending_draft(
+        self,
+        *,
+        draft_id: str,
+        session: dict[str, Any],
+        counted_qty: float | None = None,
+        difference: float | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        draft = self.store.get_draft(draft_id)
+        if not draft:
+            raise ValueError("draft not found")
+        if draft["status"] != "pending":
+            raise ValueError("draft not pending")
+        if self._line_id(session) != str(draft.get("operator_line_user_id") or "").strip():
+            raise PermissionError("only owner can edit draft")
+
+        product = get_product_by_bcode(draft["bcode"])
+        if not product:
+            raise ValueError("product not found")
+
+        live_qty = float(product.qtyoh2)
+        if difference is not None:
+            counted = live_qty + float(difference)
+        elif counted_qty is not None:
+            counted = float(counted_qty)
+        else:
+            raise ValueError("provide counted_qty or difference")
+
+        variance = counted - live_qty
+        edit_count = int(draft.get("edit_count") or 0) + 1
+        self.store.update_draft(
+            draft_id,
+            counted_qty=counted,
+            variance=variance,
+            system_qty=live_qty,
+            notes=notes if notes is not None else draft.get("notes"),
+            edit_count=edit_count,
+        )
+        self._record_work(
+            session,
+            "count_edit",
+            bcode=draft["bcode"],
+            draft_id=draft_id,
+            variance=variance,
+            source=draft.get("source"),
+        )
+        return {
+            "ok": True,
+            "draft_id": draft_id,
+            "counted_qty": counted,
+            "variance": variance,
+            "system_qty": live_qty,
+        }
+
+    def drift_review(self, draft_id: str) -> dict[str, Any]:
+        draft = self.store.get_draft(draft_id)
+        if not draft:
+            raise ValueError("draft not found")
+        if draft["status"] != "pending":
+            raise ValueError("draft not pending")
+
+        product = get_product_by_bcode(draft["bcode"])
+        if not product:
+            raise ValueError("product not found")
+
+        live_qty = float(product.qtyoh2)
+        expected_system = float(draft["system_qty"])
+        counted = float(draft["counted_qty"])
+        drift = live_qty - expected_system
+        new_variance = counted - live_qty
+
+        since = datetime.fromtimestamp(float(draft["created_at"]), tz=BANGKOK)
+        movements = list_stock_movements(draft["bcode"], since=since)
+        explained = sum(m.qty_delta for m in movements)
+        drift_gap = drift - explained
+
+        return {
+            "draft": draft,
+            "product": product.as_dict(),
+            "draft_system_qty": expected_system,
+            "live_qty": live_qty,
+            "counted_qty": counted,
+            "drift": drift,
+            "new_variance": new_variance,
+            "movements": [
+                {
+                    "billno": m.billno,
+                    "billdate": m.billdate.isoformat(),
+                    "billtime": m.billtime,
+                    "kind_label": m.kind_label,
+                    "qty_delta": m.qty_delta,
+                }
+                for m in movements
+            ],
+            "explained_delta": explained,
+            "unexplained_delta": drift_gap,
+            "drift_fully_explained": abs(drift_gap) < 1e-6 if movements else False,
         }
 
     def skip_item(self, session_id: str, bcode: str) -> None:
@@ -305,13 +446,12 @@ class StockCheckService:
         approver_session: dict[str, Any],
         confirm_drift: bool = False,
     ) -> dict[str, Any]:
-        if not approver_session.get("is_approver"):
-            raise PermissionError("approver role required")
         draft = self.store.get_draft(draft_id)
         if not draft:
             raise ValueError("draft not found")
         if draft["status"] != "pending":
             raise ValueError(f"draft status is {draft['status']}")
+        self._assert_can_approve(draft, approver_session)
 
         product = get_product_by_bcode(draft["bcode"])
         if not product:
@@ -324,12 +464,12 @@ class StockCheckService:
                 "ok": False,
                 "code": "qty_drift",
                 "message": "system qty changed since count",
+                "draft_id": draft_id,
                 "draft_system_qty": expected_system,
                 "live_qty": live_qty,
                 "variance": float(draft["variance"]),
             }
 
-        # Recompute variance against live qty using counted qty
         counted = float(draft["counted_qty"])
         variance = counted - live_qty
         if abs(variance) < 1e-9:
@@ -339,7 +479,7 @@ class StockCheckService:
                 variance=0.0,
                 system_qty=live_qty,
                 completed_at=time.time(),
-                approver_line_user_id=approver_session["line_user_id"],
+                approver_line_user_id=self._line_id(approver_session),
                 approver_name=approver_session["display_name"],
                 post_error=None,
             )
@@ -356,8 +496,16 @@ class StockCheckService:
                 variance=0.0,
                 source=draft["source"],
                 billno=None,
-                approver_id=approver_session["line_user_id"],
+                approver_id=self._line_id(approver_session),
                 approver_name=approver_session["display_name"],
+            )
+            self._record_work(
+                approver_session,
+                "audit_approve",
+                bcode=product.bcode,
+                draft_id=draft_id,
+                variance=0.0,
+                source=draft["source"],
             )
             return {"ok": True, "status": "completed", "variance": 0.0}
 
@@ -381,7 +529,7 @@ class StockCheckService:
             system_qty=live_qty,
             posted_billno=posted.billno,
             completed_at=time.time(),
-            approver_line_user_id=approver_session["line_user_id"],
+            approver_line_user_id=self._line_id(approver_session),
             approver_name=approver_session["display_name"],
             post_error=None,
         )
@@ -398,8 +546,16 @@ class StockCheckService:
             variance=variance,
             source=draft["source"],
             billno=posted.billno,
-            approver_id=approver_session["line_user_id"],
+            approver_id=self._line_id(approver_session),
             approver_name=approver_session["display_name"],
+        )
+        self._record_work(
+            approver_session,
+            "audit_approve",
+            bcode=product.bcode,
+            draft_id=draft_id,
+            variance=variance,
+            source=draft["source"],
         )
         return {
             "ok": True,
@@ -410,17 +566,36 @@ class StockCheckService:
         }
 
     def reject_draft(self, *, draft_id: str, approver_session: dict[str, Any]) -> None:
-        if not approver_session.get("is_approver"):
-            raise PermissionError("approver role required")
         draft = self.store.get_draft(draft_id)
         if not draft or draft["status"] != "pending":
             raise ValueError("draft not pending")
+        is_owner = self._line_id(approver_session) == str(draft.get("operator_line_user_id") or "").strip()
+        if not is_owner:
+            self._assert_can_approve(draft, approver_session)
+
         self.store.update_draft(
             draft_id,
             status="rejected",
-            approver_line_user_id=approver_session["line_user_id"],
+            approver_line_user_id=self._line_id(approver_session),
             approver_name=approver_session["display_name"],
             completed_at=time.time(),
+        )
+        self._record_work(
+            approver_session,
+            "audit_reject",
+            bcode=draft["bcode"],
+            draft_id=draft_id,
+            variance=float(draft.get("variance") or 0),
+            source=draft.get("source"),
+        )
+
+    def work_summary_today(self, line_user_id: str) -> dict[str, int]:
+        now = datetime.now(BANGKOK)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        since_ts = start.timestamp()
+        return self.store.summarize_work_events(
+            line_user_id=line_user_id,
+            since_ts=since_ts,
         )
 
     def _enqueue_mirror(self, **payload: Any) -> None:

@@ -14,7 +14,6 @@ class StockCheckIdentity:
     line_user_id: str
     display_name: str
     branch: str
-    is_approver: bool
 
 
 class TokenError(ValueError):
@@ -65,7 +64,6 @@ def verify_access_token(
     *,
     secret: str,
     expected_branch: str,
-    approver_ids: set[str],
     now: float | None = None,
 ) -> StockCheckIdentity:
     if not secret:
@@ -96,7 +94,6 @@ def verify_access_token(
         line_user_id=uid,
         display_name=name,
         branch=branch,
-        is_approver=uid in approver_ids,
     )
 
 
