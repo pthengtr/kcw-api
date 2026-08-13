@@ -610,3 +610,66 @@ def test_drift_redirects_to_review(tmp_path: Path, monkeypatch):
     resp = client.post(f"/stock-check/approve/{draft_id}", follow_redirects=False)
     assert resp.status_code == 303
     assert f"/stock-check/approve/{draft_id}/review" in resp.headers["location"]
+
+
+def test_sa_writer_always_posts_mtp_one_for_pack_skus():
+    """SIDET.MTP must be 1 even when ICMAS.MTP2 is a large pack factor."""
+    from unittest.mock import MagicMock
+
+    from src.stock_check.config import StockCheckSettings
+    from src.stock_check.sa_writer import post_stock_adjustment
+
+    product = ProductRow(
+        bcode="15010490",
+        descr="bearing",
+        pcode="P",
+        mcode="M",
+        location1="A1",
+        location2="",
+        qtyoh2=13.0,
+        ui1="หน่วย",
+        mtp2=80.0,
+        canceled="N",
+    )
+    settings = StockCheckSettings.model_construct(
+        stock_check_branch="HQ",
+        pos_mssql_writer_username="writer",
+        pos_mssql_writer_password="x",
+    )
+
+    captured: list[dict] = []
+
+    def _execute(sql, params=None):
+        sql_s = str(sql)
+        captured.append({"sql": sql_s, "params": dict(params or {})})
+        result = MagicMock()
+        if "MAX(BILLNO)" in sql_s:
+            result.mappings.return_value.first.return_value = {"max_no": None}
+        elif "SELECT QTYOH2" in sql_s:
+            result.mappings.return_value.first.return_value = {"QTYOH2": 13.0}
+        else:
+            result.mappings.return_value.first.return_value = None
+        return result
+
+    conn = MagicMock()
+    conn.execute.side_effect = _execute
+    eng = MagicMock()
+    eng.begin.return_value.__enter__.return_value = conn
+    eng.begin.return_value.__exit__.return_value = None
+
+    posted = post_stock_adjustment(
+        settings=settings,
+        product=product,
+        variance=-3.0,
+        operator_name="Tester",
+        approver_name="Approver",
+        engine=eng,
+    )
+    assert posted.billtype == "1"
+    assert posted.qty_signed == 3.0
+    assert posted.new_qtyoh2 == 10.0
+
+    sidet = next(c for c in captured if "INSERT INTO dbo.SIDET" in c["sql"])
+    assert sidet["params"]["mtp"] == 1.0
+    assert sidet["params"]["ui"] == "หน่วย"
+    assert sidet["params"]["qty"] == 3.0

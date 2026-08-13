@@ -76,9 +76,11 @@ def post_stock_adjustment(
     """
     Insert SIMAS+SIDET and update ICMAS.QTYOH2 in one transaction.
 
-    variance = counted - system:
+    variance = counted - system (both in smallest units / QTYOH2):
       < 0 → BILLTYPE 1, +abs qty (stock out)
       > 0 → BILLTYPE 2, -abs qty (stock in)
+
+    SIDET.UI = ICMAS.UI1; SIDET.MTP is always 1 (qty already in UI1 units).
 
     SALE = operator; REMARKS = SC:{operator}/{approver} (truncated to 30).
     """
@@ -181,8 +183,11 @@ def post_stock_adjustment(
                     "detail": (product.descr or "")[:60],
                     "location1": (product.location1 or "")[:10] or None,
                     "qty": qty_signed,
+                    # Count / QTYOH2 are always in smallest units (UI1). SIDET.MTP is the
+                    # pack multiplier into those units — must be 1 here. Stamping ICMAS.MTP2
+                    # made PARTS9 apply QTY×MTP2 and blow up on-hand for pack SKUs.
                     "ui": (product.ui1 or "หน่วย")[:10],
-                    "mtp": product.mtp2 or 1.0,
+                    "mtp": 1.0,
                 },
             )
             conn.execute(
