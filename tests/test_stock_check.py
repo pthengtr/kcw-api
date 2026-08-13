@@ -40,12 +40,10 @@ def test_token_roundtrip():
         token,
         secret="test-secret",
         expected_branch="HQ",
-        approver_ids={"U999"},
         now=1_700_000_010,
     )
     assert ident.line_user_id == "U123"
     assert ident.display_name == "Tester"
-    assert ident.is_approver is False
 
 
 def test_resolve_url_prefers_explicit(monkeypatch):
@@ -66,25 +64,6 @@ def test_resolve_url_autodetect(monkeypatch):
     )
     url = resolve_stock_check_public_base_url(explicit="", port=None)
     assert url == "http://192.168.1.50:8787"
-
-
-def test_approver_flag():
-    token = mint_access_token(
-        secret="s",
-        line_user_id="U999",
-        display_name="Boss",
-        branch="SYP",
-        ttl_seconds=60,
-        now=100,
-    )
-    ident = verify_access_token(
-        token,
-        secret="s",
-        expected_branch="SYP",
-        approver_ids={"U999"},
-        now=110,
-    )
-    assert ident.is_approver is True
 
 
 def test_lease_release_on_session_end(tmp_path: Path):
@@ -461,3 +440,173 @@ def test_submission_flags_on_product_detail(tmp_path: Path, monkeypatch):
     card_b = svc.product_detail("P1", session_id=sid_b)
     assert card_b["leased_elsewhere"] is True
     assert card_b["submit_blocked"] is True
+
+
+def _pending_draft(**overrides):
+    base = {
+        "bcode": "P1",
+        "descr": "Test",
+        "location1": "A1",
+        "location2": "",
+        "system_qty": 10.0,
+        "counted_qty": 8.0,
+        "variance": -2.0,
+        "entry_mode": "total",
+        "source": "batch",
+        "status": "pending",
+        "operator_line_user_id": "U1",
+        "operator_name": "Alice",
+        "notes": None,
+        "completed_at": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_self_approve_blocked(tmp_path: Path):
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "mc.sqlite3")
+    draft_id = store.create_draft(_pending_draft())
+    svc = StockCheckService(store=store)
+    session = {"line_user_id": "U1", "display_name": "Alice", "id": "s1"}
+    with pytest.raises(PermissionError, match="own draft"):
+        svc.approve_draft(draft_id=draft_id, approver_session=session)
+
+
+def test_cross_user_approve_allowed(tmp_path: Path, monkeypatch):
+    from src.stock_check.parts9 import ProductRow
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "mc2.sqlite3")
+    draft_id = store.create_draft(_pending_draft())
+    svc = StockCheckService(store=store)
+    product = ProductRow(
+        bcode="P1",
+        descr="Test",
+        pcode="",
+        mcode="",
+        location1="A1",
+        location2="",
+        qtyoh2=10.0,
+        ui1="",
+        mtp2=1.0,
+        canceled="N",
+    )
+
+    class _Posted:
+        billno = "SA001"
+        new_qtyoh2 = 8.0
+
+    monkeypatch.setattr("src.stock_check.service.get_product_by_bcode", lambda bcode: product)
+    monkeypatch.setattr(
+        "src.stock_check.service.post_stock_adjustment",
+        lambda **kwargs: _Posted(),
+    )
+    checker = {"line_user_id": "U2", "display_name": "Bob", "id": "s2"}
+    result = svc.approve_draft(draft_id=draft_id, approver_session=checker)
+    assert result["ok"] is True
+    assert result["status"] == "posted"
+
+
+def test_owner_can_edit_pending_draft(tmp_path: Path, monkeypatch):
+    from src.stock_check.parts9 import ProductRow
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "edit.sqlite3")
+    draft_id = store.create_draft(_pending_draft())
+    svc = StockCheckService(store=store)
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: ProductRow(
+            bcode="P1",
+            descr="Test",
+            pcode="",
+            mcode="",
+            location1="A1",
+            location2="",
+            qtyoh2=9.0,
+            ui1="",
+            mtp2=1.0,
+            canceled="N",
+        ),
+    )
+    owner = {"line_user_id": "U1", "display_name": "Alice", "id": "s1"}
+    result = svc.edit_pending_draft(
+        draft_id=draft_id,
+        session=owner,
+        counted_qty=7.0,
+    )
+    assert result["counted_qty"] == 7.0
+    assert result["variance"] == pytest.approx(-2.0)
+    updated = store.get_draft(draft_id)
+    assert updated["edit_count"] == 1
+
+
+def test_work_events_recorded(tmp_path: Path, monkeypatch):
+    from src.stock_check.parts9 import ProductRow
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "work.sqlite3")
+    sid = store.create_session(line_user_id="U1", display_name="Alice", is_approver=False, now=1000)
+    svc = StockCheckService(store=store)
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: ProductRow(
+            bcode="P1",
+            descr="Test",
+            pcode="",
+            mcode="",
+            location1="A1",
+            location2="",
+            qtyoh2=10.0,
+            ui1="",
+            mtp2=1.0,
+            canceled="N",
+        ),
+    )
+    session = {"line_user_id": "U1", "display_name": "Alice", "id": sid}
+    svc.submit_count(session=session, bcode="P1", counted_qty=8.0)
+    summary = store.summarize_work_events(line_user_id="U1", since_ts=0)
+    assert summary.get("count_variance") == 1
+
+
+def test_drift_redirects_to_review(tmp_path: Path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.routers import stock_check as sc_router
+    from app.stock_check_app import app
+    from src.stock_check.parts9 import ProductRow
+    from src.stock_check.service import StockCheckService
+
+    data_dir = tmp_path / "drift"
+    monkeypatch.setenv("STOCK_CHECK_ENABLED", "true")
+    monkeypatch.setenv("STOCK_CHECK_BRANCH", "HQ")
+    monkeypatch.setenv("STOCK_CHECK_TOKEN_SECRET", "test-secret")
+    monkeypatch.setenv("STOCK_CHECK_DATA_DIR", str(data_dir))
+
+    store = LocalStore(data_dir / "stock_check.sqlite3")
+    draft_id = store.create_draft(_pending_draft(operator_line_user_id="U1"))
+    checker_sid = store.create_session(line_user_id="U2", display_name="Bob", is_approver=False, now=1000)
+    monkeypatch.setattr(sc_router, "_service", lambda: StockCheckService(store=store))
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: ProductRow(
+            bcode="P1",
+            descr="Test",
+            pcode="",
+            mcode="",
+            location1="A1",
+            location2="",
+            qtyoh2=7.0,
+            ui1="",
+            mtp2=1.0,
+            canceled="N",
+        ),
+    )
+
+    client = TestClient(app)
+    client.cookies.set(sc_router.SESSION_COOKIE, checker_sid)
+    resp = client.post(f"/stock-check/approve/{draft_id}", follow_redirects=False)
+    assert resp.status_code == 303
+    assert f"/stock-check/approve/{draft_id}/review" in resp.headers["location"]

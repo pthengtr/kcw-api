@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -261,4 +262,97 @@ def list_never_counted_stock_products(
         out.append(product)
         if len(out) >= limit:
             break
+    return out
+
+
+@dataclass(frozen=True)
+class StockMovement:
+    billno: str
+    billdate: datetime
+    billtime: str
+    billtype: str
+    qty_delta: float
+    jourtype: str
+
+    @property
+    def kind_label(self) -> str:
+        jt = (self.jourtype or "").strip().upper()
+        if jt in {"SJ", "SA"} or (self.billno or "").upper().startswith(("SA", "3SA")):
+            return "ปรับสต็อก"
+        bt = (self.billtype or "").strip()
+        if bt == "1":
+            return "ขาย/ออก"
+        if bt == "2":
+            return "รับ/เข้า"
+        return "เคลื่อนไหว"
+
+
+def list_stock_movements(
+    bcode: str,
+    *,
+    since: datetime,
+    until: datetime | None = None,
+    limit: int = 30,
+    engine: Engine | None = None,
+) -> list[StockMovement]:
+    """SIDET lines for one SKU between timestamps (for drift review)."""
+    code = (bcode or "").strip()
+    if not code:
+        return []
+    eng = engine or get_parts9_engine(writer=False)
+    limit = max(1, min(int(limit), 100))
+    sql = text(
+        f"""
+        SELECT TOP {limit}
+          LTRIM(RTRIM(m.BILLNO)) AS billno,
+          m.BILLDATE AS billdate,
+          LTRIM(RTRIM(COALESCE(m.BILLTIME, ''))) AS billtime,
+          LTRIM(RTRIM(COALESCE(m.BILLTYPE, ''))) AS billtype,
+          LTRIM(RTRIM(COALESCE(m.JOURTYPE, ''))) AS jourtype,
+          d.QTY AS qty_raw
+        FROM dbo.SIDET d WITH (NOLOCK)
+        INNER JOIN dbo.SIMAS m WITH (NOLOCK)
+          ON d.BILLNO = m.BILLNO
+         AND d.BILLDATE = m.BILLDATE
+         AND d.BILLTYPE = m.BILLTYPE
+         AND d.JOURMODE = m.JOURMODE
+        WHERE LTRIM(RTRIM(d.BCODE)) = :bcode
+          AND UPPER(LTRIM(RTRIM(COALESCE(m.CANCELED,'')))) <> 'Y'
+          AND LTRIM(RTRIM(COALESCE(m.JOURMODE,''))) <> '0'
+          AND m.BILLDATE >= :since
+          AND (:until IS NULL OR m.BILLDATE <= :until)
+        ORDER BY m.BILLDATE DESC, m.BILLTIME DESC, m.BILLNO DESC
+        """
+    )
+    with eng.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {"bcode": code, "since": since, "until": until},
+        ).mappings().fetchall()
+
+    out: list[StockMovement] = []
+    for row in rows:
+        qty = _parse_qty(row.get("qty_raw"))
+        billtype = str(row.get("billtype") or "").strip()
+        if billtype == "1":
+            qty_delta = -abs(qty)
+        elif billtype == "2":
+            qty_delta = abs(qty)
+        else:
+            qty_delta = qty
+        bd = row.get("billdate")
+        if isinstance(bd, datetime):
+            billdate = bd
+        else:
+            billdate = datetime.fromisoformat(str(bd)[:19])
+        out.append(
+            StockMovement(
+                billno=str(row.get("billno") or "").strip(),
+                billdate=billdate,
+                billtime=str(row.get("billtime") or "").strip(),
+                billtype=billtype,
+                qty_delta=qty_delta,
+                jourtype=str(row.get("jourtype") or "").strip(),
+            )
+        )
     return out

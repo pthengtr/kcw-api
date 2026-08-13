@@ -55,11 +55,10 @@ def page(
 ) -> str:
     who = ""
     if user:
-        role = "ผู้อนุมัติ" if user.get("is_approver") else "ผู้ตรวจ"
         who = (
             f"<div class='who'>"
             f"<span class='avatar'>{escape((user.get('display_name') or '?')[:1])}</span>"
-            f"<span>{escape(user.get('display_name') or '')} · {role}</span>"
+            f"<span>{escape(user.get('display_name') or '')} · ตรวจนับ</span>"
             f"</div>"
         )
     eye = f"<div class='eyebrow'>{escape(eyebrow)}</div>" if eyebrow else ""
@@ -289,6 +288,7 @@ def page(
       text-align: center; padding: 28px 16px; color: var(--muted);
     }}
     .empty strong {{ display: block; color: var(--ink); margin-bottom: 6px; font-size: 1.05rem; }}
+    .card.own-draft {{ opacity: .72; background: #f1f5f9; border: 1px dashed var(--line); }}
     .stats {{
       display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
       margin: 12px 0 4px;
@@ -982,31 +982,42 @@ def approve_page(
         bits.append(f"<div class='flash'>{escape(flash)}</div>")
     if error:
         bits.append(f"<div class='flash err'>{escape(error)}</div>")
-    if not user.get("is_approver"):
-        bits.append(
-            "<div class='card empty'><strong>ไม่มีสิทธิ์อนุมัติ</strong>"
-            "บัญชี LINE นี้ไม่อยู่ในรายชื่อผู้อนุมัติ</div>"
-        )
-        return page(
-            "อนุมัติปรับสต็อก",
-            "".join(bits),
-            user=user,
-            nav="/approve",
-            browser_entry_url=browser_entry_url,
-        )
     if not drafts:
         bits.append(
             "<div class='card empty'><strong>คิวว่าง</strong>ไม่มีรายการรออนุมัติตอนนี้</div>"
         )
     else:
         bits.append(f"<div class='section-title'>รออนุมัติ · {len(drafts)}</div>")
+    uid = str(user.get("line_user_id") or "").strip()
     for d in drafts:
         loc = " / ".join(x for x in [d.get("location1"), d.get("location2")] if x) or "-"
         var = float(d.get("variance") or 0)
         var_color = "var(--danger)" if var < 0 else "var(--ok)"
+        is_own = uid == str(d.get("operator_line_user_id") or "").strip()
+        card_class = "card own-draft" if is_own else "card"
+        actions = ""
+        if is_own:
+            actions = f"""
+              <div class='muted' style='margin-top:10px'>รายการของคุณ — ต้องให้เพื่อนร่วมงานอนุมัติ</div>
+              <div class="grid2" style="margin-top:12px">
+                <a class="secondary" href="/stock-check/draft/{escape(d['id'])}/edit" style="text-align:center;padding:12px;border-radius:12px;text-decoration:none">แก้ไข</a>
+                <form method="post" action="/stock-check/reject/{escape(d['id'])}">
+                  <button class="ghost" type="submit">ยกเลิก</button>
+                </form>
+              </div>
+            """
+        else:
+            actions = f"""
+              <form method="post" action="/stock-check/approve/{escape(d['id'])}" style="margin-top:12px">
+                <div class="grid2">
+                  <button type="submit">อนุมัติ SA</button>
+                  <button class="danger" formaction="/stock-check/reject/{escape(d['id'])}" type="submit">ปฏิเสธ</button>
+                </div>
+              </form>
+            """
         bits.append(
             f"""
-            <div class="card">
+            <div class="{card_class}">
               <div class="loc">{escape(loc)}</div>
               <div class="bcode" style="margin-top:8px">{escape(d['bcode'])}</div>
               <div class="descr">{escape(d.get('descr') or '')}</div>
@@ -1017,12 +1028,7 @@ def approve_page(
               </div>
               <div class="muted" style="margin-top:8px">โดย {escape(d.get('operator_name') or '')}</div>
               {f"<div class='flash err' style='margin-top:10px'>{escape(d['post_error'])}</div>" if d.get('post_error') else ''}
-              <form method="post" action="/stock-check/approve/{escape(d['id'])}" style="margin-top:12px">
-                <div class="grid2">
-                  <button type="submit">อนุมัติ SA</button>
-                  <button class="danger" formaction="/stock-check/reject/{escape(d['id'])}" type="submit">ปฏิเสธ</button>
-                </div>
-              </form>
+              {actions}
             </div>
             """
         )
@@ -1031,6 +1037,134 @@ def approve_page(
         "".join(bits),
         user=user,
         nav="/approve",
-        eyebrow="Approval",
+        eyebrow="Audit",
+        browser_entry_url=browser_entry_url,
+    )
+
+
+def draft_edit_page(
+    *,
+    user: dict[str, Any],
+    draft: dict[str, Any],
+    product: dict[str, Any],
+    flash: str | None = None,
+    error: str | None = None,
+    browser_entry_url: str | None = None,
+) -> str:
+    loc = " / ".join(x for x in [product.get("location1"), product.get("location2")] if x) or "ไม่ระบุที่เก็บ"
+    qty = float(product.get("qtyoh2", 0) or 0)
+    counted = float(draft.get("counted_qty") or 0)
+    qty_disp = f"{qty:.3g}"
+    counted_disp = f"{counted:.3g}"
+    bits: list[str] = []
+    if flash:
+        bits.append(f"<div class='flash'>{escape(flash)}</div>")
+    if error:
+        bits.append(f"<div class='flash err'>{escape(error)}</div>")
+    body = f"""
+    <div class="card soft">
+      <div class="loc">{escape(loc)}</div>
+      <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(product['bcode'])}</div>
+      <div class="descr" style="-webkit-line-clamp:4">{escape(product.get('descr') or '')}</div>
+      <div class="stats">
+        <div class="stat"><b>{qty_disp}</b><span>ระบบตอนนี้</span></div>
+        <div class="stat"><b>{counted_disp}</b><span>นับเดิม</span></div>
+      </div>
+      <div class="muted" style="margin-top:8px">แก้ไขได้ก่อนเพื่อนร่วมงานอนุมัติ</div>
+    </div>
+    <div class="card" id="count-card" data-system-qty="{qty}">
+      <div class="section-title" style="margin:0 0 4px">แก้ไขผลนับ</div>
+      <form method="post" action="/stock-check/draft/{escape(draft['id'])}/edit" id="count-form">
+        <label>นับได้กี่ชิ้น</label>
+        <input type="text" name="counted_qty" id="counted-qty"
+          inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*"
+          autocomplete="off" value="{escape(counted_disp)}"/>
+        <label>หมายเหตุ</label>
+        <input type="text" name="notes" maxlength="120" value="{escape(draft.get('notes') or '')}"/>
+        <div style="height:12px"></div>
+        <button type="submit">บันทึกการแก้ไข</button>
+      </form>
+      <div style="height:8px"></div>
+      <a href="/stock-check/approve" class="ghost" style="display:block;text-align:center;padding:10px">กลับคิวอนุมัติ</a>
+    </div>
+    """
+    return page(
+        "แก้ไขรายการ",
+        "".join(bits) + body,
+        user=user,
+        nav="/approve",
+        eyebrow="Edit",
+        browser_entry_url=browser_entry_url,
+    )
+
+
+def drift_review_page(
+    *,
+    user: dict[str, Any],
+    review: dict[str, Any],
+    browser_entry_url: str | None = None,
+) -> str:
+    draft = review["draft"]
+    loc = " / ".join(x for x in [draft.get("location1"), draft.get("location2")] if x) or "-"
+    sys0 = float(review["draft_system_qty"])
+    live = float(review["live_qty"])
+    counted = float(review["counted_qty"])
+    drift = float(review["drift"])
+    new_var = float(review["new_variance"])
+    explained = float(review.get("explained_delta") or 0)
+    unexplained = float(review.get("unexplained_delta") or 0)
+    var_color = "var(--danger)" if new_var < 0 else "var(--ok)"
+
+    bill_rows = ""
+    for m in review.get("movements") or []:
+        q = float(m.get("qty_delta") or 0)
+        q_color = "var(--danger)" if q < 0 else "var(--ok)"
+        bill_rows += (
+            f"<div class='muted' style='margin:6px 0'>"
+            f"{escape(m.get('billno') or '')} · {escape(m.get('kind_label') or '')} "
+            f"<b style='color:{q_color}'>{q:+.3g}</b></div>"
+        )
+    if not bill_rows:
+        bill_rows = "<div class='muted'>ไม่พบบิลในช่วงนี้</div>"
+
+    explain_note = ""
+    if review.get("drift_fully_explained"):
+        explain_note = "<div class='flash' style='margin-top:10px'>สอดคล้องกับบิลขาย/ซื้อระหว่างนับกับอนุมัติ</div>"
+    elif abs(drift) > 1e-6:
+        explain_note = (
+            f"<div class='flash err' style='margin-top:10px'>"
+            f"สต็อกเปลี่ยน {drift:+.3g} · จากบิล {explained:+.3g} · คงเหลือไม่อธิบาย {unexplained:+.3g}"
+            f" — ยังอนุมัติต่อได้</div>"
+        )
+
+    body = f"""
+    <div class="card">
+      <div class="loc">{escape(loc)}</div>
+      <div class="bcode" style="margin-top:8px">{escape(draft['bcode'])}</div>
+      <div class="descr">{escape(draft.get('descr') or '')}</div>
+      <div class="stats">
+        <div class="stat"><b>{sys0:.3g}</b><span>ตอนนับ</span></div>
+        <div class="stat"><b>{counted:.3g}</b><span>นับได้</span></div>
+        <div class="stat"><b>{live:.3g}</b><span>ระบบตอนนี้</span></div>
+      </div>
+      <div class="muted" style="margin-top:10px">
+        สต็อกเปลี่ยน {drift:+.3g} ระหว่างนับกับอนุมัติ · SA ที่จะโพสต์ <b style="color:{var_color}">{new_var:+.3g}</b>
+      </div>
+      {explain_note}
+      <div class="section-title" style="margin-top:14px">บิลระหว่างนับกับอนุมัติ</div>
+      {bill_rows}
+      <form method="post" action="/stock-check/approve/{escape(draft['id'])}" style="margin-top:14px">
+        <input type="hidden" name="confirm_drift" value="1"/>
+        <button type="submit">อนุมัติต่อ (ใช้สต็อกปัจจุบัน)</button>
+      </form>
+      <a href="/stock-check/approve" class="ghost" style="display:block;text-align:center;padding:10px;margin-top:8px">กลับ</a>
+    </div>
+    """
+    return page(
+        "ตรวจสอบสต็อกเปลี่ยน",
+        body,
+        user=user,
+        nav="/approve",
+        eyebrow="Drift review",
         browser_entry_url=browser_entry_url,
     )

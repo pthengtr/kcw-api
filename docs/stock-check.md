@@ -8,7 +8,7 @@ Mobile stock-count app on HQ/SYP local servers. Posts invented `SA` / `3SA` bill
 STOCK_CHECK_ENABLED=true
 STOCK_CHECK_BRANCH=HQ
 STOCK_CHECK_TOKEN_SECRET=long-random-shared-with-line-bot-host
-STOCK_CHECK_APPROVER_LINE_USER_IDS=Uxxxx,Uyyyy
+# STOCK_CHECK_APPROVER_LINE_USER_IDS is deprecated (maker-checker: any user can audit except own drafts)
 # Idle seconds before unfinished leases return to pool (extended while counting)
 STOCK_CHECK_LEASE_IDLE_SECONDS=300
 # Optional override; leave empty to auto-detect LAN IP each worker heartbeat
@@ -58,9 +58,18 @@ Everyday **Take N** batch uses weighted ABC + risk pools (see below).
 
 1. Take N → leased pick list with LOCATION1/2 + pool badge → open product → count  
 2. Variance 0 → auto complete + audit mirror  
-3. Variance ≠ 0 → pending draft → approver posts SA/3SA (fails clearly until writer login)  
-4. **จบงาน** releases unfinished leases immediately  
-5. Form submits show a full-screen busy spinner (blocks double-click)
+3. Variance ≠ 0 → pending draft → **another operator** audits and posts SA/3SA (maker-checker: creator cannot approve own draft; owner can edit pending count)  
+4. If system qty changes between count and audit, drift review shows intervening bills + current stock; auditor can still approve using `counted − live`  
+5. **จบงาน** releases unfinished leases immediately  
+6. Form submits show a full-screen busy spinner (blocks double-click)
+
+### Audit (maker-checker)
+
+Any logged-in stock-check user can open the audit queue. You **cannot approve your own** pending draft; use **แก้ไข** to fix your count or **ยกเลิก** to withdraw. Another operator approves or rejects.
+
+### Work KPI (backend)
+
+Counting and auditing emit `work_events` locally and mirror to Supabase `stock.work_event` after migration `20260813020000_stock_work_event.sql`. JSON summary for dashboards: `GET /stock-check/api/work-summary` (kcw-v2 UI later).
 
 ### Lease idle (close tab vs still working)
 
