@@ -1,0 +1,407 @@
+From e00126cce476efa0940c9fdcaba02e284f113ccb Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 19:13:42 +0000
+Subject: [PATCH] Add Statement Lines FAQ re-embed control on /kb
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Seeded FAQ rows 136–147 need embeddings for chatbot search. Add a
+one-click re-embed for kb_parts missing vectors (same title+keywords
+path as save), plus operator FAQ docs.
+---
+ docs/README.md                                |  1 +
+ docs/statement-lines-operator-faq.md          | 67 +++++++++++++++++++
+ .../(root)/kb/_components/kb-admin-screen.tsx |  2 +
+ .../(root)/kb/_components/kb-recent-list.tsx  | 17 ++++-
+ .../kb/_components/kb-status-banner.tsx       | 17 +++++
+ src/app/(root)/kb/actions.ts                  | 66 ++++++++++++++++++
+ src/app/(root)/kb/page.tsx                    |  7 +-
+ src/app/(root)/kb/queries.ts                  | 17 +++++
+ src/app/(root)/kb/types.ts                    |  3 +
+ 9 files changed, 195 insertions(+), 2 deletions(-)
+ create mode 100644 docs/statement-lines-operator-faq.md
+
+diff --git a/docs/README.md b/docs/README.md
+index fe10b58..4b6e113 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -4,6 +4,7 @@
+ |-----|---------|
+ | [worker-jobs.md](./worker-jobs.md) | **PC worker queue** — enqueue via `ops.job_queue` (same as LINE); heartbeats; known `job_type`s |
+ | [bank-statement-upload.md](./bank-statement-upload.md) | Bank Excel upload UI → Edge Function `import-bank-statement` (no PC worker) |
++| [statement-lines-operator-faq.md](./statement-lines-operator-faq.md) | Statement Lines `/bank-statement-sync` operator FAQ seeded into `kb.kb_parts` (chatbot) |
+ | [bi/README.md](./bi/README.md) | BI data dictionaries + RPC contracts (`raw_kcw` / `curated_kcw` / app tables) |
+ 
+ Upstream extract / BAT pipelines live in **[kcw-analytics](https://github.com/pthengtr/kcw-analytics)** (PARTS9 → Drive → Supabase). Mirror domain docs here when the webapp consumes those tables — e.g. [ICLOW ค้างรับ](./bi/kcw-iclow-pending-receive-data-dictionary.md), [BRDET/BPDET เช็ครับ-จ่าย](./bi/kcw-brdet-bpdet-cheque-transfers-data-dictionary.md).
+diff --git a/docs/statement-lines-operator-faq.md b/docs/statement-lines-operator-faq.md
+new file mode 100644
+index 0000000..b281583
+--- /dev/null
++++ b/docs/statement-lines-operator-faq.md
+@@ -0,0 +1,67 @@
++# Statement Lines — FAQ สำหรับแชทบอท (`kb.kb_parts`)
++
++คู่มือผู้ปฏิบัติงานหน้า `/bank-statement-sync` ถูกแยกเป็น FAQ ใน `kb.kb_parts` (id **136–147**) เพื่อให้ถามผ่าน LINE chatbot ได้
++
++Embedding สร้างอัตโนมัติตอนบันทึกที่ `/kb` (จาก `title` + `keywords`)  
++ถ้า FAQ ถูก seed แบบยังไม่มี embedding → กด **สร้าง embedding ที่ขาด** ที่หน้า `/kb`
++
++## รายการ FAQ ที่ seed แล้ว
++
++| id | หัวข้อ (title) |
++|---:|---|
++| 136 | หน้า Statement Lines (/bank-statement-sync) ใช้อย่างไร? |
++| 137 | ประเภทการจับคู่ matched_ref_type คืออะไร ต้องใส่มั้ย? |
++| 138 | จับคู่ด้วยมือ หรือ ตรวจแล้ว ต้องใส่อะไรบ้าง? |
++| 139 | สถานะไม่ใช้ ใน Statement Lines ใช้เมื่อไหร่? |
++| 140 | สถานะต้องตรวจ ตรวจแล้ว จับคู่ด้วยมือ ส่งกลับรอจับคู่ ต่างกันอย่างไร? |
++| 141 | เงินเข้า Shopee Lazada TikTok บิลโอน ดอกเบี้ย ใส่ประเภทการจับคู่อะไร? |
++| 142 | เงินออก ใบสำคัญจ่าย PIMAS เงินเดือน ภาษีหัก ณ ที่จ่าย ใส่ประเภทอะไร? |
++| 143 | ดอกเบี้ย ภาษีหัก ณ ที่จ่าย โอนภายใน ตั้งเป็นไม่ใช้ได้ไหม? |
++| 144 | คิว Statement Lines ควรไล่อะไรทุกวันหรือทุกสัปดาห์? |
++| 145 | เจอข้อความอาจเป็นแถวซ้ำ ใน Statement Lines ทำยังไง? |
++| 146 | ตัวอย่างเหตุผลจับคู่ Statement Lines เขียนยังไง? |
++| 147 | พิมพ์ประเภทการจับคู่อย่างไรให้ Cashflow BI จัดกลุ่มถูก? |
++
++## หลักสำคัญ (สรุปสั้น)
++
++1. Cashflow BI อ่านจาก **ประเภทการจับคู่** (`matched_ref_type`) — ไม่ใส่ → ไปกอง “ยังไม่จัดประเภท / อื่นๆ”
++2. **จับคู่ด้วยมือ / ตรวจแล้ว** ต้องมีเหตุผลไทย + ประเภท (บังคับ) + เลขอ้างอิงถ้ามี
++3. **ไม่ใช้** = ไม่เข้า Excel / ไม่นับ Cashflow (แถวซ้ำ) — อย่าใช้กับดอกเบี้ย / WHT / โอนภายใน
++
++## ประเภทการจับคู่ (ตัวเล็กตามระบบ)
++
++### เงินเข้า
++
++| สถานการณ์ | ประเภท |
++|---|---|
++| Shopee / Lazada / TikTok | `rvi` |
++| บิลโอน 1 ใบ | `tr_bill` |
++| บิลโอนหลายใบรวมยอด | `tr_bundle` |
++| ส่วนต่าง / เหลือจากบิลโอน | `tr_remainder` |
++| ยอดขายสุทธิ TAR−CNTAR | `tar_cntar_net` |
++| ใบสำคัญรับเงิน RC… | `rvmas` |
++| ดอกเบี้ยเงินฝาก | `interest_income` |
++| โอนจากบัญชีบริษัทในกลุ่ม | `internal_transfer` |
++| เงินคืนจากผู้ขาย | `vendor_rebate` |
++| ปรับปรุงยอดขาย / โอนคืน 3CTAR | `sales_adjustment` |
++
++### เงินออก
++
++| สถานการณ์ | ประเภท |
++|---|---|
++| ใบสำคัญจ่าย PARTS9 | `pvmas` |
++| บิลซื้อ PIMAS / ถึงเบิกเลย | `pimas` |
++| เช็คเคลียร์ที่ยังไม่ชัด | `bank_cheque` |
++| ค่าใช้จ่ายแอป PV / 3PV | `expense_pv` |
++| เงินเดือน | `expense_payroll` |
++| พนักงานเบิกล่วงหน้า | `employee_advance` |
++| ภาษีหัก ณ ที่จ่าย (ดอกเบี้ย) | `withholding_tax` |
++| โอนไปบัญชีบริษัทในกลุ่ม | `internal_transfer` |
++
++อย่าพิมพ์ `PIMAS` ตัวใหญ่ / ช่องว่าง / ชื่อไทยในช่องประเภท
++
++## ตรวจ chatbot
++
++1. เปิด `/kb` → กด **สร้าง embedding ที่ขาด** (ถ้ามี)
++2. ใช้ช่องค้นหาความหมายบน `/kb` ลองถาม เช่น `อาจเป็นแถวซ้ำ`, `ประเภทการจับคู่`, `ดอกเบี้ย ไม่ใช้`
++3. จาก LINE ถามด้วย trigger KB ตามปกติ แล้วเลือกหัวข้อที่ตรง
+diff --git a/src/app/(root)/kb/_components/kb-admin-screen.tsx b/src/app/(root)/kb/_components/kb-admin-screen.tsx
+index 66d9819..aa05180 100644
+--- a/src/app/(root)/kb/_components/kb-admin-screen.tsx
++++ b/src/app/(root)/kb/_components/kb-admin-screen.tsx
+@@ -16,6 +16,7 @@ export function KbAdminScreen({
+   isNewMode,
+   editorItem,
+   editorImages,
++  missingEmbeddingCount,
+   status,
+ }: KbAdminScreenProps) {
+   return (
+@@ -40,6 +41,7 @@ export function KbAdminScreen({
+           recentItems={recentItems}
+           selectedId={selectedId}
+           isNewMode={isNewMode}
++          missingEmbeddingCount={missingEmbeddingCount}
+         />
+ 
+         <KbEditorCard
+diff --git a/src/app/(root)/kb/_components/kb-recent-list.tsx b/src/app/(root)/kb/_components/kb-recent-list.tsx
+index df67cf7..03d8403 100644
+--- a/src/app/(root)/kb/_components/kb-recent-list.tsx
++++ b/src/app/(root)/kb/_components/kb-recent-list.tsx
+@@ -7,18 +7,22 @@ import {
+   CardTitle,
+ } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
++import { reembedMissingKbPartsAction } from "../actions";
++import { KbSubmitButton } from "./kb-submit-button";
+ import type { KbPartListItem } from "../types";
+ 
+ type KbRecentListProps = {
+   recentItems: KbPartListItem[];
+   selectedId: number | null;
+   isNewMode: boolean;
++  missingEmbeddingCount: number;
+ };
+ 
+ export function KbRecentList({
+   recentItems,
+   selectedId,
+   isNewMode,
++  missingEmbeddingCount,
+ }: KbRecentListProps) {
+   return (
+     <Card className="h-fit">
+@@ -30,10 +34,21 @@ export function KbRecentList({
+       </CardHeader>
+ 
+       <CardContent className="space-y-3">
+-        <div className="flex gap-2">
++        <div className="flex flex-col gap-2">
+           <Button asChild>
+             <Link href="/kb?mode=new">สร้าง FAQ ใหม่</Link>
+           </Button>
++          {missingEmbeddingCount > 0 ? (
++            <form action={reembedMissingKbPartsAction}>
++              <KbSubmitButton
++                type="submit"
++                variant="outline"
++                className="w-full"
++                idleText={`สร้าง embedding ที่ขาด (${missingEmbeddingCount})`}
++                pendingText="กำลังสร้าง embedding..."
++              />
++            </form>
++          ) : null}
+         </div>
+ 
+         {recentItems.length === 0 ? (
+diff --git a/src/app/(root)/kb/_components/kb-status-banner.tsx b/src/app/(root)/kb/_components/kb-status-banner.tsx
+index 899bf43..6f6e6ef 100644
+--- a/src/app/(root)/kb/_components/kb-status-banner.tsx
++++ b/src/app/(root)/kb/_components/kb-status-banner.tsx
+@@ -6,6 +6,7 @@ export function KbStatusBanner({
+   deleted,
+   image_uploaded,
+   image_deleted,
++  reembedded,
+   error,
+ }: KbStatusState) {
+   if (error) {
+@@ -28,6 +29,8 @@ export function KbStatusBanner({
+     else if (error === "image_delete_failed") message = "ลบรูปภาพไม่สำเร็จ";
+     else if (error === "invalid_image_delete")
+       message = "คำขอลบรูปภาพไม่ถูกต้อง";
++    else if (error === "reembed_failed")
++      message = "สร้าง embedding ที่ขาดไม่สำเร็จ";
+ 
+     return (
+       <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+@@ -76,5 +79,19 @@ export function KbStatusBanner({
+     );
+   }
+ 
++  if (reembedded !== undefined) {
++    const count = Number(reembedded);
++    const message =
++      Number.isFinite(count) && count > 0
++        ? `สร้าง embedding เรียบร้อยแล้ว ${count} รายการ`
++        : "ไม่มี FAQ ที่ขาด embedding";
++
++    return (
++      <div className="rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3 text-sm text-green-700 dark:text-green-400">
++        {message}
++      </div>
++    );
++  }
++
+   return null;
+ }
+diff --git a/src/app/(root)/kb/actions.ts b/src/app/(root)/kb/actions.ts
+index 249ede4..f13af7e 100644
+--- a/src/app/(root)/kb/actions.ts
++++ b/src/app/(root)/kb/actions.ts
+@@ -119,6 +119,72 @@ export async function upsertKbPartAction(formData: FormData) {
+   redirect(`/kb?id=${data.id}&created=1`);
+ }
+ 
++export async function reembedMissingKbPartsAction() {
++  const supabase = await createClient();
++
++  const { data: rows, error: listError } = await supabase
++    .schema("kb")
++    .from("kb_parts")
++    .select("id, title, keywords")
++    .is("embedding", null)
++    .order("id", { ascending: true })
++    .limit(100);
++
++  if (listError) {
++    console.error("reembedMissingKbPartsAction list error", listError);
++    redirect("/kb?error=reembed_failed");
++  }
++
++  const missing = rows ?? [];
++  if (missing.length === 0) {
++    redirect("/kb?reembedded=0");
++  }
++
++  let updated = 0;
++
++  for (const row of missing) {
++    const embeddingInput = buildKbEmbeddingInput({
++      title: row.title,
++      keywords: row.keywords,
++    });
++
++    if (!embeddingInput) {
++      continue;
++    }
++
++    try {
++      const vector = await generateKbEmbedding(embeddingInput);
++      const { error: updateError } = await supabase
++        .schema("kb")
++        .from("kb_parts")
++        .update({
++          embedding: toPgVectorLiteral(vector),
++          updated_at: new Date().toISOString(),
++        })
++        .eq("id", row.id);
++
++      if (updateError) {
++        console.error("reembedMissingKbPartsAction update error", {
++          id: row.id,
++          error: updateError,
++        });
++        redirect(`/kb?error=reembed_failed&reembedded=${updated}`);
++      }
++
++      updated += 1;
++    } catch (error) {
++      console.error("reembedMissingKbPartsAction embed error", {
++        id: row.id,
++        error,
++      });
++      redirect(`/kb?error=reembed_failed&reembedded=${updated}`);
++    }
++  }
++
++  revalidatePath("/kb");
++  redirect(`/kb?reembedded=${updated}`);
++}
++
+ export async function deleteKbPartAction(formData: FormData) {
+   const supabase = await createClient();
+ 
+diff --git a/src/app/(root)/kb/page.tsx b/src/app/(root)/kb/page.tsx
+index 3e42a66..905c9d9 100644
+--- a/src/app/(root)/kb/page.tsx
++++ b/src/app/(root)/kb/page.tsx
+@@ -4,6 +4,7 @@ import {
+   semanticSearchKbParts,
+   getKbPartById,
+   listKbPartImages,
++  countKbPartsMissingEmbedding,
+ } from "./queries";
+ import { KbAdminScreen } from "./_components/kb-admin-screen";
+ import type { KbSearchParams } from "./types";
+@@ -19,7 +20,7 @@ export default async function KbPage({ searchParams }: PageProps) {
+   const mode = params.mode?.trim() ?? "";
+   const selectedId = params.id ? Number(params.id) : null;
+ 
+-  const RECENT_LIMIT = 10;
++  const RECENT_LIMIT = 20;
+   const FIXED_SEARCH_LIMIT = 5;
+   const SEMANTIC_SEARCH_LIMIT = 5;
+ 
+@@ -29,6 +30,7 @@ export default async function KbPage({ searchParams }: PageProps) {
+     semanticResults,
+     selectedItem,
+     editorImages,
++    missingEmbeddingCount,
+   ] = await Promise.all([
+     getRecentKbParts(RECENT_LIMIT),
+     fixedQuery
+@@ -43,6 +45,7 @@ export default async function KbPage({ searchParams }: PageProps) {
+     Number.isFinite(selectedId) && selectedId && mode !== "new"
+       ? listKbPartImages(selectedId)
+       : Promise.resolve([]),
++    countKbPartsMissingEmbedding(),
+   ]);
+ 
+   const isNewMode = mode === "new";
+@@ -61,12 +64,14 @@ export default async function KbPage({ searchParams }: PageProps) {
+       isNewMode={isNewMode}
+       editorItem={editorItem}
+       editorImages={editorImages}
++      missingEmbeddingCount={missingEmbeddingCount}
+       status={{
+         created: params.created,
+         saved: params.saved,
+         deleted: params.deleted,
+         image_uploaded: params.image_uploaded,
+         image_deleted: params.image_deleted,
++        reembedded: params.reembedded,
+         error: params.error,
+       }}
+     />
+diff --git a/src/app/(root)/kb/queries.ts b/src/app/(root)/kb/queries.ts
+index 6f25aff..7344b5f 100644
+--- a/src/app/(root)/kb/queries.ts
++++ b/src/app/(root)/kb/queries.ts
+@@ -27,6 +27,23 @@ export async function getRecentKbParts(limit = 20): Promise<KbPartListItem[]> {
+   return (data ?? []) as KbPartListItem[];
+ }
+ 
++export async function countKbPartsMissingEmbedding(): Promise<number> {
++  const supabase = await createClient();
++
++  const { count, error } = await supabase
++    .schema("kb")
++    .from("kb_parts")
++    .select("id", { count: "exact", head: true })
++    .is("embedding", null);
++
++  if (error) {
++    console.error("countKbPartsMissingEmbedding error", error);
++    return 0;
++  }
++
++  return count ?? 0;
++}
++
+ export async function fixedTermSearchKbParts(
+   term: string,
+   limit = 20,
+diff --git a/src/app/(root)/kb/types.ts b/src/app/(root)/kb/types.ts
+index 3cc7a73..cb921ce 100644
+--- a/src/app/(root)/kb/types.ts
++++ b/src/app/(root)/kb/types.ts
+@@ -37,6 +37,7 @@ export type KbStatusState = {
+   deleted?: string;
+   image_uploaded?: string;
+   image_deleted?: string;
++  reembedded?: string;
+   error?: string;
+ };
+ 
+@@ -50,6 +51,7 @@ export type KbSearchParams = {
+   deleted?: string;
+   image_uploaded?: string;
+   image_deleted?: string;
++  reembedded?: string;
+   error?: string;
+ };
+ 
+@@ -63,5 +65,6 @@ export type KbAdminScreenProps = {
+   isNewMode: boolean;
+   editorItem: KbPartEditorItem;
+   editorImages: KbPartImage[];
++  missingEmbeddingCount: number;
+   status: KbStatusState;
+ };
+-- 
+2.43.0
+
