@@ -6,6 +6,8 @@
 
 KCW API is a FastAPI backend that powers a LINE Messaging chatbot for a Thai auto-parts business. It connects to a Supabase-hosted PostgreSQL database, OpenAI for AI features, and the LINE Messaging API for bot interactions.
 
+Shared table/metric meaning lives in [kcw-docs dictionaries](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/README.md) (ICMAS, sales, PO, ICLOW, …).
+
 ### Running the dev server
 
 ```bash
