@@ -11,9 +11,16 @@ INGEST_WEBHOOK_RPC = "ingest_webhook"
 
 
 class TigerPayIngestError(Exception):
-    def __init__(self, category: str, message: str | None = None) -> None:
+    def __init__(
+        self,
+        category: str,
+        message: str | None = None,
+        *,
+        supabase_code: str | None = None,
+    ) -> None:
         self.category = category
         self.message = message
+        self.supabase_code = supabase_code
         super().__init__(category)
 
 
@@ -33,6 +40,45 @@ def _parse_ingest_webhook_row(data: Any) -> dict[str, object]:
         return data
 
     raise TigerPayIngestError("rpc_response_shape_invalid")
+
+
+def normalize_ingest_result_row(row: dict[str, object]) -> dict[str, object]:
+    def pick(*keys: str) -> object:
+        for key in keys:
+            if key in row:
+                return row[key]
+        return None
+
+    event_id = pick("event_id", "eventId")
+    duplicate = pick("duplicate", "is_duplicate", "isDuplicate")
+    transaction_updated = pick(
+        "transaction_updated",
+        "transactionUpdated",
+        "is_transaction_updated",
+    )
+
+    if event_id is None or duplicate is None or transaction_updated is None:
+        raise TigerPayIngestError("rpc_response_fields_missing")
+
+    return {
+        "event_id": event_id,
+        "duplicate": _coerce_bool(duplicate),
+        "transaction_updated": _coerce_bool(transaction_updated),
+    }
+
+
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "t", "1", "yes"}:
+            return True
+        if lowered in {"false", "f", "0", "no"}:
+            return False
+    if isinstance(value, int):
+        return bool(value)
+    raise TigerPayIngestError("rpc_response_fields_invalid")
 
 
 def ingest_webhook_sync(
@@ -57,7 +103,12 @@ def ingest_webhook_sync(
             .execute()
         )
     except APIError as exc:
-        raise TigerPayIngestError("supabase_rpc_failed", str(exc.message or exc)) from exc
+        raise TigerPayIngestError(
+            "supabase_rpc_failed",
+            str(exc.message or exc),
+            supabase_code=exc.code,
+        ) from exc
 
-    return _parse_ingest_webhook_row(response.data)
+    row = _parse_ingest_webhook_row(response.data)
+    return normalize_ingest_result_row(row)
 
