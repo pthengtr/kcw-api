@@ -2,6 +2,8 @@
 
 Minimal FastAPI backend for KCW.
 
+**Shared docs / data dictionaries:** [kcw-docs](https://github.com/pthengtr/kcw-docs) ([dictionaries](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/README.md)). Use ICMAS / product dictionaries when LINE or scan features touch `BCODE`.
+
 ## Run locally
 
 ```bash
