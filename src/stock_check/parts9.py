@@ -8,6 +8,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from src.db.mssql_host import pick_mssql_server
 from src.stock_check.config import StockCheckSettings, get_stock_check_settings
 
 
@@ -55,7 +56,7 @@ def _odbc_url(settings: StockCheckSettings, *, writer: bool = False) -> str:
         password = settings.pos_mssql_writer_password
     odbc = (
         f"DRIVER={{{settings.pos_mssql_driver}}};"
-        f"SERVER={settings.pos_mssql_server};"
+        f"SERVER={pick_mssql_server(settings.pos_mssql_server)};"
         f"DATABASE={settings.pos_mssql_database};"
         f"UID={user};"
         f"PWD={password};"

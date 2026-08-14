@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 from src.companion.bill_mapping import REQUIRED_COLUMNS, frames_to_bills, row_to_bill
 from src.companion.bills import PosBill
 from src.companion.config import CompanionBillSettings, get_companion_bill_settings
+from src.db.mssql_host import pick_mssql_server
 
 logger = logging.getLogger("kcw.companion.mssql_bills")
 
@@ -31,7 +32,7 @@ def build_mssql_odbc_url(settings: CompanionBillSettings) -> str:
     driver = settings.pos_mssql_driver
     odbc_str = (
         f"DRIVER={{{driver}}};"
-        f"SERVER={settings.pos_mssql_server};"
+        f"SERVER={pick_mssql_server(settings.pos_mssql_server)};"
         f"DATABASE={settings.pos_mssql_database};"
         f"UID={settings.pos_mssql_username};"
         f"PWD={settings.pos_mssql_password};"
