@@ -137,6 +137,10 @@ def reply_line_response(reply_token: str, response: dict | None):
     if rtype == "template":
         return reply_line_payload(reply_token, [response])
 
+    # flex message (Thai word-links over long entry URLs)
+    if rtype == "flex":
+        return reply_line_payload(reply_token, [response])
+
     # ⭐ default text
     text = (response.get("text") or "ไม่เข้าใจคำสั่งครับ")[:5000]
 

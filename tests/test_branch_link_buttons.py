@@ -1,11 +1,11 @@
-"""Short URI button replies hide long entry tokens in chat."""
+"""Short URI word-links hide long entry tokens in chat."""
 
 from __future__ import annotations
 
 from src.bot.branch_link_buttons import branch_uri_buttons
 
 
-def test_branch_uri_buttons_hides_urls_behind_labels():
+def test_branch_uri_buttons_hides_urls_behind_thai_words():
     long_url = "http://192.168.1.10:8787/stock-check/?t=" + ("x" * 200)
     msg = branch_uri_buttons(
         title="ตรวจนับสต็อก",
@@ -15,22 +15,36 @@ def test_branch_uri_buttons_hides_urls_behind_labels():
             ("SYP", "", "offline"),
         ],
     )
-    assert msg["type"] == "template"
-    assert msg["template"]["type"] == "buttons"
-    assert long_url not in msg["template"]["text"]
-    assert "ออฟไลน์" in msg["template"]["text"]
-    actions = msg["template"]["actions"]
-    assert len(actions) == 1
-    assert actions[0] == {"type": "uri", "label": "สำนักงานใหญ่", "uri": long_url}
-    both = branch_uri_buttons(
-        title="ตรวจนับสต็อก",
-        alt_text="ตรวจนับสต็อก",
+    assert msg["type"] == "flex"
+    assert long_url not in str(msg.get("altText"))
+    body = msg["contents"]["body"]["contents"]
+    texts = [c.get("text") for c in body if c.get("type") == "text"]
+    assert "ตรวจนับสต็อก" in texts
+    assert all(long_url not in (t or "") for t in texts)
+
+    buttons = [c for c in body if c.get("type") == "button"]
+    assert len(buttons) == 1
+    assert buttons[0]["style"] == "link"
+    assert buttons[0]["action"] == {
+        "type": "uri",
+        "label": "สำนักงานใหญ่",
+        "uri": long_url,
+    }
+    assert any("ออฟไลน์" in (t or "") for t in texts)
+
+
+def test_branch_uri_buttons_both_branches():
+    long_url = "http://192.168.1.10:8787/stock-check/?t=abc"
+    msg = branch_uri_buttons(
+        title="ไทเกอร์เพย์",
+        alt_text="ไทเกอร์เพย์",
         links=[
             ("HQ", long_url, "online"),
-            ("SYP", long_url.replace("8787", "8788"), "online"),
+            ("SYP", long_url.replace("8787", "8000"), "online"),
         ],
     )
-    assert [a["label"] for a in both["template"]["actions"]] == [
+    buttons = [c for c in msg["contents"]["body"]["contents"] if c.get("type") == "button"]
+    assert [b["action"]["label"] for b in buttons] == [
         "สำนักงานใหญ่",
         "สาขาสี่แยกพัฒนา",
     ]

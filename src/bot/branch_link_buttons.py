@@ -1,14 +1,8 @@
-"""Build short LINE button replies that hide long entry URLs behind URI actions."""
+"""Build short LINE replies that hide long entry URLs behind Thai word-links."""
 
 from __future__ import annotations
 
 BRANCH_LABEL = {
-    "HQ": "สำนักงานใหญ่",
-    "SYP": "สาขาสี่แยกพัฒนา",
-}
-
-# LINE buttons label max 20 characters
-BRANCH_BUTTON = {
     "HQ": "สำนักงานใหญ่",
     "SYP": "สาขาสี่แยกพัฒนา",
 }
@@ -19,15 +13,16 @@ def branch_uri_buttons(
     title: str,
     alt_text: str,
     links: list[tuple[str, str, str]],
-    wifi_hint: str = "กดปุ่มสาขา — ต้องอยู่ Wi‑Fi สาขานั้น",
+    wifi_hint: str = "กดชื่อสาขาเพื่อเปิด — ต้องอยู่ Wi‑Fi สาขานั้น",
 ) -> dict:
     """
     links: (branch, url, status) where status is online|offline|local.
 
-    Returns a LINE buttons template so the long token URL is not shown in chat.
+    Returns a Flex message: Thai branch names are tappable word-links; the
+    long token URL is only inside the URI action (never shown as chat text).
     Falls back to plain text when every branch is offline.
     """
-    actions: list[dict] = []
+    link_rows: list[dict] = []
     offline_names: list[str] = []
 
     for branch, url, status in links:
@@ -35,28 +30,69 @@ def branch_uri_buttons(
         if status == "offline" or not url:
             offline_names.append(name)
             continue
-        label = BRANCH_BUTTON.get(branch, name)[:20]
-        actions.append({"type": "uri", "label": label, "uri": url})
+        # Link-styled button reads as a meaningful word, not a raw URL
+        link_rows.append(
+            {
+                "type": "button",
+                "style": "link",
+                "height": "sm",
+                "action": {
+                    "type": "uri",
+                    "label": name[:40],
+                    "uri": url,
+                },
+            }
+        )
 
-    if not actions:
+    if not link_rows:
         lines = [title, "", "ยังไม่มีสาขาออนไลน์ครับ"]
         if offline_names:
             lines.append("ออฟไลน์: " + ", ".join(offline_names))
         return {"type": "text", "text": "\n".join(lines)}
 
-    text_parts = [title, wifi_hint]
+    body_contents: list[dict] = [
+        {
+            "type": "text",
+            "text": title,
+            "weight": "bold",
+            "size": "lg",
+            "color": "#111111",
+        },
+        {
+            "type": "text",
+            "text": wifi_hint,
+            "size": "sm",
+            "color": "#888888",
+            "wrap": True,
+        },
+        {"type": "separator", "margin": "md"},
+    ]
+    body_contents.extend(link_rows)
+
     if offline_names:
-        text_parts.append("ออฟไลน์: " + ", ".join(offline_names))
-    text = "\n".join(text_parts)
-    if len(text) > 160:
-        text = text[:157] + "…"
+        body_contents.append(
+            {
+                "type": "text",
+                "text": "ออฟไลน์: " + ", ".join(offline_names),
+                "size": "xs",
+                "color": "#AAAAAA",
+                "wrap": True,
+                "margin": "md",
+            }
+        )
 
     return {
-        "type": "template",
+        "type": "flex",
         "altText": alt_text[:400],
-        "template": {
-            "type": "buttons",
-            "text": text,
-            "actions": actions[:4],
+        "contents": {
+            "type": "bubble",
+            "size": "kilo",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "paddingAll": "16px",
+                "contents": body_contents,
+            },
         },
     }
