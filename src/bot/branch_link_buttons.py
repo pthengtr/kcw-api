@@ -4,13 +4,13 @@ from __future__ import annotations
 
 BRANCH_LABEL = {
     "HQ": "สำนักงานใหญ่",
-    "SYP": "สี่แยกพัฒนา",
+    "SYP": "สาขาสี่แยกพัฒนา",
 }
 
 # LINE buttons label max 20 characters
 BRANCH_BUTTON = {
     "HQ": "สำนักงานใหญ่",
-    "SYP": "สี่แยกพัฒนา",
+    "SYP": "สาขาสี่แยกพัฒนา",
 }
 
 
