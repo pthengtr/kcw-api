@@ -5,8 +5,15 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src.parts9_explorer.config import get_explorer_settings
 from src.parts9_explorer.net import is_tailscale_cg_nat
-from src.parts9_explorer.query import parse_query
-from src.parts9_explorer.search import get_product, lookup_document, probe_sites, recent_for_product, search_products
+from src.parts9_explorer.query import maybe_document_query, parse_query
+from src.parts9_explorer.search import (
+    get_product,
+    iclow_summary,
+    lookup_documents,
+    probe_sites,
+    recent_for_product,
+    search_products,
+)
 from src.parts9_explorer.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
@@ -110,17 +117,66 @@ def home(request: Request, t: str | None = None, site: str | None = None):
 
 
 @router.get("/api/search")
-def api_search(request: Request, q: str = "", site: str = "hq", include_skip: str = "0"):
+def api_search(
+    request: Request,
+    q: str = "",
+    site: str = "hq",
+    include_skip: str = "0",
+    kind: str = "all",
+):
     ident, err = _require(request)
     if err:
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
     _ = ident
-    parsed = parse_query(q)
-    products, errp = search_products(q, site=site, include_skip=include_skip in ("1", "true", "yes"))
-    document, errd = (None, None)
-    if parsed.kind in ("document", "mixed") or parsed.docno:
-        document, errd = lookup_document(q, site=site)
-    return {"q": q, "parsed": parsed.kind, "products": products, "document": document, "error": errp or errd}
+    mode = (kind or "all").strip().lower()
+    parsed = parse_query((mode + " " + q).strip() if mode not in ("all", "product") and q else q)
+    if mode == "product":
+        parsed = parse_query("สินค้า " + q) if q else parsed
+    products, errp = ([], None)
+    documents, errd = ([], None)
+    summary, errs = (None, None)
+    want_products = mode in ("all", "product") and parsed.want_product
+    if want_products and q.strip():
+        products, errp = search_products(q, site=site, include_skip=include_skip in ("1", "true", "yes"))
+    want_docs = mode in ("si", "pi", "po", "pv", "rv", "iclow") or (
+        mode == "all" and q.strip() and (parsed.kind == "document" or not parsed.want_product)
+    )
+    if want_docs and q.strip():
+        lookup_kind = None if mode == "all" else mode
+        documents, errd = lookup_documents(q, site=site, kind=lookup_kind)
+    elif (
+        mode == "all"
+        and q.strip()
+        and parsed.kind == "product"
+        and maybe_document_query(q)
+    ):
+        documents, errd = lookup_documents(q, site=site, kinds=("pi", "pv"))
+    if mode == "iclow":
+        summary, errs = iclow_summary(site)
+    document = documents[0] if documents else None
+    return {
+        "q": q,
+        "kind": mode,
+        "parsed": parsed.kind,
+        "doc_kind": parsed.doc_kind,
+        "products": products,
+        "document": document,
+        "documents": documents,
+        "iclow_summary": summary,
+        "error": errp or errd or errs,
+    }
+
+
+@router.get("/api/iclow/summary")
+def api_iclow_summary(request: Request, site: str = "hq"):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    data, err_s = iclow_summary(site)
+    if err_s:
+        return {"site": site.upper(), "error": err_s, "iclow_summary": None}
+    return {"site": site.upper(), "iclow_summary": data, "error": None}
 
 
 @router.get("/api/product/{bcode}")
