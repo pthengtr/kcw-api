@@ -22,6 +22,18 @@ def test_branch_uri_buttons_hides_urls_behind_labels():
     actions = msg["template"]["actions"]
     assert len(actions) == 1
     assert actions[0] == {"type": "uri", "label": "สำนักงานใหญ่", "uri": long_url}
+    both = branch_uri_buttons(
+        title="ตรวจนับสต็อก",
+        alt_text="ตรวจนับสต็อก",
+        links=[
+            ("HQ", long_url, "online"),
+            ("SYP", long_url.replace("8787", "8788"), "online"),
+        ],
+    )
+    assert [a["label"] for a in both["template"]["actions"]] == [
+        "สำนักงานใหญ่",
+        "สาขาสี่แยกพัฒนา",
+    ]
 
 
 def test_branch_uri_buttons_all_offline_falls_back_to_text():
