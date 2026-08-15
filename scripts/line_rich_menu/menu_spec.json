@@ -5,7 +5,7 @@
   "chatBarText": "เมนูเครื่องมือ",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
+      "bounds": { "x": 0, "y": 0, "width": 1250, "height": 843 },
       "action": {
         "type": "message",
         "label": "เช็คสต็อก",
@@ -13,19 +13,11 @@
       }
     },
     {
-      "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
+      "bounds": { "x": 1250, "y": 0, "width": 1250, "height": 843 },
       "action": {
         "type": "message",
         "label": "ไทเกอร์เพย์",
         "text": "ไทเกอร์"
-      }
-    },
-    {
-      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
-      "action": {
-        "type": "message",
-        "label": "สำรวจสินค้า",
-        "text": "สำรวจ"
       }
     }
   ]
