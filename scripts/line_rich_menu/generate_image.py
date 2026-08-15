@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate a simple/minimal KCW LINE rich-menu PNG (2500x843, half-height, 2 taps).
+"""Generate a simple/minimal KCW LINE rich-menu PNG (2500x843, half-height, 3 taps).
 
-Visual language mirrors the v2 shop tools (companion + stock-check):
-dark canvas, Prompt type, one icon + one label per column — no cards/header clutter.
+Visual language mirrors the v2 shop tools: dark canvas, Prompt type,
+one icon + one label per column — no cards/header clutter.
 """
 
 from __future__ import annotations
@@ -17,17 +17,18 @@ FONTS = ROOT / "fonts"
 
 W, H = 2500, 843
 
-# Match parts9 explorer / companion dark theme
 BG = (12, 16, 20)  # #0c1014
 LINE = (42, 53, 66)  # #2a3542
 TEXT = (236, 241, 246)
 
-STOCK = (230, 180, 80)  # explorer --warn
-PAY = (47, 158, 123)  # companion --accent #2f9e7b
+STOCK = (230, 180, 80)
+PAY = (47, 158, 123)
+SEARCH = (61, 156, 240)  # explorer --acc #3d9cf0
 
 CELLS = [
     {"title": "เช็คสต็อก", "accent": STOCK, "icon": "boxes", "tint": (28, 24, 14)},
     {"title": "ไทเกอร์เพย์", "accent": PAY, "icon": "pay", "tint": (14, 28, 24)},
+    {"title": "ค้นหา", "accent": SEARCH, "icon": "search", "tint": (14, 22, 32)},
 ]
 
 
@@ -63,8 +64,7 @@ def _center_text(
 
 
 def _draw_boxes_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color: tuple[int, int, int]) -> None:
-    w, h = 78, 58
-    draw.rounded_rectangle([cx - 52, cy - 8, cx + 26, cy + h - 8], radius=8, outline=color, width=5)
+    draw.rounded_rectangle([cx - 52, cy - 8, cx + 26, cy + 50], radius=8, outline=color, width=5)
     draw.rounded_rectangle([cx - 26, cy - 36, cx + 52, cy + 22], radius=8, outline=color, width=5)
     draw.line([(cx - 26, cy - 6), (cx + 52, cy - 6)], fill=color, width=4)
 
@@ -75,12 +75,18 @@ def _draw_pay_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color: tuple[int
     draw.rounded_rectangle([cx - 40, cy + 10, cx - 4, cy + 28], radius=4, fill=color)
 
 
+def _draw_search_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color: tuple[int, int, int]) -> None:
+    r = 42
+    draw.ellipse([cx - r - 10, cy - r - 6, cx + r - 10, cy + r - 6], outline=color, width=5)
+    draw.line([(cx + 24, cy + 24), (cx + 56, cy + 56)], fill=color, width=6)
+
+
 def generate() -> Path:
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    widths = [1250, 1250]
-    title_font = _font("Prompt-SemiBold.ttf", 74)
+    widths = [833, 834, 833]
+    title_font = _font("Prompt-SemiBold.ttf", 70)
     x = 0
 
     for i, (cell, cw) in enumerate(zip(CELLS, widths)):
@@ -96,8 +102,10 @@ def generate() -> Path:
 
         if cell["icon"] == "boxes":
             _draw_boxes_icon(draw, cx, icon_y, cell["accent"])
-        else:
+        elif cell["icon"] == "pay":
             _draw_pay_icon(draw, cx, icon_y, cell["accent"])
+        else:
+            _draw_search_icon(draw, cx, icon_y, cell["accent"])
 
         _center_text(draw, (cx, title_y), cell["title"], title_font, TEXT)
         x += cw
