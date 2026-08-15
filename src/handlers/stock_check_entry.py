@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from src.bot.branch_link_buttons import branch_uri_buttons
 from src.stock_check.auth import build_entry_url, mint_access_token
 from src.stock_check.config import get_stock_check_settings
 from src.jobs.heartbeat import get_all_worker_status
@@ -117,12 +118,8 @@ def handle_stock_check_command(engine, *, line_user_id: str, display_name: str |
             "text": "ยังไม่พบเซิร์ฟเวอร์ตรวจนับสต็อกออนไลน์ครับ (รอ HQ/SYP heartbeat)",
         }
 
-    lines = ["ตรวจนับสต็อก — เปิดลิงก์สาขาที่ต้องการ (ต้องอยู่ Wi‑Fi สาขา):\n"]
-    label = {"HQ": "สำนักงานใหญ่ (HQ)", "SYP": "สี่แยกพัฒนา (SYP)"}
-    for branch, url, status in links:
-        name = label.get(branch, branch)
-        if status == "offline" or not url:
-            lines.append(f"• {name}: ออฟไลน์")
-        else:
-            lines.append(f"• {name}:\n{url}")
-    return {"type": "text", "text": "\n".join(lines)}
+    return branch_uri_buttons(
+        title="ตรวจนับสต็อก",
+        alt_text="ตรวจนับสต็อก — กดเลือกสาขา",
+        links=links,
+    )

@@ -1,0 +1,24 @@
+{
+  "size": { "width": 2500, "height": 843 },
+  "selected": true,
+  "name": "KCW tools v2",
+  "chatBarText": "เมนูเครื่องมือ",
+  "areas": [
+    {
+      "bounds": { "x": 0, "y": 0, "width": 1250, "height": 843 },
+      "action": {
+        "type": "message",
+        "label": "เช็คสต็อก",
+        "text": "เช็คสต็อก"
+      }
+    },
+    {
+      "bounds": { "x": 1250, "y": 0, "width": 1250, "height": 843 },
+      "action": {
+        "type": "message",
+        "label": "ไทเกอร์เพย์",
+        "text": "ไทเกอร์"
+      }
+    }
+  ]
+}

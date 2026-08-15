@@ -1,0 +1,98 @@
+"""Build short LINE replies that hide long entry URLs behind Thai word-links."""
+
+from __future__ import annotations
+
+BRANCH_LABEL = {
+    "HQ": "สำนักงานใหญ่",
+    "SYP": "สาขาสี่แยกพัฒนา",
+}
+
+
+def branch_uri_buttons(
+    *,
+    title: str,
+    alt_text: str,
+    links: list[tuple[str, str, str]],
+    wifi_hint: str = "กดชื่อสาขาเพื่อเปิด — ต้องอยู่ Wi‑Fi สาขานั้น",
+) -> dict:
+    """
+    links: (branch, url, status) where status is online|offline|local.
+
+    Returns a Flex message: Thai branch names are tappable word-links; the
+    long token URL is only inside the URI action (never shown as chat text).
+    Falls back to plain text when every branch is offline.
+    """
+    link_rows: list[dict] = []
+    offline_names: list[str] = []
+
+    for branch, url, status in links:
+        name = BRANCH_LABEL.get(branch, branch)
+        if status == "offline" or not url:
+            offline_names.append(name)
+            continue
+        # Link-styled button reads as a meaningful word, not a raw URL
+        link_rows.append(
+            {
+                "type": "button",
+                "style": "link",
+                "height": "sm",
+                "action": {
+                    "type": "uri",
+                    "label": name[:40],
+                    "uri": url,
+                },
+            }
+        )
+
+    if not link_rows:
+        lines = [title, "", "ยังไม่มีสาขาออนไลน์ครับ"]
+        if offline_names:
+            lines.append("ออฟไลน์: " + ", ".join(offline_names))
+        return {"type": "text", "text": "\n".join(lines)}
+
+    body_contents: list[dict] = [
+        {
+            "type": "text",
+            "text": title,
+            "weight": "bold",
+            "size": "lg",
+            "color": "#111111",
+        },
+        {
+            "type": "text",
+            "text": wifi_hint,
+            "size": "sm",
+            "color": "#888888",
+            "wrap": True,
+        },
+        {"type": "separator", "margin": "md"},
+    ]
+    body_contents.extend(link_rows)
+
+    if offline_names:
+        body_contents.append(
+            {
+                "type": "text",
+                "text": "ออฟไลน์: " + ", ".join(offline_names),
+                "size": "xs",
+                "color": "#AAAAAA",
+                "wrap": True,
+                "margin": "md",
+            }
+        )
+
+    return {
+        "type": "flex",
+        "altText": alt_text[:400],
+        "contents": {
+            "type": "bubble",
+            "size": "kilo",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "paddingAll": "16px",
+                "contents": body_contents,
+            },
+        },
+    }

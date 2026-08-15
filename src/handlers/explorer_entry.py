@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from src.bot.branch_link_buttons import branch_uri_buttons
 from src.jobs.heartbeat import get_all_worker_status
 from src.jobs.hq_worker import hq_worker_sort_key
 from src.handlers.stock_check_entry import _branch_for_worker
@@ -53,12 +54,9 @@ def handle_explorer_command(engine, *, line_user_id: str, display_name: str | No
             seen.add(branch)
     if not links:
         return {"type": "text", "text": "ยังไม่พบเซิร์ฟเวอร์ PARTS9 explorer ออนไลน์ครับ (รอ heartbeat)"}
-    lines = ["PARTS9 explorer — เปิดลิงก์ตอนอยู่ Wi‑Fi สาขา (หรือ Tailscale):\n"]
-    label = {"HQ": "สำนักงานใหญ่ (HQ)", "SYP": "สี่แยกพัฒนา (SYP)"}
-    for branch, url, status in links:
-        name = label.get(branch, branch)
-        if status == "offline" or not url:
-            lines.append(f"• {name}: ออฟไลน์")
-        else:
-            lines.append(f"• {name}:\n{url}")
-    return {"type": "text", "text": "\n".join(lines)}
+    return branch_uri_buttons(
+        title="สำรวจสินค้า",
+        alt_text="สำรวจสินค้า — กดเลือกสาขา",
+        links=links,
+        wifi_hint="กดปุ่มสาขา — ต้องอยู่ Wi‑Fi สาขา (หรือ Tailscale)",
+    )
