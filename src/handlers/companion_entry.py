@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from src.bot.branch_link_buttons import branch_uri_buttons
 from src.jobs.heartbeat import get_all_worker_status
 from src.jobs.hq_worker import hq_worker_sort_key
 from src.stock_check.auth import build_entry_url, mint_access_token
@@ -78,12 +79,8 @@ def handle_companion_command(engine, *, line_user_id: str, display_name: str | N
             "text": "ยังไม่พบเซิร์ฟเวอร์ Tiger Pay ออนไลน์ครับ (รอ HQ/SYP heartbeat)",
         }
 
-    lines = ["Tiger Pay — เปิดลิงก์สาขาที่ต้องการ (ต้องอยู่ Wi‑Fi สาขา):\n"]
-    label = {"HQ": "สำนักงานใหญ่ (HQ)", "SYP": "สี่แยกพัฒนา (SYP)"}
-    for branch, url, status in links:
-        name = label.get(branch, branch)
-        if status == "offline" or not url:
-            lines.append(f"• {name}: ออฟไลน์")
-        else:
-            lines.append(f"• {name}:\n{url}")
-    return {"type": "text", "text": "\n".join(lines)}
+    return branch_uri_buttons(
+        title="Tiger Pay",
+        alt_text="Tiger Pay — กดเปิด HQ หรือ SYP",
+        links=links,
+    )

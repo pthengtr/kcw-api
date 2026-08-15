@@ -133,6 +133,10 @@ def reply_line_response(reply_token: str, response: dict | None):
             ],
         )
 
+    # buttons / confirm / carousel template (hides long URIs behind labels)
+    if rtype == "template":
+        return reply_line_payload(reply_token, [response])
+
     # ⭐ default text
     text = (response.get("text") or "ไม่เข้าใจคำสั่งครับ")[:5000]
 
