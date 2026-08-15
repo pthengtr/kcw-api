@@ -1,0 +1,17 @@
+[Unit]
+Description=KCW API queue worker (HQ-UBUNTU-SERVER)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/kcw-api
+EnvironmentFile=%h/projects/kcw-api/.env
+Environment=TZ=Asia/Bangkok
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/projects/kcw-api/.venv/bin/python -m src.jobs.worker
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

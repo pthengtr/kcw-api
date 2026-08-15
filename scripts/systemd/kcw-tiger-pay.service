@@ -1,0 +1,16 @@
+[Unit]
+Description=KCW Tiger Pay companion (LAN :8000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/kcw-api
+EnvironmentFile=%h/projects/kcw-api/.env
+Environment=TZ=Asia/Bangkok
+ExecStart=%h/projects/kcw-api/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

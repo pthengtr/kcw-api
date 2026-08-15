@@ -25,6 +25,10 @@ from src.handlers.stock_check_entry import (
     is_stock_check_command,
     handle_stock_check_command,
 )
+from src.handlers.companion_entry import (
+    is_companion_command,
+    handle_companion_command,
+)
 
 
 def route_user_text(
@@ -63,6 +67,15 @@ def route_user_text(
 
     if is_stock_check_command(text):
         return handle_stock_check_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+        )
+
+    if is_companion_command(text):
+        return handle_companion_command(
             engine,
             line_user_id=line_user_id or "unknown",
             display_name=(access or {}).get("display_name")

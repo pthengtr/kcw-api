@@ -14,6 +14,14 @@ cp .env.example .env  # replace placeholders before using external services
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+On Linux HQ (`hq-ubuntu-server`), use systemd user units in `scripts/systemd/` (not Docker). See [kcw-docs ops/hq-linux.md](https://github.com/pthengtr/kcw-docs/blob/main/ops/hq-linux.md).
+
+```bash
+systemctl --user enable --now kcw-worker kcw-tiger-pay kcw-stock-check
+```
+
+Companion on that box requires a LINE link (`ไทเกอร์` / `tiger pay`) when `COMPANION_REQUIRE_LINE_AUTH=true`.
+
 On Windows:
 
 ```bat

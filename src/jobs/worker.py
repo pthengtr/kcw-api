@@ -12,7 +12,10 @@ from src.jobs.queue import (
     finish_job_success,
 )
 from src.jobs.heartbeat import upsert_worker_heartbeat
-from src.stock_check.net import resolve_stock_check_public_base_url
+from src.stock_check.net import (
+    resolve_companion_public_base_url,
+    resolve_stock_check_public_base_url,
+)
 
 
 load_dotenv()
@@ -35,6 +38,9 @@ def run_worker_forever():
     print(
         f"[START] public_base_url={resolve_stock_check_public_base_url() or '- (auto-detect pending)'}"
     )
+    print(
+        f"[START] companion_public_base_url={resolve_companion_public_base_url() or '- (auto-detect pending)'}"
+    )
     print("[START] command source=.env WORKER_JOB_<JOB_TYPE>_COMMAND")
 
     last_heartbeat_at = 0.0
@@ -45,11 +51,13 @@ def run_worker_forever():
 
             if now_ts - last_heartbeat_at >= heartbeat_interval_seconds:
                 public_base_url = resolve_stock_check_public_base_url()
+                companion_public_base_url = resolve_companion_public_base_url()
                 upsert_worker_heartbeat(
                     engine=engine,
                     worker_name=worker_name,
                     status="idle",
                     public_base_url=public_base_url,
+                    companion_public_base_url=companion_public_base_url,
                 )
                 last_heartbeat_at = now_ts
 

@@ -14,6 +14,7 @@ class StockCheckIdentity:
     line_user_id: str
     display_name: str
     branch: str
+    app: str = "stock-check"
 
 
 class TokenError(ValueError):
@@ -40,6 +41,7 @@ def mint_access_token(
     display_name: str,
     branch: str,
     ttl_seconds: int,
+    app: str = "stock-check",
     now: float | None = None,
 ) -> str:
     if not secret:
@@ -49,6 +51,7 @@ def mint_access_token(
         "uid": line_user_id,
         "name": display_name or line_user_id,
         "branch": branch,
+        "app": app,
         "iat": ts,
         "exp": ts + int(ttl_seconds),
     }
@@ -64,6 +67,7 @@ def verify_access_token(
     *,
     secret: str,
     expected_branch: str,
+    expected_app: str = "stock-check",
     now: float | None = None,
 ) -> StockCheckIdentity:
     if not secret:
@@ -90,16 +94,23 @@ def verify_access_token(
     if not uid:
         raise TokenError("token missing user")
     name = str(payload.get("name") or uid).strip() or uid
+    app = str(payload.get("app") or "stock-check").strip() or "stock-check"
+    if app != expected_app:
+        raise TokenError("token app mismatch")
     return StockCheckIdentity(
         line_user_id=uid,
         display_name=name,
         branch=branch,
+        app=app,
     )
 
 
-def build_entry_url(base_url: str, token: str) -> str:
+def build_entry_url(base_url: str, token: str, path: str = "/stock-check/") -> str:
     root = (base_url or "").rstrip("/")
-    return f"{root}/stock-check/?{urlencode({'t': token})}"
+    prefix = path if path.startswith("/") else f"/{path}"
+    if not prefix.endswith("/"):
+        prefix = prefix + "/"
+    return f"{root}{prefix}?{urlencode({'t': token})}"
 
 
 def quote_path(value: str) -> str:
