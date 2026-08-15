@@ -1,0 +1,32 @@
+{
+  "size": { "width": 2500, "height": 843 },
+  "selected": true,
+  "name": "KCW tools 2026-08",
+  "chatBarText": "เมนูเครื่องมือ",
+  "areas": [
+    {
+      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
+      "action": {
+        "type": "message",
+        "label": "เช็คสต็อก",
+        "text": "เช็คสต็อก"
+      }
+    },
+    {
+      "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
+      "action": {
+        "type": "message",
+        "label": "ไทเกอร์เพย์",
+        "text": "ไทเกอร์"
+      }
+    },
+    {
+      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
+      "action": {
+        "type": "message",
+        "label": "สำรวจสินค้า",
+        "text": "สำรวจ"
+      }
+    }
+  ]
+}
