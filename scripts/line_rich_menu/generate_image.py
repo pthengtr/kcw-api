@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the KCW LINE rich-menu PNG (2500x843, half-height, 3 taps)."""
+"""Generate a simple/minimal KCW LINE rich-menu PNG (2500x843, half-height, 3 taps).
+
+Visual language mirrors the v2 shop tools (companion + PARTS9 explorer):
+dark canvas, Prompt type, one icon + one label per column — no cards/header clutter.
+"""
 
 from __future__ import annotations
 
@@ -9,53 +13,44 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "rich_menu.png"
+FONTS = ROOT / "fonts"
 
 W, H = 2500, 843
-# Auto-parts workshop palette (steel + amber safety accent — not purple/cream AI defaults)
-BG = (18, 28, 38)
-PANEL = (28, 42, 56)
-PANEL_ALT = (34, 52, 68)
-LINE = (55, 78, 98)
-AMBER = (232, 156, 48)
-AMBER_DIM = (180, 118, 36)
-TEXT = (245, 247, 250)
-MUTED = (160, 176, 192)
 
-THAI_BOLD = "/usr/share/fonts/truetype/noto/NotoSansThai-Bold.ttf"
-THAI_REG = "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf"
-LATIN_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-LATIN_REG = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+# Match parts9 explorer / companion dark theme
+BG = (12, 16, 20)  # #0c1014
+LINE = (42, 53, 66)  # #2a3542
+TEXT = (236, 241, 246)
+MUTED = (122, 138, 154)
+
+STOCK = (230, 180, 80)  # explorer --warn
+PAY = (47, 158, 123)  # companion --accent #2f9e7b
+SEARCH = (61, 156, 240)  # explorer --acc #3d9cf0
 
 CELLS = [
-    {
-        "title": "เช็คสต็อก",
-        "sub": "HQ  SYP",
-        "sub_script": "latin",
-        "hint": "ตรวจนับบนไวไฟสาขา",
-        "accent": AMBER,
-        "icon": "boxes",
-    },
-    {
-        "title": "ไทเกอร์เพย์",
-        "sub": "เก็บเงิน",
-        "sub_script": "thai",
-        "hint": "เปิดบิลเก็บเงิน",
-        "accent": (72, 180, 140),
-        "icon": "pay",
-    },
-    {
-        "title": "สำรวจสินค้า",
-        "sub": "PARTS9",
-        "sub_script": "latin",
-        "hint": "ค้นหาและสำรวจแคตตาล็อก",
-        "accent": (88, 156, 220),
-        "icon": "search",
-    },
+    {"title": "เช็คสต็อก", "accent": STOCK, "icon": "boxes", "tint": (28, 24, 14)},
+    {"title": "ไทเกอร์เพย์", "accent": PAY, "icon": "pay", "tint": (14, 28, 24)},
+    {"title": "สำรวจสินค้า", "accent": SEARCH, "icon": "search", "tint": (14, 22, 32)},
 ]
 
 
-def _font(path: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(path, size=size)
+def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
+    path = FONTS / name
+    if path.is_file():
+        return ImageFont.truetype(str(path), size=size)
+    # Fallbacks if fonts/ is missing locally
+    for fallback in (
+        "/usr/share/fonts/truetype/noto/NotoSansThai-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ):
+        if Path(fallback).is_file():
+            return ImageFont.truetype(fallback, size=size)
+    return ImageFont.load_default()
+
+
+def _blend(base: tuple[int, int, int], overlay: tuple[int, int, int], alpha: float) -> tuple[int, int, int]:
+    return tuple(int(b * (1 - alpha) + o * alpha) for b, o in zip(base, overlay))
 
 
 def _center_text(
@@ -68,69 +63,60 @@ def _center_text(
     x, y = xy
     bbox = draw.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    draw.text((x - tw // 2, y - th // 2), text, font=font, fill=fill)
+    draw.text((x - tw // 2 - bbox[0], y - th // 2 - bbox[1]), text, font=font, fill=fill)
 
 
 def _draw_boxes_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color: tuple[int, int, int]) -> None:
-    s = 54
-    # back box
-    draw.rectangle([cx - s, cy - s + 10, cx + 10, cy + 18], outline=color, width=5)
-    # front box
-    draw.rectangle([cx - 10, cy - 18, cx + s, cy + s - 10], outline=color, width=5)
-    draw.line([(cx - 10, cy), (cx + s, cy)], fill=color, width=4)
+    # Two simple stacked crates
+    w, h = 78, 58
+    draw.rounded_rectangle([cx - 52, cy - 8, cx + 26, cy + h - 8], radius=8, outline=color, width=5)
+    draw.rounded_rectangle([cx - 26, cy - 36, cx + 52, cy + 22], radius=8, outline=color, width=5)
+    draw.line([(cx - 26, cy - 6), (cx + 52, cy - 6)], fill=color, width=4)
 
 
 def _draw_pay_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color: tuple[int, int, int]) -> None:
-    r = 58
-    draw.rounded_rectangle([cx - r, cy - int(r * 0.72), cx + r, cy + int(r * 0.72)], radius=14, outline=color, width=5)
-    draw.ellipse([cx - 22, cy - 22, cx + 22, cy + 22], outline=color, width=5)
-    draw.line([(cx, cy - 34), (cx, cy + 34)], fill=color, width=4)
+    # Minimal payment card
+    draw.rounded_rectangle([cx - 72, cy - 48, cx + 72, cy + 48], radius=14, outline=color, width=5)
+    draw.line([(cx - 72, cy - 18), (cx + 72, cy - 18)], fill=color, width=5)
+    draw.rounded_rectangle([cx - 40, cy + 10, cx - 4, cy + 28], radius=4, fill=color)
 
 
 def _draw_search_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color: tuple[int, int, int]) -> None:
-    r = 38
-    draw.ellipse([cx - r - 8, cy - r - 4, cx + r - 8, cy + r - 4], outline=color, width=5)
-    draw.line([(cx + 22, cy + 22), (cx + 52, cy + 52)], fill=color, width=6)
+    r = 42
+    draw.ellipse([cx - r - 10, cy - r - 6, cx + r - 10, cy + r - 6], outline=color, width=5)
+    draw.line([(cx + 24, cy + 24), (cx + 56, cy + 56)], fill=color, width=6)
 
 
 def generate() -> Path:
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    # subtle top brand bar
-    draw.rectangle([0, 0, W, 10], fill=AMBER)
-    brand_font = _font(LATIN_BOLD, 36)
-    brand_th = _font(THAI_REG, 28)
-    _center_text(draw, (W // 2, 48), "KCW", brand_font, AMBER)
-    _center_text(draw, (W // 2, 88), "เครื่องมือประจำวัน", brand_th, MUTED)
-
     widths = [833, 834, 833]
+    title_font = _font("Prompt-SemiBold.ttf", 70)
     x = 0
-    title_font = _font(THAI_BOLD, 72)
-    sub_latin = _font(LATIN_BOLD, 34)
-    sub_thai = _font(THAI_BOLD, 36)
-    hint_font = _font(THAI_REG, 30)
 
     for i, (cell, cw) in enumerate(zip(CELLS, widths)):
-        panel = PANEL if i % 2 == 0 else PANEL_ALT
-        # inset panel
-        pad = 28
+        # Soft column wash (no inset cards)
+        fill = _blend(BG, cell["tint"], 0.55)
+        draw.rectangle([x, 0, x + cw, H], fill=fill)
+
+        # Thin vertical divider
+        if i > 0:
+            draw.line([(x, 56), (x, H - 56)], fill=LINE, width=2)
+
+        cx = x + cw // 2
+        # Keep icon + label as one centered cluster
+        icon_y = 340
+        title_y = 510
+
+        # Small accent tick just above the icon
+        tick_w = 40
         draw.rounded_rectangle(
-            [x + pad, 120, x + cw - pad, H - 36],
-            radius=28,
-            fill=panel,
-            outline=LINE,
-            width=3,
-        )
-        # left accent stripe
-        draw.rounded_rectangle(
-            [x + pad, 120, x + pad + 14, H - 36],
-            radius=8,
+            [cx - tick_w // 2, icon_y - 118, cx + tick_w // 2, icon_y - 110],
+            radius=3,
             fill=cell["accent"],
         )
 
-        cx = x + cw // 2
-        icon_y = 250
         if cell["icon"] == "boxes":
             _draw_boxes_icon(draw, cx, icon_y, cell["accent"])
         elif cell["icon"] == "pay":
@@ -138,19 +124,9 @@ def generate() -> Path:
         else:
             _draw_search_icon(draw, cx, icon_y, cell["accent"])
 
-        sub_font = sub_thai if cell["sub_script"] == "thai" else sub_latin
-        _center_text(draw, (cx, 400), cell["title"], title_font, TEXT)
-        _center_text(draw, (cx, 490), cell["sub"], sub_font, cell["accent"])
-        _center_text(draw, (cx, 570), cell["hint"], hint_font, MUTED)
-
-        # divider between cells (except last)
-        if i < 2:
-            draw.line([(x + cw, 140), (x + cw, H - 50)], fill=LINE, width=2)
+        _center_text(draw, (cx, title_y), cell["title"], title_font, TEXT)
 
         x += cw
-
-    # bottom chat-bar cue strip
-    draw.rectangle([0, H - 8, W, H], fill=AMBER_DIM)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     img.save(OUT, format="PNG", optimize=True)
