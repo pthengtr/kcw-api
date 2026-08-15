@@ -3,11 +3,13 @@ from __future__ import annotations
 import re
 
 from src.bot.branch_link_buttons import branch_uri_buttons
+from src.handlers.branch_tool_links import (
+    collect_branch_tool_links,
+    elevated_wifi_hint,
+    is_elevated_access,
+)
 from src.jobs.heartbeat import get_all_worker_status
-from src.jobs.hq_worker import hq_worker_sort_key
-from src.stock_check.auth import build_entry_url, mint_access_token
 from src.stock_check.config import get_stock_check_settings
-from src.handlers.stock_check_entry import _branch_for_worker
 
 
 COMPANION_COMMANDS = {
@@ -36,7 +38,13 @@ def is_companion_command(text: str) -> bool:
     return _normalize_cmd(text) in _COMPANION_COMMANDS_NORM
 
 
-def handle_companion_command(engine, *, line_user_id: str, display_name: str | None = None) -> dict:
+def handle_companion_command(
+    engine,
+    *,
+    line_user_id: str,
+    display_name: str | None = None,
+    access: dict | None = None,
+) -> dict:
     settings = get_stock_check_settings()
     if not settings.stock_check_token_secret:
         return {
@@ -44,34 +52,20 @@ def handle_companion_command(engine, *, line_user_id: str, display_name: str | N
             "text": "ยังไม่ได้ตั้ง STOCK_CHECK_TOKEN_SECRET บนเซิร์ฟเวอร์ครับ",
         }
 
+    elevated = is_elevated_access(access)
     workers = get_all_worker_status(engine, offline_after_seconds=60)
-    workers = sorted(
+    links = collect_branch_tool_links(
         workers,
-        key=lambda w: hq_worker_sort_key(str(w.get("worker_name") or "")),
+        line_user_id=line_user_id,
+        display_name=display_name,
+        secret=settings.stock_check_token_secret,
+        ttl_seconds=settings.stock_check_token_ttl_seconds,
+        path="/companion/",
+        lan_url_key="companion_public_base_url",
+        tailscale_url_key="companion_tailscale_base_url",
+        include_tailscale=elevated,
+        mint_app="companion",
     )
-    links: list[tuple[str, str, str]] = []
-    seen_branch: set[str] = set()
-    for w in workers:
-        branch = _branch_for_worker(str(w.get("worker_name") or ""))
-        if not branch or branch in seen_branch:
-            continue
-        base = (w.get("companion_public_base_url") or "").strip().rstrip("/")
-        online = w.get("online_status") == "online"
-        if base:
-            try:
-                token = mint_access_token(
-                    secret=settings.stock_check_token_secret,
-                    line_user_id=line_user_id,
-                    display_name=display_name or line_user_id,
-                    branch=branch,
-                    ttl_seconds=settings.stock_check_token_ttl_seconds,
-                    app="companion",
-                )
-                url = build_entry_url(base, token, path="/companion/")
-            except Exception:  # noqa: BLE001
-                url = base + "/companion/"
-            links.append((branch, url if online else "", "online" if online else "offline"))
-            seen_branch.add(branch)
 
     if not links:
         return {
@@ -83,4 +77,5 @@ def handle_companion_command(engine, *, line_user_id: str, display_name: str | N
         title="ไทเกอร์เพย์",
         alt_text="ไทเกอร์เพย์ — กดเลือกสาขา",
         links=links,
+        wifi_hint=elevated_wifi_hint(elevated),
     )

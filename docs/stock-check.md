@@ -38,7 +38,9 @@ Prefer `run_stock_check.vbs` over the bat (and over starting from an SSH shell).
 
 Listens on `STOCK_CHECK_LISTEN_PORT` (default **8787**). Routes under `/stock-check/`.
 
-Worker heartbeats `public_base_url` automatically from the PC’s LAN IP (re-detected every heartbeat). Set `STOCK_CHECK_PUBLIC_BASE_URL` only if you need a fixed Tailscale/hostname URL.
+Worker heartbeats `public_base_url` automatically from the PC’s LAN IP (re-detected every heartbeat). Set `STOCK_CHECK_PUBLIC_BASE_URL` only if you need a fixed LAN/hostname URL.
+
+Workers also heartbeat `tailscale_public_base_url` (auto-detect Tailscale IP, or set `STOCK_CHECK_TAILSCALE_BASE_URL`). LINE users with `access_group` **admin** or **exec** get extra Flex links (`สนญ · Tailscale` / `สี่แยก · Tailscale`) so they can open the app over Tailscale without branch Wi‑Fi.
 
 Keep companion / Tiger Pay on:
 

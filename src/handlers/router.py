@@ -76,6 +76,7 @@ def route_user_text(
             display_name=(access or {}).get("display_name")
             or (access or {}).get("line_display_name")
             or line_user_id,
+            access=access,
         )
 
     if is_explorer_command(text):
@@ -85,6 +86,7 @@ def route_user_text(
             display_name=(access or {}).get("display_name")
             or (access or {}).get("line_display_name")
             or line_user_id,
+            access=access,
         )
 
     if is_companion_command(text):
@@ -94,6 +96,7 @@ def route_user_text(
             display_name=(access or {}).get("display_name")
             or (access or {}).get("line_display_name")
             or line_user_id,
+            access=access,
         )
 
     if is_image_command(text):
