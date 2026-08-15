@@ -5,6 +5,7 @@ import re
 from src.stock_check.auth import build_entry_url, mint_access_token
 from src.stock_check.config import get_stock_check_settings
 from src.jobs.heartbeat import get_all_worker_status
+from src.jobs.hq_worker import hq_worker_sort_key
 
 
 # Canonical phrases (after _normalize_cmd). Add readable forms here; spelling
@@ -69,6 +70,10 @@ def handle_stock_check_command(engine, *, line_user_id: str, display_name: str |
         }
 
     workers = get_all_worker_status(engine, offline_after_seconds=60)
+    workers = sorted(
+        workers,
+        key=lambda w: hq_worker_sort_key(str(w.get("worker_name") or "")),
+    )
     # Prefer heartbeat public_base_url when present
     links: list[tuple[str, str, str]] = []  # branch, url, status
     seen_branch: set[str] = set()

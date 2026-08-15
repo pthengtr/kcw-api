@@ -30,6 +30,28 @@ def detect_lan_ipv4() -> str | None:
     return None
 
 
+def resolve_lan_public_base_url(
+    *,
+    explicit: str | None,
+    port: int | None,
+    env_port_key: str,
+    default_port: int,
+) -> str | None:
+    value = (explicit or "").strip().rstrip("/")
+    if value:
+        return value
+    ip = detect_lan_ipv4()
+    if not ip:
+        return None
+    listen_port = port
+    if listen_port is None:
+        try:
+            listen_port = int(os.getenv(env_port_key) or str(default_port))
+        except ValueError:
+            listen_port = default_port
+    return f"http://{ip}:{listen_port}"
+
+
 def resolve_stock_check_public_base_url(
     *,
     explicit: str | None = None,
@@ -40,16 +62,24 @@ def resolve_stock_check_public_base_url(
 
     Re-call on each heartbeat so DHCP IP changes propagate without restart.
     """
-    value = (explicit if explicit is not None else os.getenv("STOCK_CHECK_PUBLIC_BASE_URL") or "").strip().rstrip("/")
-    if value:
-        return value
-    ip = detect_lan_ipv4()
-    if not ip:
-        return None
-    listen_port = port
-    if listen_port is None:
-        try:
-            listen_port = int(os.getenv("STOCK_CHECK_LISTEN_PORT") or "8787")
-        except ValueError:
-            listen_port = 8787
-    return f"http://{ip}:{listen_port}"
+    env_explicit = explicit if explicit is not None else os.getenv("STOCK_CHECK_PUBLIC_BASE_URL")
+    return resolve_lan_public_base_url(
+        explicit=env_explicit,
+        port=port,
+        env_port_key="STOCK_CHECK_LISTEN_PORT",
+        default_port=8787,
+    )
+
+
+def resolve_companion_public_base_url(
+    *,
+    explicit: str | None = None,
+    port: int | None = None,
+) -> str | None:
+    env_explicit = explicit if explicit is not None else os.getenv("COMPANION_PUBLIC_BASE_URL")
+    return resolve_lan_public_base_url(
+        explicit=env_explicit,
+        port=port,
+        env_port_key="COMPANION_LISTEN_PORT",
+        default_port=8000,
+    )

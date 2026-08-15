@@ -12,6 +12,8 @@ os.environ.setdefault("TIGER_PAY_MAX_BODY_BYTES", "5242880")
 os.environ.setdefault("OPENAI_API_KEY", "placeholder")
 os.environ.setdefault("SUPABASE_DB_HOST", "localhost")
 os.environ.setdefault("SUPABASE_DB_PASSWORD", "placeholder")
+os.environ["COMPANION_REQUIRE_LINE_AUTH"] = "false"
+os.environ.setdefault("STOCK_CHECK_TOKEN_SECRET", "test-stock-check-secret")
 
 from src.tiger_pay.config import get_tiger_pay_settings
 

@@ -637,7 +637,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         if not jobs:
             return text_response(
                 "ยังอัปเดตออนไลน์ไม่ได้ครับ\n"
-                "ไม่พบ HQ-PC ออนไลน์สำหรับงานนี้"
+                "ไม่พบ worker HQ ออนไลน์สำหรับงานนี้"
             )
 
         lines = ["ได้เลย เดี๋ยวจ๋าไปอัปเดตยอดขายออนไลน์ที่ HQ ให้นะ ✅"]
@@ -830,7 +830,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         if not jobs:
             return text_response(
                 "ยังอัปเดตธนาคารไม่ได้ครับ\n"
-                "ไม่พบ HQ-PC ออนไลน์สำหรับงานนี้"
+                "ไม่พบ worker HQ ออนไลน์สำหรับงานนี้"
             )
 
         lines = ["ได้เลย เดี๋ยวจ๋าไปดึง statement ธนาคารที่ HQ ให้นะ ✅"]
@@ -906,7 +906,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         if not jobs:
             return text_response(
                 "ยังรัน HQ raw ไม่ได้ครับ\n"
-                "ไม่พบ HQ-PC ออนไลน์สำหรับงานนี้"
+                "ไม่พบ worker HQ ออนไลน์สำหรับงานนี้"
             )
 
         lines = ["ได้เลย เดี๋ยวรัน HQ parts9 raw ที่สนญให้นะ ✅"]
@@ -944,7 +944,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         if not jobs:
             return text_response(
                 "ยังรัน HQ full ไม่ได้ครับ\n"
-                "ไม่พบ HQ-PC ออนไลน์สำหรับงานนี้"
+                "ไม่พบ worker HQ ออนไลน์สำหรับงานนี้"
             )
 
         lines = ["ได้เลย เดี๋ยวรัน HQ parts9 full pipeline ที่สนญให้นะ ✅"]

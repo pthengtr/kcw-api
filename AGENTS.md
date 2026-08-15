@@ -28,9 +28,9 @@ A `.env` file (gitignored) is loaded via `python-dotenv`. Required variables are
 
 For Cursor Cloud setup commands, Supabase CLI migration commands, and the full list of required secret names, see `docs/cloud-environment.md`. Use `.env.example` as a non-secret template and never commit real values.
 
-### No tests or linting configured
+### Tests
 
-This codebase has no test suite, no linting/formatting tools, and no pre-commit hooks. There is no `tests/` directory, no `pytest` in `requirements.txt`, and no ruff/flake8/black/mypy configuration.
+`pytest` lives in `requirements.txt`. Tests are under `tests/` (Tiger Pay, stock-check, companion, worker preference). Not every route is covered.
 
 ### Python version
 
@@ -38,7 +38,8 @@ The project targets Python 3.11 (`runtime.txt`). The venv at `/workspace/.venv` 
 
 ### Project structure
 
-- `app/main.py` — FastAPI app with two POST endpoints: `/kcw-peak/sync` and `/line-webhook`.
-- `src/` — all business logic: `db/` (SQLAlchemy + psycopg), `bot/` (LINE API helpers), `handlers/` (message routing, image handling), `ai/` (OpenAI KB), `access/` (user access control), `jobs/` (background worker), `search/`, `repos/`, `utils/`.
+- `app/main.py` — FastAPI LINE webhook, Tiger Pay webhook, companion UI/API, printout.
+- `app/stock_check_app.py` — separate stock-check LAN app (port 8787).
+- `src/` — business logic: `db/`, `bot/`, `handlers/`, `ai/`, `access/`, `jobs/` (queue worker), `tiger_pay/`, `stock_check/`, `companion/`, `search/`, `repos/`.
 - `supabase/` — Supabase CLI config and SQL migrations.
 - `notebooks/` — Jupyter notebooks for ad-hoc queries.

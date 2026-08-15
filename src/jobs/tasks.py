@@ -1,6 +1,11 @@
 from uuid import uuid4
 
+from src.jobs.hq_worker import pick_hq_worker, SYP_WORKER_NAME
 from src.jobs.queue import enqueue_job
+
+
+def _hq_name(engine, allowed_workers: set[str] | None) -> str | None:
+    return pick_hq_worker(engine, allowed_workers=allowed_workers)
 
 
 def enqueue_sync_inventory_jobs(
@@ -11,16 +16,15 @@ def enqueue_sync_inventory_jobs(
 ) -> list[dict]:
     jobs = []
     batch_id = str(uuid4())
+    hq = _hq_name(engine, allowed_workers)
 
-    targets = [
-        {"site": "HQ", "worker_name": "HQ-PC"},
-        {"site": "SYP", "worker_name": "SYP-PC"},
-    ]
+    targets = []
+    if hq:
+        targets.append({"site": "HQ", "worker_name": hq})
+    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
+        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
 
     for target in targets:
-        if allowed_workers is not None and target["worker_name"] not in allowed_workers:
-            continue
-
         job = enqueue_job(
             engine=engine,
             job_type="sync_inventory",
@@ -30,7 +34,6 @@ def enqueue_sync_inventory_jobs(
             source=source,
             batch_id=batch_id,
         )
-
         jobs.append(job)
 
     return jobs
@@ -43,16 +46,15 @@ def enqueue_sync_product_images_jobs(
 ) -> list[dict]:
     jobs = []
     batch_id = str(uuid4())
+    hq = _hq_name(engine, allowed_workers)
 
-    targets = [
-        {"site": "HQ", "worker_name": "HQ-PC"},
-        {"site": "SYP", "worker_name": "SYP-PC"},
-    ]
+    targets = []
+    if hq:
+        targets.append({"site": "HQ", "worker_name": hq})
+    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
+        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
 
     for target in targets:
-        if allowed_workers is not None and target["worker_name"] not in allowed_workers:
-            continue
-
         job = enqueue_job(
             engine=engine,
             job_type="sync_product_images",
@@ -67,7 +69,6 @@ def enqueue_sync_product_images_jobs(
             source=source,
             batch_id=batch_id,
         )
-
         jobs.append(job)
 
     return jobs
@@ -78,34 +79,26 @@ def enqueue_sync_online_sales_jobs(
     source: str | None = None,
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
-    jobs = []
-    batch_id = str(uuid4())
-
-    target = {"site": "HQ", "worker_name": "HQ-PC"}
-
-    if allowed_workers is not None and target["worker_name"] not in allowed_workers:
-        return jobs
-
-    job = enqueue_job(
-        engine=engine,
+    hq = _hq_name(engine, allowed_workers)
+    if not hq:
+        return []
+    return _enqueue_single_worker_job(
+        engine,
         job_type="sync_online_sales",
-        payload={
-            "task": "sync_online_sales",
-            "site": target["site"],
+        site="HQ",
+        worker_name=hq,
+        task="sync_online_sales",
+        requested_by=requested_by,
+        source=source,
+        allowed_workers=None,
+        extra_payload={
             "notebooks": [
                 "71_online_shopee.ipynb",
                 "72_online_lazada.ipynb",
                 "73_online_tiktok.ipynb",
             ],
         },
-        worker_name=target["worker_name"],
-        requested_by=requested_by,
-        source=source,
-        batch_id=batch_id,
     )
-
-    jobs.append(job)
-    return jobs
 
 
 def _enqueue_single_worker_job(
@@ -118,18 +111,19 @@ def _enqueue_single_worker_job(
     requested_by: str | None = None,
     source: str | None = None,
     allowed_workers: set[str] | None = None,
+    extra_payload: dict | None = None,
 ) -> list[dict]:
     if allowed_workers is not None and worker_name not in allowed_workers:
         return []
 
     batch_id = str(uuid4())
+    payload = {"task": task, "site": site}
+    if extra_payload:
+        payload.update(extra_payload)
     job = enqueue_job(
         engine=engine,
         job_type=job_type,
-        payload={
-            "task": task,
-            "site": site,
-        },
+        payload=payload,
         worker_name=worker_name,
         requested_by=requested_by,
         source=source,
@@ -148,7 +142,7 @@ def enqueue_syp_raw_jobs(
         engine,
         job_type="syp_raw",
         site="SYP",
-        worker_name="SYP-PC",
+        worker_name=SYP_WORKER_NAME,
         task="syp_raw",
         requested_by=requested_by,
         source=source,
@@ -162,15 +156,18 @@ def enqueue_hq_raw_jobs(
     source: str | None = None,
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
+    hq = _hq_name(engine, allowed_workers)
+    if not hq:
+        return []
     return _enqueue_single_worker_job(
         engine,
         job_type="hq_raw",
         site="HQ",
-        worker_name="HQ-PC",
+        worker_name=hq,
         task="hq_raw",
         requested_by=requested_by,
         source=source,
-        allowed_workers=allowed_workers,
+        allowed_workers=None,
     )
 
 
@@ -180,15 +177,18 @@ def enqueue_hq_full_jobs(
     source: str | None = None,
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
+    hq = _hq_name(engine, allowed_workers)
+    if not hq:
+        return []
     return _enqueue_single_worker_job(
         engine,
         job_type="hq_full",
         site="HQ",
-        worker_name="HQ-PC",
+        worker_name=hq,
         task="hq_full",
         requested_by=requested_by,
         source=source,
-        allowed_workers=allowed_workers,
+        allowed_workers=None,
     )
 
 
@@ -200,16 +200,15 @@ def enqueue_sync_pomas_podet_jobs(
 ) -> list[dict]:
     jobs = []
     batch_id = str(uuid4())
+    hq = _hq_name(engine, allowed_workers)
 
-    targets = [
-        {"site": "HQ", "worker_name": "HQ-PC"},
-        {"site": "SYP", "worker_name": "SYP-PC"},
-    ]
+    targets = []
+    if hq:
+        targets.append({"site": "HQ", "worker_name": hq})
+    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
+        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
 
     for target in targets:
-        if allowed_workers is not None and target["worker_name"] not in allowed_workers:
-            continue
-
         job = enqueue_job(
             engine=engine,
             job_type="sync_pomas_podet",
@@ -222,7 +221,6 @@ def enqueue_sync_pomas_podet_jobs(
             source=source,
             batch_id=batch_id,
         )
-
         jobs.append(job)
 
     return jobs
@@ -236,16 +234,15 @@ def enqueue_sync_iclow_jobs(
 ) -> list[dict]:
     jobs = []
     batch_id = str(uuid4())
+    hq = _hq_name(engine, allowed_workers)
 
-    targets = [
-        {"site": "HQ", "worker_name": "HQ-PC"},
-        {"site": "SYP", "worker_name": "SYP-PC"},
-    ]
+    targets = []
+    if hq:
+        targets.append({"site": "HQ", "worker_name": hq})
+    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
+        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
 
     for target in targets:
-        if allowed_workers is not None and target["worker_name"] not in allowed_workers:
-            continue
-
         job = enqueue_job(
             engine=engine,
             job_type="sync_iclow",
@@ -258,7 +255,6 @@ def enqueue_sync_iclow_jobs(
             source=source,
             batch_id=batch_id,
         )
-
         jobs.append(job)
 
     return jobs
@@ -272,16 +268,15 @@ def enqueue_sync_icmas_jobs(
 ) -> list[dict]:
     jobs = []
     batch_id = str(uuid4())
+    hq = _hq_name(engine, allowed_workers)
 
-    targets = [
-        {"site": "HQ", "worker_name": "HQ-PC"},
-        {"site": "SYP", "worker_name": "SYP-PC"},
-    ]
+    targets = []
+    if hq:
+        targets.append({"site": "HQ", "worker_name": hq})
+    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
+        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
 
     for target in targets:
-        if allowed_workers is not None and target["worker_name"] not in allowed_workers:
-            continue
-
         job = enqueue_job(
             engine=engine,
             job_type="sync_icmas",
@@ -294,7 +289,6 @@ def enqueue_sync_icmas_jobs(
             source=source,
             batch_id=batch_id,
         )
-
         jobs.append(job)
 
     return jobs
@@ -306,16 +300,19 @@ def enqueue_bank_statement_import_jobs(
     source: str | None = None,
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
-    """Enqueue one job assigned to HQ-PC only."""
+    """Enqueue one job assigned to the preferred live HQ worker."""
+    hq = _hq_name(engine, allowed_workers)
+    if not hq:
+        return []
     return _enqueue_single_worker_job(
         engine,
         job_type="bank_statement_import",
         site="HQ",
-        worker_name="HQ-PC",
+        worker_name=hq,
         task="bank_statement_import",
         requested_by=requested_by,
         source=source,
-        allowed_workers=allowed_workers,
+        allowed_workers=None,
     )
 
 
@@ -325,13 +322,10 @@ def enqueue_sync_po_related_jobs(
     source: str | None = None,
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
-    """Enqueue one unassigned job; any online worker can claim it."""
-    known_workers = {"HQ-PC", "SYP-PC"}
-
-    if allowed_workers is not None:
-        eligible = known_workers & allowed_workers
-        if not eligible:
-            return []
+    """Assign to preferred live HQ worker when possible; else unassigned."""
+    hq = _hq_name(engine, allowed_workers)
+    if allowed_workers is not None and hq is None and SYP_WORKER_NAME not in allowed_workers:
+        return []
 
     batch_id = str(uuid4())
     job = enqueue_job(
@@ -340,7 +334,7 @@ def enqueue_sync_po_related_jobs(
         payload={
             "task": "sync_po_related",
         },
-        worker_name=None,
+        worker_name=hq,
         requested_by=requested_by,
         source=source,
         batch_id=batch_id,
