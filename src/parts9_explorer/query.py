@@ -33,9 +33,62 @@ CATEGORY_LABELS = {
     "33": "อัดสายไฮดรอลิค", "34": "โฟคลิฟ", "35": "รถไถ ยันม่าร์",
     "40": "ค่าแรง", "70": "ค่าใช้จ่าย", "91": "โปรโมชั่น",
 }
-_DOC_HINT = re.compile(r"^(P|PV|RC|RV|KCPN|PO|3T|3SA|SA|TD|TR|CN)\w+$", re.I)
+_DOC_HINT = re.compile(
+    r"^(PI|PO|PV|P|RC|RV|RVI|KCPN|3T|3SA|8K|SA|TD|TR|TF|TFV|TAD|CN|DN)\w+",
+    re.I,
+)
 _BCODE_LIKE = re.compile(r"^[0-9]{4,}[A-Za-z0-9\-]*$")
 _CODE1_TOKEN = re.compile(r"^[A-Za-z]$")
+_KIND_PREFIX = re.compile(
+    r"^(si|pi|po|pv|rv|np|iclow|สินค้า|บิลขาย|บิลซื้อ|ใบสั่ง(?:ซื้อ)?|"
+    r"ค้างรับ|ใบสำคัญจ่าย|ใบสำคัญรับ|โน้ต|ใบจ่าย|note)[:\s]+",
+    re.I,
+)
+_KIND_ALIASES = {
+    "si": "si", "บิลขาย": "si",
+    "pi": "pi", "บิลซื้อ": "pi",
+    "po": "po", "ใบสั่ง": "po", "ใบสั่งซื้อ": "po",
+    "pv": "pv", "ใบสำคัญจ่าย": "pv", "โน้ต": "pv", "ใบจ่าย": "pv", "note": "pv", "np": "pv",
+    "rv": "rv", "ใบสำคัญรับ": "rv",
+    "iclow": "iclow", "ค้างรับ": "iclow",
+    "สินค้า": "product",
+}
+DOC_KIND_LABELS = {
+    "si": "บิลขาย SI",
+    "pi": "บิลซื้อ PI",
+    "po": "ใบสั่งซื้อ PO",
+    "pv": "ใบสำคัญจ่าย PV",
+    "rv": "ใบสำคัญรับ RV",
+    "iclow": "ค้างรับ ICLOW",
+    "product": "สินค้า",
+}
+
+
+def maybe_document_query(raw: str) -> bool:
+    """Single token with digits — voucher, note, or bill number, including numeric notes."""
+    q = (raw or "").strip()
+    if not q or " " in q:
+        return False
+    compact = re.sub(r"\s+", "", q)
+    return len(compact) >= 4 and any(ch.isdigit() for ch in compact)
+
+
+def infer_doc_kind(docno: str) -> str | None:
+    compact = re.sub(r"\s+", "", docno or "")
+    if not compact:
+        return None
+    u = compact.upper()
+    if u.startswith("PO"):
+        return "po"
+    if u.startswith(("KCPN", "PV")) or re.match(r"^P\d", u):
+        return "pv"
+    if u.startswith(("RC", "RV", "RVI")):
+        return "rv"
+    if u.startswith("PI"):
+        return "pi"
+    if u.startswith(("SA", "3SA", "8K", "3T", "TD", "TR", "TF", "TAD", "CN", "DN")):
+        return "si"
+    return None
 
 
 @dataclass
@@ -47,6 +100,8 @@ class ParsedQuery:
     sizes: list[str] = field(default_factory=list)
     text_terms: list[str] = field(default_factory=list)
     docno: str | None = None
+    doc_kind: str | None = None
+    want_product: bool = True
 
 
 def category_label(bcode: str) -> str:
@@ -70,17 +125,31 @@ def parse_query(raw: str) -> ParsedQuery:
     q = (raw or "").strip()
     if not q:
         return ParsedQuery(raw="", kind="product")
+    forced = None
+    m = _KIND_PREFIX.match(q)
+    if m:
+        forced = _KIND_ALIASES.get(m.group(1).lower())
+        q = q[m.end():].strip()
     compact = re.sub(r"\s+", "", q)
-    if _DOC_HINT.match(compact) or (
+    if forced in ("si", "pi", "po", "pv", "rv", "iclow"):
+        return ParsedQuery(
+            raw=q, kind="document", docno=compact or None, doc_kind=forced, want_product=False,
+        )
+    if forced == "product":
+        pass
+    elif _DOC_HINT.match(compact) or (
         len(compact) >= 6
         and any(ch.isdigit() for ch in compact)
         and " " not in q.strip()
         and not _BCODE_LIKE.match(compact)
         and any(c.isalpha() for c in compact)
     ):
-        return ParsedQuery(raw=q, kind="document", docno=compact)
+        return ParsedQuery(
+            raw=q, kind="document", docno=compact,
+            doc_kind=infer_doc_kind(compact), want_product=False,
+        )
     if _BCODE_LIKE.match(compact):
-        return ParsedQuery(raw=q, kind="product", bcode_prefix=compact)
+        return ParsedQuery(raw=q, kind="product", bcode_prefix=compact, want_product=True)
     tokens = [t for t in re.split(r"\s+", q) if t]
     code1 = None
     sizes: list[str] = []
@@ -102,4 +171,5 @@ def parse_query(raw: str) -> ParsedQuery:
     return ParsedQuery(
         raw=q, kind="product", code1=code1, sizes=sizes[:3], text_terms=text_terms,
         bcode_prefix=compact if compact.isdigit() and len(compact) >= 4 else None,
+        want_product=True,
     )
