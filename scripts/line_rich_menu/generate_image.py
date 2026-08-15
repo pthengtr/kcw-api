@@ -94,13 +94,6 @@ def generate() -> Path:
         icon_y = 340
         title_y = 520
 
-        tick_w = 44
-        draw.rounded_rectangle(
-            [cx - tick_w // 2, icon_y - 118, cx + tick_w // 2, icon_y - 110],
-            radius=3,
-            fill=cell["accent"],
-        )
-
         if cell["icon"] == "boxes":
             _draw_boxes_icon(draw, cx, icon_y, cell["accent"])
         else:
