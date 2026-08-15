@@ -80,7 +80,7 @@ def handle_companion_command(engine, *, line_user_id: str, display_name: str | N
         }
 
     return branch_uri_buttons(
-        title="Tiger Pay",
-        alt_text="Tiger Pay — กดเปิด HQ หรือ SYP",
+        title="ไทเกอร์เพย์",
+        alt_text="ไทเกอร์เพย์ — กดเลือกสาขา",
         links=links,
     )

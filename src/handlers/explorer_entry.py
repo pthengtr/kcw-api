@@ -55,8 +55,8 @@ def handle_explorer_command(engine, *, line_user_id: str, display_name: str | No
     if not links:
         return {"type": "text", "text": "ยังไม่พบเซิร์ฟเวอร์ PARTS9 explorer ออนไลน์ครับ (รอ heartbeat)"}
     return branch_uri_buttons(
-        title="PARTS9 explorer",
-        alt_text="PARTS9 explorer — กดเปิด HQ หรือ SYP",
+        title="สำรวจสินค้า",
+        alt_text="สำรวจสินค้า — กดเลือกสาขา",
         links=links,
         wifi_hint="กดปุ่มสาขา — ต้องอยู่ Wi‑Fi สาขา (หรือ Tailscale)",
     )

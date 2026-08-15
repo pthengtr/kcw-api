@@ -21,13 +21,13 @@ def test_branch_uri_buttons_hides_urls_behind_labels():
     assert "ออฟไลน์" in msg["template"]["text"]
     actions = msg["template"]["actions"]
     assert len(actions) == 1
-    assert actions[0] == {"type": "uri", "label": "เปิด HQ", "uri": long_url}
+    assert actions[0] == {"type": "uri", "label": "สำนักงานใหญ่", "uri": long_url}
 
 
 def test_branch_uri_buttons_all_offline_falls_back_to_text():
     msg = branch_uri_buttons(
-        title="Tiger Pay",
-        alt_text="Tiger Pay",
+        title="ไทเกอร์เพย์",
+        alt_text="ไทเกอร์เพย์",
         links=[("HQ", "", "offline"), ("SYP", "", "offline")],
     )
     assert msg["type"] == "text"

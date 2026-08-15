@@ -120,6 +120,6 @@ def handle_stock_check_command(engine, *, line_user_id: str, display_name: str |
 
     return branch_uri_buttons(
         title="ตรวจนับสต็อก",
-        alt_text="ตรวจนับสต็อก — กดเปิด HQ หรือ SYP",
+        alt_text="ตรวจนับสต็อก — กดเลือกสาขา",
         links=links,
     )

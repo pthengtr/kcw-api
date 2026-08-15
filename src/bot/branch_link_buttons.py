@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 BRANCH_LABEL = {
-    "HQ": "สำนักงานใหญ่ (HQ)",
-    "SYP": "สี่แยกพัฒนา (SYP)",
+    "HQ": "สำนักงานใหญ่",
+    "SYP": "สี่แยกพัฒนา",
 }
 
+# LINE buttons label max 20 characters
 BRANCH_BUTTON = {
-    "HQ": "เปิด HQ",
-    "SYP": "เปิด SYP",
+    "HQ": "สำนักงานใหญ่",
+    "SYP": "สี่แยกพัฒนา",
 }
 
 
@@ -34,7 +35,7 @@ def branch_uri_buttons(
         if status == "offline" or not url:
             offline_names.append(name)
             continue
-        label = BRANCH_BUTTON.get(branch, f"เปิด {branch}")[:20]
+        label = BRANCH_BUTTON.get(branch, name)[:20]
         actions.append({"type": "uri", "label": label, "uri": url})
 
     if not actions:
