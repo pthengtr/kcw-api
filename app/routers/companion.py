@@ -9,7 +9,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from src.companion.config import get_companion_bill_settings
 from src.db import get_engine
-from src.stock_check.auth import TokenError, verify_access_token
+from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
+from src.stock_check.net import client_ip, is_tailscale_cg_nat
 from src.stock_check.config import get_stock_check_settings
 from src.tiger_pay.payment_service import (
     PaymentServiceError,
@@ -100,6 +101,25 @@ async def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
                 raise TokenError("missing token")
             _verify_companion_token(token)
         except TokenError:
+            if is_tailscale_cg_nat(client_ip(request)):
+                settings = get_stock_check_settings()
+                minted = mint_access_token(
+                    secret=settings.stock_check_token_secret,
+                    line_user_id="tailscale",
+                    display_name="tailnet",
+                    branch=settings.stock_check_branch,
+                    ttl_seconds=max(settings.stock_check_token_ttl_seconds, 3600),
+                    app="companion",
+                )
+                resp = RedirectResponse(url="/companion/", status_code=303)
+                resp.set_cookie(
+                    SESSION_COOKIE,
+                    minted,
+                    httponly=True,
+                    samesite="lax",
+                    max_age=max(settings.stock_check_token_ttl_seconds, 3600),
+                )
+                return resp
             return HTMLResponse(
                 "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ ไทเกอร์ หรือ tiger pay ในแชทแล้วกดลิงก์สาขา</p>",
                 status_code=401,

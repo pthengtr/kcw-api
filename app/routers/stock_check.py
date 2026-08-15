@@ -13,6 +13,7 @@ from src.barcode import (
 from src.stock_check.audit_mirror import flush_audit_outbox
 from src.stock_check.auth import TokenError, build_entry_url, mint_access_token, verify_access_token
 from src.stock_check.config import get_stock_check_settings
+from src.stock_check.net import client_ip, is_tailscale_cg_nat
 from src.stock_check.service import StockCheckService
 from src.stock_check.work_mirror import flush_work_outbox
 from src.stock_check import ui
@@ -110,6 +111,21 @@ def home(request: Request, t: str | None = None):
         return resp
 
     user, err = _require_user(request, service)
+    if err and is_tailscale_cg_nat(client_ip(request)):
+        session_id = service.store.create_session(
+            line_user_id="tailscale",
+            display_name="tailnet",
+            is_approver=False,
+        )
+        resp = RedirectResponse(url="/stock-check/", status_code=303)
+        resp.set_cookie(
+            SESSION_COOKIE,
+            session_id,
+            httponly=True,
+            samesite="lax",
+            max_age=max(settings.lease_idle_seconds * 48, 86_400),
+        )
+        return resp
     if err:
         return err
     flash = request.query_params.get("ok")

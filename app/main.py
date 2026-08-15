@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 import json
 import time
@@ -59,6 +59,12 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(tiger_pay_router)
 app.include_router(companion_router)
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/companion/", status_code=307)
+
 
 
 @app.get("/printout/{token}")

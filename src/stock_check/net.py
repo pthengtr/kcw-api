@@ -71,6 +71,31 @@ def resolve_stock_check_public_base_url(
     )
 
 
+def is_tailscale_cg_nat(ip: str | None) -> bool:
+    """True for Tailscale IPv4 CGNAT 100.64.0.0/10 and IPv6 fd7a:115c:a1e0::/48."""
+    if not ip:
+        return False
+    host = ip.split("%")[0].strip().lower()
+    if host.startswith("::ffff:"):
+        host = host[7:]
+    if ":" in host:
+        return host.startswith("fd7a:115c:a1e0:")
+    parts = host.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        a, b = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    return a == 100 and 64 <= b <= 127
+
+
+def client_ip(request) -> str:
+    if getattr(request, "client", None) and request.client.host:
+        return request.client.host
+    return ""
+
+
 def resolve_companion_public_base_url(
     *,
     explicit: str | None = None,
