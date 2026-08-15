@@ -10,59 +10,105 @@ def upsert_worker_heartbeat(
     public_base_url: str | None = None,
     companion_public_base_url: str | None = None,
     explorer_public_base_url: str | None = None,
+    tailscale_public_base_url: str | None = None,
+    companion_tailscale_base_url: str | None = None,
+    explorer_tailscale_base_url: str | None = None,
+    *,
+    update_urls: bool = False,
 ) -> None:
     hostname = hostname or socket.gethostname()
 
-    sql = text("""
-        insert into ops.worker_heartbeat (
-            worker_name,
-            last_seen,
-            hostname,
-            status,
-            public_base_url,
-            companion_public_base_url,
-            explorer_public_base_url,
-            updated_at
-        )
-        values (
-            :worker_name,
-            now(),
-            :hostname,
-            :status,
-            :public_base_url,
-            :companion_public_base_url,
-            :explorer_public_base_url,
-            now()
-        )
-        on conflict (worker_name)
-        do update set
-            last_seen = now(),
-            hostname = excluded.hostname,
-            status = excluded.status,
-            public_base_url = coalesce(excluded.public_base_url, ops.worker_heartbeat.public_base_url),
-            companion_public_base_url = coalesce(
-                excluded.companion_public_base_url,
-                ops.worker_heartbeat.companion_public_base_url
-            ),
-            explorer_public_base_url = coalesce(
-                excluded.explorer_public_base_url,
-                ops.worker_heartbeat.explorer_public_base_url
-            ),
-            updated_at = now()
-    """)
+    # LAN URLs keep prior value when detection briefly fails (coalesce).
+    # Tailscale URLs always overwrite so a disconnected Tailscale node clears.
+    if update_urls:
+        sql = text("""
+            insert into ops.worker_heartbeat (
+                worker_name,
+                last_seen,
+                hostname,
+                status,
+                public_base_url,
+                companion_public_base_url,
+                explorer_public_base_url,
+                tailscale_public_base_url,
+                companion_tailscale_base_url,
+                explorer_tailscale_base_url,
+                updated_at
+            )
+            values (
+                :worker_name,
+                now(),
+                :hostname,
+                :status,
+                :public_base_url,
+                :companion_public_base_url,
+                :explorer_public_base_url,
+                :tailscale_public_base_url,
+                :companion_tailscale_base_url,
+                :explorer_tailscale_base_url,
+                now()
+            )
+            on conflict (worker_name)
+            do update set
+                last_seen = now(),
+                hostname = excluded.hostname,
+                status = excluded.status,
+                public_base_url = coalesce(excluded.public_base_url, ops.worker_heartbeat.public_base_url),
+                companion_public_base_url = coalesce(
+                    excluded.companion_public_base_url,
+                    ops.worker_heartbeat.companion_public_base_url
+                ),
+                explorer_public_base_url = coalesce(
+                    excluded.explorer_public_base_url,
+                    ops.worker_heartbeat.explorer_public_base_url
+                ),
+                tailscale_public_base_url = excluded.tailscale_public_base_url,
+                companion_tailscale_base_url = excluded.companion_tailscale_base_url,
+                explorer_tailscale_base_url = excluded.explorer_tailscale_base_url,
+                updated_at = now()
+        """)
+        params = {
+            "worker_name": worker_name,
+            "hostname": hostname,
+            "status": status,
+            "public_base_url": (public_base_url or "").strip() or None,
+            "companion_public_base_url": (companion_public_base_url or "").strip() or None,
+            "explorer_public_base_url": (explorer_public_base_url or "").strip() or None,
+            "tailscale_public_base_url": (tailscale_public_base_url or "").strip() or None,
+            "companion_tailscale_base_url": (companion_tailscale_base_url or "").strip() or None,
+            "explorer_tailscale_base_url": (explorer_tailscale_base_url or "").strip() or None,
+        }
+    else:
+        sql = text("""
+            insert into ops.worker_heartbeat (
+                worker_name,
+                last_seen,
+                hostname,
+                status,
+                updated_at
+            )
+            values (
+                :worker_name,
+                now(),
+                :hostname,
+                :status,
+                now()
+            )
+            on conflict (worker_name)
+            do update set
+                last_seen = now(),
+                hostname = excluded.hostname,
+                status = excluded.status,
+                updated_at = now()
+        """)
+        params = {
+            "worker_name": worker_name,
+            "hostname": hostname,
+            "status": status,
+        }
 
     with engine.begin() as conn:
-        conn.execute(
-            sql,
-            {
-                "worker_name": worker_name,
-                "hostname": hostname,
-                "status": status,
-                "public_base_url": (public_base_url or "").strip() or None,
-                "companion_public_base_url": (companion_public_base_url or "").strip() or None,
-                "explorer_public_base_url": (explorer_public_base_url or "").strip() or None,
-            },
-        )
+        conn.execute(sql, params)
 
 
 def get_all_worker_status(engine, offline_after_seconds: int = 30) -> list[dict]:
@@ -74,6 +120,9 @@ def get_all_worker_status(engine, offline_after_seconds: int = 30) -> list[dict]
             public_base_url,
             companion_public_base_url,
             explorer_public_base_url,
+            tailscale_public_base_url,
+            companion_tailscale_base_url,
+            explorer_tailscale_base_url,
             last_seen,
             case
                 when last_seen >= now() - (:offline_after_seconds || ' seconds')::interval

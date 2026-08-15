@@ -12,11 +12,11 @@ def branch_uri_buttons(
     *,
     title: str,
     alt_text: str,
-    links: list[tuple[str, str, str]],
+    links: list[tuple],
     wifi_hint: str = "กดชื่อสาขาเพื่อเปิด — ต้องอยู่ Wi‑Fi สาขานั้น",
 ) -> dict:
     """
-    links: (branch, url, status) where status is online|offline|local.
+    links: (branch, url, status) or (branch, url, status, label).
 
     Returns a Flex message: Thai branch names are tappable word-links; the
     long token URL is only inside the URI action (never shown as chat text).
@@ -24,13 +24,21 @@ def branch_uri_buttons(
     """
     link_rows: list[dict] = []
     offline_names: list[str] = []
+    seen_offline: set[str] = set()
 
-    for branch, url, status in links:
+    for item in links:
+        if len(item) >= 4:
+            branch, url, status, label = item[0], item[1], item[2], item[3]
+        else:
+            branch, url, status = item[0], item[1], item[2]
+            label = None
         name = BRANCH_LABEL.get(branch, branch)
         if status == "offline" or not url:
-            offline_names.append(name)
+            if name not in seen_offline:
+                offline_names.append(name)
+                seen_offline.add(name)
             continue
-        # Link-styled button reads as a meaningful word, not a raw URL
+        button_label = (label or name)[:40]
         link_rows.append(
             {
                 "type": "button",
@@ -38,7 +46,7 @@ def branch_uri_buttons(
                 "height": "sm",
                 "action": {
                     "type": "uri",
-                    "label": name[:40],
+                    "label": button_label,
                     "uri": url,
                 },
             }
