@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from app.routers.stock_check import router as stock_check_router
 
@@ -15,6 +16,11 @@ logging.basicConfig(
 
 app = FastAPI(title="KCW Stock Check", docs_url="/docs", redoc_url=None)
 app.include_router(stock_check_router)
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/stock-check/", status_code=307)
 
 
 @app.get("/health")
