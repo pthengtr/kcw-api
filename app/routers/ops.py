@@ -5,7 +5,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src.ops.config import get_ops_settings
 from src.ops.net import is_tailscale_cg_nat
-from src.ops.po import get_po_lines, health_probes, list_pending_receive, list_purchase_orders
+from src.ops.iclow import list_iclow
+from src.ops.po import get_po_lines, health_probes, list_purchase_orders
 from src.ops.tf_prepare import attach_header_prepare, attach_line_prepare
 from src.ops.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
@@ -125,9 +126,11 @@ def home(request: Request, t: str | None = None, site: str | None = None):
     )
     if t:
         redir = RedirectResponse(url="/ops/", status_code=303)
+        redir.headers["Cache-Control"] = "no-store"
         _set_session(redir, ident)
         return redir
     resp = HTMLResponse(html)
+    resp.headers["Cache-Control"] = "no-store"
     _set_session(resp, ident)
     return resp
 
@@ -144,14 +147,16 @@ def _auth_json(request: Request):
     return ident, None
 
 
-def _attach_prepare(data: dict, prepare_filter: str = "all") -> dict:
+def _attach_prepare(data: dict, prepare_filter: str = "all", *, limit: int = 50, offset: int = 0) -> dict:
     if (data.get("site") or "").upper() != "SYP" or not data.get("rows"):
         return data
     attach_header_prepare(data["rows"])
     wanted = (prepare_filter or "all").strip().lower()
+    rows = data["rows"]
     if wanted in ("prepared", "partially_prepared", "not_prepared"):
-        data["rows"] = [r for r in data["rows"] if (r.get("prepare_status") or "not_prepared") == wanted]
-        data["count"] = len(data["rows"])
+        rows = [r for r in rows if (r.get("prepare_status") or "not_prepared") == wanted]
+        data["count"] = len(rows)
+        data["rows"] = rows[max(0, offset) : max(0, offset) + max(1, limit)]
     return data
 
 
@@ -159,7 +164,7 @@ def _attach_prepare(data: dict, prepare_filter: str = "all") -> dict:
 def api_po_list(
     request: Request,
     site: str = "hq",
-    status: str = "open",
+    status: str = "all",
     q: str = "",
     limit: int = 50,
     offset: int = 0,
@@ -168,6 +173,8 @@ def api_po_list(
     if err:
         return err
     _ = ident
+    prepare = request.query_params.get("prepare") or "all"
+    scan = 2000 if site.lower() == "syp" and prepare not in ("", "all") else None
     try:
         data = list_purchase_orders(
             site=site,
@@ -176,9 +183,10 @@ def api_po_list(
             dfrom=request.query_params.get("from"),
             dto=request.query_params.get("to"),
             limit=limit,
-            offset=offset,
+            offset=0 if scan else offset,
+            scan_limit=scan,
         )
-        return _attach_prepare(data, request.query_params.get("prepare") or "all")
+        return _attach_prepare(data, prepare, limit=limit, offset=offset if scan else 0)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -187,6 +195,7 @@ def api_po_list(
 def api_po_pending(
     request: Request,
     site: str = "hq",
+    status: str = "pending_receive",
     q: str = "",
     limit: int = 50,
     offset: int = 0,
@@ -196,11 +205,13 @@ def api_po_pending(
         return err
     _ = ident
     try:
-        return list_pending_receive(
+        return list_iclow(
             site=site,
+            status=status,
             q=q or None,
             dfrom=request.query_params.get("from"),
             dto=request.query_params.get("to"),
+            prepare=request.query_params.get("prepare") or "all",
             limit=limit,
             offset=offset,
         )
