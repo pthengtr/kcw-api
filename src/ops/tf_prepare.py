@@ -218,6 +218,20 @@ def attach_header_prepare(rows: list[dict[str, Any]]) -> None:
         row["prepare_line_count"] = info.get("line_count")
 
 
+def attach_bcode_prepare(rows: list[dict[str, Any]]) -> None:
+    """ICLOW DOCNO+BCODE grain: use TF qty for that BCODE, not PO header rollup."""
+    docs = sorted({r.get("docno") for r in rows if r.get("docno")})
+    status = prepare_status_for_docnos(docs)
+    for row in rows:
+        info = status.get(row.get("docno") or "") or {}
+        extra = (info.get("lines") or {}).get(_s(row.get("bcode"))) or {}
+        st = extra.get("prepare_line_status") or "not_prepared"
+        row["prepare_status"] = st
+        row["prepared"] = st == "prepared"
+        row["prepared_qty"] = extra.get("prepared_qty")
+        row["prepare_tf_billnos"] = info.get("tf_billnos")
+
+
 def attach_line_prepare(docno: str, lines: list[dict[str, Any]]) -> dict[str, Any]:
     info = prepare_status_for_docnos([docno]).get(docno) or {
         "prepare_status": "not_prepared",

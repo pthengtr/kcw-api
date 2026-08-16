@@ -2,6 +2,7 @@ from pathlib import Path
 
 from src.access.helper import can_execute
 from src.handlers.ops_entry import is_ops_command
+from src.ops.iclow import ICLOW_STATUSES
 from src.ops.net import rewrite_base_port
 from src.ops.tf_prepare import (
     extract_po_docno,
@@ -52,7 +53,11 @@ def test_ops_page_labels():
         probes={"hq": {"ok": True}, "syp": {"ok": True}},
     )
     assert "ใบสั่งซื้อ" in html
+    assert "รอสั่งซื้อ" in html
     assert "ค้างรับ" in html
+    assert "รับบางส่วน" in html
+    assert 'data-k="to_be_ordered"' in html
+    assert ICLOW_STATUSES == ("to_be_ordered", "pending_receive", "partially_received")
     assert "ไม่ต้องอัปเดตข้อมูล" in html
     assert "สด" in html
     assert "จัดของบางส่วน" in html

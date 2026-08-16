@@ -49,6 +49,7 @@ button.theme { min-width:2.6rem; }
 .modes { display:flex; gap:.3rem; overflow-x:auto; margin-top:.5rem; }
 .modes button { white-space:nowrap; padding:.4rem .7rem; font-size:.8rem; border-radius:999px; }
 .modes button.on { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:700; }
+#lookback button.on { background:var(--acc); border-color:var(--acc); color:var(--on-acc); }
 .badge { font-size:.72rem; padding:.15rem .45rem; border-radius:.4rem; background:var(--chip); color:var(--muted); }
 .badge.ok { color:var(--ok); } .badge.down { color:var(--down); }
 .badge.open { background:#163328; color:var(--ok); }
@@ -80,29 +81,35 @@ h2 { font-size:1.05rem; margin:.2rem 0 .5rem; }
     <button type="button" class="theme" id="themeBtn">มืด</button>
   </div>
   <form class="row" id="f" onsubmit="go(event); return false;">
-    <input id="q" type="search" placeholder="เลข PO / ชื่อร้าน / รหัสลูกค้า" enterkeyhint="search"/>
-    <select id="site">
+    <input id="q" type="search" placeholder="เลข PO / รหัสสินค้า / ชื่อร้าน" enterkeyhint="search"/>
+    <select id="site" onchange="go()">
       <option value="hq" __HQSEL__>HQ</option>
       <option value="syp" __SYPSEL__>SYP</option>
     </select>
-    <select id="status">
-      <option value="open">เปิด</option>
-      <option value="all">ทั้งหมด</option>
-      <option value="billed">รับแล้ว</option>
-    </select>
-    <select id="prepare">
-      <option value="all">จัดของ: ทั้งหมด</option>
+    <select id="prepare" onchange="go()">
+      <option value="all">สถานะจัด: ทั้งหมด</option>
       <option value="not_prepared">ยังไม่จัด</option>
       <option value="partially_prepared">จัดของบางส่วน</option>
       <option value="prepared">จัดแล้ว</option>
     </select>
-    <input id="from" type="date"/>
-    <input id="to" type="date"/>
+    <span id="dates">
+      <input id="from" type="date" onchange="go()"/>
+      <input id="to" type="date" onchange="go()"/>
+    </span>
+    <span class="row" id="lookback">
+      <button type="button" data-days="30">30 วัน</button>
+      <button type="button" data-days="60">60 วัน</button>
+      <button type="button" data-months="3">3 เดือน</button>
+      <button type="button" data-months="6">6 เดือน</button>
+      <button type="button" data-months="12">1 ปี</button>
+    </span>
     <button class="primary" type="submit">ค้นหา</button>
   </form>
   <div class="modes" id="modes">
-    <button type="button" data-k="list" class="on">ใบสั่งซื้อ</button>
-    <button type="button" data-k="pending">ค้างรับ</button>
+    <button type="button" data-k="list" class="on">PO</button>
+    <button type="button" data-k="to_be_ordered">รอสั่งซื้อ</button>
+    <button type="button" data-k="pending_receive">ค้างรับ</button>
+    <button type="button" data-k="partially_received">รับบางส่วน</button>
   </div>
   <div class="row" style="margin-top:.45rem">
     <span class="badge __HQBADGE__">HQ SQL __HQSQL__ · สด</span>
@@ -137,9 +144,34 @@ document.querySelectorAll("#modes button").forEach((b) => {
     b.classList.add("on");
     mode = b.dataset.k;
     offset = 0;
+    syncDates();
     load();
   };
 });
+document.querySelectorAll("#lookback button").forEach((b) => {
+  b.onclick = () => {
+    const d = new Date();
+    const from = new Date(d);
+    if (b.dataset.days) from.setDate(from.getDate() - Number(b.dataset.days));
+    if (b.dataset.months) from.setMonth(from.getMonth() - Number(b.dataset.months));
+    $("from").value = isoLocal(from);
+    $("to").value = isoLocal(d);
+    document.querySelectorAll("#lookback button").forEach((x) => x.classList.remove("on"));
+    b.classList.add("on");
+    go();
+  };
+});
+function syncDates() {
+  const show = mode !== "to_be_ordered";
+  $("dates").style.display = show ? "" : "none";
+  $("lookback").style.display = show ? "" : "none";
+  $("prepare").style.display = $("site").value === "syp" ? "" : "none";
+}
+function iclowLabel(st) {
+  if (st === "to_be_ordered") return "รอสั่งซื้อ";
+  if (st === "partially_received") return "รับบางส่วน";
+  return "ค้างรับ";
+}
 
 function fmtAmt(v) {
   const n = Number(v);
@@ -156,6 +188,7 @@ function billedLabel(b) { return b === "Y" ? "รับแล้ว" : "เป�
 function go(ev) {
   if (ev) ev.preventDefault();
   offset = 0;
+  syncDates();
   load();
 }
 
@@ -166,15 +199,18 @@ async function load() {
   const q = $("q").value.trim();
   const from = $("from").value;
   const to = $("to").value;
-  const status = $("status").value;
+  const status = "all";
   const prepare = $("prepare").value;
   const params = new URLSearchParams({ site, limit: String(limit), offset: String(offset) });
   if (q) params.set("q", q);
-  if (from) params.set("from", from);
-  if (to) params.set("to", to);
+  if (mode !== "to_be_ordered") {
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+  }
   if (mode === "list") params.set("status", status);
-  if (mode === "list" && site === "syp") params.set("prepare", prepare);
-  const url = (mode === "pending" ? "/ops/api/po/pending?" : "/ops/api/po?") + params.toString();
+  else params.set("status", mode);
+  if (site === "syp") params.set("prepare", prepare);
+  const url = (mode === "list" ? "/ops/api/po?" : "/ops/api/po/pending?") + params.toString();
   try {
     const res = await fetch(url, { credentials: "same-origin" });
     const data = await res.json();
@@ -205,16 +241,20 @@ function renderList(data) {
     };
     rows.forEach((r) => {
       const ps = r.prepare_status || (r.prepared ? "prepared" : "not_prepared");
-      const prep = (data.site === "SYP" && mode === "list")
+      const prep = (data.site === "SYP")
         ? "<span class='badge " + (prepClass[ps] || "noprep") + "'>" + (prepLabel[ps] || "ยังไม่จัด") + "</span>"
         : "";
-      const st = mode === "pending"
-        ? "<span class='badge open'>ค้างรับ</span>"
-        : "<span class='badge " + (r.open ? "open" : "billed") + "'>" + billedLabel(r.billed) + "</span>";
-      const tf = r.tf_billnos ? " · TF " + r.tf_billnos : "";
+      const st = mode === "list"
+        ? (data.site === "SYP" ? "" : "<span class='badge " + (r.open ? "open" : "billed") + "'>" + billedLabel(r.billed) + "</span>")
+        : "<span class='badge open'>" + iclowLabel(r.status || mode) + "</span>";
+      const tf = r.tf_billnos || r.prepare_tf_billnos ? " · TF " + (r.tf_billnos || r.prepare_tf_billnos) : "";
+      const lineBits = mode === "list"
+        ? ""
+        : (" · " + (r.bcode || "") + " · " + (r.descr || "") + " · สั่ง " + fmtQty(r.ordered_qty || r.qty)
+           + (mode === "partially_received" ? " รับแล้ว " + fmtQty(r.received_qty) : ""));
       html += "<button class='card' onclick='openDoc(" + JSON.stringify(r.docno) + ")'>"
         + "<div class='t'>" + (r.docno || "") + " " + st + " " + prep + "</div>"
-        + "<div class='meta'>" + (r.docdate || "") + " · " + (r.acctname || r.vendor || "") + " · " + fmtAmt(r.aftertax || r.amount) + tf + "</div>"
+        + "<div class='meta'>" + (r.docdate || "") + " · " + (r.acctname || r.vendor || "") + " · " + fmtAmt(r.aftertax || r.amount) + tf + lineBits + "</div>"
         + "</button>";
     });
   html += "<div class='pager'><button " + (offset<=0?"disabled":"") + " onclick='page(-1)'>ก่อนหน้า</button>"
@@ -229,6 +269,7 @@ function page(dir) {
 }
 
 async function openDoc(docno) {
+  if (!docno) return;
   $("detail").innerHTML = "<div class='empty'>กำลังเปิด " + docno + "…</div>";
   const site = $("site").value;
   try {
@@ -287,6 +328,8 @@ const today = new Date();
 const from = new Date(today); from.setDate(from.getDate()-30);
 $("from").value = isoLocal(from);
 $("to").value = isoLocal(today);
+document.querySelector('#lookback button[data-days="30"]').classList.add("on");
+syncDates();
 load();
 </script>
 </body>

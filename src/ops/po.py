@@ -69,26 +69,28 @@ def datetime_today() -> date:
 def list_purchase_orders(
     *,
     site: str,
-    status: str = "open",
+    status: str = "all",
     q: str | None = None,
     dfrom: str | None = None,
     dto: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    scan_limit: int | None = None,
 ) -> dict[str, Any]:
     site_key = _site(site)
-    st = (status or "open").strip().lower()
+    st = (status or "all").strip().lower()
     if st not in ("open", "billed", "all"):
-        st = "open"
+        st = "all"
     lim = max(1, min(int(limit or 50), 200))
     off = max(0, int(offset or 0))
     default_from, default_to = default_date_window(30)
     dfrom = (dfrom or "").strip() or default_from
     dto = (dto or "").strip() or default_to
     qn = (q or "").strip() or None
+    scan = max(lim, min(int(scan_limit or lim), 2000))
 
     where = [f"{_DATE_EXPR} >= :dfrom", f"{_DATE_EXPR} <= :dto"]
-    params: dict[str, Any] = {"dfrom": dfrom, "dto": dto, "lim": lim, "off": off}
+    params: dict[str, Any] = {"dfrom": dfrom, "dto": dto, "lim": scan, "off": 0 if scan_limit else off}
     if st == "open":
         where.append("LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(BILLED,'N')))) = 'N'")
         where.append("LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) <> 'Y'")
