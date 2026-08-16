@@ -54,9 +54,11 @@ button.theme { min-width:2.6rem; }
 .badge.open { background:#163328; color:var(--ok); }
 .badge.billed { background:#2a3140; color:var(--muted); }
 .badge.prep { background:#163328; color:var(--ok); }
+.badge.part { background:#3a2a18; color:var(--warn); }
 .badge.noprep { background:#2a3140; color:var(--muted); }
 html[data-theme="light"] .badge.open { background:#e8f6ee; }
 html[data-theme="light"] .badge.prep { background:#e8f6ee; }
+html[data-theme="light"] .badge.part { background:#fff3e0; }
 main { max-width:1100px; margin:0 auto; padding:.75rem 1rem 2.5rem; }
 .card { display:block; width:100%; text-align:left; padding:.75rem; margin-bottom:.5rem; background:var(--card); border:1px solid var(--line); border-radius:.7rem; color:inherit; cursor:pointer; }
 .card .t { font-weight:650; }
@@ -87,6 +89,12 @@ h2 { font-size:1.05rem; margin:.2rem 0 .5rem; }
       <option value="open">เปิด</option>
       <option value="all">ทั้งหมด</option>
       <option value="billed">รับแล้ว</option>
+    </select>
+    <select id="prepare">
+      <option value="all">จัดของ: ทั้งหมด</option>
+      <option value="not_prepared">ยังไม่จัด</option>
+      <option value="partially_prepared">จัดของบางส่วน</option>
+      <option value="prepared">จัดแล้ว</option>
     </select>
     <input id="from" type="date"/>
     <input id="to" type="date"/>
@@ -159,11 +167,13 @@ async function load() {
   const from = $("from").value;
   const to = $("to").value;
   const status = $("status").value;
+  const prepare = $("prepare").value;
   const params = new URLSearchParams({ site, limit: String(limit), offset: String(offset) });
   if (q) params.set("q", q);
   if (from) params.set("from", from);
   if (to) params.set("to", to);
   if (mode === "list") params.set("status", status);
+  if (mode === "list" && site === "syp") params.set("prepare", prepare);
   const url = (mode === "pending" ? "/ops/api/po/pending?" : "/ops/api/po?") + params.toString();
   try {
     const res = await fetch(url, { credentials: "same-origin" });
@@ -183,16 +193,30 @@ function renderList(data) {
   }
   const count = data.count ?? rows.length;
   let html = "<div class='meta'>สดจาก PARTS9 · " + count + " รายการ</div>";
-  rows.forEach((r) => {
-    const prep = r.prepared ? "<span class='badge prep'>จัดแล้ว</span>" : (data.site === "SYP" && mode === "list" ? "<span class='badge noprep'>ยังไม่จัด</span>" : "");
-    const st = mode === "pending"
-      ? "<span class='badge open'>ค้างรับ</span>"
-      : "<span class='badge " + (r.open ? "open" : "billed") + "'>" + billedLabel(r.billed) + "</span>";
-    html += "<button class='card' onclick='openDoc(" + JSON.stringify(r.docno) + ")'>"
-      + "<div class='t'>" + (r.docno || "") + " " + st + " " + prep + "</div>"
-      + "<div class='meta'>" + (r.docdate || "") + " · " + (r.acctname || r.vendor || "") + " · " + fmtAmt(r.aftertax || r.amount) + "</div>"
-      + "</button>";
-  });
+    const prepLabel = {
+      prepared: "จัดแล้ว",
+      partially_prepared: "จัดของบางส่วน",
+      not_prepared: "ยังไม่จัด",
+    };
+    const prepClass = {
+      prepared: "prep",
+      partially_prepared: "part",
+      not_prepared: "noprep",
+    };
+    rows.forEach((r) => {
+      const ps = r.prepare_status || (r.prepared ? "prepared" : "not_prepared");
+      const prep = (data.site === "SYP" && mode === "list")
+        ? "<span class='badge " + (prepClass[ps] || "noprep") + "'>" + (prepLabel[ps] || "ยังไม่จัด") + "</span>"
+        : "";
+      const st = mode === "pending"
+        ? "<span class='badge open'>ค้างรับ</span>"
+        : "<span class='badge " + (r.open ? "open" : "billed") + "'>" + billedLabel(r.billed) + "</span>";
+      const tf = r.tf_billnos ? " · TF " + r.tf_billnos : "";
+      html += "<button class='card' onclick='openDoc(" + JSON.stringify(r.docno) + ")'>"
+        + "<div class='t'>" + (r.docno || "") + " " + st + " " + prep + "</div>"
+        + "<div class='meta'>" + (r.docdate || "") + " · " + (r.acctname || r.vendor || "") + " · " + fmtAmt(r.aftertax || r.amount) + tf + "</div>"
+        + "</button>";
+    });
   html += "<div class='pager'><button " + (offset<=0?"disabled":"") + " onclick='page(-1)'>ก่อนหน้า</button>"
     + "<span class='meta'>" + (offset+1) + "–" + (offset+rows.length) + "</span>"
     + "<button " + (offset+rows.length>=count?"disabled":"") + " onclick='page(1)'>ถัดไป</button></div>";
@@ -217,42 +241,36 @@ async function openDoc(docno) {
   }
 }
 
-async function togglePrep(docno, prepared) {
-  const site = $("site").value;
-  try {
-    const res = await fetch("/ops/api/po/" + encodeURIComponent(docno) + "/prepare?site=" + site, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ prepared }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || data.error || res.status);
-    openDoc(docno);
-    load();
-  } catch (e) {
-    alert(e.message || e);
-  }
+function prepBadge(status) {
+  const prepLabel = { prepared: "จัดแล้ว", partially_prepared: "จัดของบางส่วน", not_prepared: "ยังไม่จัด" };
+  const prepClass = { prepared: "prep", partially_prepared: "part", not_prepared: "noprep" };
+  const ps = status || "not_prepared";
+  return "<span class='badge " + (prepClass[ps] || "noprep") + "'>" + (prepLabel[ps] || "ยังไม่จัด") + "</span>";
 }
 
 function renderDetail(data) {
   const h = data.header || {};
   const lines = data.lines || [];
-  let html = "<div class='detail-head'><h2>" + (h.docno || data.docno) + "</h2>";
+  let html = "<div class='detail-head'><h2>" + (h.docno || data.docno) + "</h2></div>";
+  html += "<div class='meta'>" + (h.docdate||"") + " · " + (h.acctname||"") + " · " + billedLabel(h.billed);
   if (data.site === "SYP") {
-    const on = !!data.prepared;
-    html += "<button class='primary' onclick='togglePrep(" + JSON.stringify(data.docno) + "," + (!on) + ")'>"
-      + (on ? "ยกเลิกจัดแล้ว" : "ทำเครื่องหมายจัดแล้ว") + "</button>";
+    html += " · " + prepBadge(data.prepare_status);
+    const n = data.prepared_line_count, t = data.prepare_line_count;
+    if (t) html += " · จัดแล้ว " + n + "/" + t + " รายการ";
+    html += "</div>";
+    html += data.tf_billnos
+      ? "<div class='meta'>เลขที่บิลโอน: " + data.tf_billnos + "</div>"
+      : "<div class='meta'>ยังไม่พบบิล TF/TFV ที่ REMARKS อ้างเลข PO นี้</div>";
+  } else {
+    html += "</div>";
   }
-  html += "</div>";
-  html += "<div class='meta'>" + (h.docdate||"") + " · " + (h.acctname||"") + " · " + billedLabel(h.billed)
-    + (data.prepared ? " · จัดแล้ว" : "") + "</div>";
-  html += "<table><thead><tr><th>รหัส</th><th>รายการ</th><th>จำนวน</th><th>ที่เก็บ HQ</th><th>คงเหลือ HQ</th><th>เงิน</th></tr></thead><tbody>";
+  html += "<table><thead><tr><th>รหัส</th><th>รายการ</th><th>จำนวน</th><th>จัดแล้ว</th><th>ที่เก็บ HQ</th><th>คงเหลือ HQ</th><th>เงิน</th></tr></thead><tbody>";
   lines.forEach((ln) => {
     const loc = [ln.hq_location1 || ln.location1, ln.hq_location2 || ln.location2].filter(Boolean).join(" / ");
     const qty = ln.hq_qty != null && ln.hq_qty !== "" ? ln.hq_qty : ln.qtyoh2;
+    const linePrep = data.site === "SYP" ? prepBadge(ln.prepare_line_status) : "";
     html += "<tr><td>" + (ln.bcode||"") + "</td><td>" + (ln.detail||"") + "</td><td>" + fmtQty(ln.qty)
-      + "</td><td>" + (loc||"—") + "</td><td>" + fmtQty(qty) + "</td><td>" + fmtAmt(ln.amount) + "</td></tr>";
+      + "</td><td>" + linePrep + "</td><td>" + (loc||"—") + "</td><td>" + fmtQty(qty) + "</td><td>" + fmtAmt(ln.amount) + "</td></tr>";
   });
   html += "</tbody></table>";
   $("detail").innerHTML = html;

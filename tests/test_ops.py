@@ -3,6 +3,12 @@ from pathlib import Path
 from src.access.helper import can_execute
 from src.handlers.ops_entry import is_ops_command
 from src.ops.net import rewrite_base_port
+from src.ops.tf_prepare import (
+    extract_po_docno,
+    is_tf_transfer_bill,
+    line_prepare_status,
+    rollup_prepare_status,
+)
 from src.ops.ui import page
 from src.parts9_explorer.query import parse_query
 
@@ -49,6 +55,21 @@ def test_ops_page_labels():
     assert "ค้างรับ" in html
     assert "ไม่ต้องอัปเดตข้อมูล" in html
     assert "สด" in html
+    assert "จัดของบางส่วน" in html
+
+
+def test_syp_prepare_from_tf_remarks():
+    assert extract_po_docno("1PO6908-054##0215560000262") == "1PO6908-054"
+    assert extract_po_docno("no po here") is None
+    assert is_tf_transfer_bill("TF6908-046")
+    assert is_tf_transfer_bill("TFV6908-069")
+    assert not is_tf_transfer_bill("TR6908-001")
+    assert rollup_prepare_status(line_count=2, prepared_line_count=2, any_tf_line_count=2) == "prepared"
+    assert rollup_prepare_status(line_count=2, prepared_line_count=1, any_tf_line_count=1) == "partially_prepared"
+    assert rollup_prepare_status(line_count=2, prepared_line_count=0, any_tf_line_count=0) == "not_prepared"
+    assert line_prepare_status(ordered_qty=4, tf_qty=4) == "prepared"
+    assert line_prepare_status(ordered_qty=4, tf_qty=1) == "partially_prepared"
+    assert line_prepare_status(ordered_qty=4, tf_qty=0) == "not_prepared"
 
 
 def test_ops_rich_menu_is_separate_from_staff_default():
@@ -57,5 +78,7 @@ def test_ops_rich_menu_is_separate_from_staff_default():
     staff = json.loads(STAFF_SPEC.read_text(encoding="utf-8"))
     ops = json.loads(OPS_SPEC.read_text(encoding="utf-8"))
     assert [a["action"]["text"] for a in staff["areas"]] == ["เช็คสต็อก", "ไทเกอร์", "ค้นหา"]
-    assert ops["areas"][0]["action"]["text"] == "สถานะใบสั่งซื้อ"
-    assert ops["areas"][0]["action"]["label"] == "ใบสั่งซื้อ"
+    assert [a["action"]["text"] for a in ops["areas"][:3]] == ["เช็คสต็อก", "ไทเกอร์", "ค้นหา"]
+    assert ops["areas"][3]["action"]["text"] == "สถานะใบสั่งซื้อ"
+    assert ops["areas"][3]["action"]["label"] == "ใบสั่งซื้อ"
+    assert ops["size"] == {"width": 2500, "height": 1686}
