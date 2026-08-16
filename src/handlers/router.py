@@ -33,6 +33,11 @@ from src.handlers.companion_entry import (
     is_companion_command,
     handle_companion_command,
 )
+from src.handlers.ops_entry import (
+    OPS_COMMAND,
+    is_ops_command,
+    handle_ops_command,
+)
 
 
 def route_user_text(
@@ -91,6 +96,18 @@ def route_user_text(
 
     if is_companion_command(text):
         return handle_companion_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+            access=access,
+        )
+
+    if is_ops_command(text):
+        if not can_execute(access["access_group"], OPS_COMMAND):
+            return {"type": "text", "text": "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"}
+        return handle_ops_command(
             engine,
             line_user_id=line_user_id or "unknown",
             display_name=(access or {}).get("display_name")

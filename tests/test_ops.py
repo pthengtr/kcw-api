@@ -1,0 +1,61 @@
+from pathlib import Path
+
+from src.access.helper import can_execute
+from src.handlers.ops_entry import is_ops_command
+from src.ops.net import rewrite_base_port
+from src.ops.ui import page
+from src.parts9_explorer.query import parse_query
+
+OPS_SPEC = Path(__file__).resolve().parents[1] / "scripts" / "line_rich_menu" / "menu_spec_ops.json"
+STAFF_SPEC = Path(__file__).resolve().parents[1] / "scripts" / "line_rich_menu" / "menu_spec.json"
+
+
+def test_ops_commands_use_existing_labels():
+    assert is_ops_command("สถานะใบสั่งซื้อ")
+    assert is_ops_command("ใบสั่งซื้อ")
+    assert is_ops_command(" ใบสั่งซื้อ ")
+    assert not is_ops_command("ทดลอง")
+    assert not is_ops_command("เช็คสต็อก")
+    assert not is_ops_command("ค้นหา")
+
+
+def test_ops_command_does_not_steal_po_doc_search():
+    parsed = parse_query("PO6905-392")
+    assert parsed.doc_kind == "po"
+    assert not is_ops_command("PO6905-392")
+
+
+def test_ops_permission_admin_only():
+    assert can_execute("admin", "สถานะใบสั่งซื้อ")
+    assert can_execute("exec", "สถานะใบสั่งซื้อ")
+    assert not can_execute("staff", "สถานะใบสั่งซื้อ")
+    assert not can_execute("user", "สถานะใบสั่งซื้อ")
+    assert not can_execute("guest", "สถานะใบสั่งซื้อ")
+
+
+def test_rewrite_explorer_port_to_ops():
+    assert rewrite_base_port("http://100.113.143.97:8788", 8790) == "http://100.113.143.97:8790"
+    assert rewrite_base_port("http://192.168.1.21:8788/", 8790) == "http://192.168.1.21:8790"
+    assert rewrite_base_port("", 8790) is None
+
+
+def test_ops_page_labels():
+    html = page(
+        user_name="ทดสอบ",
+        site="syp",
+        probes={"hq": {"ok": True}, "syp": {"ok": True}},
+    )
+    assert "ใบสั่งซื้อ" in html
+    assert "ค้างรับ" in html
+    assert "ไม่ต้องอัปเดตข้อมูล" in html
+    assert "สด" in html
+
+
+def test_ops_rich_menu_is_separate_from_staff_default():
+    import json
+
+    staff = json.loads(STAFF_SPEC.read_text(encoding="utf-8"))
+    ops = json.loads(OPS_SPEC.read_text(encoding="utf-8"))
+    assert [a["action"]["text"] for a in staff["areas"]] == ["เช็คสต็อก", "ไทเกอร์", "ค้นหา"]
+    assert ops["areas"][0]["action"]["text"] == "สถานะใบสั่งซื้อ"
+    assert ops["areas"][0]["action"]["label"] == "ใบสั่งซื้อ"
