@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from src.ops.config import get_ops_settings
 from src.ops.net import is_tailscale_cg_nat
 from src.ops.po import get_po_lines, health_probes, list_pending_receive, list_purchase_orders
-from src.ops.prepare import fetch_prepare_headers, fetch_prepare_lines, upsert_prepare_header
+from src.ops.tf_prepare import attach_header_prepare, attach_line_prepare
 from src.ops.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
@@ -144,15 +144,14 @@ def _auth_json(request: Request):
     return ident, None
 
 
-def _attach_prepare(data: dict) -> dict:
+def _attach_prepare(data: dict, prepare_filter: str = "all") -> dict:
     if (data.get("site") or "").upper() != "SYP" or not data.get("rows"):
         return data
-    prep = fetch_prepare_headers([r["docno"] for r in data["rows"]])
-    for row in data["rows"]:
-        info = prep.get(row["docno"]) or {}
-        row["prepared"] = bool(info.get("prepared"))
-        row["prepared_at"] = str(info.get("prepared_at") or "") or None
-        row["note"] = info.get("note")
+    attach_header_prepare(data["rows"])
+    wanted = (prepare_filter or "all").strip().lower()
+    if wanted in ("prepared", "partially_prepared", "not_prepared"):
+        data["rows"] = [r for r in data["rows"] if (r.get("prepare_status") or "not_prepared") == wanted]
+        data["count"] = len(data["rows"])
     return data
 
 
@@ -179,7 +178,7 @@ def api_po_list(
             limit=limit,
             offset=offset,
         )
-        return _attach_prepare(data)
+        return _attach_prepare(data, request.query_params.get("prepare") or "all")
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -220,14 +219,12 @@ def api_po_detail(request: Request, docno: str, site: str = "hq"):
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=500)
     if site.lower() == "syp":
-        headers = fetch_prepare_headers([data.get("docno") or docno])
-        info = headers.get(data.get("docno") or docno) or {}
+        info = attach_line_prepare(data.get("docno") or docno, data.get("lines") or [])
+        data["prepare_status"] = info.get("prepare_status") or "not_prepared"
         data["prepared"] = bool(info.get("prepared"))
-        data["note"] = info.get("note")
-        lines_prep = fetch_prepare_lines(docno)
-        for ln in data.get("lines") or []:
-            p = lines_prep.get(str(ln.get("line") or "").strip()) or {}
-            ln["prepared"] = bool(p.get("prepared"))
+        data["tf_billnos"] = info.get("tf_billnos")
+        data["prepared_line_count"] = info.get("prepared_line_count")
+        data["prepare_line_count"] = info.get("line_count")
     return data
 
 
@@ -236,13 +233,12 @@ async def api_po_prepare(request: Request, docno: str, site: str = "syp"):
     ident, err = _auth_json(request)
     if err:
         return err
-    if site.lower() != "syp":
-        return JSONResponse({"error": "prepare overlay is SYP only"}, status_code=400)
-    body = await request.json()
-    prepared = bool(body.get("prepared"))
-    note = ident.display_name if ident else None
-    try:
-        row = upsert_prepare_header(docno=docno, prepared=prepared, note=note)
-    except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"error": str(exc)}, status_code=500)
-    return {"ok": True, "row": row}
+    _ = ident
+    return JSONResponse(
+        {
+            "error": "prepare status comes from HQ TF/TFV bills (SIMas.REMARKS), not a manual overlay",
+            "docno": docno,
+            "site": site,
+        },
+        status_code=409,
+    )
