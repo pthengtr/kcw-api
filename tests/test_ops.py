@@ -21,6 +21,7 @@ def test_ops_commands_use_existing_labels():
     assert is_ops_command("สถานะใบสั่งซื้อ")
     assert is_ops_command("ใบสั่งซื้อ")
     assert is_ops_command(" ใบสั่งซื้อ ")
+    assert is_ops_command("ภาพรวมยอดขาย")
     assert not is_ops_command("ทดลอง")
     assert not is_ops_command("เช็คสต็อก")
     assert not is_ops_command("ค้นหา")
@@ -34,6 +35,8 @@ def test_ops_command_does_not_steal_po_doc_search():
 
 def test_ops_permission_admin_only():
     assert can_execute("admin", "สถานะใบสั่งซื้อ")
+    assert can_execute("admin", "ภาพรวมยอดขาย")
+    assert not can_execute("staff", "ภาพรวมยอดขาย")
     assert can_execute("exec", "สถานะใบสั่งซื้อ")
     assert not can_execute("staff", "สถานะใบสั่งซื้อ")
     assert not can_execute("user", "สถานะใบสั่งซื้อ")
@@ -46,7 +49,10 @@ def test_rewrite_explorer_port_to_ops():
     assert rewrite_base_port("", 8790) is None
 
 
-def test_ops_page_labels():
+def test_ops_page_defaults_to_syp():
+    html = page(user_name="ทดสอบ", site="", probes={"hq": {}, "syp": {}})
+    assert '<option value="syp" selected>' in html
+    assert '<option value="hq" selected>' not in html
     html = page(
         user_name="ทดสอบ",
         site="syp",
@@ -58,9 +64,16 @@ def test_ops_page_labels():
     assert "รับบางส่วน" in html
     assert 'data-k="to_be_ordered"' in html
     assert ICLOW_STATUSES == ("to_be_ordered", "pending_receive", "partially_received")
-    assert "ไม่ต้องอัปเดตข้อมูล" in html
+    assert 'value="syp" selected' in html or 'value="syp"  selected' in html or 'option value="syp" selected' in html
     assert "สด" in html
     assert "จัดของบางส่วน" in html
+    assert "จำนวนสั่ง" in html
+    assert "จำนวน TF" in html
+    assert 'id="dlg"' in html
+    assert "showModal" in html
+    assert "scrollIntoView" not in html
+    assert "fmtQtyUi" in html
+    assert "Math.round(n)" in html
 
 
 def test_syp_prepare_from_tf_remarks():

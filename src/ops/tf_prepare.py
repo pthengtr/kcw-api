@@ -247,5 +247,6 @@ def attach_line_prepare(docno: str, lines: list[dict[str, Any]]) -> dict[str, An
         ln["prepare_line_status"] = extra.get("prepare_line_status") or "not_prepared"
         ln["prepared"] = ln["prepare_line_status"] == "prepared"
         ln["prepared_qty"] = extra.get("prepared_qty")
+        ln["tf_qty"] = extra.get("prepared_qty")
         ln["ordered_qty"] = extra.get("ordered_qty")
     return info
