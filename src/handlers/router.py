@@ -114,6 +114,7 @@ def route_user_text(
             or (access or {}).get("line_display_name")
             or line_user_id,
             access=access,
+            user_text=text,
         )
 
     if is_image_command(text):

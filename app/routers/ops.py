@@ -3,6 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from src.ops.bi_catalog import customer_overview, product_movement, product_overview
+from src.ops.bi_sales import sales_overview
+from src.ops import bi_ui
 from src.ops.config import get_ops_settings
 from src.ops.net import is_tailscale_cg_nat
 from src.ops.iclow import list_iclow
@@ -121,7 +124,7 @@ def home(request: Request, t: str | None = None, site: str | None = None):
         return err
     html = page(
         user_name=ident.display_name,
-        site=(site or settings.site).lower(),
+        site=(site or "syp").lower(),
         probes=health_probes(),
     )
     if t:
@@ -133,6 +136,92 @@ def home(request: Request, t: str | None = None, site: str | None = None):
     resp.headers["Cache-Control"] = "no-store"
     _set_session(resp, ident)
     return resp
+
+
+@router.get("/bi/", response_class=HTMLResponse)
+def bi_home(request: Request, t: str | None = None):
+    ident, err = _require(request)
+    if err and t:
+        try:
+            ident = _verify_token(t)
+            err = None
+        except TokenError as exc:
+            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+    if err and is_tailscale_cg_nat(_client_ip(request)):
+        ident = _tailscale_identity()
+        err = None
+    if err:
+        return err
+    _ = ident
+    resp = HTMLResponse(bi_ui.page(probes=health_probes()))
+    resp.headers["Cache-Control"] = "no-store"
+    _set_session(resp, ident)
+    return resp
+
+
+def _bi_range(request: Request):
+    return {
+        "dfrom": request.query_params.get("from"),
+        "dto": request.query_params.get("to"),
+        "branch": request.query_params.get("branch") or "ALL",
+    }
+
+
+@router.get("/api/bi/sales")
+def api_bi_sales(request: Request):
+    ident, err = _auth_json(request)
+    if err:
+        return err
+    _ = ident
+    try:
+        return sales_overview(**_bi_range(request))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@router.get("/api/bi/customers")
+def api_bi_customers(request: Request, limit: int = 50):
+    ident, err = _auth_json(request)
+    if err:
+        return err
+    _ = ident
+    try:
+        return customer_overview(limit=limit, **_bi_range(request))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@router.get("/api/bi/products")
+def api_bi_products(request: Request, limit: int = 50):
+    ident, err = _auth_json(request)
+    if err:
+        return err
+    _ = ident
+    try:
+        return product_overview(limit=limit, **_bi_range(request))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@router.get("/api/bi/movement")
+def api_bi_movement(request: Request, stock_limit: int = 50):
+    ident, err = _auth_json(request)
+    if err:
+        return err
+    _ = ident
+    try:
+        rng = _bi_range(request)
+        return product_movement(stock_limit=stock_limit, dfrom=rng["dfrom"], dto=rng["dto"], branch=rng["branch"])
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @router.get("/api/health")

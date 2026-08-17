@@ -44,10 +44,17 @@ h1 { font-size:1.05rem; margin:0; }
 .row { display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; }
 input, select, button { font: inherit; font-size:.92rem; padding:.55rem .7rem; border-radius:.55rem; border:1px solid var(--line); background:var(--chip); color:var(--text); }
 input[type=search], input[type=date] { background:var(--inset); }
+#q { flex: 1 1 16rem; min-width: 12rem; }
+#site, #prepare { min-width: 7.5rem; }
+#dates { display:flex; gap:.4rem; flex: 1 1 14rem; }
+#dates input { flex:1; min-width: 0; }
+#lookback { gap:.3rem; }
+#lookback button { padding:.4rem .55rem; font-size:.78rem; }
 button.primary { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:650; }
 button.theme { min-width:2.6rem; }
-.modes { display:flex; gap:.3rem; overflow-x:auto; margin-top:.5rem; }
-.modes button { white-space:nowrap; padding:.4rem .7rem; font-size:.8rem; border-radius:999px; }
+.modes { display:flex; gap:.3rem; overflow-x:auto; margin-top:.5rem; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.modes::-webkit-scrollbar { display:none; }
+.modes button { white-space:nowrap; padding:.4rem .7rem; font-size:.8rem; border-radius:999px; flex:0 0 auto; }
 .modes button.on { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:700; }
 #lookback button.on { background:var(--acc); border-color:var(--acc); color:var(--on-acc); }
 .badge { font-size:.72rem; padding:.15rem .45rem; border-radius:.4rem; background:var(--chip); color:var(--muted); }
@@ -61,24 +68,65 @@ html[data-theme="light"] .badge.open { background:#e8f6ee; }
 html[data-theme="light"] .badge.prep { background:#e8f6ee; }
 html[data-theme="light"] .badge.part { background:#fff3e0; }
 main { max-width:1100px; margin:0 auto; padding:.75rem 1rem 2.5rem; }
-.card { display:block; width:100%; text-align:left; padding:.75rem; margin-bottom:.5rem; background:var(--card); border:1px solid var(--line); border-radius:.7rem; color:inherit; cursor:pointer; }
-.card .t { font-weight:650; }
-.meta { font-size:.8rem; color:var(--muted); margin-top:.15rem; }
+.cards { display:grid; grid-template-columns:1fr; gap:.5rem; margin-top:.45rem; }
+.card { display:block; width:100%; text-align:left; padding:.75rem; background:var(--card); border:1px solid var(--line); border-radius:.7rem; color:inherit; cursor:pointer; }
+.card .t { font-weight:650; display:flex; flex-wrap:wrap; gap:.25rem .4rem; align-items:center; }
+.meta { font-size:.8rem; color:var(--muted); margin-top:.15rem; word-break:break-word; }
 table { width:100%; border-collapse:collapse; font-size:.84rem; }
-th, td { border-bottom:1px solid var(--line); padding:.35rem .25rem; text-align:left; vertical-align:top; }
+th, td { border-bottom:1px solid var(--line); padding:.4rem .35rem; text-align:left; vertical-align:top; }
+th { white-space:nowrap; color:var(--muted); font-weight:600; }
 .who { font-size:.75rem; color:var(--muted); }
 .empty, .err { color:var(--muted); padding:1rem 0; }
 .err { color:var(--down); }
 .pager { display:flex; gap:.4rem; align-items:center; margin-top:.8rem; }
-h2 { font-size:1.05rem; margin:.2rem 0 .5rem; }
-.detail-head { display:flex; justify-content:space-between; gap:.5rem; flex-wrap:wrap; align-items:center; }
+h2 { font-size:1.05rem; margin:0; }
+dialog#dlg {
+  width: min(960px, calc(100vw - 1.2rem));
+  max-height: min(90dvh, 920px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: .85rem;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 18px 50px rgba(0,0,0,.35);
+}
+dialog#dlg::backdrop { background: rgba(7,10,14,.62); }
+.dlg-head {
+  display:flex; justify-content:space-between; align-items:flex-start; gap:.6rem;
+  padding:.85rem 1rem; border-bottom:1px solid var(--line); position:sticky; top:0;
+  background:var(--card); z-index:1;
+}
+.dlg-close { min-width: 3.2rem; }
+.dlg-body { padding:.75rem 1rem 1.15rem; overflow:auto; max-height: calc(90dvh - 4.2rem); }
+.tbl-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; margin-top:.55rem; }
+.tbl-wrap table { min-width: 36rem; }
+@media (min-width: 720px) and (max-width: 1100px) {
+  .cards { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 900px) {
+  header { padding:.55rem .75rem .65rem; }
+  h1 { font-size:.98rem; }
+  #q { flex: 1 1 100%; min-width: 0; }
+  #site, #prepare { flex: 1 1 calc(50% - .3rem); min-width: 0; }
+  #dates { flex: 1 1 100%; }
+  #lookback { flex: 1 1 100%; }
+  button.primary { width: 100%; }
+  main { padding:.6rem .75rem 2rem; }
+  .card { padding:.7rem .75rem; }
+  dialog#dlg { width: calc(100vw - .7rem); max-height: 92dvh; border-radius:.7rem; }
+  .tbl-wrap table { min-width: 40rem; }
+}
 </style>
 </head>
 <body>
 <header>
   <div class="brand">
     <h1>ใบสั่งซื้อ</h1>
-    <button type="button" class="theme" id="themeBtn">มืด</button>
+    <span>
+      <a href="/ops/bi/" style="color:var(--acc);text-decoration:none;font-size:.86rem;margin-right:.6rem">ภาพรวมยอดขาย</a>
+      <button type="button" class="theme" id="themeBtn">มืด</button>
+    </span>
   </div>
   <form class="row" id="f" onsubmit="go(event); return false;">
     <input id="q" type="search" placeholder="เลข PO / รหัสสินค้า / ชื่อร้าน" enterkeyhint="search"/>
@@ -119,8 +167,14 @@ h2 { font-size:1.05rem; margin:.2rem 0 .5rem; }
 </header>
 <main>
   <div id="list"></div>
-  <div id="detail"></div>
 </main>
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <div class="dlg-head">
+    <h2 id="dlgTitle">ใบสั่งซื้อ</h2>
+    <button type="button" class="dlg-close" id="dlgClose">ปิด</button>
+  </div>
+  <div class="dlg-body" id="dlgBody"></div>
+</dialog>
 <script>
 const $ = (id) => document.getElementById(id);
 let mode = "list";
@@ -181,7 +235,14 @@ function fmtAmt(v) {
 function fmtQty(v) {
   const n = Number(v);
   if (v === null || v === undefined || v === "" || Number.isNaN(n)) return "—";
+  if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
   return n.toLocaleString("th-TH", { maximumFractionDigits: 3 });
+}
+function fmtQtyUi(qty, ui) {
+  const q = fmtQty(qty);
+  const u = (ui || "").trim();
+  if (q === "—") return q;
+  return u ? (q + " " + u) : q;
 }
 function billedLabel(b) { return b === "Y" ? "รับแล้ว" : "เปิด"; }
 
@@ -193,7 +254,7 @@ function go(ev) {
 }
 
 async function load() {
-  $("detail").innerHTML = "";
+  closeDlg();
   $("list").innerHTML = "<div class='empty'>กำลังโหลดจาก PARTS9…</div>";
   const site = $("site").value;
   const q = $("q").value.trim();
@@ -228,7 +289,7 @@ function renderList(data) {
     return;
   }
   const count = data.count ?? rows.length;
-  let html = "<div class='meta'>สดจาก PARTS9 · " + count + " รายการ</div>";
+  let html = "<div class='meta'>สดจาก PARTS9 · " + count + " รายการ</div><div class='cards'>";
     const prepLabel = {
       prepared: "จัดแล้ว",
       partially_prepared: "จัดของบางส่วน",
@@ -250,14 +311,14 @@ function renderList(data) {
       const tf = r.tf_billnos || r.prepare_tf_billnos ? " · TF " + (r.tf_billnos || r.prepare_tf_billnos) : "";
       const lineBits = mode === "list"
         ? ""
-        : (" · " + (r.bcode || "") + " · " + (r.descr || "") + " · สั่ง " + fmtQty(r.ordered_qty || r.qty)
+        : (" · " + (r.bcode || "") + " · " + (r.descr || "") + " · สั่ง " + fmtQtyUi(r.ordered_qty || r.qty, r.ui)
            + (mode === "partially_received" ? " รับแล้ว " + fmtQty(r.received_qty) : ""));
       html += "<button class='card' onclick='openDoc(" + JSON.stringify(r.docno) + ")'>"
         + "<div class='t'>" + (r.docno || "") + " " + st + " " + prep + "</div>"
         + "<div class='meta'>" + (r.docdate || "") + " · " + (r.acctname || r.vendor || "") + " · " + fmtAmt(r.aftertax || r.amount) + tf + lineBits + "</div>"
         + "</button>";
     });
-  html += "<div class='pager'><button " + (offset<=0?"disabled":"") + " onclick='page(-1)'>ก่อนหน้า</button>"
+  html += "</div><div class='pager'><button " + (offset<=0?"disabled":"") + " onclick='page(-1)'>ก่อนหน้า</button>"
     + "<span class='meta'>" + (offset+1) + "–" + (offset+rows.length) + "</span>"
     + "<button " + (offset+rows.length>=count?"disabled":"") + " onclick='page(1)'>ถัดไป</button></div>";
   $("list").innerHTML = html;
@@ -268,9 +329,21 @@ function page(dir) {
   load();
 }
 
+function closeDlg() {
+  const dlg = $("dlg");
+  if (dlg && dlg.open) dlg.close();
+}
+
+function openDlg() {
+  const dlg = $("dlg");
+  if (dlg && !dlg.open && typeof dlg.showModal === "function") dlg.showModal();
+}
+
 async function openDoc(docno) {
   if (!docno) return;
-  $("detail").innerHTML = "<div class='empty'>กำลังเปิด " + docno + "…</div>";
+  $("dlgTitle").textContent = docno;
+  $("dlgBody").innerHTML = "<div class='empty'>กำลังเปิด " + docno + "…</div>";
+  openDlg();
   const site = $("site").value;
   try {
     const res = await fetch("/ops/api/po/" + encodeURIComponent(docno) + "?site=" + site, { credentials: "same-origin" });
@@ -278,7 +351,7 @@ async function openDoc(docno) {
     if (!res.ok) throw new Error(data.detail || data.error || res.status);
     renderDetail(data);
   } catch (e) {
-    $("detail").innerHTML = "<div class='err'>" + (e.message || e) + "</div>";
+    $("dlgBody").innerHTML = "<div class='err'>" + (e.message || e) + "</div>";
   }
 }
 
@@ -292,8 +365,8 @@ function prepBadge(status) {
 function renderDetail(data) {
   const h = data.header || {};
   const lines = data.lines || [];
-  let html = "<div class='detail-head'><h2>" + (h.docno || data.docno) + "</h2></div>";
-  html += "<div class='meta'>" + (h.docdate||"") + " · " + (h.acctname||"") + " · " + billedLabel(h.billed);
+  $("dlgTitle").textContent = h.docno || data.docno || "ใบสั่งซื้อ";
+  let html = "<div class='meta'>" + (h.docdate||"") + " · " + (h.acctname||"") + " · " + billedLabel(h.billed);
   if (data.site === "SYP") {
     html += " · " + prepBadge(data.prepare_status);
     const n = data.prepared_line_count, t = data.prepare_line_count;
@@ -303,20 +376,36 @@ function renderDetail(data) {
       ? "<div class='meta'>เลขที่บิลโอน: " + data.tf_billnos + "</div>"
       : "<div class='meta'>ยังไม่พบบิล TF/TFV ที่ REMARKS อ้างเลข PO นี้</div>";
   } else {
-    html += "</div>";
+    html += " · ยอด " + fmtAmt(h.aftertax) + "</div>";
   }
-  html += "<table><thead><tr><th>รหัส</th><th>รายการ</th><th>จำนวน</th><th>จัดแล้ว</th><th>ที่เก็บ HQ</th><th>คงเหลือ HQ</th><th>เงิน</th></tr></thead><tbody>";
-  lines.forEach((ln) => {
-    const loc = [ln.hq_location1 || ln.location1, ln.hq_location2 || ln.location2].filter(Boolean).join(" / ");
-    const qty = ln.hq_qty != null && ln.hq_qty !== "" ? ln.hq_qty : ln.qtyoh2;
-    const linePrep = data.site === "SYP" ? prepBadge(ln.prepare_line_status) : "";
-    html += "<tr><td>" + (ln.bcode||"") + "</td><td>" + (ln.detail||"") + "</td><td>" + fmtQty(ln.qty)
-      + "</td><td>" + linePrep + "</td><td>" + (loc||"—") + "</td><td>" + fmtQty(qty) + "</td><td>" + fmtAmt(ln.amount) + "</td></tr>";
-  });
-  html += "</tbody></table>";
-  $("detail").innerHTML = html;
-  $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+  html += "<div class='tbl-wrap'>";
+  if (data.site === "SYP") {
+    html += "<table><thead><tr><th>สถานะ</th><th>รหัส</th><th>รายการ</th><th>ที่เก็บ HQ</th><th>คงเหลือ HQ</th><th>จำนวน TF</th><th>จำนวนสั่ง</th></tr></thead><tbody>";
+    lines.forEach((ln) => {
+      const loc = [ln.hq_location1 || ln.location1, ln.hq_location2 || ln.location2].filter(Boolean).join(" / ");
+      const hqQty = ln.hq_qty != null && ln.hq_qty !== "" ? ln.hq_qty : ln.qtyoh2;
+      const tfQty = ln.tf_qty != null && ln.tf_qty !== "" ? ln.tf_qty : ln.prepared_qty;
+      html += "<tr><td>" + prepBadge(ln.prepare_line_status) + "</td><td>" + (ln.bcode||"")
+        + "</td><td>" + (ln.detail||"") + "</td><td>" + (loc||"—") + "</td><td>" + fmtQty(hqQty)
+        + "</td><td>" + fmtQty(tfQty) + "</td><td>" + fmtQtyUi(ln.qty, ln.ui) + "</td></tr>";
+    });
+  } else {
+    html += "<table><thead><tr><th>รหัส</th><th>รายการ</th><th>จำนวน</th><th>ราคา</th><th>จำนวนเงิน</th></tr></thead><tbody>";
+    lines.forEach((ln) => {
+      html += "<tr><td>" + (ln.bcode||"") + "</td><td>" + (ln.detail||"") + "</td><td>" + fmtQtyUi(ln.qty, ln.ui)
+        + "</td><td>" + fmtAmt(ln.price) + "</td><td>" + fmtAmt(ln.amount) + "</td></tr>";
+    });
+  }
+  html += "</tbody></table></div>";
+  $("dlgBody").innerHTML = html;
 }
+
+$("dlgClose").onclick = closeDlg;
+$("dlg").addEventListener("click", (ev) => {
+  const box = $("dlg").getBoundingClientRect();
+  const outside = ev.clientX < box.left || ev.clientX > box.right || ev.clientY < box.top || ev.clientY > box.bottom;
+  if (ev.target === $("dlg") || outside) closeDlg();
+});
 
 function isoLocal(d) {
   const y = d.getFullYear();
@@ -338,7 +427,7 @@ load();
 
 
 def page(*, user_name: str, site: str, probes: dict) -> str:
-    site_key = (site or "hq").strip().lower()
+    site_key = (site or "syp").strip().lower()
     hq = (probes or {}).get("hq") or {}
     syp = (probes or {}).get("syp") or {}
     html = _HTML
