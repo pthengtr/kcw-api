@@ -17,6 +17,7 @@ from src.ops.ui import APP
 from src.stock_check.auth import mint_access_token
 
 OPS_COMMAND = "สถานะใบสั่งซื้อ"
+BI_COMMAND = "ภาพรวมยอดขาย"
 OPS_COMMANDS = {
     "สถานะใบสั่งซื้อ",
     "ใบสั่งซื้อ",
@@ -35,6 +36,10 @@ _OPS_COMMANDS_NORM = {_normalize_cmd(c) for c in OPS_COMMANDS}
 
 def is_ops_command(text: str) -> bool:
     return _normalize_cmd(text) in _OPS_COMMANDS_NORM
+
+
+def is_ops_bi_command(text: str) -> bool:
+    return _normalize_cmd(text) == _normalize_cmd(BI_COMMAND)
 
 
 def _rewrite_worker_ops_urls(workers: list[dict]) -> list[dict]:
@@ -60,7 +65,9 @@ def handle_ops_command(
     user_text: str | None = None,
 ) -> dict:
     group = ((access or {}).get("access_group") or "").strip().lower()
-    if not can_execute(group, OPS_COMMAND) and not can_execute(group, "ภาพรวมยอดขาย"):
+    want_bi = is_ops_bi_command(user_text or "")
+    cmd = BI_COMMAND if want_bi else OPS_COMMAND
+    if not can_execute(group, cmd):
         return {"type": "text", "text": "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"}
 
     settings = get_ops_settings()
@@ -72,7 +79,6 @@ def handle_ops_command(
     workers = _rewrite_worker_ops_urls(
         get_all_worker_status(engine, offline_after_seconds=60)
     )
-    want_bi = _normalize_cmd(user_text or "") == _normalize_cmd("ภาพรวมยอดขาย")
     path = "/ops/bi/" if want_bi else "/ops/"
     title = "ภาพรวมยอดขาย" if want_bi else "ใบสั่งซื้อ"
     links = collect_branch_tool_links(

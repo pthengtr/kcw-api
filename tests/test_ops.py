@@ -35,12 +35,12 @@ def test_ops_command_does_not_steal_po_doc_search():
 
 def test_ops_permission_admin_only():
     assert can_execute("admin", "สถานะใบสั่งซื้อ")
-    assert can_execute("admin", "ภาพรวมยอดขาย")
-    assert not can_execute("staff", "ภาพรวมยอดขาย")
     assert can_execute("exec", "สถานะใบสั่งซื้อ")
-    assert not can_execute("staff", "สถานะใบสั่งซื้อ")
+    assert can_execute("staff", "สถานะใบสั่งซื้อ")
     assert not can_execute("user", "สถานะใบสั่งซื้อ")
     assert not can_execute("guest", "สถานะใบสั่งซื้อ")
+    assert can_execute("admin", "ภาพรวมยอดขาย")
+    assert not can_execute("staff", "ภาพรวมยอดขาย")
 
 
 def test_rewrite_explorer_port_to_ops():
@@ -95,8 +95,12 @@ def test_ops_rich_menu_is_separate_from_staff_default():
 
     staff = json.loads(STAFF_SPEC.read_text(encoding="utf-8"))
     ops = json.loads(OPS_SPEC.read_text(encoding="utf-8"))
-    assert [a["action"]["text"] for a in staff["areas"]] == ["เช็คสต็อก", "ไทเกอร์", "ค้นหา"]
-    assert [a["action"]["text"] for a in ops["areas"][:3]] == ["เช็คสต็อก", "ไทเกอร์", "ค้นหา"]
-    assert ops["areas"][3]["action"]["text"] == "สถานะใบสั่งซื้อ"
-    assert ops["areas"][3]["action"]["label"] == "ใบสั่งซื้อ"
+    staff_texts = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "วิธีใช้"]
+    ops_texts = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "ภาพรวมยอดขาย"]
+    assert [a["action"]["text"] for a in staff["areas"]] == staff_texts
+    assert [a["action"]["text"] for a in ops["areas"]] == ops_texts
+    assert ops["areas"][3]["action"]["label"] == "PO โอนสินค้า"
+    assert ops["areas"][5]["action"]["label"] == "ภาพรวมยอดขาย"
+    assert staff["size"] == {"width": 2500, "height": 1686}
     assert ops["size"] == {"width": 2500, "height": 1686}
+    assert staff["name"] != ops["name"]
