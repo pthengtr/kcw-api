@@ -7,28 +7,48 @@ from pathlib import Path
 
 from src.handlers.companion_entry import is_companion_command
 from src.handlers.explorer_entry import is_explorer_command
+from src.handlers.image import is_image_command
+from src.handlers.message import is_help_request
+from src.handlers.ops_entry import is_ops_command
 from src.handlers.stock_check_entry import is_stock_check_command
 
 SPEC = Path(__file__).resolve().parents[1] / "scripts" / "line_rich_menu" / "menu_spec.json"
+
+EXPECTED_TEXTS = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "วิธีใช้"]
 
 
 def test_rich_menu_message_actions_match_handlers():
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     areas = spec["areas"]
-    assert len(areas) == 3
+    assert len(areas) == 6
 
     texts = [a["action"]["text"] for a in areas]
-    assert texts == ["เช็คสต็อก", "ไทเกอร์", "ค้นหา"]
+    assert texts == EXPECTED_TEXTS
     assert is_stock_check_command(texts[0])
     assert is_companion_command(texts[1])
     assert is_explorer_command(texts[2])
-
-
-def test_rich_menu_geometry_is_line_half_size():
-    spec = json.loads(SPEC.read_text(encoding="utf-8"))
-    assert spec["size"] == {"width": 2500, "height": 843}
-    total_w = sum(a["bounds"]["width"] for a in spec["areas"])
-    assert total_w == 2500
-    for area in spec["areas"]:
-        assert area["bounds"]["height"] == 843
+    assert is_ops_command(texts[3])
+    assert is_image_command(texts[4])
+    assert is_help_request(texts[5])
+    for area in areas:
         assert area["action"]["type"] == "message"
+
+
+def test_rich_menu_geometry_is_line_full_size_3x2():
+    spec = json.loads(SPEC.read_text(encoding="utf-8"))
+    assert spec["size"] == {"width": 2500, "height": 1686}
+    assert spec["chatBarText"] == "เมนู"
+
+    areas = spec["areas"]
+    assert [(a["bounds"]["x"], a["bounds"]["y"]) for a in areas] == [
+        (0, 0),
+        (833, 0),
+        (1667, 0),
+        (0, 749),
+        (833, 749),
+        (1667, 749),
+    ]
+    assert [a["bounds"]["width"] for a in areas] == [833, 834, 833, 833, 834, 833]
+    assert [a["bounds"]["height"] for a in areas] == [749, 749, 749, 937, 937, 937]
+    covered = sum(a["bounds"]["width"] * a["bounds"]["height"] for a in areas)
+    assert covered == 2500 * 1686

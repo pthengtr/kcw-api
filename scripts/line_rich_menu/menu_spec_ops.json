@@ -1,15 +1,55 @@
 {
-  "size": { "width": 2500, "height": 843 },
+  "size": { "width": 2500, "height": 1686 },
   "selected": true,
-  "name": "KCW ops admin ใบสั่งซื้อ",
-  "chatBarText": "ใบสั่งซื้อ",
+  "name": "KCW ops v3",
+  "chatBarText": "เมนู",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
+      "bounds": { "x": 0, "y": 0, "width": 833, "height": 749 },
       "action": {
         "type": "message",
-        "label": "ใบสั่งซื้อ",
+        "label": "เช็คสต็อก",
+        "text": "เช็คสต็อก"
+      }
+    },
+    {
+      "bounds": { "x": 833, "y": 0, "width": 834, "height": 749 },
+      "action": {
+        "type": "message",
+        "label": "ไทเกอร์เพย์",
+        "text": "ไทเกอร์"
+      }
+    },
+    {
+      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 749 },
+      "action": {
+        "type": "message",
+        "label": "ค้นหา",
+        "text": "ค้นหา"
+      }
+    },
+    {
+      "bounds": { "x": 0, "y": 749, "width": 833, "height": 937 },
+      "action": {
+        "type": "message",
+        "label": "PO โอนสินค้า",
         "text": "สถานะใบสั่งซื้อ"
+      }
+    },
+    {
+      "bounds": { "x": 833, "y": 749, "width": 834, "height": 937 },
+      "action": {
+        "type": "message",
+        "label": "จัดการรูปสินค้า",
+        "text": "รูป"
+      }
+    },
+    {
+      "bounds": { "x": 1667, "y": 749, "width": 833, "height": 937 },
+      "action": {
+        "type": "message",
+        "label": "ภาพรวมยอดขาย",
+        "text": "ภาพรวมยอดขาย"
       }
     }
   ]

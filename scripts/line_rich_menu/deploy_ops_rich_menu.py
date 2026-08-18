@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Create an admin-only LINE rich menu and link it to admin/exec users.
+"""Create an admin-linked LINE rich menu (same 3x2 as default) and link it.
 
-Does NOT change the default 3-tap staff menu.
+Does NOT change the default menu (no PUT /user/all/richmenu).
 
   python scripts/line_rich_menu/generate_ops_image.py
   python scripts/line_rich_menu/deploy_ops_rich_menu.py --dry-run
@@ -21,6 +21,8 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 SPEC_PATH = ROOT / "menu_spec_ops.json"
 IMAGE_PATH = ROOT / "rich_menu_ops.png"
 

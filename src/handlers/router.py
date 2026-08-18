@@ -34,7 +34,9 @@ from src.handlers.companion_entry import (
     handle_companion_command,
 )
 from src.handlers.ops_entry import (
+    BI_COMMAND,
     OPS_COMMAND,
+    is_ops_bi_command,
     is_ops_command,
     handle_ops_command,
 )
@@ -105,7 +107,8 @@ def route_user_text(
         )
 
     if is_ops_command(text):
-        if not can_execute(access["access_group"], OPS_COMMAND):
+        cmd = BI_COMMAND if is_ops_bi_command(text) else OPS_COMMAND
+        if not can_execute(access["access_group"], cmd):
             return {"type": "text", "text": "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"}
         return handle_ops_command(
             engine,
