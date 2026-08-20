@@ -34,11 +34,16 @@ CATEGORY_LABELS = {
     "40": "ค่าแรง", "70": "ค่าใช้จ่าย", "91": "โปรโมชั่น",
 }
 _DOC_HINT = re.compile(
-    r"^(PI|PO|PV|P|RC|RV|RVI|KCPN|3T|3SA|8K|SA|TD|TR|TF|TFV|TAD|CN|DN)\w+",
+    r"^(PI|PO|PV|RC|RV|RVI|KCPN|3T|3SA|8K|SA|TD|TR|TF|TFV|TAD|CN|DN)\w+",
     re.I,
 )
-_BCODE_LIKE = re.compile(r"^[0-9]{4,}[A-Za-z0-9\-]*$")
+# Internal BCODE is digits (optional letter suffix). Hyphenated values are OEM/PCODE.
+_BCODE_LIKE = re.compile(r"^[0-9]{4,}[A-Za-z0-9]*$")
 _CODE1_TOKEN = re.compile(r"^[A-Za-z]$")
+_FIELD_PREFIX = re.compile(
+    r"^(oem|pcode|mcode|เบอร์แท้|เบอร์โรงงาน|code1|ประเภท)[:\s]+",
+    re.I,
+)
 _KIND_PREFIX = re.compile(
     r"^(si|pi|po|pv|rv|np|iclow|สินค้า|บิลขาย|บิลซื้อ|ใบสั่ง(?:ซื้อ)?|"
     r"ค้างรับ|ใบสำคัญจ่าย|ใบสำคัญรับ|โน้ต|ใบจ่าย|note)[:\s]+",
@@ -130,6 +135,12 @@ def parse_query(raw: str) -> ParsedQuery:
     if m:
         forced = _KIND_ALIASES.get(m.group(1).lower())
         q = q[m.end():].strip()
+    field = None
+    fm = _FIELD_PREFIX.match(q)
+    if fm:
+        field = fm.group(1).lower()
+        q = q[fm.end():].strip()
+        forced = forced or "product"
     compact = re.sub(r"\s+", "", q)
     if forced in ("si", "pi", "po", "pv", "rv", "iclow"):
         return ParsedQuery(
@@ -137,17 +148,13 @@ def parse_query(raw: str) -> ParsedQuery:
         )
     if forced == "product":
         pass
-    elif _DOC_HINT.match(compact) or (
-        len(compact) >= 6
-        and any(ch.isdigit() for ch in compact)
-        and " " not in q.strip()
-        and not _BCODE_LIKE.match(compact)
-        and any(c.isalpha() for c in compact)
-    ):
+    elif infer_doc_kind(compact) or _DOC_HINT.match(compact):
         return ParsedQuery(
             raw=q, kind="document", docno=compact,
             doc_kind=infer_doc_kind(compact), want_product=False,
         )
+    if field in ("oem", "pcode", "mcode", "เบอร์แท้", "เบอร์โรงงาน") and q:
+        return ParsedQuery(raw=q, kind="product", text_terms=[q], want_product=True)
     if _BCODE_LIKE.match(compact):
         return ParsedQuery(raw=q, kind="product", bcode_prefix=compact, want_product=True)
     tokens = [t for t in re.split(r"\s+", q) if t]

@@ -78,6 +78,58 @@ def test_explorer_page_has_theme_toggle():
     assert 'html[data-theme="dark"]' in html
 
 
+def test_parse_oem_mcode_and_code1():
+    oem = parse_query("12371-0L040")
+    assert oem.kind == "product"
+    assert oem.want_product is True
+    assert oem.bcode_prefix is None
+    assert oem.text_terms == ["12371-0L040"]
+
+    mfr = parse_query("ME201571")
+    assert mfr.kind == "product"
+    assert mfr.want_product is True
+    assert mfr.text_terms == ["ME201571"]
+
+    labeled = parse_query("oem 90915-YZZD3")
+    assert labeled.kind == "product"
+    assert labeled.text_terms == ["90915-YZZD3"]
+    assert parse_query("mcode MD075760").text_terms == ["MD075760"]
+    assert parse_query("เบอร์แท้ 12371-0L040").text_terms == ["12371-0L040"]
+
+    assert parse_query("I").code1 == "I"
+    assert parse_query("K").code1 == "K"
+    assert parse_query("code1 I").code1 == "I"
+    assert parse_query("ประเภท K").code1 == "K"
+    combo = parse_query("I 6201")
+    assert combo.kind == "product"
+    assert combo.code1 == "I"
+    assert combo.sizes == ["6201"]
+
+    # Known bill prefixes stay documents
+    assert parse_query("KCPN6901-12").kind == "document"
+    assert parse_query("PO6905-392").want_product is False
+
+
+def test_product_search_matches_pcode_mcode_and_code1():
+    from src.parts9_explorer.search import _term_match_sql
+
+    sql = _term_match_sql("t0")
+    assert "PCODE LIKE :t0" in sql
+    assert "MCODE LIKE :t0" in sql
+    assert "CODE1" in sql
+    sized = _term_match_sql("sz1", include_size_slot=1)
+    assert "SIZE1" in sized
+    assert "PCODE LIKE :sz1" in sized
+
+
+def test_explorer_page_mentions_oem_and_code1():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
+    assert "เบอร์แท้" in html
+    assert "เบอร์โรงงาน" in html
+    assert "PCODE" in html
+    assert "MCODE" in html
+
+
 def test_pack_note_only_pv_uses_noteno():
     packed = _pack_doc(
         "pv",
