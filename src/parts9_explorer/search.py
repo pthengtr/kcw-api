@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from sqlalchemy import text
 
 from src.parts9_explorer.config import get_explorer_settings
-from src.parts9_explorer.db import get_site_engine
+from src.parts9_explorer.db import format_sql_error, get_site_engine
 from src.parts9_explorer.query import (
     DOC_KIND_LABELS,
     category_label,
@@ -44,6 +45,10 @@ PRODUCT_COLS = """
   LTRIM(RTRIM(COALESCE(LOCATION2,''))) AS LOCATION2,
   LTRIM(RTRIM(COALESCE(CANCELED,''))) AS CANCELED
 """
+
+
+def _sql_fail(site: str, exc: BaseException) -> str:
+    return format_sql_error(exc, site=site)
 
 
 def _num(value: Any) -> float | None:
@@ -144,7 +149,7 @@ def search_products(raw: str, *, site: str, include_skip: bool = False, limit: i
     try:
         engine = get_site_engine(site_key)
     except Exception as exc:
-        return [], f"{site_key.upper()} SQL: {exc}"
+        return [], _sql_fail(site_key, exc)
     where = ["UPPER(LTRIM(RTRIM(COALESCE(CANCELED,'')))) <> 'Y'"]
     params: dict[str, Any] = {}
     if not include_skip:
@@ -192,7 +197,7 @@ def search_products(raw: str, *, site: str, include_skip: bool = False, limit: i
         with engine.connect() as conn:
             rows = conn.execute(sql, params).mappings().all()
     except Exception as exc:
-        return [], str(exc)
+        return [], _sql_fail(site_key, exc)
     return [_serialize_product(dict(r), site=site_key) for r in rows], None
 
 
@@ -207,7 +212,7 @@ def get_product(bcode: str, *, site: str):
         with engine.connect() as conn:
             row = conn.execute(sql, {"bcode": code}).mappings().first()
     except Exception as exc:
-        return None, str(exc)
+        return None, _sql_fail(site_key, exc)
     if not row:
         return None, None
     return _serialize_product(dict(row), site=site_key), None
@@ -449,14 +454,14 @@ def lookup_documents(
         try:
             engine = get_site_engine(site_key)
         except Exception as exc:
-            return [], str(exc)
+            return [], _sql_fail(site_key, exc)
         return _lookup_iclow(engine, docno, site_key)
     if not docno:
         return [], None
     try:
         engine = get_site_engine(site_key)
     except Exception as exc:
-        return [], str(exc)
+        return [], _sql_fail(site_key, exc)
     if kinds:
         order = [k for k in kinds if k in _DOC_SPECS]
         stop_first = False
@@ -472,7 +477,7 @@ def lookup_documents(
         try:
             rows = _fetch_kind(engine, k, docno, site_key)
         except Exception as exc:
-            last_err = str(exc)
+            last_err = _sql_fail(site_key, exc)
             continue
         found.extend(rows)
         if found and stop_first:
@@ -527,7 +532,7 @@ def _lookup_iclow(engine, q: str, site: str):
         with engine.connect() as conn:
             lines = [_row(r) for r in conn.execute(sql, {"like": like}).mappings().all()]
     except Exception as exc:
-        return [], str(exc)
+        return [], _sql_fail(site, exc)
     groups: dict[str, dict[str, Any]] = {}
     for line in lines:
         st = _iclow_status(line)
@@ -560,7 +565,7 @@ def iclow_summary(site: str) -> tuple[dict[str, Any] | None, str | None]:
     try:
         engine = get_site_engine(site_key)
     except Exception as exc:
-        return None, str(exc)
+        return None, _sql_fail(site_key, exc)
     amt = _amt_sql("AMOUNT")
     pending = "ORDERED = 'Y' AND ISNULL(RECEIVED,'N') = 'N' AND ISNULL(CANCELED,'N') = 'N'"
     totals_sql = text(
@@ -616,7 +621,7 @@ def iclow_summary(site: str) -> tuple[dict[str, Any] | None, str | None]:
                 vendors = _rows(conn.execute(vendors_sql_plain).mappings().all(), 8)
             recent = _rows(conn.execute(recent_sql).mappings().all(), 25)
     except Exception as exc:
-        return None, str(exc)
+        return None, _sql_fail(site_key, exc)
     return {
         "site": site_key.upper(),
         "totals": totals,
@@ -631,38 +636,39 @@ def recent_for_product(bcode: str, *, site: str, limit: int = 15) -> dict[str, A
     out: dict[str, Any] = {"sales": [], "pi": [], "po": [], "iclow": [], "error": None}
     try:
         engine = get_site_engine(site_key)
+        queries = {
+            "sales": "SELECT TOP 15 BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.SIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
+            "pi": "SELECT TOP 15 BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
+            "po": "SELECT TOP 15 DOCNO, DOCDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PODET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY DOCDATE DESC",
+            "iclow": "SELECT TOP 15 DOCNO, DOCDATE, ORDERED, RECEIVED, CANCELED, RCVDNO, QTY, BCODE FROM dbo.ICLOW WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY DOCDATE DESC",
+        }
+        with engine.connect() as conn:
+            for key, sql in queries.items():
+                try:
+                    rows = conn.execute(text(sql), {"bcode": code}).mappings().all()
+                    out[key] = [{k: ("" if v is None else str(v).strip()) for k, v in dict(r).items()} for r in rows]
+                except Exception as exc:
+                    out[key] = []
+                    out["error"] = (out.get("error") or "") + f" {key}:{exc}"
     except Exception as exc:
-        out["error"] = str(exc)
-        return out
-    queries = {
-        "sales": "SELECT TOP 15 BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.SIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
-        "pi": "SELECT TOP 15 BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
-        "po": "SELECT TOP 15 DOCNO, DOCDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PODET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY DOCDATE DESC",
-        "iclow": "SELECT TOP 15 DOCNO, DOCDATE, ORDERED, RECEIVED, CANCELED, RCVDNO, QTY, BCODE FROM dbo.ICLOW WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY DOCDATE DESC",
-    }
-    with engine.connect() as conn:
-        for key, sql in queries.items():
-            try:
-                rows = conn.execute(text(sql), {"bcode": code}).mappings().all()
-                out[key] = [{k: ("" if v is None else str(v).strip()) for k, v in dict(r).items()} for r in rows]
-            except Exception as exc:
-                out[key] = []
-                out["error"] = (out.get("error") or "") + f" {key}:{exc}"
+        out["error"] = _sql_fail(site_key, exc)
     return out
 
 
+def _probe_one(site: str) -> tuple[str, dict[str, Any]]:
+    try:
+        engine = get_site_engine(site)
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT @@SERVERNAME AS server_name, DB_NAME() AS db_name")).mappings().first()
+        return site, {
+            "ok": True,
+            "server": str(row["server_name"] if row else ""),
+            "db": str(row["db_name"] if row else ""),
+        }
+    except Exception as exc:
+        return site, {"ok": False, "error": _sql_fail(site, exc)}
+
+
 def probe_sites() -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for site in ("hq", "syp"):
-        try:
-            engine = get_site_engine(site)
-            with engine.connect() as conn:
-                row = conn.execute(text("SELECT @@SERVERNAME AS server_name, DB_NAME() AS db_name")).mappings().first()
-            result[site] = {
-                "ok": True,
-                "server": str(row["server_name"] if row else ""),
-                "db": str(row["db_name"] if row else ""),
-            }
-        except Exception as exc:
-            result[site] = {"ok": False, "error": str(exc)}
-    return result
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        return dict(pool.map(_probe_one, ("hq", "syp")))

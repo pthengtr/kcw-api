@@ -139,3 +139,34 @@ def test_pack_note_only_pv_uses_noteno():
     )
     assert packed["docno"] == "103772300"
     assert packed["kind_label"] == "โน้ตจ่าย NP"
+
+
+def test_explorer_page_hides_pyodbc_timeout():
+    html = page(
+        user_name="t",
+        site="hq",
+        probes={
+            "hq": {"ok": True, "server": "KSS"},
+            "syp": {
+                "ok": False,
+                "error": "(pyodbc.OperationalError) ('HYT00', 'Login timeout expired')",
+            },
+        },
+    )
+    assert "HQ SQL KSS" in html
+    assert "SYP SQL down" in html
+    assert "HYT00" not in html
+    assert "pyodbc" not in html
+
+
+def test_format_sql_timeout_is_short():
+    from src.parts9_explorer.db import format_sql_error
+
+    msg = format_sql_error(
+        Exception("(pyodbc.OperationalError) ('HYT00', '[HYT00] Login timeout expired')"),
+        site="syp",
+    )
+    assert "HYT00" not in msg
+    assert "pyodbc" not in msg
+    assert "SYP SQL" in msg
+    assert "ไม่เชื่อมต่อ" in msg
