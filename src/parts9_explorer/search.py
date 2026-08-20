@@ -119,6 +119,25 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
     }
 
 
+def _term_match_sql(key: str, *, include_size_slot: int | None = None) -> str:
+    """Match a token against OEM (PCODE), factory (MCODE), codes, name, and optional SIZE slot."""
+    parts = [
+        f"DESCR LIKE :{key}",
+        f"PCODE LIKE :{key}",
+        f"MCODE LIKE :{key}",
+        f"BRAND LIKE :{key}",
+        f"MODEL LIKE :{key}",
+        f"BCODE LIKE :{key}",
+        f"UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) LIKE :{key}",
+    ]
+    if include_size_slot is not None:
+        parts.insert(
+            0,
+            f"LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE{include_size_slot}), ''))) LIKE :{key}",
+        )
+    return "(" + " OR ".join(parts) + ")"
+
+
 def search_products(raw: str, *, site: str, include_skip: bool = False, limit: int = 50):
     parsed = parse_query(raw)
     site_key = (site or "hq").strip().lower()
@@ -134,26 +153,27 @@ def search_products(raw: str, *, site: str, include_skip: bool = False, limit: i
             " OR CONVERT(float, REPLACE(CONVERT(varchar(50), QTYMIN), ',', '')) >= 0)"
         )
     if parsed.bcode_prefix:
-        where.append("LTRIM(RTRIM(BCODE)) LIKE :bpre")
+        where.append(
+            "(LTRIM(RTRIM(BCODE)) LIKE :bpre"
+            " OR LTRIM(RTRIM(COALESCE(PCODE,''))) LIKE :bcode_any"
+            " OR LTRIM(RTRIM(COALESCE(MCODE,''))) LIKE :bcode_any)"
+        )
         params["bpre"] = parsed.bcode_prefix + "%"
+        params["bcode_any"] = f"%{parsed.bcode_prefix}%"
     if parsed.code1:
         where.append("UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) = :code1")
         params["code1"] = parsed.code1
     for i, sz in enumerate(parsed.sizes, start=1):
-        where.append(
-            f"LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE{i}), ''))) LIKE :sz{i}"
-        )
-        params[f"sz{i}"] = f"%{sz}%"
+        key = f"sz{i}"
+        where.append(_term_match_sql(key, include_size_slot=i))
+        params[key] = f"%{sz}%"
     for i, term in enumerate(parsed.text_terms):
         key = f"t{i}"
-        where.append(
-            f"(DESCR LIKE :{key} OR PCODE LIKE :{key} OR MCODE LIKE :{key}"
-            f" OR BRAND LIKE :{key} OR MODEL LIKE :{key} OR BCODE LIKE :{key})"
-        )
+        where.append(_term_match_sql(key))
         params[key] = f"%{term}%"
     if not parsed.bcode_prefix and not parsed.code1 and not parsed.sizes and not parsed.text_terms:
         if parsed.raw:
-            where.append("(DESCR LIKE :q OR PCODE LIKE :q OR MCODE LIKE :q OR BCODE LIKE :q)")
+            where.append(_term_match_sql("q"))
             params["q"] = f"%{parsed.raw}%"
         else:
             return [], None
@@ -162,7 +182,9 @@ def search_products(raw: str, *, site: str, include_skip: bool = False, limit: i
         f"SELECT TOP {top_n} {PRODUCT_COLS} FROM dbo.ICMAS WHERE "
         + " AND ".join(where)
         + " ORDER BY CASE WHEN LTRIM(RTRIM(BCODE)) = :exact THEN 0"
-        " WHEN LTRIM(RTRIM(BCODE)) LIKE :pre THEN 1 ELSE 2 END, BCODE"
+        " WHEN LTRIM(RTRIM(COALESCE(PCODE,''))) = :exact THEN 1"
+        " WHEN LTRIM(RTRIM(COALESCE(MCODE,''))) = :exact THEN 1"
+        " WHEN LTRIM(RTRIM(BCODE)) LIKE :pre THEN 2 ELSE 3 END, BCODE"
     )
     params["exact"] = parsed.raw.strip()
     params["pre"] = (parsed.bcode_prefix or parsed.raw.strip()) + "%"

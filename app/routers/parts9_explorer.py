@@ -135,7 +135,7 @@ def api_search(
     products, errp = ([], None)
     documents, errd = ([], None)
     summary, errs = (None, None)
-    want_products = mode in ("all", "product") and parsed.want_product
+    want_products = mode == "product" or (mode == "all" and parsed.want_product)
     if want_products and q.strip():
         products, errp = search_products(q, site=site, include_skip=include_skip in ("1", "true", "yes"))
     want_docs = mode in ("si", "pi", "po", "pv", "rv", "iclow") or (
