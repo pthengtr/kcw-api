@@ -448,6 +448,12 @@ drawModes();
 """
 
 
+def _sql_badge_text(probe: dict) -> str:
+    if probe.get("ok"):
+        return str(probe.get("server") or "ok")
+    return "down"
+
+
 def page(*, user_name: str, site: str, probes: dict) -> str:
     hq = probes.get("hq") or {}
     syp = probes.get("syp") or {}
@@ -457,6 +463,6 @@ def page(*, user_name: str, site: str, probes: dict) -> str:
         .replace("__SYPSEL__", "selected" if site.lower()=="syp" else "")
         .replace("__HQBADGE__", "ok" if hq.get("ok") else "down")
         .replace("__SYPBADGE__", "ok" if syp.get("ok") else "down")
-        .replace("__HQSQL__", str(hq.get("server") or hq.get("error") or ""))
-        .replace("__SYPSQL__", str(syp.get("server") or syp.get("error") or ""))
+        .replace("__HQSQL__", _sql_badge_text(hq))
+        .replace("__SYPSQL__", _sql_badge_text(syp))
     )
