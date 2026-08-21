@@ -340,7 +340,7 @@ def approve_list(request: Request):
     user, err = _require_user(request, service)
     if err:
         return err
-    drafts = service.store.list_pending_drafts()
+    drafts = service.attach_product_model(service.store.list_pending_drafts())
     return HTMLResponse(
         ui.approve_page(
             user=user,

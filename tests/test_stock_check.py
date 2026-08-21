@@ -673,3 +673,40 @@ def test_sa_writer_always_posts_mtp_one_for_pack_skus():
     assert sidet["params"]["mtp"] == 1.0
     assert sidet["params"]["ui"] == "หน่วย"
     assert sidet["params"]["qty"] == 3.0
+
+
+def test_product_row_includes_model():
+    product = ProductRow(
+        bcode="P1",
+        descr="bearing",
+        pcode="P",
+        mcode="M",
+        location1="A1",
+        location2="",
+        qtyoh2=3.0,
+        ui1="u",
+        mtp2=1.0,
+        canceled="N",
+        model="1LT",
+    )
+    assert product.as_dict()["model"] == "1LT"
+
+
+def test_product_card_and_info_show_model():
+    from src.stock_check.ui import _product_card_html, product_page
+
+    item = {
+        "bcode": "P1",
+        "descr": "bearing",
+        "model": "1LT",
+        "location1": "A-01",
+        "location2": "",
+        "qtyoh2": 4,
+        "last_audited_at": None,
+    }
+    card = _product_card_html(item, href="/stock-check/product/P1")
+    assert "รุ่น 1LT" in card
+    info = product_page(user={"display_name": "T", "line_user_id": "U1"}, item=item)
+    assert "รุ่น 1LT" in info
+    blank = _product_card_html({**item, "model": ""}, href="/x")
+    assert "รุ่น" not in blank
