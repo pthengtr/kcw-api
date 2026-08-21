@@ -26,6 +26,7 @@ class ProductRow:
     canceled: str
     # Legacy PARTS9: QTYMIN < 0 (usually -1) = do not restock / skip ICLOW.
     qtymin: float = 0.0
+    model: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +34,7 @@ class ProductRow:
             "descr": self.descr,
             "pcode": self.pcode,
             "mcode": self.mcode,
+            "model": self.model,
             "location1": self.location1,
             "location2": self.location2,
             "qtyoh2": self.qtyoh2,
@@ -118,12 +120,13 @@ def _row_to_product(row: Any) -> ProductRow:
         mtp2=_parse_qty(row["MTP2"]) or 1.0,
         canceled=str(row["CANCELED"] or "N").strip().upper() or "N",
         qtymin=_parse_qty(row["QTYMIN"]) if "QTYMIN" in row.keys() else 0.0,
+        model=str(row["MODEL"] or "").strip() if "MODEL" in row.keys() else "",
     )
 
 
 _PRODUCT_SELECT = """
 SELECT
-  BCODE, DESCR, PCODE, MCODE, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED, QTYMIN
+  BCODE, DESCR, PCODE, MCODE, MODEL, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED, QTYMIN
 FROM dbo.ICMAS
 """
 
@@ -158,8 +161,10 @@ def lookup_products(query: str, *, limit: int = 20, engine: Engine | None = None
             LTRIM(RTRIM(BCODE)) = :q
             OR LTRIM(RTRIM(PCODE)) = :q
             OR LTRIM(RTRIM(MCODE)) = :q
+            OR LTRIM(RTRIM(MODEL)) = :q
             OR PCODE LIKE :like
             OR MCODE LIKE :like
+            OR MODEL LIKE :like
             OR DESCR LIKE :like
           )
         ORDER BY BCODE
@@ -242,7 +247,7 @@ def list_never_counted_stock_products(
     sql = text(
         f"""
         SELECT TOP {limit * 3}
-          BCODE, DESCR, PCODE, MCODE, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED, QTYMIN
+          BCODE, DESCR, PCODE, MCODE, MODEL, LOCATION1, LOCATION2, QTYOH2, UI1, MTP2, CANCELED, QTYMIN
         FROM dbo.ICMAS
         WHERE UPPER(LTRIM(RTRIM(COALESCE(CANCELED,'')))) <> 'Y'
           AND ISNUMERIC(REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) = 1

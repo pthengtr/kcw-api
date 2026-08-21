@@ -43,6 +43,13 @@ def _pool_badge_html(item: dict[str, Any]) -> str:
     )
 
 
+def _product_model_html(item: dict[str, Any]) -> str:
+    model = str(item.get("model") or "").strip()
+    if not model:
+        return ""
+    return f"<div class='model'>รุ่น {escape(model)}</div>"
+
+
 def page(
     title: str,
     body: str,
@@ -192,6 +199,9 @@ def page(
       margin-top: 2px; color: var(--muted); font-size: .92rem;
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
       overflow: hidden;
+    }}
+    .model {{
+      margin-top: 4px; font-size: .86rem; font-weight: 500; color: var(--ink);
     }}
     a.item {{
       display: block; text-decoration: none; color: inherit;
@@ -647,6 +657,7 @@ def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> st
           <div style="min-width:0">
             <div class="bcode">{escape(item['bcode'])}</div>
             <div class="descr">{escape(item.get('descr') or '')}</div>
+            {_product_model_html(item)}
             {abc_bit}
           </div>
           <div class="qty-block">
@@ -748,6 +759,7 @@ def product_page(
       <div class="loc">{escape(loc)}</div>
       <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(item['bcode'])}</div>
       <div class="descr" style="-webkit-line-clamp:4">{escape(item.get('descr') or '')}</div>
+      {_product_model_html(item)}
       <div class="stats">
         <div class="stat"><b>{qty_disp}</b><span>ระบบ</span></div>
         <div class="stat"><b>{_fmt_ts(item.get('last_audited_at'))}</b><span>ตรวจล่าสุด</span></div>
@@ -926,7 +938,7 @@ def ondemand_page(
         <div class="card">
           <div class="section-title" style="margin-top:0">พิมพ์รหัส</div>
           <form method="get" action="/stock-check/ondemand">
-            <label>BCODE / MCODE / PCODE</label>
+            <label>BCODE / MCODE / PCODE / รุ่น</label>
             <input type="search" name="q" value="__Q__" placeholder="พิมพ์หรือแปะรหัส" />
             <div style="height:10px"></div>
             <button class="secondary" type="submit">ค้นหา</button>
@@ -1021,6 +1033,7 @@ def approve_page(
               <div class="loc">{escape(loc)}</div>
               <div class="bcode" style="margin-top:8px">{escape(d['bcode'])}</div>
               <div class="descr">{escape(d.get('descr') or '')}</div>
+              {_product_model_html(d)}
               <div class="stats">
                 <div class="stat"><b>{float(d['system_qty']):.3g}</b><span>ระบบ</span></div>
                 <div class="stat"><b>{float(d['counted_qty']):.3g}</b><span>นับได้</span></div>
@@ -1066,6 +1079,7 @@ def draft_edit_page(
       <div class="loc">{escape(loc)}</div>
       <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(product['bcode'])}</div>
       <div class="descr" style="-webkit-line-clamp:4">{escape(product.get('descr') or '')}</div>
+      {_product_model_html(product)}
       <div class="stats">
         <div class="stat"><b>{qty_disp}</b><span>ระบบตอนนี้</span></div>
         <div class="stat"><b>{counted_disp}</b><span>นับเดิม</span></div>
@@ -1142,6 +1156,7 @@ def drift_review_page(
       <div class="loc">{escape(loc)}</div>
       <div class="bcode" style="margin-top:8px">{escape(draft['bcode'])}</div>
       <div class="descr">{escape(draft.get('descr') or '')}</div>
+      {_product_model_html(draft)}
       <div class="stats">
         <div class="stat"><b>{sys0:.3g}</b><span>ตอนนับ</span></div>
         <div class="stat"><b>{counted:.3g}</b><span>นับได้</span></div>
