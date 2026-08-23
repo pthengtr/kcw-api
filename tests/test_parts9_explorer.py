@@ -170,3 +170,78 @@ def test_format_sql_timeout_is_short():
     assert "pyodbc" not in msg
     assert "SYP SQL" in msg
     assert "ไม่เชื่อมต่อ" in msg
+
+
+def _explorer_html():
+    return page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
+
+
+def test_explorer_page_uses_thai_headers_and_formats_billamt():
+    html = _explorer_html()
+    assert 'BILLAMT:"ยอดบิล"' in html
+    assert 'JOURTYPE:"ประเภทสมุด"' in html
+    assert 'NOTENO:"เลขโน้ต"' in html
+    assert 'LINE:"ลำดับ"' in html
+    assert 'BCODE:"รหัสสินค้า"' in html
+    assert 'DETAIL:"รายละเอียด"' in html
+    assert 'QTY:"จำนวน"' in html
+    assert 'UI:"หน่วย"' in html
+    assert 'PRICE:"ราคา"' in html
+    assert 'AMOUNT:"จำนวนเงิน"' in html
+    assert "MONEY_KEYS.has(k) ? money(obj[k])" in html
+    assert 'if (c === "LINE") return "<td>"+(i+1)+"</td>"' in html
+    assert 'minimumFractionDigits: 2' in html
+
+
+def test_explorer_js_renders_comma_billamt_and_sequential_lines(tmp_path):
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        raise AssertionError("node is required to verify explorer money/LINE rendering")
+    html = _explorer_html()
+    start = html.index("const STATUS_TH")
+    end = html.index("function jumpProduct")
+    helpers = html[start:end]
+    script = helpers + r"""
+const header = {
+  JOURTYPE: "NP", VOUCED: "N", NOTED: "Y", NOTEDATE: "2026-08-22",
+  NOTENO: "ABC7/69", ACCTNO: "123", ACCTNAME: "บจก. ทดสอบ",
+  BILLCNT: "5", BILLAMT: "31809.14", CANCELED: "N"
+};
+const lines = [
+  {LINE:"10", BCODE:"2201", DETAIL:"สายพาน", QTY:"2", UI:"เส้น", PRICE:"1000.5", AMOUNT:"2001"},
+  {LINE:"20", BCODE:"2202", DETAIL:"สายพาน 2", QTY:"1", UI:"เส้น", PRICE:"50", AMOUNT:"50"},
+];
+process.stdout.write(JSON.stringify({
+  kv: kvTable(header),
+  table: lineTable(lines, ["LINE","BCODE","DETAIL","QTY","UI","PRICE","AMOUNT"]),
+  money: money("31809.14"),
+  lineLabel: colTh("LINE"),
+}));
+"""
+    script_path = tmp_path / "render_explorer.js"
+    script_path.write_text(script, encoding="utf-8")
+    result = subprocess.run([node, str(script_path)], capture_output=True, text=True, check=True)
+    out = json.loads(result.stdout)
+    assert "31,809.14" in out["money"]
+    assert "ยอดบิล" in out["kv"]
+    assert "ประเภทสมุด" in out["kv"]
+    assert "เลขโน้ต" in out["kv"]
+    assert "ชื่อบัญชี" in out["kv"]
+    assert "BILLAMT" not in out["kv"]
+    assert "JOURTYPE" not in out["kv"]
+    assert "31,809.14" in out["kv"]
+    assert "31809.14" not in out["kv"]
+    assert out["lineLabel"] == "ลำดับ"
+    assert "<th>ลำดับ</th>" in out["table"]
+    assert "<th>รหัสสินค้า</th>" in out["table"]
+    assert "<th>รายละเอียด</th>" in out["table"]
+    assert "<th>LINE</th>" not in out["table"]
+    assert "<th>BCODE</th>" not in out["table"]
+    assert "<td>1</td>" in out["table"]
+    assert "<td>2</td>" in out["table"]
+    assert "<td>10</td>" not in out["table"]
+    assert "<td>20</td>" not in out["table"]
