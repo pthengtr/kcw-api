@@ -149,6 +149,25 @@ const PLACE = {
   iclow: "เลข PO / รหัสสินค้า / ผู้ขาย — ว่าง = สรุปค้างรับ",
 };
 const STATUS_TH = {pending:"ค้างรับ", received:"รับแล้ว", canceled:"ยกเลิก", to_order:"รอสั่ง"};
+const COL_TH = {
+  JOURTYPE:"ประเภทสมุด", VOUCED:"ผ่านใบสำคัญ", VOUCDATE:"วันที่ใบสำคัญ", VOUCNO:"เลขใบสำคัญ",
+  NOTED:"ผ่านโน้ต", NOTEDATE:"วันที่โน้ต", NOTENO:"เลขโน้ต", RCPTNO:"เลขใบเสร็จ",
+  ACCTNO:"รหัสบัญชี", ACCTNAME:"ชื่อบัญชี", BILLCNT:"จำนวนบิล", BILLAMT:"ยอดบิล",
+  CHKAMT:"ยอดเช็ค", CASHAMT:"ยอดเงินสด", NETAMT:"ยอดสุทธิ", PAYAMT:"ยอดจ่าย",
+  PAID:"ชำระแล้ว", CANCELED:"ยกเลิก", BILLNO:"เลขบิล", BILLDATE:"วันที่บิล",
+  AFTERTAX:"ยอดหลังภาษี", CASHED:"รับเงินสด", SALE:"พนักงานขาย", PO:"เลข PO",
+  BILLTYPE:"ประเภทบิล", REMARKS:"หมายเหตุ", VOUCNO1:"ใบสำคัญ 1", VOUCNO2:"ใบสำคัญ 2",
+  DOCNO:"เลขเอกสาร", DOCDATE:"วันที่เอกสาร", BILLED:"ออกบิลแล้ว", VENDOR:"ผู้ขาย",
+  DESCR:"รายละเอียด", DETAIL:"รายละเอียด", RCVDNO:"เลขใบรับ", RCVDDATE:"วันที่รับ",
+  CHKNO:"เลขเช็ค", CHKDATE:"วันที่เช็ค", BANKNAME:"ธนาคาร", PAYTYPE:"ประเภทจ่าย",
+  STATUS:"สถานะ", CARDNAME:"ชื่อบัตร", ORDERED:"สั่งแล้ว", RECEIVED:"รับแล้ว",
+  LINE:"ลำดับ", BCODE:"รหัสสินค้า", QTY:"จำนวน", UI:"หน่วย", PRICE:"ราคา", AMOUNT:"จำนวนเงิน",
+  status:"สถานะ",
+  PRICE1:"ราคา 1", PRICE2:"ราคา 2", PRICE3:"ราคา 3", PRICE4:"ราคา 4", PRICE5:"ราคา 5",
+  PRICEM1:"ราคาสมาชิก 1", PRICEM2:"ราคาสมาชิก 2", PRICEM3:"ราคาสมาชิก 3",
+  PRICEM4:"ราคาสมาชิก 4", PRICEM5:"ราคาสมาชิก 5"
+};
+const MONEY_KEYS = new Set(["PRICE","AMOUNT","CHKAMT","AFTERTAX","BILLAMT","NETAMT","CASHAMT","PAYAMT"]);
 let KIND = "all";
 let ITEMS = [];
 let DOCS = [];
@@ -162,14 +181,20 @@ function esc(s) {
     return "&#39;";
   });
 }
+function colTh(k) { return COL_TH[k] || k; }
 function money(v) {
+  const n = Number(String(v == null ? "" : v).replace(/,/g,""));
+  if (!isFinite(n) || String(v).trim() === "") return esc(v || "");
+  return n.toLocaleString("th-TH", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function qty(v) {
   const n = Number(String(v == null ? "" : v).replace(/,/g,""));
   if (!isFinite(n) || String(v).trim() === "") return esc(v || "");
   return n.toLocaleString("th-TH", {maximumFractionDigits: 2});
 }
 function fmtPrices(p) {
   if (!p) return "";
-  return Object.entries(p).map(([k,v]) => `<span>${k} ${Number(v).toLocaleString()}</span>`).join("");
+  return Object.entries(p).map(([k,v]) => `<span>${esc(colTh(k))} ${Number(v).toLocaleString("th-TH")}</span>`).join("");
 }
 function codeBits(p) {
   const bits = [];
@@ -263,19 +288,20 @@ function render(data) {
 function kvTable(obj) {
   const skip = new Set(["ID"]);
   return "<table>"+Object.keys(obj).filter(k => !skip.has(k) && String(obj[k]||"").trim() !== "").map(k =>
-    "<tr><th>"+esc(k)+"</th><td>"+esc(obj[k])+"</td></tr>"
+    "<tr><th>"+esc(colTh(k))+"</th><td>"+(MONEY_KEYS.has(k) ? money(obj[k]) : esc(obj[k]))+"</td></tr>"
   ).join("")+"</table>";
 }
 function lineTable(rows, cols) {
   if (!rows || !rows.length) return "<p class='meta'>ไม่มีบรรทัด</p>";
   const use = cols || Object.keys(rows[0]);
-  const head = use.map(c => "<th>"+esc(c)+"</th>").join("");
-  const moneyCols = new Set(["PRICE","AMOUNT","CHKAMT","QTY","AFTERTAX","BILLAMT","NETAMT"]);
-  const body = rows.map(row => "<tr>"+use.map(c => {
+  const head = use.map(c => "<th>"+esc(colTh(c))+"</th>").join("");
+  const body = rows.map((row, i) => "<tr>"+use.map(c => {
     let v = row[c] || "";
+    if (c === "LINE") return "<td>"+(i+1)+"</td>";
     if (c === "status") return "<td>"+stBadge(v)+"</td>";
     if (c === "BCODE" && v) return "<td><button class='linkish' data-jump='product' data-q='"+esc(v)+"'>"+esc(v)+"</button></td>";
-    if (moneyCols.has(c)) return "<td>"+money(v)+"</td>";
+    if (c === "QTY") return "<td>"+qty(v)+"</td>";
+    if (MONEY_KEYS.has(c)) return "<td>"+money(v)+"</td>";
     return "<td>"+esc(v)+"</td>";
   }).join("")+"</tr>").join("");
   return "<table><thead><tr>"+head+"</tr></thead><tbody>"+body+"</tbody></table>";
@@ -312,7 +338,7 @@ function showSummary() {
     +"</div>"
     +"<div class='meta'>รอสั่งซื้อ "+esc(t.to_order_lines||"0")+" · ยกเลิก "+esc(t.canceled_lines||"0")+" · ทั้งตาราง "+esc(t.total_lines||"0")+"</div>"
     +"<h3>ผู้ขายค้างรับสูงสุด</h3>"
-    +(vendors.length ? "<table><thead><tr><th>VENDOR</th><th>ชื่อ</th><th>บรรทัด</th><th>มูลค่า</th></tr></thead><tbody>"
+    +(vendors.length ? "<table><thead><tr><th>ผู้ขาย</th><th>ชื่อ</th><th>บรรทัด</th><th>มูลค่า</th></tr></thead><tbody>"
       +vendors.map(v => "<tr><td><button class='linkish' data-jump='iclow' data-q='"+esc(v.VENDOR)+"'>"+esc(v.VENDOR)+"</button></td>"
         +"<td>"+esc(v.ACCTNAME)+"</td><td>"+esc(v.lines)+"</td><td>"+money(v.amount)+"</td></tr>").join("")
       +"</tbody></table>" : "<p class='meta'>—</p>")
