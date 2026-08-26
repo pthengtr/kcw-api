@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.jobs.hq_worker import hq_worker_sort_key
+from src.jobs.hq_worker import worker_sort_key
 from src.stock_check.auth import build_entry_url, mint_access_token
 
 ELEVATED_ACCESS_GROUPS = frozenset({"admin", "exec"})
@@ -54,7 +54,7 @@ def collect_branch_tool_links(
     """
     workers = sorted(
         workers,
-        key=lambda w: hq_worker_sort_key(str(w.get("worker_name") or "")),
+        key=lambda w: worker_sort_key(str(w.get("worker_name") or "")),
     )
     links: list[BranchLink] = []
     seen_branch: set[str] = set()

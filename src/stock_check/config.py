@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,7 +58,9 @@ class StockCheckSettings(BaseSettings):
     )
     public_base_url: str = Field(default="", validation_alias="PUBLIC_BASE_URL")
 
-    # Reuse companion MSSQL reader settings
+    # Reuse companion MSSQL reader settings.
+    # HQ default is Windows name KSS (LAN only, not Tailscale).
+    # SYP boxes must use kss-pc (see _syp_sql_host) — never HQ KSS.
     pos_mssql_server: str = Field(default="KSS", validation_alias="POS_MSSQL_SERVER")
     pos_mssql_database: str = Field(default="PARTS9", validation_alias="POS_MSSQL_DATABASE")
     pos_mssql_username: str = Field(default="python_reader", validation_alias="POS_MSSQL_USERNAME")
@@ -86,6 +89,23 @@ class StockCheckSettings(BaseSettings):
         if branch not in {"HQ", "SYP"}:
             raise ValueError("STOCK_CHECK_BRANCH must be HQ or SYP")
         return branch
+
+    @model_validator(mode="after")
+    def _syp_sql_host(self) -> StockCheckSettings:
+        """SYP stock-check must hit shop SQL (kss-pc), not HQ KSS."""
+        if self.stock_check_branch != "SYP":
+            return self
+        hosts = [
+            h.strip()
+            for h in (self.pos_mssql_server or "").replace(";", ",").split(",")
+            if h.strip()
+        ]
+        first = (hosts[0] if hosts else "").upper()
+        hq_names = {"KSS", "KSS.LOCAL"}
+        if not hosts or first in hq_names:
+            syp = (os.getenv("PARTS9_SYP_SERVER") or "kss-pc,KSS-PC").strip()
+            self.pos_mssql_server = syp
+        return self
 
     @property
     def approver_ids(self) -> set[str]:
