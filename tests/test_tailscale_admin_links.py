@@ -49,7 +49,7 @@ def test_collect_branch_tool_links_adds_tailscale_for_elevated(monkeypatch):
             "tailscale_public_base_url": "http://100.64.1.10:8787",
         },
         {
-            "worker_name": "SYP-PC",
+            "worker_name": "SYP-UBUNTU-SERVER",
             "online_status": "online",
             "public_base_url": "http://192.168.2.10:8787",
             "tailscale_public_base_url": "http://100.64.2.10:8787",

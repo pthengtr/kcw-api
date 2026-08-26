@@ -1,11 +1,34 @@
 from uuid import uuid4
 
-from src.jobs.hq_worker import pick_hq_worker, SYP_WORKER_NAME
+from src.jobs.hq_worker import (
+    pick_hq_worker,
+    pick_syp_worker,
+    SYP_WORKER_CANDIDATES,
+    SYP_WORKER_NAME,
+)
 from src.jobs.queue import enqueue_job
 
 
 def _hq_name(engine, allowed_workers: set[str] | None) -> str | None:
     return pick_hq_worker(engine, allowed_workers=allowed_workers)
+
+
+def _syp_name(engine, allowed_workers: set[str] | None) -> str | None:
+    return pick_syp_worker(engine, allowed_workers=allowed_workers)
+
+
+def _append_syp_target(
+    targets: list[dict],
+    engine,
+    allowed_workers: set[str] | None,
+) -> None:
+    if allowed_workers is None:
+        syp = pick_syp_worker(engine) or SYP_WORKER_CANDIDATES[0]
+        targets.append({"site": "SYP", "worker_name": syp})
+        return
+    syp = _syp_name(engine, allowed_workers)
+    if syp:
+        targets.append({"site": "SYP", "worker_name": syp})
 
 
 def enqueue_sync_inventory_jobs(
@@ -21,8 +44,7 @@ def enqueue_sync_inventory_jobs(
     targets = []
     if hq:
         targets.append({"site": "HQ", "worker_name": hq})
-    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
-        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
+    _append_syp_target(targets, engine, allowed_workers)
 
     for target in targets:
         job = enqueue_job(
@@ -51,8 +73,7 @@ def enqueue_sync_product_images_jobs(
     targets = []
     if hq:
         targets.append({"site": "HQ", "worker_name": hq})
-    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
-        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
+    _append_syp_target(targets, engine, allowed_workers)
 
     for target in targets:
         job = enqueue_job(
@@ -138,15 +159,18 @@ def enqueue_syp_raw_jobs(
     source: str | None = None,
     allowed_workers: set[str] | None = None,
 ) -> list[dict]:
+    syp = _syp_name(engine, allowed_workers)
+    if not syp:
+        return []
     return _enqueue_single_worker_job(
         engine,
         job_type="syp_raw",
         site="SYP",
-        worker_name=SYP_WORKER_NAME,
+        worker_name=syp,
         task="syp_raw",
         requested_by=requested_by,
         source=source,
-        allowed_workers=allowed_workers,
+        allowed_workers=None,
     )
 
 
@@ -205,8 +229,7 @@ def enqueue_sync_pomas_podet_jobs(
     targets = []
     if hq:
         targets.append({"site": "HQ", "worker_name": hq})
-    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
-        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
+    _append_syp_target(targets, engine, allowed_workers)
 
     for target in targets:
         job = enqueue_job(
@@ -239,8 +262,7 @@ def enqueue_sync_iclow_jobs(
     targets = []
     if hq:
         targets.append({"site": "HQ", "worker_name": hq})
-    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
-        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
+    _append_syp_target(targets, engine, allowed_workers)
 
     for target in targets:
         job = enqueue_job(
@@ -273,8 +295,7 @@ def enqueue_sync_icmas_jobs(
     targets = []
     if hq:
         targets.append({"site": "HQ", "worker_name": hq})
-    if allowed_workers is None or SYP_WORKER_NAME in allowed_workers:
-        targets.append({"site": "SYP", "worker_name": SYP_WORKER_NAME})
+    _append_syp_target(targets, engine, allowed_workers)
 
     for target in targets:
         job = enqueue_job(
@@ -324,7 +345,8 @@ def enqueue_sync_po_related_jobs(
 ) -> list[dict]:
     """Assign to preferred live HQ worker when possible; else unassigned."""
     hq = _hq_name(engine, allowed_workers)
-    if allowed_workers is not None and hq is None and SYP_WORKER_NAME not in allowed_workers:
+    syp = _syp_name(engine, allowed_workers) if allowed_workers is not None else pick_syp_worker(engine)
+    if allowed_workers is not None and hq is None and syp is None:
         return []
 
     batch_id = str(uuid4())

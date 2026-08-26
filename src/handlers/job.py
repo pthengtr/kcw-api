@@ -868,7 +868,7 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
         if not jobs:
             return text_response(
                 "ยังรัน SYP raw ไม่ได้ครับ\n"
-                "ไม่พบ SYP-PC ออนไลน์สำหรับงานนี้"
+                "ไม่พบ worker SYP ออนไลน์สำหรับงานนี้"
             )
 
         lines = ["ได้เลย เดี๋ยวรัน SYP parts9 raw ที่สาขาให้นะ ✅"]
