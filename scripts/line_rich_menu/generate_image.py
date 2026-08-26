@@ -2,8 +2,8 @@
 """Generate the KCW LINE rich-menu PNG (2500x1686, full-height, 3x2 taps).
 
 Visual: light ice-blue canvas, equal white-blue cards, royal-blue icons,
-navy titles, gradient footer. Actions live in menu_spec.json — this file
-only paints the image.
+navy titles. No footer bar — LINE shows chatBarText on its own menu tab.
+Actions live in menu_spec.json — this file only paints the image.
 """
 
 from __future__ import annotations
@@ -28,21 +28,18 @@ ROYAL = (65, 105, 225)  # #4169E1
 DEEP = (12, 28, 84)
 SUB = (122, 143, 179)
 CHEVRON = (90, 122, 196)
-FOOTER_L = (65, 105, 225)
-FOOTER_R = (12, 28, 84)
-WHITE = (255, 255, 255)
 
 COL_WIDTHS = [833, 834, 833]
-# Column gap is 2 * OUTER (40px pad on each cell). Use that same 80px
-# between rows and between row 2 and the footer so the tab is not covered.
+# Column gap is 2 * OUTER (40px pad on each cell). Bottom row extends to the
+# canvas edge — LINE draws its own chat-bar tab (chatBarText) below the image.
 GAP = 80
 OUTER = 40
-FOOTER_H = 148
-CARD_H = (H - FOOTER_H - OUTER - GAP * 2) // 2  # 669
+# Top row height unchanged so menu_spec.json tap split (y=749) still lines up.
+ROW0_CARD_H = (H - 148 - OUTER - GAP * 2) // 2  # 669 — legacy footer slot reclaimed by row 2
 ROW0_Y = OUTER
-ROW1_Y = OUTER + CARD_H + GAP
-# Tap split sits in the middle of the row gap so hits match the cards.
-TAP_SPLIT_Y = ROW0_Y + CARD_H + GAP // 2  # 749
+ROW1_Y = OUTER + ROW0_CARD_H + GAP
+ROW1_CARD_H = H - ROW1_Y  # 897 — fills former footer + bottom gap
+TAP_SPLIT_Y = ROW0_Y + ROW0_CARD_H + GAP // 2  # 749 — matches menu_spec.json
 
 CELLS = [
     {"title": "เช็คสต็อก", "sub": "", "icon": "boxes"},
@@ -88,17 +85,6 @@ def _center_text(
     bbox = draw.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text((x - tw // 2 - bbox[0], y - th // 2 - bbox[1]), text, font=font, fill=fill)
-
-
-def _paste_h_gradient(img: Image.Image, box: tuple[int, int, int, int], c1, c2) -> None:
-    x0, y0, x1, y1 = box
-    w, h = max(x1 - x0, 1), max(y1 - y0, 1)
-    grad = Image.new("RGB", (w, 1))
-    px = grad.load()
-    for x in range(w):
-        t = x / max(w - 1, 1)
-        px[x, 0] = tuple(int(a + (b - a) * t) for a, b in zip(c1, c2))
-    img.paste(grad.resize((w, h), Image.Resampling.NEAREST), (x0, y0))
 
 
 def _card_layer(size: tuple[int, int], radius: int) -> tuple[Image.Image, int]:
@@ -292,30 +278,20 @@ def _draw_chevron(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
 def generate(*, cells: list[dict] | None = None, out: Path | None = None) -> Path:
     cell_list = cells or CELLS
     dest = out or OUT
-    if ROW1_Y + CARD_H + GAP != H - FOOTER_H:
-        raise SystemExit("Row-2 cards must sit above the footer with GAP spacing")
+    if ROW1_Y + ROW1_CARD_H != H:
+        raise SystemExit("Bottom row must extend to the canvas edge")
     if GAP != OUTER * 2:
         raise SystemExit("Row gap must match the visible column gap (2 * OUTER)")
 
     img = Image.new("RGBA", (SW, SH), (*BG, 255))
 
-    footer_top = _px(H - FOOTER_H)
-    _paste_h_gradient(img, (0, footer_top, SW, SH), FOOTER_L, FOOTER_R)
-    foot_draw = ImageDraw.Draw(img)
-    foot_font = _font("Prompt-SemiBold.ttf", _px(76))
-    _center_text(
-        foot_draw,
-        (SW // 2, footer_top + _px(FOOTER_H) // 2),
-        "เมนู",
-        foot_font,
-        WHITE,
-    )
-
     pad_x = _px(OUTER)
-    card_h = _px(CARD_H)
     radius = _px(36)  # ~16px on a phone-width LINE surface
     title_max_w = min(_px(w) for w in COL_WIDTHS) - pad_x * 2 - _px(56)
-    row_ys = [_px(ROW0_Y), _px(ROW1_Y)]
+    row_specs = [
+        (_px(ROW0_Y), _px(ROW0_CARD_H)),
+        (_px(ROW1_Y), _px(ROW1_CARD_H)),
+    ]
 
     def _fit_font(name: str, texts: list[str], max_w: int, max_size: int, min_size: int):
         dummy = ImageDraw.Draw(Image.new("RGB", (8, 8)))
@@ -338,8 +314,8 @@ def generate(*, cells: list[dict] | None = None, out: Path | None = None) -> Pat
         _px(80),
     )
     print(
-        f"Title font {title_size // SCALE}px · card {CARD_H}px · "
-        f"gap {GAP}px (row=col) · footer {FOOTER_H}px below row 2"
+        f"Title font {title_size // SCALE}px · row0 {ROW0_CARD_H}px · "
+        f"row1 {ROW1_CARD_H}px · gap {GAP}px (row=col)"
     )
     noto_regular = Path("/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf")
     sub_font = (
@@ -349,7 +325,7 @@ def generate(*, cells: list[dict] | None = None, out: Path | None = None) -> Pat
     )
 
     idx = 0
-    for row_y in row_ys:
+    for row_y, card_h in row_specs:
         x = 0
         for cw in COL_WIDTHS:
             cell = cell_list[idx]

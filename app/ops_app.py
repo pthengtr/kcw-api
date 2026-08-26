@@ -1,4 +1,4 @@
-"""Standalone kcw-ops (live PARTS9 PO / later BI). Parallel to cloud kcw-v2."""
+"""Standalone kcw-ops (live PARTS9 PO). Parallel to cloud kcw-v2."""
 
 from __future__ import annotations
 
