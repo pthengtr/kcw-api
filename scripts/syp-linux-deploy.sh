@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SYP Linux auto-deploy (GitHub Actions: syp-linux-deploy.yml, runner label linux+syp).
 set -euo pipefail
 REPO="${SYP_KCW_API_DIR:-$HOME/projects/kcw-api}"
 PY="${REPO}/.venv/bin/python"
