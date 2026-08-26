@@ -20,6 +20,8 @@ On Linux HQ (`hq-ubuntu-server`), use systemd user units in `scripts/systemd/` (
 systemctl --user enable --now kcw-worker kcw-tiger-pay kcw-stock-check
 ```
 
+**KCW Ask (POC):** experimental read-only analyst UI on `:3000` on the same HQ box — **not** in this repo. Code: [pthengtr/kcw-ask](https://github.com/pthengtr/kcw-ask) (`~/projects/ask-chat`). Same runbook section [hq-linux.md — KCW Ask POC](https://github.com/pthengtr/kcw-docs/blob/main/ops/hq-linux.md#kcw-ask-poc). Direction (standalone vs merge here) not decided yet.
+
 Companion on that box requires a LINE link (`ไทเกอร์` / `tiger pay`) when `COMPANION_REQUIRE_LINE_AUTH=true`.
 
 On Windows:
