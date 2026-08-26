@@ -2,7 +2,7 @@
 """Generate the KCW LINE rich-menu PNG (2500x1686, full-height, 3x2 taps).
 
 Visual: light ice-blue canvas, equal white-blue cards, royal-blue icons,
-navy titles. No footer bar — LINE shows chatBarText on its own menu tab.
+navy titles. Equal-height cards; bottom canvas is background only (no footer bar).
 Actions live in menu_spec.json — this file only paints the image.
 """
 
@@ -29,15 +29,15 @@ DEEP = (12, 28, 84)
 SUB = (122, 143, 179)
 
 COL_WIDTHS = [833, 834, 833]
-# Column gap is 2 * OUTER (40px pad on each cell). Bottom row extends to the
-# canvas edge — LINE draws its own chat-bar tab (chatBarText) below the image.
+# Column gap is 2 * OUTER (40px pad on each cell). Former footer slot stays as
+# canvas background — LINE draws its own chat-bar tab (chatBarText) below the image.
 GAP = 80
 OUTER = 40
-# Top row height unchanged so menu_spec.json tap split (y=749) still lines up.
-ROW0_CARD_H = (H - 148 - OUTER - GAP * 2) // 2  # 669 — legacy footer slot reclaimed by row 2
+ROW0_CARD_H = (H - 148 - OUTER - GAP * 2) // 2  # 669
+ROW1_CARD_H = ROW0_CARD_H
 ROW0_Y = OUTER
 ROW1_Y = OUTER + ROW0_CARD_H + GAP
-ROW1_CARD_H = H - ROW1_Y  # 897 — fills former footer + bottom gap
+BOTTOM_BG = H - ROW1_Y - ROW1_CARD_H  # 228 — bg only, not taller cards
 TAP_SPLIT_Y = ROW0_Y + ROW0_CARD_H + GAP // 2  # 749 — matches menu_spec.json
 
 CELLS = [
@@ -267,8 +267,8 @@ def _draw_icon(draw: ImageDraw.ImageDraw, name: str, cx: int, cy: int) -> None:
 def generate(*, cells: list[dict] | None = None, out: Path | None = None) -> Path:
     cell_list = cells or CELLS
     dest = out or OUT
-    if ROW1_Y + ROW1_CARD_H != H:
-        raise SystemExit("Bottom row must extend to the canvas edge")
+    if ROW1_Y + ROW1_CARD_H + BOTTOM_BG != H:
+        raise SystemExit("Bottom padding must fill the canvas below row 2 cards")
     if GAP != OUTER * 2:
         raise SystemExit("Row gap must match the visible column gap (2 * OUTER)")
 
@@ -303,8 +303,8 @@ def generate(*, cells: list[dict] | None = None, out: Path | None = None) -> Pat
         _px(80),
     )
     print(
-        f"Title font {title_size // SCALE}px · row0 {ROW0_CARD_H}px · "
-        f"row1 {ROW1_CARD_H}px · gap {GAP}px (row=col)"
+        f"Title font {title_size // SCALE}px · card {ROW0_CARD_H}px · "
+        f"gap {GAP}px · bottom bg {BOTTOM_BG}px"
     )
     noto_regular = Path("/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf")
     sub_font = (
