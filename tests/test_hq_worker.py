@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from src.jobs.hq_worker import hq_worker_sort_key, pick_hq_worker
+from src.jobs.hq_worker import (
+    filter_worker_status_rows,
+    hq_worker_sort_key,
+    pick_hq_worker,
+)
 from src.handlers.companion_entry import is_companion_command
 
 
@@ -36,6 +40,20 @@ def test_hq_worker_sort_key_ubuntu_first():
     ordered = sorted(names, key=hq_worker_sort_key)
     assert ordered[0] == "HQ-UBUNTU-SERVER"
     assert ordered[1] == "HQ-PC"
+
+
+def test_filter_worker_status_rows_hides_legacy_pcs():
+    rows = [
+        {"worker_name": "HQ-PC", "online_status": "online"},
+        {"worker_name": "HQ-UBUNTU-SERVER", "online_status": "online"},
+        {"worker_name": "SYP-PC", "online_status": "offline"},
+        {"worker_name": "SYP-UBUNTU-SERVER", "online_status": "online"},
+    ]
+    filtered = filter_worker_status_rows(rows)
+    assert [r["worker_name"] for r in filtered] == [
+        "HQ-UBUNTU-SERVER",
+        "SYP-UBUNTU-SERVER",
+    ]
 
 
 def test_companion_command_variants():

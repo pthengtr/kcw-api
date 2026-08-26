@@ -6,8 +6,15 @@ from src.jobs.heartbeat import get_all_worker_status
 
 HQ_WORKER_CANDIDATES = ("HQ-UBUNTU-SERVER", "HQ-PC")
 SYP_WORKER_CANDIDATES = ("SYP-UBUNTU-SERVER", "SYP-PC")
+# Retired Windows boxes — hide from operator-facing worker status in LINE.
+LEGACY_WORKER_NAMES = frozenset({"HQ-PC", "SYP-PC"})
 # Back-compat alias — prefer pick_syp_worker() instead of hard-coding.
 SYP_WORKER_NAME = SYP_WORKER_CANDIDATES[-1]
+
+
+def filter_worker_status_rows(rows: list[dict]) -> list[dict]:
+    """Drop retired Windows workers from chatbot status lists."""
+    return [r for r in rows if r.get("worker_name") not in LEGACY_WORKER_NAMES]
 
 
 def online_worker_names(engine, *, offline_after_seconds: int = 30) -> set[str]:
