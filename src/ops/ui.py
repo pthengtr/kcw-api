@@ -124,7 +124,6 @@ dialog#dlg::backdrop { background: rgba(7,10,14,.62); }
   <div class="brand">
     <h1>ใบสั่งซื้อ</h1>
     <span>
-      <a href="/ops/bi/" style="color:var(--acc);text-decoration:none;font-size:.86rem;margin-right:.6rem">ภาพรวมยอดขาย</a>
       <button type="button" class="theme" id="themeBtn">มืด</button>
     </span>
   </div>

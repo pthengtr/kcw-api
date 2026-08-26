@@ -1,5 +1,5 @@
 [Unit]
-Description=KCW ops live PO/BI LAN+Tailscale UI (:8790)
+Description=KCW ops live PO LAN+Tailscale UI (:8790)
 After=network-online.target
 Wants=network-online.target
 
