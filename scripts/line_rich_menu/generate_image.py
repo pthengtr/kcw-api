@@ -27,7 +27,6 @@ NAVY = (10, 31, 58)
 ROYAL = (65, 105, 225)  # #4169E1
 DEEP = (12, 28, 84)
 SUB = (122, 143, 179)
-CHEVRON = (90, 122, 196)
 
 COL_WIDTHS = [833, 834, 833]
 # Column gap is 2 * OUTER (40px pad on each cell). Bottom row extends to the
@@ -265,16 +264,6 @@ def _draw_icon(draw: ImageDraw.ImageDraw, name: str, cx: int, cy: int) -> None:
         _draw_help_icon(draw, cx, cy, ROYAL)
 
 
-def _draw_chevron(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
-    s = _px(9)
-    draw.line(
-        [(cx - s, cy - _px(12)), (cx + s, cy), (cx - s, cy + _px(12))],
-        fill=CHEVRON,
-        width=_px(5),
-        joint="curve",
-    )
-
-
 def generate(*, cells: list[dict] | None = None, out: Path | None = None) -> Path:
     cell_list = cells or CELLS
     dest = out or OUT
@@ -339,13 +328,11 @@ def generate(*, cells: list[dict] | None = None, out: Path | None = None) -> Pat
             icon_y = row_y + card_h * 33 // 100
             title_y = row_y + card_h * 66 // 100
             sub_y = row_y + card_h * 78 // 100
-            chev_y = row_y + card_h - _px(42)
 
             _draw_icon(overlay, cell["icon"], cx, icon_y)
             _center_text(overlay, (cx, title_y), cell["title"], title_font, NAVY)
             if cell["sub"]:
                 _center_text(overlay, (cx, sub_y), cell["sub"], sub_font, SUB)
-            _draw_chevron(overlay, cx, chev_y)
 
             x += scw
             idx += 1
