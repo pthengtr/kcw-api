@@ -17,6 +17,7 @@ from src.jobs.tasks import (
     enqueue_hq_full_jobs,
 )
 from src.jobs.heartbeat import get_all_worker_status
+from src.jobs.hq_worker import filter_worker_status_rows
 from src.access.helper import can_execute
 
 
@@ -512,7 +513,9 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
 
     # worker status
     if is_worker_status_request(text_lower):
-        rows = get_all_worker_status(engine, offline_after_seconds=30)
+        rows = filter_worker_status_rows(
+            get_all_worker_status(engine, offline_after_seconds=30)
+        )
 
         if not rows:
             return "ยังไม่พบ worker heartbeat"
