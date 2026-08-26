@@ -1,0 +1,12 @@
+name: SYP Linux deploy
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, syp]
+    steps:
+      - name: Pull and restart kcw-api units
+        run: bash "$HOME/projects/kcw-api/scripts/syp-linux-deploy.sh"
