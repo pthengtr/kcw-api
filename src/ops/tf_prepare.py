@@ -37,11 +37,6 @@ def _num(value: Any) -> float:
         return 0.0
 
 
-def _mtp(value: Any) -> float:
-    n = _num(value)
-    return n if n else 1.0
-
-
 def _s(value: Any) -> str:
     if value is None:
         return ""
@@ -99,7 +94,7 @@ def _fetch_tf_bills(docnos: list[str]) -> list[dict[str, str]]:
 
 
 def _fetch_tf_line_qty(billnos: list[str]) -> dict[tuple[str, str], float]:
-    """(billno, bcode) -> qty * mtp."""
+    """(billno, bcode) -> raw QTY (order units; matches kcw-v2 prepare_by_bcode)."""
     bills = [b.strip() for b in billnos if b]
     if not bills:
         return {}
@@ -108,7 +103,7 @@ def _fetch_tf_line_qty(billnos: list[str]) -> dict[tuple[str, str], float]:
     sql = text(
         "SELECT LTRIM(RTRIM(CONVERT(nvarchar(80), BILLNO))) AS BILLNO, "
         "LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE, "
-        "QTY, MTP "
+        "QTY "
         "FROM dbo.SIDET "
         "WHERE LTRIM(RTRIM(CONVERT(nvarchar(80), BILLNO))) IN (" + placeholders + ") "
         "AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) <> 'Y' "
@@ -119,7 +114,7 @@ def _fetch_tf_line_qty(billnos: list[str]) -> dict[tuple[str, str], float]:
     with engine.connect() as conn:
         for r in conn.execute(sql, params).mappings().all():
             key = (_s(r.get("BILLNO")).upper(), _s(r.get("BCODE")))
-            qty[key] = qty.get(key, 0.0) + _num(r.get("QTY")) * _mtp(r.get("MTP"))
+            qty[key] = qty.get(key, 0.0) + _num(r.get("QTY"))
     return qty
 
 
@@ -150,7 +145,7 @@ def prepare_status_for_docnos(docnos: list[str]) -> dict[str, dict[str, Any]]:
     params = {f"p{i}": d for i, d in enumerate(docs)}
     sql = text(
         "SELECT LTRIM(RTRIM(CONVERT(nvarchar(80), DOCNO))) AS DOCNO, "
-        "LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE, QTY, MTP "
+        "LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE, QTY "
         "FROM dbo.PODET "
         "WHERE LTRIM(RTRIM(CONVERT(nvarchar(80), DOCNO))) IN (" + placeholders + ") "
         "AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))), '') IS NOT NULL"
@@ -159,7 +154,7 @@ def prepare_status_for_docnos(docnos: list[str]) -> dict[str, dict[str, Any]]:
         for r in conn.execute(sql, params).mappings().all():
             doc = _s(r.get("DOCNO")).upper()
             bcode = _s(r.get("BCODE"))
-            ordered = _num(r.get("QTY")) * _mtp(r.get("MTP"))
+            ordered = _num(r.get("QTY"))
             po_lines.setdefault(doc, []).append((bcode, ordered))
 
     out: dict[str, dict[str, Any]] = {}
