@@ -1,0 +1,13 @@
+# KCW Wake-on-LAN targets (copy to ~/.config/kcw/wol-hosts.conf)
+# Format: alias MAC [broadcast]
+# broadcast defaults to 192.168.1.255 for HQ LAN
+
+# This box (hq-ubuntu-server, Realtek enp129s0)
+hq-ubuntu-server 30:56:0f:7c:4f:15 192.168.1.255
+
+# HQ PARTS9 SQL server (KSS @ 192.168.1.99)
+kss 6c:3c:8c:8a:19:4e 192.168.1.255
+
+# Add when known (ip neigh / ipconfig /all on Windows):
+# hq-pc aa:bb:cc:dd:ee:ff 192.168.1.255
+# syp-ubuntu-server aa:bb:cc:dd:ee:ff 192.168.1.255
