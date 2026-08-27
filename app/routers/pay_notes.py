@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from src.pay_notes.config import get_pay_notes_settings
 from src.pay_notes.db import (
     get_pay_notes_supabase_client,
+    get_reminder,
     get_vendor_bank,
     insert_reminder,
     insert_vendor_bank,
@@ -35,7 +36,7 @@ from src.pay_notes.storage import (
     upload_bytes,
 )
 from src.pay_notes.ui import APP, SESSION_COOKIE, page
-from src.pay_notes.writer import PayNoteWriteError, create_pay_note, create_voucher
+from src.pay_notes.writer import PayNoteWriteError, cancel_unvouchered_pay_note, create_pay_note, create_voucher
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
 router = APIRouter(prefix="/pay-notes", tags=["pay-notes"])
@@ -156,6 +157,8 @@ class NoteCreate(BaseModel):
     due_date: str
     bank_id: str
     billnos: list[str] = Field(default_factory=list)
+    discount_mode: str = "amount"  # amount | percent
+    discount_input: float = 0.0
 
 
 class ReminderPatch(BaseModel):
@@ -163,28 +166,45 @@ class ReminderPatch(BaseModel):
     bank_id: str | None = None
 
 
-class BpdetLine(BaseModel):
-    chkno: str
-    chkamt: float
-    bankname: str = ""
-    acctno: str = "2101.7"
-    paytype: int = 2
-    chkdate: str | None = None
-
-
 class VoucherCreate(BaseModel):
     acctno: str
     noteno: str
-    discount: float = 0.0
-    bpdet: list[BpdetLine] = Field(default_factory=list)
+    # transfer | cheque | cash — drives CHKNO defaults; discount stays on reminder
+    settle_method: str = "transfer"
+    chkno: str = ""
+    chkamt: float
+    chkdate: str | None = None
+    bank_gl: str = "2101.7"
 
 
-def _parse_due(raw: str) -> datetime:
+def _parse_due(raw: str) -> str:
+    """Calendar due date as YYYY-MM-DD (no timezone)."""
     text = (raw or "").strip()
+    if not text:
+        raise ValueError("due_date required")
+    # Accept ISO datetime from old clients; use the calendar date the user picked.
     if "T" in text:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    d = datetime.strptime(text[:10], "%Y-%m-%d")
-    return d.replace(tzinfo=_BKK)
+        text = text.split("T", 1)[0]
+    return datetime.strptime(text[:10], "%Y-%m-%d").date().isoformat()
+
+
+def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str, float, float]:
+    m = (mode or "amount").strip().lower()
+    if m not in ("amount", "percent"):
+        m = "amount"
+    val = float(raw_input or 0)
+    if val < 0:
+        raise ValueError("discount cannot be negative")
+    bill = float(billamt or 0)
+    if m == "percent":
+        if val > 100:
+            raise ValueError("discount percent cannot exceed 100")
+        amount = round(bill * val / 100.0, 2)
+    else:
+        amount = round(val, 2)
+    if amount - bill > 1e-9:
+        raise ValueError("discount exceeds bill total")
+    return m, val, amount
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -288,7 +308,7 @@ def api_reminder_patch(request: Request, acctno: str, noteno: str, body: Reminde
         return err
     patch: dict[str, Any] = {"updated_at": datetime.now(_BKK).isoformat()}
     if body.due_date:
-        patch["due_date"] = _parse_due(body.due_date).isoformat()
+        patch["due_date"] = _parse_due(body.due_date)
     if body.bank_id:
         patch["bank_id"] = body.bank_id
     client = get_pay_notes_supabase_client()
@@ -352,32 +372,85 @@ def api_create_note(request: Request, body: NoteCreate):
     if not images:
         return JSONResponse({"error": "upload at least one bill image first"}, status_code=400)
 
+    # KSS + Supabase cannot share one ACID tx. Write KSS first, then reminder;
+    # if reminder fails, compensate by canceling the unvouchered KSS note.
+    recovered = False
     if note_exists(settings.site, acct, note):
-        return JSONResponse({"error": "note already exists in KSS"}, status_code=409)
-
-    try:
-        kss = create_pay_note(
-            settings=settings,
-            acctno=acct,
-            acctname=body.acctname.strip(),
-            noteno=note,
-            billnos=body.billnos,
-            operator=ident.display_name if ident else None,
-        )
-    except PayNoteWriteError as exc:
-        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=400)
-
-    due = _parse_due(body.due_date)
-    rem = insert_reminder(
-        client,
-        {
+        # Legacy orphan from before compensate: attach reminder only.
+        if get_reminder(client, acct, note):
+            return JSONResponse({"error": "note already exists in KSS"}, status_code=409)
+        header = get_note_header(settings.site, acct, note)
+        if not header:
+            return JSONResponse({"error": "note already exists in KSS"}, status_code=409)
+        kss = {
             "acctno": acct,
             "noteno": note,
-            "due_date": due.isoformat(),
-            "bank_id": body.bank_id,
-            "created_by": ident.line_user_id if ident else None,
-        },
-    )
+            "billcnt": int(header.get("BILLCNT") or 0),
+            "billamt": float(header.get("BILLAMT") or 0),
+            "notedate": header.get("NOTEDATE"),
+            "jourmode": str(header.get("JOURMODE") or "1").strip() or "1",
+            "recovered": True,
+        }
+        recovered = True
+    else:
+        try:
+            kss = create_pay_note(
+                settings=settings,
+                acctno=acct,
+                acctname=body.acctname.strip(),
+                noteno=note,
+                billnos=body.billnos,
+                operator=ident.display_name if ident else None,
+            )
+        except PayNoteWriteError as exc:
+            return JSONResponse({"error": str(exc), "code": exc.code}, status_code=400)
+
+    billamt = float(kss.get("billamt") or 0)
+    try:
+        discount_mode, discount_input, discount_amount = _resolve_discount(
+            billamt, body.discount_mode, body.discount_input
+        )
+    except ValueError as exc:
+        if not recovered:
+            try:
+                cancel_unvouchered_pay_note(settings=settings, acctno=acct, noteno=note)
+            except Exception:
+                pass
+        return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+
+    due = _parse_due(body.due_date)
+    try:
+        rem = insert_reminder(
+            client,
+            {
+                "acctno": acct,
+                "noteno": note,
+                "due_date": due,
+                "bank_id": body.bank_id,
+                "discount_mode": discount_mode,
+                "discount_input": discount_input,
+                "discount_amount": discount_amount,
+                "created_by": ident.line_user_id if ident else None,
+            },
+        )
+    except Exception as exc:
+        rolled_back = False
+        rollback_error = None
+        if not recovered:
+            try:
+                cancel_unvouchered_pay_note(settings=settings, acctno=acct, noteno=note)
+                rolled_back = True
+            except Exception as cancel_exc:
+                rollback_error = str(cancel_exc)
+        payload = {
+            "error": f"reminder failed: {exc}",
+            "code": "reminder_failed",
+            "noteno": note,
+            "kss_rolled_back": rolled_back,
+        }
+        if rollback_error:
+            payload["kss_rollback_error"] = rollback_error
+        return JSONResponse(payload, status_code=500)
     return {**kss, "reminder": rem}
 
 
@@ -402,24 +475,95 @@ def api_note_detail(request: Request, acctno: str, noteno: str):
 
 @router.post("/api/vouchers")
 def api_create_voucher(request: Request, body: VoucherCreate):
+    """Record voucher: discount from reminder; operator enters CHKNO/CHKAMT (settle method)."""
     ident, err = _require_api(request)
     if err:
         return err
     settings = _settings()
-    if not body.bpdet:
-        return JSONResponse({"error": "BPDET key-in required"}, status_code=400)
+    acct = body.acctno.strip()
+    note = body.noteno.strip()
+    client = get_pay_notes_supabase_client()
+    rem = get_reminder(client, acct, note)
+    if not rem:
+        return JSONResponse({"error": "reminder not found for this note"}, status_code=404)
+    bank = get_vendor_bank(client, rem.get("bank_id") or "")
+    if not bank:
+        return JSONResponse({"error": "vendor bank missing on reminder"}, status_code=400)
+
+    header = get_note_header(settings.site, acct, note)
+    if not header:
+        return JSONResponse({"error": "note not found in KSS"}, status_code=404)
+    billamt = float(header.get("BILLAMT") or 0)
+    disc = float(rem.get("discount_amount") or 0)
+    if disc < 0 or disc - billamt > 1e-9:
+        return JSONResponse({"error": "stored discount invalid"}, status_code=400)
+    net = round(billamt - disc, 2)
+
+    method = (body.settle_method or "transfer").strip().lower()
+    if method not in ("transfer", "cheque", "cash"):
+        method = "transfer"
+    chkno = (body.chkno or "").strip()
+    if method == "transfer" and not chkno:
+        chkno = "โอน"
+    if method == "cheque" and not chkno:
+        return JSONResponse({"error": "cheque number (CHKNO) required"}, status_code=400)
+    # cash: legacy often leaves CHKNO blank (or rare labels like จ่ายสด) — allow blank
+
+    try:
+        chkamt = float(body.chkamt)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "CHKAMT required"}, status_code=400)
+    if chkamt <= 0 and net > 1e-9:
+        return JSONResponse({"error": "CHKAMT must be > 0"}, status_code=400)
+    if chkamt - net > 0.01:
+        return JSONResponse(
+            {"error": f"CHKAMT ({chkamt}) exceeds net payable ({net})"},
+            status_code=400,
+        )
+
+    bankname = " ".join(
+        p
+        for p in (
+            str(bank.get("bank_name") or "").strip(),
+            str(bank.get("bank_account_name") or "").strip(),
+            ("# " + str(bank.get("bank_account_number") or "").strip())
+            if bank.get("bank_account_number")
+            else "",
+        )
+        if p
+    )[:60]
+    if method == "cash":
+        # Cash rows historically often have empty BANKNAME / GL
+        bankname = ""
+        bank_gl = (body.bank_gl or "").strip()[:10]
+    else:
+        bank_gl = (body.bank_gl or "2101.7").strip()[:10] or "2101.7"
+
+    chkdate = (body.chkdate or "").strip() or datetime.now(_BKK).date().isoformat()
+    bpdet_lines: list[dict[str, Any]] = []
+    if chkamt > 1e-9:
+        bpdet_lines = [
+            {
+                "chkno": chkno,  # may be blank for cash
+                "chkamt": round(chkamt, 2),
+                "bankname": bankname,
+                "acctno": bank_gl,
+                "paytype": 2,
+                "chkdate": chkdate,
+            }
+        ]
     try:
         result = create_voucher(
             settings=settings,
-            acctno=body.acctno.strip(),
-            noteno=body.noteno.strip(),
-            discount=body.discount,
-            bpdet_lines=[line.model_dump() for line in body.bpdet],
+            acctno=acct,
+            noteno=note,
+            discount=disc,
+            bpdet_lines=bpdet_lines,
             operator=ident.display_name if ident else None,
         )
     except PayNoteWriteError as exc:
         return JSONResponse({"error": str(exc), "code": exc.code}, status_code=400)
-    return result
+    return {**result, "reminder": rem, "settle_method": method}
 
 
 @router.get("/api/awaiting-proof")

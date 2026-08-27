@@ -28,9 +28,10 @@ def test_pay_notes_page_renders():
     assert "ใบสำคัญจ่าย" in html
     assert "themeBtn" in html
     assert "kcw.pay_notes.theme" in html
-    assert "สร้างโน้ต" not in html
-    assert "ค้างจ่าย" not in html
-    assert "รอหลักฐาน" not in html
+    assert 'id="tabCreate"' in html
+    assert ">สร้างโน้ต<" not in html
+    assert ">ค้างจ่าย<" not in html
+    assert ">รอหลักฐาน<" not in html
 
 
 def test_create_pay_note_write_disabled():
@@ -67,17 +68,12 @@ def test_noteno_max_length_validation_in_writer():
     assert raised
 
 
-def test_create_voucher_write_disabled():
+def test_cancel_pay_note_write_disabled():
     settings = PayNotesSettings(pay_notes_write_enabled=False)
     try:
-        from src.pay_notes.writer import create_voucher
+        from src.pay_notes.writer import cancel_unvouchered_pay_note
 
-        create_voucher(
-            settings=settings,
-            acctno="7GP",
-            noteno="TEST",
-            bpdet_lines=[{"chkno": "โอน", "chkamt": 100}],
-        )
+        cancel_unvouchered_pay_note(settings=settings, acctno="7GP", noteno="X")
         raised = False
     except PayNoteWriteError as exc:
         raised = True

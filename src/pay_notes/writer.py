@@ -152,6 +152,82 @@ def create_pay_note(
     }
 
 
+def cancel_unvouchered_pay_note(
+    *,
+    settings: PayNotesSettings,
+    acctno: str,
+    noteno: str,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    """Compensate create_pay_note when the Supabase reminder write fails.
+
+    KSS and Supabase cannot share one ACID transaction — on reminder failure we
+    clear PIMAS stamps and mark the PVMAS row canceled so bills are free again
+    and note_exists() returns false.
+    """
+    if not settings.pay_notes_write_enabled:
+        raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise PayNoteWriteError("acctno and noteno required", code="validation")
+
+    write_eng = engine or _writer_engine(settings)
+    try:
+        with write_eng.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 ID, VOUCED, CANCELED
+                    FROM dbo.PVMAS
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            ).mappings().first()
+            if not header:
+                return {"acctno": acct, "noteno": note, "canceled": False, "reason": "not_found"}
+            if str(header.get("VOUCED") or "N").strip().upper() == "Y":
+                raise PayNoteWriteError(
+                    "cannot cancel vouchered note",
+                    code="already_vouchered",
+                )
+            if str(header.get("CANCELED") or "N").strip().upper() == "Y":
+                return {"acctno": acct, "noteno": note, "canceled": False, "reason": "already_canceled"}
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.PIMAS
+                    SET NOTENO = '', NOTEDATE = NULL
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.PVMAS
+                    SET CANCELED = 'Y'
+                    WHERE ID = :id
+                      AND ISNULL(VOUCED, 'N') <> 'Y'
+                    """
+                ),
+                {"id": header["ID"]},
+            )
+    except PayNoteWriteError:
+        raise
+    except Exception as exc:
+        raise _map_write_exc(exc) from exc
+
+    return {"acctno": acct, "noteno": note, "canceled": True}
+
+
 def next_kcpn_voucno(conn, when: datetime | None = None) -> str:
     """Allocate next KCPN{YYMM}-### from live PVMAS."""
     when = when or datetime.now(_BKK)
@@ -186,7 +262,7 @@ def create_voucher(
     operator: str | None = None,
     engine: Engine | None = None,
 ) -> dict[str, Any]:
-    """Finance mark-paid: update PVMAS + stamp PIMAS + insert BPDET (operator key-in)."""
+    """Finance mark-paid: update PVMAS + stamp PIMAS + insert BPDET from reminder bank/net."""
     if not settings.pay_notes_write_enabled:
         raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")
 
@@ -194,8 +270,6 @@ def create_voucher(
     note = (noteno or "").strip()
     if not acct or not note:
         raise PayNoteWriteError("acctno and noteno required", code="validation")
-    if not bpdet_lines:
-        raise PayNoteWriteError("at least one BPDET line required", code="validation")
 
     eng = engine or _writer_engine(settings)
     voucd = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -225,6 +299,8 @@ def create_voucher(
             netamt = billamt - disc
             if netamt < 0:
                 raise PayNoteWriteError("discount exceeds BILLAMT", code="validation")
+            if not bpdet_lines and netamt > 1e-9:
+                raise PayNoteWriteError("at least one BPDET line required", code="validation")
 
             voucno = next_kcpn_voucno(conn, voucd)
             jourmode = str(header.get("JOURMODE") or "1").strip() or "1"
@@ -271,14 +347,13 @@ def create_voucher(
             )
 
             for line in bpdet_lines:
+                # CHKNO is free text: cheque number, "โอน", or blank (cash / legacy).
                 chkno = str(line.get("chkno") or "").strip()
-                if not chkno:
-                    raise PayNoteWriteError("BPDET CHKNO required", code="validation")
                 chkamt = float(line.get("chkamt") or 0)
                 if chkamt <= 0:
                     raise PayNoteWriteError("BPDET CHKAMT must be > 0", code="validation")
                 bankname = str(line.get("bankname") or "").strip()[:60]
-                bank_gl = str(line.get("acctno") or "2101.7").strip()[:10]
+                bank_gl = str(line.get("acctno") or "").strip()[:10]
                 paytype = int(line.get("paytype") or 2)
                 chkdate_raw = str(line.get("chkdate") or "").strip()
                 if chkdate_raw:
@@ -303,9 +378,9 @@ def create_voucher(
                         "jourmode": jourmode,
                         "voucd": voucd,
                         "voucno": voucno,
-                        "bank_gl": bank_gl,
+                        "bank_gl": bank_gl or None,
                         "paytype": paytype,
-                        "chkno": chkno[:15],
+                        "chkno": (chkno[:15] if chkno else None),
                         "chkdate": chkdate,
                         "chkamt": chkamt,
                         "bankname": bankname or None,
