@@ -49,29 +49,98 @@ def test_rewrite_explorer_port_to_ops():
 
 def test_ops_page_defaults_to_syp():
     html = page(user_name="ทดสอบ", site="", probes={"hq": {}, "syp": {}})
-    assert '<option value="syp" selected>' in html
-    assert '<option value="hq" selected>' not in html
+    assert 'let site = "syp";' in html
+    assert 'data-site="syp"' in html
+    assert 'data-site="hq"' in html
     html = page(
         user_name="ทดสอบ",
         site="syp",
         probes={"hq": {"ok": True}, "syp": {"ok": True}},
     )
-    assert "ใบสั่งซื้อ" in html
+    assert "จัดการ PO" in html
+    assert "PO สาขา" in html
+    assert "PO จัดซื้อ (HQ)" in html
     assert "รอสั่งซื้อ" in html
     assert "ค้างรับ" in html
     assert "รับบางส่วน" in html
     assert 'data-k="to_be_ordered"' in html
     assert ICLOW_STATUSES == ("to_be_ordered", "pending_receive", "partially_received")
-    assert 'value="syp" selected' in html or 'value="syp"  selected' in html or 'option value="syp" selected' in html
     assert "สด" in html
     assert "จัดของบางส่วน" in html
     assert "จำนวนสั่ง" in html
     assert "จำนวน TF" in html
-    assert 'id="dlg"' in html
+    assert 'id="dlgPo"' in html
+    assert 'id="dlgAccount"' in html
+    assert 'id="dlgPi"' in html
+    assert "/ops/api/po/account/" in html
+    assert "/ops/api/po/pi/" in html
+    assert "พิมพ์ตาราง" in html
+    assert "scrollIntoView" in html
+    assert "@media print" in html
+    assert "list-wrap" in html
     assert "showModal" in html
-    assert "scrollIntoView" not in html
     assert "fmtQtyUi" in html
     assert "Math.round(n)" in html
+    assert "productCell" in html
+    assert "openAccount" in html
+    assert "openPi" in html
+
+
+def test_ops_page_hq_site_seed():
+    html = page(user_name="x", site="hq", probes={"hq": {"ok": True}, "syp": {"ok": False}})
+    assert 'let site = "hq";' in html
+    assert "HQ SQL ok" in html
+    assert "SYP SQL down" in html
+
+
+def test_bill_key12_and_resolve_helpers():
+    from src.ops.pi import bill_key12, resolve_pimas_batch
+
+    assert bill_key12("  ABC1234567890XX  ") == "ABC123456789"
+    assert bill_key12("") == ""
+    # empty batch
+    assert resolve_pimas_batch([]) == {}
+
+
+def test_account_detail_empty_acctno():
+    from src.ops.account import get_account_detail
+
+    assert get_account_detail(acctno="") is None
+    assert get_account_detail(acctno="   ") is None
+
+
+def test_attach_hq_pimas_marks_missing(monkeypatch):
+    from src.ops import iclow
+
+    rows = [
+        {"rcvdno": "A219623", "docno": "PO1"},
+        {"rcvdno": "", "docno": "PO2"},
+        {"rcvdno": "MISSING1", "docno": "PO3"},
+    ]
+
+    def fake_batch(rcvdnos):
+        assert "A219623" in rcvdnos
+        assert "MISSING1" in rcvdnos
+        return {
+            "A219623": {
+                "pimas_matched_billno": "A219623",
+                "pimas_match_method": "exact",
+                "pimas_link_missing": False,
+            },
+            "MISSING1": {
+                "pimas_matched_billno": None,
+                "pimas_match_method": None,
+                "pimas_link_missing": True,
+            },
+        }
+
+    monkeypatch.setattr(iclow, "resolve_pimas_batch", fake_batch)
+    iclow._attach_hq_pimas(rows)
+    assert rows[0]["pimas_matched_billno"] == "A219623"
+    assert rows[0]["pimas_match_method"] == "exact"
+    assert rows[0]["pimas_link_missing"] is False
+    assert rows[1]["pimas_link_missing"] is False
+    assert rows[2]["pimas_link_missing"] is True
 
 
 def test_syp_prepare_from_tf_remarks():

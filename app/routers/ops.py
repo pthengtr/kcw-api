@@ -5,7 +5,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src.ops.config import get_ops_settings
 from src.ops.net import is_tailscale_cg_nat
+from src.ops.account import get_account_detail
 from src.ops.iclow import list_iclow
+from src.ops.pi import get_pi_detail
 from src.ops.po import get_po_lines, health_probes, list_purchase_orders
 from src.ops.tf_prepare import attach_header_prepare, attach_line_prepare
 from src.ops.ui import APP, SESSION_COOKIE, page
@@ -217,6 +219,34 @@ def api_po_pending(
         )
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@router.get("/api/po/account/{acctno}")
+def api_po_account(request: Request, acctno: str, site: str = "hq", docno: str | None = None):
+    ident, err = _auth_json(request)
+    if err:
+        return err
+    _ = ident
+    try:
+        account = get_account_detail(acctno=acctno, site=site, docno=docno)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return {"account": account, "live": True}
+
+
+@router.get("/api/po/pi/{billno}")
+def api_po_pi(request: Request, billno: str):
+    ident, err = _auth_json(request)
+    if err:
+        return err
+    _ = ident
+    try:
+        data = get_pi_detail(billno_or_rcvdno=billno)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    if not data:
+        return JSONResponse({"error": "ไม่พบใบ PIMAS สำหรับเลขนี้"}, status_code=404)
+    return data
 
 
 @router.get("/api/po/{docno}")
