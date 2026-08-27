@@ -10,8 +10,8 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 
 | Step | Tab | KSS / Supabase |
 |------|-----|----------------|
-| Create note | ใบวางบิล | `PVMAS` INSERT (`JOURTYPE=NP`) + `PIMAS` stamp `NOTENO`; bill images → Supabase `pay_note` storage; reminder row |
-| Due / pay | รอชำระ | reminder due + bank; voucher → `PVMAS` UPDATE + `BPDET` INSERT |
+| Create note | ใบวางบิล | `PVMAS` INSERT (`JOURTYPE=NP`) + `PIMAS` stamp `NOTENO`; bill images → Supabase; reminder row **with discount** (`amount` baht or `%` of bill total) |
+| Due / pay | รอชำระ | discount from reminder; operator enters **CHKNO / CHKAMT** (`โอน` / cheque # / blank cash) → `PVMAS` UPDATE + `BPDET` |
 | Proof | ใบสำคัญจ่าย | payment images on voucher |
 
 Write rules: [kcw-docs PVMAS/RVMAS dictionary §9](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md).
@@ -39,11 +39,21 @@ SQL grants for `python_writer` (run on HQ `PARTS9` as admin, e.g. WinRM + `sqlcm
 
 `scripts/sql/grant_pay_notes_writer.sql`
 
-Supabase: schema `pay_note` (vendor_bank, reminder) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`.
+Supabase: schema `pay_note` (vendor_bank, reminder) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`, `20260827140000_pay_note_reminder_discount.sql` (`discount_mode` / `discount_input` / `discount_amount` on reminder).
 
 ## Auth
 
 Same HMAC token pattern as stock-check / explorer (`APP=pay-notes`). LINE link `?t=` or session cookie. Tailscale CGNAT clients get a `tailnet` identity without a token.
+
+## Consistency (KSS + Supabase)
+
+PARTS9 and Supabase **cannot** share one ACID transaction. Create-note order:
+
+1. Write note in KSS (`PVMAS` + `PIMAS`) in one SQL Server transaction  
+2. Insert `pay_note.reminder` in Supabase  
+3. If step 2 fails → **compensate**: clear `PIMAS` stamps and set `PVMAS.CANCELED='Y'` so bills are free and the noteno can be reused  
+
+Do not leave a live KSS note without a reminder going forward.
 
 ## Not on SYP
 

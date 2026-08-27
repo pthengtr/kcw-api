@@ -20,6 +20,16 @@ def _table(client: Client, name: str):
     return client.schema(PAY_NOTE_SCHEMA).from_(name)
 
 
+def _first_row(resp) -> dict[str, Any]:
+    """supabase-py 2.x: insert/update().select() returns a list, not .single()."""
+    data = resp.data
+    if data is None:
+        return {}
+    if isinstance(data, list):
+        return dict(data[0]) if data else {}
+    return dict(data)
+
+
 def list_vendor_banks(client: Client, acctno: str) -> list[dict[str, Any]]:
     acct = (acctno or "").strip()
     resp = (
@@ -34,8 +44,8 @@ def list_vendor_banks(client: Client, acctno: str) -> list[dict[str, Any]]:
 
 
 def insert_vendor_bank(client: Client, row: dict[str, Any]) -> dict[str, Any]:
-    resp = _table(client, "vendor_bank").insert(row).select("*").single().execute()
-    return dict(resp.data or {})
+    resp = _table(client, "vendor_bank").insert(row).select("*").execute()
+    return _first_row(resp)
 
 
 def update_vendor_bank(client: Client, bank_id: str, patch: dict[str, Any]) -> dict[str, Any]:
@@ -44,20 +54,35 @@ def update_vendor_bank(client: Client, bank_id: str, patch: dict[str, Any]) -> d
         .update(patch)
         .eq("bank_id", bank_id)
         .select("*")
-        .single()
         .execute()
     )
-    return dict(resp.data or {})
+    return _first_row(resp)
 
 
 def get_vendor_bank(client: Client, bank_id: str) -> dict[str, Any] | None:
     resp = _table(client, "vendor_bank").select("*").eq("bank_id", bank_id).maybe_single().execute()
-    return dict(resp.data) if resp.data else None
+    if not resp or not resp.data:
+        return None
+    return dict(resp.data)
+
+
+def get_reminder(client: Client, acctno: str, noteno: str) -> dict[str, Any] | None:
+    resp = (
+        _table(client, "reminder")
+        .select("*")
+        .eq("acctno", acctno.strip())
+        .eq("noteno", noteno.strip())
+        .maybe_single()
+        .execute()
+    )
+    if not resp or not resp.data:
+        return None
+    return dict(resp.data)
 
 
 def insert_reminder(client: Client, row: dict[str, Any]) -> dict[str, Any]:
-    resp = _table(client, "reminder").insert(row).select("*").single().execute()
-    return dict(resp.data or {})
+    resp = _table(client, "reminder").insert(row).select("*").execute()
+    return _first_row(resp)
 
 
 def patch_reminder(
@@ -72,10 +97,9 @@ def patch_reminder(
         .eq("acctno", acctno.strip())
         .eq("noteno", noteno.strip())
         .select("*")
-        .single()
         .execute()
     )
-    return dict(resp.data or {})
+    return _first_row(resp)
 
 
 def list_reminders(client: Client) -> list[dict[str, Any]]:
