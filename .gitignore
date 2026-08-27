@@ -7,3 +7,6 @@ env/
 .env
 logs/
 *.log
+
+# Local stock-check runtime DB
+.stock_check/

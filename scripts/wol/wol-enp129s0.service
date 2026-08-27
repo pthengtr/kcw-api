@@ -1,0 +1,14 @@
+[Unit]
+Description=Enable Wake-on-LAN on enp129s0
+After=network-pre.target
+Before=network.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/ethtool -s enp129s0 wol g
+ExecStop=/usr/sbin/ethtool -s enp129s0 wol d
+
+[Install]
+WantedBy=multi-user.target
