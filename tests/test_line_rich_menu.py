@@ -14,7 +14,7 @@ from src.handlers.stock_check_entry import is_stock_check_command
 
 SPEC = Path(__file__).resolve().parents[1] / "scripts" / "line_rich_menu" / "menu_spec.json"
 
-EXPECTED_TEXTS = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "โน้ตจ่าย"]
+EXPECTED_TEXTS = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "ชำระเจ้าหนี้"]
 
 
 def test_rich_menu_message_actions_match_handlers():

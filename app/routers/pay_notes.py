@@ -124,7 +124,7 @@ def _require(request: Request):
     ident = _identity_from_request(request)
     if ident is False:
         return None, HTMLResponse(
-            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ โน้ตจ่าย ในแชท</p>",
+            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ ชำระเจ้าหนี้ ในแชท</p>",
             status_code=401,
         )
     if ident is None:

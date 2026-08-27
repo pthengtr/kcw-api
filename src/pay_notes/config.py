@@ -10,7 +10,11 @@ class PayNotesSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     pay_notes_enabled: bool = Field(default=True, validation_alias="PAY_NOTES_ENABLED")
-    pay_notes_site: str = Field(default="HQ", validation_alias="PAY_NOTES_SITE")
+    pay_notes_site: str = Field(
+        default="HQ",
+        validation_alias="PAY_NOTES_SITE",
+        description="HQ only — do not set SYP",
+    )
     pay_notes_listen_port: int = Field(default=8791, validation_alias="PAY_NOTES_LISTEN_PORT")
     pay_notes_public_base_url: str = Field(default="", validation_alias="PAY_NOTES_PUBLIC_BASE_URL")
     pay_notes_tailscale_base_url: str = Field(

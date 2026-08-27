@@ -17,8 +17,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 On Linux HQ (`hq-ubuntu-server`), use systemd user units in `scripts/systemd/` (not Docker). See [kcw-docs ops/hq-linux.md](https://github.com/pthengtr/kcw-docs/blob/main/ops/hq-linux.md).
 
 ```bash
-systemctl --user enable --now kcw-worker kcw-tiger-pay kcw-stock-check
+systemctl --user enable --now kcw-worker kcw-tiger-pay kcw-stock-check kcw-parts9-explorer kcw-ops kcw-pay-notes
 ```
+
+Pay notes / ชำระเจ้าหนี้ (`:8791`) is **HQ-only** — see [`docs/pay-notes.md`](docs/pay-notes.md). Do not enable on SYP.
 
 **KCW Ask (POC):** experimental read-only analyst UI on `:3000` on the same HQ box — **not** in this repo. Code: [pthengtr/kcw-ask](https://github.com/pthengtr/kcw-ask) (`~/projects/ask-chat`). Same runbook section [hq-linux.md — KCW Ask POC](https://github.com/pthengtr/kcw-docs/blob/main/ops/hq-linux.md#kcw-ask-poc). Direction (standalone vs merge here) not decided yet.
 

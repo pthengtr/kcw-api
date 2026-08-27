@@ -16,16 +16,35 @@ _HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>โน้ตจ่าย</title>
+<meta name="color-scheme" content="dark light"/>
+<meta name="theme-color" content="#0c1014" id="themeColor"/>
+<title>ชำระเจ้าหนี้</title>
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem("kcw.pay_notes.theme");
+    if (t !== "light" && t !== "dark") {
+      t = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+    document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 :root { --acc:#3d9cf0; --ok:#3ecf8e; --warn:#e6b450; --down:#e25c5c; --on-acc:#071018; }
 html[data-theme="dark"] {
+  color-scheme: dark;
   --bg:#0c1014; --card:#161d26; --line:#2a3542; --text:#e8eef4; --muted:#8b9aab; --chip:#243040; --inset:#0a0e12;
+}
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg:#f4f6f8; --card:#ffffff; --line:#d5dde6; --text:#1b2430; --muted:#5b6b7c; --chip:#e8eef4; --inset:#eef2f6;
 }
 * { box-sizing:border-box; }
 body { margin:0; font-family:Prompt,sans-serif; background:var(--bg); color:var(--text); }
 header { padding:.75rem 1rem; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
+.brand { display:flex; align-items:flex-start; justify-content:space-between; gap:.6rem; }
 h1 { margin:0; font-size:1.05rem; }
 .meta { font-size:.78rem; color:var(--muted); margin-top:.2rem; }
 .tabs { display:flex; gap:.35rem; margin-top:.55rem; flex-wrap:wrap; }
@@ -38,6 +57,7 @@ main { max-width:960px; margin:0 auto; padding:1rem; }
 label { display:block; font-size:.78rem; color:var(--muted); margin:.35rem 0 .15rem; }
 input, select, button, textarea { font:inherit; padding:.5rem .65rem; border-radius:.5rem; border:1px solid var(--line); background:var(--inset); color:var(--text); width:100%; }
 button.primary { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:600; cursor:pointer; width:auto; }
+button.theme { width:auto; min-width:2.6rem; flex:0 0 auto; background:var(--chip); cursor:pointer; }
 button.linkish { width:auto; background:none; border:none; color:var(--acc); text-decoration:underline; cursor:pointer; padding:0; }
 .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
 .row > * { flex:1; min-width:8rem; }
@@ -54,27 +74,33 @@ button.linkish { width:auto; background:none; border:none; color:var(--acc); tex
 .hidden { display:none !important; }
 .dlg { border:1px solid var(--line); border-radius:.7rem; background:var(--card); color:var(--text); padding:1rem; max-width:36rem; width:calc(100% - 2rem); }
 .dlg::backdrop { background:rgba(0,0,0,.55); }
+input[type="date"] {
+  min-height: 2.75rem;
+  font-size: 1.05rem;
+  letter-spacing: .02em;
+  cursor: pointer;
+}
+.date-hint { font-size:.72rem; color:var(--muted); margin:.1rem 0 .35rem; }
+.date-ce { font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
 <header>
-  <h1>โน้ตจ่าย · __SITE__</h1>
-  <div class="meta">__USER__ · โน้ต → ค้างจ่าย → ทำจ่าย (BPDET) → อัปโหลดหลักฐาน</div>
+  <div class="brand">
+    <div>
+      <h1>ชำระเจ้าหนี้ · __SITE__</h1>
+      <div class="meta">__USER__ · HQ only · ใบวางบิล → รอชำระ → ใบสำคัญจ่าย</div>
+    </div>
+    <button type="button" class="theme" id="themeBtn" aria-label="สลับธีม">มืด</button>
+  </div>
   <div class="tabs">
-    <button type="button" id="tabPending" class="on">ค้างจ่าย</button>
-    <button type="button" id="tabCreate">สร้างโน้ต</button>
-    <button type="button" id="tabProof">รอหลักฐาน</button>
+    <button type="button" id="tabCreate" class="on">ใบวางบิล</button>
+    <button type="button" id="tabPending">รอชำระ</button>
+    <button type="button" id="tabProof">ใบสำคัญจ่าย</button>
   </div>
 </header>
 <main>
-  <section id="panelPending" class="panel on">
-    <div class="card">
-      <div class="row"><button type="button" class="primary" id="btnRefreshPending">รีเฟรช</button></div>
-      <div id="pendingList"></div>
-    </div>
-  </section>
-
-  <section id="panelCreate" class="panel">
+  <section id="panelCreate" class="panel on">
     <div class="card">
       <label>ค้นหาเจ้าหนี้ (APMAS)</label>
       <div class="row">
@@ -86,8 +112,9 @@ button.linkish { width:auto; background:none; border:none; color:var(--acc); tex
         <p><span class="badge" id="pickedVendor"></span></p>
         <label>เลขที่ใบวางบิล (NOTENO) — สูงสุด 15 ตัวอักษร</label>
         <input id="noteno" maxlength="15"/>
-        <label>Due date</label>
-        <input id="dueDate" type="date"/>
+        <label>วันครบกำหนด</label>
+        <p class="date-hint">แตะเพื่อเปิดปฏิทิน · ใช้ปี ค.ศ. เช่น 2026 (ไม่พิมพ์ พ.ศ. 2569)</p>
+        <input id="dueDate" class="date-ce" type="date" lang="en" inputmode="none"/>
         <label>บัญชีธนาคาร (required)</label>
         <select id="bankSelect"></select>
         <details style="margin-top:.5rem"><summary>เพิ่มบัญชีใหม่</summary>
@@ -102,10 +129,17 @@ button.linkish { width:auto; background:none; border:none; color:var(--acc); tex
         <input id="billImages" type="file" accept="image/*" multiple/>
         <div class="thumbs" id="billThumbs"></div>
         <div class="row" style="margin-top:.65rem">
-          <button type="button" class="primary" id="btnCreateNote">สร้างโน้ต</button>
+          <button type="button" class="primary" id="btnCreateNote">บันทึกใบวางบิล</button>
         </div>
         <div id="createMsg"></div>
       </div>
+    </div>
+  </section>
+
+  <section id="panelPending" class="panel">
+    <div class="card">
+      <div class="row"><button type="button" class="primary" id="btnRefreshPending">รีเฟรช</button></div>
+      <div id="pendingList"></div>
     </div>
   </section>
 
@@ -118,7 +152,7 @@ button.linkish { width:auto; background:none; border:none; color:var(--acc); tex
 </main>
 
 <dialog id="dlgPay" class="dlg">
-  <h2 style="margin:0 0 .5rem;font-size:1rem">ทำจ่าย / ใบสำคัญจ่าย</h2>
+  <h2 style="margin:0 0 .5rem;font-size:1rem">บันทึกใบสำคัญจ่าย</h2>
   <div id="payDetail" class="meta"></div>
   <label>ส่วนลด (voucher)</label>
   <input id="payDiscount" type="number" step="0.01" value="0"/>
@@ -130,8 +164,9 @@ button.linkish { width:auto; background:none; border:none; color:var(--acc); tex
   <input id="payBankname"/>
   <label>บัญชีธนาคาร GL (BPDET.ACCTNO)</label>
   <input id="payBankGl" value="2101.7"/>
-  <label>CHKDATE</label>
-  <input id="payChkdate" type="date"/>
+  <label>วันที่โอน / เช็ค</label>
+  <p class="date-hint">แตะเพื่อเปิดปฏิทิน · ปี ค.ศ.</p>
+  <input id="payChkdate" class="date-ce" type="date" lang="en" inputmode="none"/>
   <div class="row" style="margin-top:.75rem">
     <button type="button" class="primary" id="btnConfirmPay">บันทึก voucher + BPDET</button>
     <button type="button" id="btnClosePay">ปิด</button>
@@ -146,8 +181,48 @@ let uploadedPaths = [];
 let payTarget = null;
 
 function $(id) { return document.getElementById(id); }
+function themeLabel(t) { return t === "light" ? "สว่าง" : "มืด"; }
+function applyTheme(t) {
+  const next = t === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  const btn = $("themeBtn");
+  if (btn) btn.textContent = themeLabel(next);
+  const meta = $("themeColor");
+  if (meta) meta.setAttribute("content", next === "light" ? "#f4f6f8" : "#0c1014");
+  try { localStorage.setItem("kcw.pay_notes.theme", next); } catch (e) {}
+}
+$("themeBtn").onclick = () => {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+};
+applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
+
 function fmtMoney(n) { return Number(n||0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
-function todayISO() { return new Date().toISOString().slice(0,10); }
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+/** Calendar-only: open native picker, block typing so ปี ค.ศ./พ.ศ. ไม่ปนกัน */
+function wireDatePicker(el) {
+  if (!el || el.dataset.dateWired === '1') return;
+  el.dataset.dateWired = '1';
+  el.setAttribute('lang', 'en');
+  el.setAttribute('inputmode', 'none');
+  el.classList.add('date-ce');
+  const open = () => { try { if (typeof el.showPicker === 'function') el.showPicker(); } catch (_) {} };
+  el.addEventListener('pointerdown', open);
+  el.addEventListener('focus', open);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' || e.key === 'Escape' || e.key === 'Enter') return;
+    e.preventDefault();
+    open();
+  });
+}
+function wireDatePickers(root) {
+  (root || document).querySelectorAll('input[type="date"]').forEach(wireDatePicker);
+}
 
 function showTab(name) {
   ['Pending','Create','Proof'].forEach(t => {
@@ -173,7 +248,7 @@ async function loadPending() {
   $('pendingList').innerHTML = 'กำลังโหลด…';
   try {
     const rows = await api('/pending');
-    if (!rows.length) { $('pendingList').innerHTML = '<p class="meta">ไม่มีโน้ตค้างจ่าย (จากบริการนี้)</p>'; return; }
+    if (!rows.length) { $('pendingList').innerHTML = '<p class="meta">ไม่มีรายการรอชำระ (จากบริการนี้)</p>'; return; }
     $('pendingList').innerHTML = rows.map(r => {
       const rem = r.reminder || {};
       const due = (rem.due_date || '').slice(0, 10);
@@ -183,12 +258,13 @@ async function loadPending() {
         <span class="meta">${fmtMoney(r.BILLAMT)} · ${r.BILLCNT} บิล · due ${due}</span><br/>
         <span class="meta">${bank.bank_name || ''} ${bank.bank_account_number || ''}</span>
         <div class="row" style="margin-top:.35rem">
-          <input type="date" value="${due}" data-due-input="${r.acctno}|${r.noteno}"/>
+          <input type="date" class="date-ce" lang="en" inputmode="none" value="${due}" data-due-input="${r.acctno}|${r.noteno}"/>
           <button type="button" class="primary" data-save-due="${r.acctno}|${r.noteno}">บันทึก due</button>
-          <button type="button" class="primary" data-pay="${r.acctno}|${r.noteno}|${r.BILLAMT||0}|${(bank.bank_name||'') + ' ' + (bank.bank_account_name||'') + ' # ' + (bank.bank_account_number||'')}">ทำจ่าย</button>
+          <button type="button" class="primary" data-pay="${r.acctno}|${r.noteno}|${r.BILLAMT||0}|${(bank.bank_name||'') + ' ' + (bank.bank_account_name||'') + ' # ' + (bank.bank_account_number||'')}">บันทึกใบสำคัญ</button>
         </div>
       </div>`;
     }).join('');
+    wireDatePickers($('pendingList'));
     $('pendingList').querySelectorAll('[data-save-due]').forEach(btn => {
       btn.onclick = async () => {
         const [acct, note] = btn.dataset.saveDue.split('|');
@@ -255,7 +331,7 @@ async function loadProof() {
   $('proofList').innerHTML = 'กำลังโหลด…';
   try {
     const rows = await api('/awaiting-proof');
-    if (!rows.length) { $('proofList').innerHTML = '<p class="meta">ไม่มีรายการรอหลักฐาน</p>'; return; }
+    if (!rows.length) { $('proofList').innerHTML = '<p class="meta">ไม่มีใบสำคัญจ่ายที่รออัปโหลดหลักฐาน</p>'; return; }
     $('proofList').innerHTML = rows.map(r => `
       <div class="note-row">
         <strong>${r.acctname || r.acctno}</strong> · ${r.noteno}<br/>
@@ -302,6 +378,7 @@ async function pickVendor(acctno, acctname) {
   picked = {acctno, acctname};
   $('pickedVendor').textContent = acctno + ' — ' + acctname;
   $('vendorPick').classList.remove('hidden');
+  if (!$('dueDate').value) $('dueDate').value = todayISO();
   uploadedPaths = [];
   $('billThumbs').innerHTML = '';
   await loadBanks();
@@ -361,7 +438,7 @@ $('btnCreateNote').onclick = async () => {
   const billnos = [...$('billList').querySelectorAll('input:checked')].map(x => x.value);
   $('createMsg').innerHTML = '';
   if (!WRITE_ENABLED) { $('createMsg').innerHTML = '<p class="err">KSS write ปิดอยู่ (PAY_NOTES_WRITE_ENABLED)</p>'; return; }
-  if (!noteno || !due || !bank_id) { $('createMsg').innerHTML = '<p class="err">กรอก NOTENO, due date, bank</p>'; return; }
+  if (!noteno || !due || !bank_id) { $('createMsg').innerHTML = '<p class="err">กรอกเลขใบวางบิล, เลือกวันครบกำหนดจากปฏิทิน, และบัญชีธนาคาร</p>'; return; }
   if (!billnos.length) { $('createMsg').innerHTML = '<p class="err">เลือกบิลอย่างน้อย 1</p>'; return; }
   if (!uploadedPaths.length) { $('createMsg').innerHTML = '<p class="err">อัปโหลดรูปใบวางบิลอย่างน้อย 1</p>'; return; }
   try {
@@ -372,12 +449,13 @@ $('btnCreateNote').onclick = async () => {
         bank_id, billnos
       })
     });
-    $('createMsg').innerHTML = `<p class="ok">สร้างโน้ตแล้ว · ${res.noteno} · ${fmtMoney(res.billamt)}</p>`;
+    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${res.noteno} · ${fmtMoney(res.billamt)}</p>`;
     showTab('pending');
   } catch (e) { $('createMsg').innerHTML = `<p class="err">${e.message}</p>`; }
 };
 
-loadPending();
+showTab('create');
+wireDatePickers(document);
 </script>
 </body>
 </html>

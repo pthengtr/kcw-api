@@ -29,6 +29,17 @@ def _writer_engine(settings: PayNotesSettings) -> Engine:
     return get_parts9_engine(writer=True)
 
 
+def _map_write_exc(exc: Exception) -> PayNoteWriteError:
+    msg = str(exc).lower()
+    if "permission" in msg or "denied" in msg:
+        return PayNoteWriteError(
+            "KSS writer missing grants on PVMAS/PIMAS/BPDET "
+            "(see scripts/sql/grant_pay_notes_writer.sql)",
+            code="permission_denied",
+        )
+    return PayNoteWriteError(str(exc), code="write_failed")
+
+
 def create_pay_note(
     *,
     settings: PayNotesSettings,
@@ -53,27 +64,30 @@ def create_pay_note(
     from src.pay_notes.parts9 import fetch_bills_for_note, note_exists
 
     site = settings.site
-    eng = engine or _writer_engine(settings)
-    if note_exists(site, acct, note, engine=eng):
-        raise PayNoteWriteError("note already exists in KSS", code="duplicate_note")
-
-    bills = fetch_bills_for_note(site, acct, billnos, engine=eng)
-    if len(bills) != len(set(b.strip() for b in billnos if b.strip())):
-        raise PayNoteWriteError("one or more bills unavailable for note", code="bill_invalid")
-
-    jourmodes = {str(b.get("JOURMODE") or "1").strip() or "1" for b in bills}
-    if len(jourmodes) > 1:
-        raise PayNoteWriteError(
-            "mixed VAT/non-VAT bills — split note per JOURMODE",
-            code="mixed_jourmode",
-        )
-    jourmode = jourmodes.pop()
-    billamt = sum(float(b.get("AFTERTAX") or 0) for b in bills)
-    billcnt = len(bills)
-    notedate = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
-
+    # SELECTs use the reader login; python_writer is INSERT/UPDATE-only until grants include SELECT.
+    # Injected `engine` (tests) is used for both read and write.
+    write_eng = engine or _writer_engine(settings)
     try:
-        with eng.begin() as conn:
+        if note_exists(site, acct, note, engine=engine):
+            raise PayNoteWriteError("note already exists in KSS", code="duplicate_note")
+
+        bills = fetch_bills_for_note(site, acct, billnos, engine=engine)
+        if len(bills) != len(set(b.strip() for b in billnos if b.strip())):
+            raise PayNoteWriteError("one or more bills unavailable for note", code="bill_invalid")
+
+        jourmodes = {str(b.get("JOURMODE") or "1").strip() or "1" for b in bills}
+        if len(jourmodes) > 1:
+            raise PayNoteWriteError(
+                "mixed VAT/non-VAT bills — split note per JOURMODE",
+                code="mixed_jourmode",
+            )
+        jourmode = jourmodes.pop()
+        billamt = sum(float(b.get("AFTERTAX") or 0) for b in bills)
+        billcnt = len(bills)
+        notedate = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
+
+        with write_eng.begin() as conn:
+            # No OUTPUT INSERTED — that requires SELECT on PVMAS.
             conn.execute(
                 text(
                     """
@@ -83,7 +97,6 @@ def create_pay_note(
                       DEPTNO, BOOKNO, VOUCED,
                       POSTED1, POSTED2, DONE, CANCELED
                     )
-                    OUTPUT INSERTED.ID
                     VALUES (
                       :jourmode, 'NP', 'Y', :notedate, :noteno,
                       :acctno, :acctname, :billcnt, :billamt,
@@ -126,10 +139,7 @@ def create_pay_note(
     except PayNoteWriteError:
         raise
     except Exception as exc:
-        msg = str(exc).lower()
-        if "permission" in msg or "denied" in msg:
-            raise PayNoteWriteError("KSS writer permission denied", code="permission_denied") from exc
-        raise PayNoteWriteError(str(exc), code="write_failed") from exc
+        raise _map_write_exc(exc) from exc
 
     _ = operator
     return {
@@ -304,10 +314,7 @@ def create_voucher(
     except PayNoteWriteError:
         raise
     except Exception as exc:
-        msg = str(exc).lower()
-        if "permission" in msg or "denied" in msg:
-            raise PayNoteWriteError("KSS writer permission denied", code="permission_denied") from exc
-        raise PayNoteWriteError(str(exc), code="write_failed") from exc
+        raise _map_write_exc(exc) from exc
 
     _ = operator
     return {

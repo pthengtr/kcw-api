@@ -14,8 +14,14 @@ from src.pay_notes.config import get_pay_notes_settings
 from src.pay_notes.net import rewrite_base_port
 from src.pay_notes.ui import APP
 
-PAY_NOTES_COMMAND = "โน้ตจ่าย"
-PAY_NOTES_COMMANDS = {"โน้ตจ่าย", "โน้ต", "paynote", "pay note"}
+PAY_NOTES_COMMAND = "ชำระเจ้าหนี้"
+PAY_NOTES_COMMANDS = {
+    "ชำระเจ้าหนี้",
+    "โน้ตจ่าย",
+    "โน้ต",
+    "paynote",
+    "pay note",
+}
 PAY_NOTES_PORT = int(os.getenv("PAY_NOTES_LISTEN_PORT", "8791"))
 
 
@@ -80,11 +86,11 @@ def handle_pay_notes_command(
     if not links:
         return {
             "type": "text",
-            "text": "ยังไม่พบเซิร์ฟเวอร์โน้ตจ่ายออนไลน์ครับ (รอ heartbeat จาก HQ)",
+            "text": "ยังไม่พบเซิร์ฟเวอร์ชำระเจ้าหนี้ออนไลน์ครับ (รอ heartbeat จาก HQ)",
         }
     return branch_uri_buttons(
-        title="โน้ตจ่าย",
-        alt_text="โน้ตจ่าย — กดเปิด",
+        title="ชำระเจ้าหนี้",
+        alt_text="ชำระเจ้าหนี้ — กดเปิด",
         links=links,
         wifi_hint=elevated_wifi_hint(elevated, allow_tailscale_copy=True),
     )
