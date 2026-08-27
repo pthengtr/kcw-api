@@ -23,15 +23,18 @@ def test_pay_notes_page_renders():
     assert "ชำระเจ้าหนี้" in html
     assert "ทดสอบ" in html
     assert "WRITE_ENABLED = false" in html
-    assert "ใบวางบิล" in html
+    assert "สร้างใบวางบิล" in html
     assert "รอชำระ" in html
-    assert "ใบสำคัญจ่าย" in html
+    assert "รอหลักฐาน" in html
+    assert "ชำระแล้ว" in html
     assert "themeBtn" in html
     assert "kcw.pay_notes.theme" in html
     assert 'id="tabCreate"' in html
+    assert 'id="tabAwaitProof"' in html
+    assert 'id="tabPaid"' in html
     assert ">สร้างโน้ต<" not in html
     assert ">ค้างจ่าย<" not in html
-    assert ">รอหลักฐาน<" not in html
+    assert 'id="tabProof"' not in html
 
 
 def test_create_pay_note_write_disabled():

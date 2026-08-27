@@ -159,11 +159,13 @@ class NoteCreate(BaseModel):
     billnos: list[str] = Field(default_factory=list)
     discount_mode: str = "amount"  # amount | percent
     discount_input: float = 0.0
+    remark: str = ""
 
 
 class ReminderPatch(BaseModel):
     due_date: str | None = None
     bank_id: str | None = None
+    remark: str | None = None
 
 
 class VoucherCreate(BaseModel):
@@ -298,7 +300,10 @@ def api_pending(request: Request):
         rows = list_pending_notes(settings.site, reminders)
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
-    return rows
+    out = []
+    for row in rows:
+        out.append({**row, "stage": "pending"})
+    return out
 
 
 @router.patch("/api/reminder/{acctno}/{noteno}")
@@ -311,6 +316,8 @@ def api_reminder_patch(request: Request, acctno: str, noteno: str, body: Reminde
         patch["due_date"] = _parse_due(body.due_date)
     if body.bank_id:
         patch["bank_id"] = body.bank_id
+    if body.remark is not None:
+        patch["remark"] = (body.remark or "").strip()[:500]
     client = get_pay_notes_supabase_client()
     row = patch_reminder(client, acctno, noteno, patch)
     return row
@@ -419,6 +426,7 @@ def api_create_note(request: Request, body: NoteCreate):
         return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
 
     due = _parse_due(body.due_date)
+    remark = (body.remark or "").strip()[:500]
     try:
         rem = insert_reminder(
             client,
@@ -430,6 +438,7 @@ def api_create_note(request: Request, body: NoteCreate):
                 "discount_mode": discount_mode,
                 "discount_input": discount_input,
                 "discount_amount": discount_amount,
+                "remark": remark,
                 "created_by": ident.line_user_id if ident else None,
             },
         )
@@ -568,6 +577,23 @@ def api_create_voucher(request: Request, body: VoucherCreate):
 
 @router.get("/api/awaiting-proof")
 def api_awaiting_proof(request: Request):
+    """Vouchered notes that still need payment proof images."""
+    return _api_vouchered_board(request, proof="awaiting")
+
+
+@router.get("/api/paid")
+def api_paid(request: Request):
+    """Vouchered notes with at least one payment proof image (ชำระแล้ว)."""
+    return _api_vouchered_board(request, proof="done")
+
+
+@router.get("/api/vouchered")
+def api_vouchered(request: Request, proof: str = "all"):
+    """All vouchered notes from this service. proof=awaiting|done|all."""
+    return _api_vouchered_board(request, proof=proof)
+
+
+def _api_vouchered_board(request: Request, *, proof: str = "all"):
     _, err = _require_api(request)
     if err:
         return err
@@ -578,13 +604,20 @@ def api_awaiting_proof(request: Request):
         rows = list_vouchered_notes(settings.site, reminders)
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
+    mode = (proof or "all").strip().lower()
+    if mode not in ("all", "awaiting", "done"):
+        mode = "all"
     out = []
     for row in rows:
         voucno = (row.get("voucno") or "").strip()
         proofs = list_folder(client, payment_image_prefix(voucno)) if voucno else []
-        if proofs:
+        has_proof = bool(proofs)
+        if mode == "awaiting" and has_proof:
             continue
-        out.append({**row, "payment_images": proofs})
+        if mode == "done" and not has_proof:
+            continue
+        stage = "paid" if has_proof else "await_proof"
+        out.append({**row, "payment_images": proofs, "has_proof": has_proof, "stage": stage})
     return out
 
 

@@ -115,6 +115,12 @@ input[type="date"] {
 }
 .filters label { margin-top:0; }
 .filters input, .filters select { width:100%; }
+.remark {
+  margin:.35rem 0 0; padding:.45rem .55rem; border-radius:.45rem;
+  border:1px dashed var(--line); background:var(--inset); color:var(--text);
+  font-size:.88rem; white-space:pre-wrap; word-break:break-word;
+}
+textarea#noteRemark { min-height:4rem; resize:vertical; width:100%; }
 </style>
 </head>
 <body>
@@ -122,14 +128,15 @@ input[type="date"] {
   <div class="brand">
     <div>
       <h1>ชำระเจ้าหนี้ · __SITE__</h1>
-      <div class="meta">__USER__ · HQ only · ใบวางบิล → รอชำระ → ใบสำคัญจ่าย</div>
+      <div class="meta">__USER__ · HQ only · สร้างใบวางบิล → รอชำระ → รอหลักฐาน → ชำระแล้ว</div>
     </div>
     <button type="button" class="theme" id="themeBtn" aria-label="สลับธีม">มืด</button>
   </div>
   <div class="tabs">
-    <button type="button" id="tabCreate" class="on">ใบวางบิล</button>
-    <button type="button" id="tabPending">รอชำระ</button>
-    <button type="button" id="tabProof">ใบสำคัญจ่าย</button>
+    <button type="button" id="tabCreate" class="on">1. สร้างใบวางบิล</button>
+    <button type="button" id="tabPending">2. รอชำระ</button>
+    <button type="button" id="tabAwaitProof">3. รอหลักฐาน</button>
+    <button type="button" id="tabPaid">4. ชำระแล้ว</button>
   </div>
 </header>
 <main>
@@ -148,6 +155,9 @@ input[type="date"] {
         <label>วันครบกำหนดชำระ</label>
         <p class="date-hint">แตะเพื่อเปิดปฏิทิน · ใช้ปี ค.ศ. เช่น 2026 (ไม่พิมพ์ พ.ศ. 2569) · แก้ทีหลังได้ที่แท็บรอชำระ</p>
         <input id="dueDate" class="date-ce" type="date" lang="en" inputmode="none"/>
+        <label for="noteRemark">หมายเหตุ (optional)</label>
+        <p class="date-hint">เก็บในระบบชำระเจ้าหนี้เท่านั้น · ไม่เขียนลง KSS</p>
+        <textarea id="noteRemark" maxlength="500" placeholder="เช่น รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
         <label>บัญชีธนาคาร (required)</label>
         <select id="bankSelect"></select>
         <details style="margin-top:.5rem"><summary>เพิ่มบัญชีใหม่</summary>
@@ -187,6 +197,7 @@ input[type="date"] {
 
   <section id="panelPending" class="panel">
     <div class="card">
+      <p class="meta" style="margin:0 0 .45rem">ขั้นที่ 2 · มีใบวางบิลใน KSS แล้ว · รอบันทึกใบสำคัญจ่าย</p>
       <div class="row" style="margin-bottom:.35rem">
         <button type="button" class="primary" id="btnRefreshPending">รีเฟรช</button>
         <button type="button" id="btnClearPendingFilters">ล้างตัวกรอง</button>
@@ -233,10 +244,97 @@ input[type="date"] {
     </div>
   </section>
 
-  <section id="panelProof" class="panel">
+  <section id="panelAwaitProof" class="panel">
     <div class="card">
-      <div class="row"><button type="button" class="primary" id="btnRefreshProof">รีเฟรช</button></div>
-      <div id="proofList"></div>
+      <p class="meta" style="margin:0 0 .45rem">ขั้นที่ 3 · บันทึกใบสำคัญแล้ว · รออัปโหลดหลักฐานการโอน/เช็ค</p>
+      <div class="row" style="margin-bottom:.35rem">
+        <button type="button" class="primary" id="btnRefreshAwait">รีเฟรช</button>
+        <button type="button" id="btnClearAwaitFilters">ล้างตัวกรอง</button>
+      </div>
+      <div class="filters" id="awaitFilters">
+        <div>
+          <label for="afQ">ค้นหา AP / ชื่อ / เลขโน้ต / VOUCNO</label>
+          <input id="afQ" placeholder="ค้นหา…" autocomplete="off"/>
+        </div>
+        <div>
+          <label for="afAcct">รหัส AP</label>
+          <select id="afAcct"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div>
+          <label for="afMonth">เดือน voucher</label>
+          <select id="afMonth"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div>
+          <label for="afFrom">voucher ตั้งแต่</label>
+          <input id="afFrom" class="date-ce" type="date" lang="en" inputmode="none"/>
+        </div>
+        <div>
+          <label for="afTo">ถึงวันที่</label>
+          <input id="afTo" class="date-ce" type="date" lang="en" inputmode="none"/>
+        </div>
+        <div>
+          <label for="afSort">เรียงโดย</label>
+          <select id="afSort">
+            <option value="vdate_desc">วัน voucher ใหม่→เก่า</option>
+            <option value="vdate_asc">วัน voucher เก่า→ใหม่</option>
+            <option value="due_asc">วันครบกำหนด ↑</option>
+            <option value="due_desc">วันครบกำหนด ↓</option>
+            <option value="acct_asc">รหัส AP ↑</option>
+            <option value="acct_desc">รหัส AP ↓</option>
+            <option value="note_asc">เลขใบวางบิล ↑</option>
+            <option value="amt_desc">ยอดมาก→น้อย</option>
+          </select>
+        </div>
+      </div>
+      <div class="bill-status empty" id="awaitStatus">ยังไม่มีรายการ</div>
+      <div id="awaitList"></div>
+    </div>
+  </section>
+
+  <section id="panelPaid" class="panel">
+    <div class="card">
+      <p class="meta" style="margin:0 0 .45rem">ขั้นที่ 4 · มีหลักฐานชำระแล้ว · ดูรูปหลักฐาน / รูปบิลได้</p>
+      <div class="row" style="margin-bottom:.35rem">
+        <button type="button" class="primary" id="btnRefreshPaid">รีเฟรช</button>
+        <button type="button" id="btnClearPaidFilters">ล้างตัวกรอง</button>
+      </div>
+      <div class="filters" id="paidFilters">
+        <div>
+          <label for="pdQ">ค้นหา AP / ชื่อ / เลขโน้ต / VOUCNO</label>
+          <input id="pdQ" placeholder="ค้นหา…" autocomplete="off"/>
+        </div>
+        <div>
+          <label for="pdAcct">รหัส AP</label>
+          <select id="pdAcct"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div>
+          <label for="pdMonth">เดือน voucher</label>
+          <select id="pdMonth"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div>
+          <label for="pdFrom">voucher ตั้งแต่</label>
+          <input id="pdFrom" class="date-ce" type="date" lang="en" inputmode="none"/>
+        </div>
+        <div>
+          <label for="pdTo">ถึงวันที่</label>
+          <input id="pdTo" class="date-ce" type="date" lang="en" inputmode="none"/>
+        </div>
+        <div>
+          <label for="pdSort">เรียงโดย</label>
+          <select id="pdSort">
+            <option value="vdate_desc">วัน voucher ใหม่→เก่า</option>
+            <option value="vdate_asc">วัน voucher เก่า→ใหม่</option>
+            <option value="due_asc">วันครบกำหนด ↑</option>
+            <option value="due_desc">วันครบกำหนด ↓</option>
+            <option value="acct_asc">รหัส AP ↑</option>
+            <option value="acct_desc">รหัส AP ↓</option>
+            <option value="note_asc">เลขใบวางบิล ↑</option>
+            <option value="amt_desc">ยอดมาก→น้อย</option>
+          </select>
+        </div>
+      </div>
+      <div class="bill-status empty" id="paidStatus">ยังไม่มีรายการ</div>
+      <div id="paidList"></div>
     </div>
   </section>
 </main>
@@ -273,6 +371,15 @@ input[type="date"] {
   <div id="payMsg"></div>
 </dialog>
 
+<dialog id="dlgImages" class="dlg">
+  <h2 style="margin:0 0 .5rem;font-size:1rem" id="imgDlgTitle">รูป</h2>
+  <div id="imgDlgMeta" class="meta"></div>
+  <div class="thumbs" id="imgDlgThumbs" style="margin-top:.5rem"></div>
+  <div class="row" style="margin-top:.75rem">
+    <button type="button" id="btnCloseImages">ปิด</button>
+  </div>
+</dialog>
+
 <script>
 const WRITE_ENABLED = __WRITE__;
 let picked = null;
@@ -281,8 +388,67 @@ let payTarget = null;
 let discMode = 'amount';
 let settleMethod = 'transfer';
 let pendingRows = [];
+let awaitRows = [];
+let paidRows = [];
 
 function $(id) { return document.getElementById(id); }
+
+function showTab(name) {
+  const map = {
+    create: 'Create',
+    pending: 'Pending',
+    awaitproof: 'AwaitProof',
+    paid: 'Paid',
+  };
+  Object.keys(map).forEach(k => {
+    const id = map[k];
+    $('tab' + id).classList.toggle('on', name === k);
+    $('panel' + id).classList.toggle('on', name === k);
+  });
+  if (name === 'pending') loadPending();
+  if (name === 'awaitproof') loadAwaitProof();
+  if (name === 'paid') loadPaid();
+  if (name === 'create' && picked) loadBills();
+}
+$('tabPending').onclick = () => showTab('pending');
+$('tabCreate').onclick = () => showTab('create');
+$('tabAwaitProof').onclick = () => showTab('awaitproof');
+$('tabPaid').onclick = () => showTab('paid');
+
+async function api(path, opts) {
+  const r = await fetch('/pay-notes/api' + path, opts || {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
+  return j;
+}
+
+function openImagesDialog(title, meta, images) {
+  $('imgDlgTitle').textContent = title || 'รูป';
+  $('imgDlgMeta').textContent = meta || '';
+  const thumbs = $('imgDlgThumbs');
+  const list = (images || []).filter(x => x && (x.url || x.path));
+  if (!list.length) {
+    thumbs.innerHTML = '<p class="meta">ไม่มีรูป</p>';
+  } else {
+    thumbs.innerHTML = list.map(img => {
+      const url = esc(img.url || '');
+      return url ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""/></a>` : '';
+    }).join('');
+  }
+  $('dlgImages').showModal();
+}
+$('btnCloseImages').onclick = () => $('dlgImages').close();
+
+async function viewBillImages(acct, note) {
+  try {
+    const det = await api(`/notes/${encodeURIComponent(acct)}/${encodeURIComponent(note)}`);
+    openImagesDialog('รูปใบวางบิล', `${acct} · ${note}`, det.bill_images || []);
+  } catch (e) { alert(e.message); }
+}
+async function viewPaymentImages(acct, note, images) {
+  openImagesDialog('หลักฐานชำระ', `${acct} · ${note}`, images || []);
+}
+
 function themeLabel(t) { return t === "light" ? "สว่าง" : "มืด"; }
 function applyTheme(t) {
   const next = t === "light" ? "light" : "dark";
@@ -299,6 +465,11 @@ $("themeBtn").onclick = () => {
 applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
 
 function fmtMoney(n) { return Number(n||0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
 function todayISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -324,27 +495,6 @@ function wireDatePicker(el) {
 }
 function wireDatePickers(root) {
   (root || document).querySelectorAll('input[type="date"]').forEach(wireDatePicker);
-}
-
-function showTab(name) {
-  ['Pending','Create','Proof'].forEach(t => {
-    const key = t.toLowerCase();
-    $('tab' + t).classList.toggle('on', name === key);
-    $('panel' + t).classList.toggle('on', name === key);
-  });
-  if (name === 'pending') loadPending();
-  if (name === 'proof') loadProof();
-  if (name === 'create' && picked) loadBills();
-}
-$('tabPending').onclick = () => showTab('pending');
-$('tabCreate').onclick = () => showTab('create');
-$('tabProof').onclick = () => showTab('proof');
-
-async function api(path, opts) {
-  const r = await fetch('/pay-notes/api' + path, opts || {});
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
-  return j;
 }
 
 async function loadPending() {
@@ -405,6 +555,7 @@ function filteredPendingRows() {
     if (q) {
       const hay = [
         r.acctno, r.acctname, r.noteno, due,
+        (r.reminder || {}).remark,
         ((r.reminder || {}).vendor_bank || {}).bank_name,
         ((r.reminder || {}).vendor_bank || {}).bank_account_number,
       ].map(x => String(x || '').toLowerCase()).join(' ');
@@ -481,10 +632,15 @@ function renderPendingList() {
         ? `ส่วนลด ${Number(rem.discount_input||0)}% = ${fmtMoney(disc)}`
         : (disc > 0 ? `ส่วนลด ${fmtMoney(disc)}` : 'ไม่มีส่วนลด');
       const key = `${r.acctno}|${r.noteno}`;
+      const remark = String(rem.remark || '').trim();
+      const remarkHtml = remark
+        ? `<div class="remark">${esc(remark)}</div>`
+        : '';
       return `<div class="note-row">
-        <strong>${r.acctname || r.acctno}</strong> · ${r.noteno}<br/>
+        <strong>${esc(r.acctname || r.acctno)}</strong> · ${esc(r.noteno)}<br/>
         <span class="meta">บิล ${fmtMoney(bill)} · ${discHint} · จ่าย ${fmtMoney(net)} · ${r.BILLCNT} บิล</span><br/>
-        <span class="meta">${bank.bank_name || ''} ${bank.bank_account_number || ''}</span>
+        <span class="meta">${esc(bank.bank_name || '')} ${esc(bank.bank_account_number || '')}</span>
+        ${remarkHtml}
         <div class="row" style="margin-top:.35rem; align-items:flex-end">
           <div style="flex:1;min-width:10rem">
             <label style="margin-top:0">วันครบกำหนดชำระ</label>
@@ -498,12 +654,15 @@ function renderPendingList() {
             </div>
             <span class="meta" data-due-status="${key}"></span>
           </div>
-          <button type="button" class="primary"
-            data-pay-acct="${r.acctno}"
-            data-pay-note="${r.noteno}"
-            data-pay-amt="${bill}"
-            data-pay-disc="${disc}"
-            data-pay-bank="${(bank.bank_name||'') + ' ' + (bank.bank_account_name||'') + ' # ' + (bank.bank_account_number||'')}">บันทึกใบสำคัญ</button>
+          <div class="row" style="flex:0 0 auto; gap:.35rem; min-width:auto">
+            <button type="button" data-view-bills="${esc(r.acctno)}|${esc(r.noteno)}">ดูรูปบิล</button>
+            <button type="button" class="primary"
+              data-pay-acct="${esc(r.acctno)}"
+              data-pay-note="${esc(r.noteno)}"
+              data-pay-amt="${bill}"
+              data-pay-disc="${disc}"
+              data-pay-bank="${esc((bank.bank_name||'') + ' ' + (bank.bank_account_name||'') + ' # ' + (bank.bank_account_number||''))}">บันทึกใบสำคัญ</button>
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -586,6 +745,12 @@ function renderPendingList() {
       btn.dataset.payDisc,
       btn.dataset.payBank || ''
     );
+  });
+  $('pendingList').querySelectorAll('[data-view-bills]').forEach(btn => {
+    btn.onclick = () => {
+      const [acct, note] = btn.dataset.viewBills.split('|');
+      viewBillImages(acct, note);
+    };
   });
 }
 
@@ -676,41 +841,214 @@ $('btnConfirmPay').onclick = async () => {
         bank_gl: $('payBankGl').value.trim()
       })
     });
-    $('payMsg').innerHTML = `<p class="ok">voucher ${res.voucno} · ส่งบัญชีอัปโหลดหลักฐานได้</p>`;
-    setTimeout(() => { $('dlgPay').close(); loadPending(); showTab('proof'); }, 800);
+    $('payMsg').innerHTML = `<p class="ok">voucher ${res.voucno} · ไปแท็บรอหลักฐานเพื่ออัปโหลด</p>`;
+    setTimeout(() => { $('dlgPay').close(); loadPending(); showTab('awaitproof'); }, 800);
   } catch (e) { $('payMsg').innerHTML = `<p class="err">${e.message}</p>`; }
 };
 
-async function loadProof() {
-  $('proofList').innerHTML = 'กำลังโหลด…';
-  try {
-    const rows = await api('/awaiting-proof');
-    if (!rows.length) { $('proofList').innerHTML = '<p class="meta">ไม่มีใบสำคัญจ่ายที่รออัปโหลดหลักฐาน</p>'; return; }
-    $('proofList').innerHTML = rows.map(r => `
-      <div class="note-row">
-        <strong>${r.acctname || r.acctno}</strong> · ${r.noteno}<br/>
-        <span class="meta">VOUCNO ${r.voucno} · ${fmtMoney(r.NETAMT || r.BILLAMT)} · ${r.VOUCDATE || ''}</span>
-        <div class="row" style="margin-top:.35rem">
-          <input type="file" accept="image/*" data-upload-proof="${r.voucno}"/>
-        </div>
-      </div>`).join('');
-    $('proofList').querySelectorAll('[data-upload-proof]').forEach(inp => {
-      inp.onchange = async (ev) => {
-        const voucno = inp.dataset.uploadProof;
-        for (const file of ev.target.files) {
-          const fd = new FormData();
-          fd.append('voucno', voucno);
-          fd.append('file', file);
-          const r = await fetch('/pay-notes/api/images/payment', {method:'POST', body: fd});
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok) { alert(j.detail || j.error); return; }
-        }
-        loadProof();
-      };
-    });
-  } catch (e) { $('proofList').innerHTML = `<p class="err">${e.message}</p>`; }
+function monthLabel(ym) {
+  const [y, m] = ym.split('-');
+  const names = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  return `${names[Number(m)] || m} ${y}`;
 }
-$('btnRefreshProof').onclick = loadProof;
+function voucDate(r) { return String(r.VOUCDATE || '').slice(0, 10); }
+function rebuildAcctMonthFilters(rows, acctSel, monthSel, dateFn) {
+  const accts = [...new Map(
+    rows.map(r => [String(r.acctno || '').trim(), String(r.acctname || '').trim()])
+  ).entries()].filter(([a]) => a).sort((a, b) => a[0].localeCompare(b[0], 'th'));
+  const curAcct = acctSel.value;
+  acctSel.innerHTML = '<option value="">ทั้งหมด</option>' + accts.map(([a, n]) =>
+    `<option value="${esc(a)}">${esc(a)}${n ? ' — ' + esc(n) : ''}</option>`
+  ).join('');
+  if ([...acctSel.options].some(o => o.value === curAcct)) acctSel.value = curAcct;
+  const months = [...new Set(rows.map(dateFn).filter(d => d.length >= 7).map(d => d.slice(0, 7)))].sort().reverse();
+  const curMonth = monthSel.value;
+  monthSel.innerHTML = '<option value="">ทั้งหมด</option>' + months.map(ym =>
+    `<option value="${ym}">${monthLabel(ym)}</option>`
+  ).join('');
+  if ([...monthSel.options].some(o => o.value === curMonth)) monthSel.value = curMonth;
+}
+function filterVoucherRows(rows, ids, dateFn) {
+  const q = ($(ids.q).value || '').trim().toLowerCase();
+  const acct = ($(ids.acct).value || '').trim();
+  const month = ($(ids.month).value || '').trim();
+  const from = ($(ids.from).value || '').trim();
+  const to = ($(ids.to).value || '').trim();
+  let out = rows.filter(r => {
+    const d = dateFn(r);
+    if (acct && String(r.acctno || '').trim() !== acct) return false;
+    if (month && !d.startsWith(month)) return false;
+    if (from && (!d || d < from)) return false;
+    if (to && (!d || d > to)) return false;
+    if (q) {
+      const hay = [
+        r.acctno, r.acctname, r.noteno, r.voucno, d, remDue(r),
+        (r.reminder || {}).remark,
+      ].map(x => String(x || '').toLowerCase()).join(' ');
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const sort = $(ids.sort).value || 'vdate_desc';
+  const cmpStr = (a, b) => String(a || '').localeCompare(String(b || ''), 'th', {numeric: true});
+  const cmpNum = (a, b) => Number(a || 0) - Number(b || 0);
+  out = [...out].sort((a, b) => {
+    switch (sort) {
+      case 'vdate_asc': return cmpStr(voucDate(a), voucDate(b));
+      case 'due_asc': return cmpStr(remDue(a), remDue(b));
+      case 'due_desc': return cmpStr(remDue(b), remDue(a));
+      case 'acct_asc': return cmpStr(a.acctno, b.acctno);
+      case 'acct_desc': return cmpStr(b.acctno, a.acctno);
+      case 'note_asc': return cmpStr(a.noteno, b.noteno);
+      case 'amt_desc': return cmpNum(b.NETAMT || b.BILLAMT, a.NETAMT || a.BILLAMT);
+      case 'vdate_desc':
+      default: return cmpStr(voucDate(b), voucDate(a));
+    }
+  });
+  return out;
+}
+function voucherCardHtml(r, {upload, showProof}) {
+  const rem = r.reminder || {};
+  const remark = String(rem.remark || '').trim();
+  const imgs = r.payment_images || [];
+  const amt = r.NETAMT != null ? r.NETAMT : r.BILLAMT;
+  return `<div class="note-row">
+    <strong>${esc(r.acctname || r.acctno)}</strong> · ${esc(r.noteno)}<br/>
+    <span class="meta">VOUCNO ${esc(r.voucno || '')} · ${fmtMoney(amt)} · voucher ${esc(voucDate(r) || '—')} · due ${esc(remDue(r) || '—')}</span><br/>
+    <span class="meta">${imgs.length ? imgs.length + ' รูปหลักฐาน' : 'ยังไม่มีหลักฐาน'}</span>
+    ${remark ? `<div class="remark">${esc(remark)}</div>` : ''}
+    <div class="row" style="margin-top:.35rem; gap:.35rem">
+      <button type="button" data-view-bills="${esc(r.acctno)}|${esc(r.noteno)}">ดูรูปบิล</button>
+      ${showProof ? `<button type="button" data-view-proof="${esc(r.acctno)}|${esc(r.noteno)}">ดูหลักฐาน</button>` : ''}
+      ${upload ? `<input type="file" accept="image/*" multiple data-upload-proof="${esc(r.voucno || '')}" style="flex:1;min-width:10rem"/>` : ''}
+    </div>
+  </div>`;
+}
+function wireVoucherCardActions(root, rows) {
+  root.querySelectorAll('[data-view-bills]').forEach(btn => {
+    btn.onclick = () => {
+      const [acct, note] = btn.dataset.viewBills.split('|');
+      viewBillImages(acct, note);
+    };
+  });
+  root.querySelectorAll('[data-view-proof]').forEach(btn => {
+    btn.onclick = () => {
+      const [acct, note] = btn.dataset.viewProof.split('|');
+      const row = rows.find(x => String(x.acctno) === acct && String(x.noteno) === note);
+      viewPaymentImages(acct, note, (row && row.payment_images) || []);
+    };
+  });
+  root.querySelectorAll('[data-upload-proof]').forEach(inp => {
+    inp.onchange = async (ev) => {
+      const voucno = inp.dataset.uploadProof;
+      for (const file of ev.target.files) {
+        const fd = new FormData();
+        fd.append('voucno', voucno);
+        fd.append('file', file);
+        const r = await fetch('/pay-notes/api/images/payment', {method:'POST', body: fd});
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(j.detail || j.error); return; }
+      }
+      await loadAwaitProof();
+      await loadPaid();
+      showTab('paid');
+    };
+  });
+}
+
+async function loadAwaitProof() {
+  $('awaitList').innerHTML = 'กำลังโหลด…';
+  $('awaitStatus').className = 'bill-status empty';
+  $('awaitStatus').textContent = 'กำลังโหลด…';
+  try {
+    awaitRows = await api('/awaiting-proof');
+    rebuildAcctMonthFilters(awaitRows, $('afAcct'), $('afMonth'), voucDate);
+    renderAwaitList();
+  } catch (e) {
+    awaitRows = [];
+    $('awaitList').innerHTML = `<p class="err">${e.message}</p>`;
+    $('awaitStatus').textContent = 'โหลดไม่สำเร็จ';
+  }
+}
+function renderAwaitList() {
+  const ids = {q:'afQ', acct:'afAcct', month:'afMonth', from:'afFrom', to:'afTo', sort:'afSort'};
+  const rows = filterVoucherRows(awaitRows, ids, voucDate);
+  const total = awaitRows.length;
+  if (!total) {
+    $('awaitStatus').className = 'bill-status empty';
+    $('awaitStatus').textContent = 'ไม่มีรายการรอหลักฐาน';
+    $('awaitList').innerHTML = '';
+    return;
+  }
+  $('awaitStatus').className = 'bill-status';
+  $('awaitStatus').textContent = rows.length === total
+    ? `แสดง ${rows.length} รายการรออัปโหลดหลักฐาน`
+    : `แสดง ${rows.length} จาก ${total}`;
+  if (!rows.length) {
+    $('awaitList').innerHTML = '<p class="meta">ไม่พบรายการตามตัวกรอง</p>';
+    return;
+  }
+  $('awaitList').innerHTML = rows.map(r => voucherCardHtml(r, {upload: true, showProof: false})).join('');
+  wireVoucherCardActions($('awaitList'), rows);
+}
+function clearAwaitFilters() {
+  $('afQ').value = ''; $('afAcct').value = ''; $('afMonth').value = '';
+  $('afFrom').value = ''; $('afTo').value = ''; $('afSort').value = 'vdate_desc';
+  renderAwaitList();
+}
+$('btnRefreshAwait').onclick = loadAwaitProof;
+$('btnClearAwaitFilters').onclick = clearAwaitFilters;
+['afQ','afAcct','afMonth','afFrom','afTo','afSort'].forEach(id => {
+  const el = $(id);
+  el.addEventListener(el.tagName === 'INPUT' && el.type !== 'date' ? 'input' : 'change', renderAwaitList);
+});
+
+async function loadPaid() {
+  $('paidList').innerHTML = 'กำลังโหลด…';
+  $('paidStatus').className = 'bill-status empty';
+  $('paidStatus').textContent = 'กำลังโหลด…';
+  try {
+    paidRows = await api('/paid');
+    rebuildAcctMonthFilters(paidRows, $('pdAcct'), $('pdMonth'), voucDate);
+    renderPaidList();
+  } catch (e) {
+    paidRows = [];
+    $('paidList').innerHTML = `<p class="err">${e.message}</p>`;
+    $('paidStatus').textContent = 'โหลดไม่สำเร็จ';
+  }
+}
+function renderPaidList() {
+  const ids = {q:'pdQ', acct:'pdAcct', month:'pdMonth', from:'pdFrom', to:'pdTo', sort:'pdSort'};
+  const rows = filterVoucherRows(paidRows, ids, voucDate);
+  const total = paidRows.length;
+  if (!total) {
+    $('paidStatus').className = 'bill-status empty';
+    $('paidStatus').textContent = 'ยังไม่มีรายการชำระแล้ว (มีหลักฐาน)';
+    $('paidList').innerHTML = '';
+    return;
+  }
+  $('paidStatus').className = 'bill-status';
+  $('paidStatus').textContent = rows.length === total
+    ? `แสดง ${rows.length} รายการชำระแล้ว`
+    : `แสดง ${rows.length} จาก ${total}`;
+  if (!rows.length) {
+    $('paidList').innerHTML = '<p class="meta">ไม่พบรายการตามตัวกรอง</p>';
+    return;
+  }
+  $('paidList').innerHTML = rows.map(r => voucherCardHtml(r, {upload: false, showProof: true})).join('');
+  wireVoucherCardActions($('paidList'), rows);
+}
+function clearPaidFilters() {
+  $('pdQ').value = ''; $('pdAcct').value = ''; $('pdMonth').value = '';
+  $('pdFrom').value = ''; $('pdTo').value = ''; $('pdSort').value = 'vdate_desc';
+  renderPaidList();
+}
+$('btnRefreshPaid').onclick = loadPaid;
+$('btnClearPaidFilters').onclick = clearPaidFilters;
+['pdQ','pdAcct','pdMonth','pdFrom','pdTo','pdSort'].forEach(id => {
+  const el = $(id);
+  el.addEventListener(el.tagName === 'INPUT' && el.type !== 'date' ? 'input' : 'change', renderPaidList);
+});
 
 async function searchVendors() {
   const q = $('vendorQ').value.trim();
@@ -871,16 +1209,18 @@ $('btnCreateNote').onclick = async () => {
         acctno: picked.acctno, acctname: picked.acctname, noteno, due_date: due,
         bank_id, billnos,
         discount_mode: discMode,
-        discount_input: Number($('discInput').value || 0)
+        discount_input: Number($('discInput').value || 0),
+        remark: ($('noteRemark').value || '').trim()
       })
     });
     const rem = res.reminder || {};
     const discShow = Number(rem.discount_amount != null ? rem.discount_amount : discAmt);
     const netShow = Math.max(0, Number(res.billamt || total) - discShow);
-    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${res.noteno} · บิล ${fmtMoney(res.billamt)} · ส่วนลด ${fmtMoney(discShow)} · จ่าย ${fmtMoney(netShow)}</p>`;
+    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${esc(res.noteno)} · บิล ${fmtMoney(res.billamt)} · ส่วนลด ${fmtMoney(discShow)} · จ่าย ${fmtMoney(netShow)}</p>`;
     uploadedPaths = [];
     $('billThumbs').innerHTML = '';
     $('discInput').value = '0';
+    $('noteRemark').value = '';
     setDiscMode('amount');
     await loadBills();
     showTab('pending');
