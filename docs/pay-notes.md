@@ -10,9 +10,10 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 
 | Step | Tab | KSS / Supabase |
 |------|-----|----------------|
-| Create note | ใบวางบิล | `PVMAS` INSERT (`JOURTYPE=NP`) + `PIMAS` stamp `NOTENO`; bill images → Supabase; reminder row **with discount** (`amount` baht or `%` of bill total) |
-| Due / pay | รอชำระ | discount from reminder; operator enters **CHKNO / CHKAMT** (`โอน` / cheque # / blank cash) → `PVMAS` UPDATE + `BPDET` |
-| Proof | ใบสำคัญจ่าย | payment images on voucher |
+| 1 Create note | สร้างใบวางบิล | `PVMAS` INSERT (`JOURTYPE=NP`) + `PIMAS` stamp `NOTENO`; bill images → Supabase; reminder with discount + optional remark |
+| 2 Pending pay | รอชำระ | reminder + unvouchered `PVMAS`; search/filter; view bill images; record voucher |
+| 3 Await proof | รอหลักฐาน | vouchered `PVMAS` **without** payment images; upload proof; search/filter |
+| 4 Paid | ชำระแล้ว | vouchered **with** payment images; view bill + proof; search/filter |
 
 Write rules: [kcw-docs PVMAS/RVMAS dictionary §9](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md).
 
