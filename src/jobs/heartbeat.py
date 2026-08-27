@@ -13,6 +13,8 @@ def upsert_worker_heartbeat(
     tailscale_public_base_url: str | None = None,
     companion_tailscale_base_url: str | None = None,
     explorer_tailscale_base_url: str | None = None,
+    pay_notes_public_base_url: str | None = None,
+    pay_notes_tailscale_base_url: str | None = None,
     *,
     update_urls: bool = False,
 ) -> None:
@@ -33,6 +35,8 @@ def upsert_worker_heartbeat(
                 tailscale_public_base_url,
                 companion_tailscale_base_url,
                 explorer_tailscale_base_url,
+                pay_notes_public_base_url,
+                pay_notes_tailscale_base_url,
                 updated_at
             )
             values (
@@ -46,6 +50,8 @@ def upsert_worker_heartbeat(
                 :tailscale_public_base_url,
                 :companion_tailscale_base_url,
                 :explorer_tailscale_base_url,
+                :pay_notes_public_base_url,
+                :pay_notes_tailscale_base_url,
                 now()
             )
             on conflict (worker_name)
@@ -65,6 +71,11 @@ def upsert_worker_heartbeat(
                 tailscale_public_base_url = excluded.tailscale_public_base_url,
                 companion_tailscale_base_url = excluded.companion_tailscale_base_url,
                 explorer_tailscale_base_url = excluded.explorer_tailscale_base_url,
+                pay_notes_public_base_url = coalesce(
+                    excluded.pay_notes_public_base_url,
+                    ops.worker_heartbeat.pay_notes_public_base_url
+                ),
+                pay_notes_tailscale_base_url = excluded.pay_notes_tailscale_base_url,
                 updated_at = now()
         """)
         params = {
@@ -77,6 +88,8 @@ def upsert_worker_heartbeat(
             "tailscale_public_base_url": (tailscale_public_base_url or "").strip() or None,
             "companion_tailscale_base_url": (companion_tailscale_base_url or "").strip() or None,
             "explorer_tailscale_base_url": (explorer_tailscale_base_url or "").strip() or None,
+            "pay_notes_public_base_url": (pay_notes_public_base_url or "").strip() or None,
+            "pay_notes_tailscale_base_url": (pay_notes_tailscale_base_url or "").strip() or None,
         }
     else:
         sql = text("""
@@ -123,6 +136,8 @@ def get_all_worker_status(engine, offline_after_seconds: int = 30) -> list[dict]
             tailscale_public_base_url,
             companion_tailscale_base_url,
             explorer_tailscale_base_url,
+            pay_notes_public_base_url,
+            pay_notes_tailscale_base_url,
             last_seen,
             case
                 when last_seen >= now() - (:offline_after_seconds || ' seconds')::interval

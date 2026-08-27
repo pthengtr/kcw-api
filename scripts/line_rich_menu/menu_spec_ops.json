@@ -48,8 +48,8 @@
       "bounds": { "x": 1667, "y": 749, "width": 833, "height": 937 },
       "action": {
         "type": "message",
-        "label": "วิธีใช้ Bot",
-        "text": "วิธีใช้"
+        "label": "โน้ตจ่าย",
+        "text": "โน้ตจ่าย"
       }
     }
   ]

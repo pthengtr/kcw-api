@@ -38,6 +38,10 @@ from src.handlers.ops_entry import (
     is_ops_command,
     handle_ops_command,
 )
+from src.handlers.pay_notes_entry import (
+    is_pay_notes_command,
+    handle_pay_notes_command,
+)
 
 
 def route_user_text(
@@ -115,6 +119,16 @@ def route_user_text(
             or line_user_id,
             access=access,
             user_text=text,
+        )
+
+    if is_pay_notes_command(text):
+        return handle_pay_notes_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+            access=access,
         )
 
     if is_image_command(text):
