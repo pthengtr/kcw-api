@@ -1,5 +1,5 @@
 [Unit]
-Description=KCW pay notes LAN+Tailscale UI (:8791)
+Description=KCW pay notes / ชำระเจ้าหนี้ HQ-only LAN+Tailscale UI (:8791)
 After=network-online.target
 Wants=network-online.target
 

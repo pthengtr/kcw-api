@@ -64,7 +64,7 @@ def list_pickable_bills(site: str, acctno: str, *, limit: int = 200) -> list[dic
           AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
           AND ISNULL(PAID, 'N') = 'N'
           AND ISNULL(CANCELED, 'N') <> 'Y'
-        ORDER BY BILLDATE DESC
+        ORDER BY BILLDATE ASC
         """
     )
     try:
@@ -277,5 +277,5 @@ def list_vouchered_notes(site: str, reminders: list[dict[str, Any]]) -> list[dic
         if isinstance(vd, datetime):
             merged["VOUCDATE"] = vd.date().isoformat()
         out.append(merged)
-    out.sort(key=lambda x: x.get("VOUCDATE") or "", reverse=True)
+    out.sort(key=lambda x: x.get("VOUCDATE") or "")
     return out

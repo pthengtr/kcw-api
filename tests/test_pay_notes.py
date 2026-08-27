@@ -6,6 +6,7 @@ from src.pay_notes.config import PayNotesSettings
 
 
 def test_pay_notes_commands():
+    assert is_pay_notes_command("ชำระเจ้าหนี้")
     assert is_pay_notes_command("โน้ตจ่าย")
     assert is_pay_notes_command(" โน้ต ")
     assert is_pay_notes_command("paynote")
@@ -19,9 +20,17 @@ def test_rewrite_explorer_port_to_pay_notes():
 
 def test_pay_notes_page_renders():
     html = page(user_name="ทดสอบ", site="HQ", write_enabled=False)
-    assert "โน้ตจ่าย" in html
+    assert "ชำระเจ้าหนี้" in html
     assert "ทดสอบ" in html
     assert "WRITE_ENABLED = false" in html
+    assert "ใบวางบิล" in html
+    assert "รอชำระ" in html
+    assert "ใบสำคัญจ่าย" in html
+    assert "themeBtn" in html
+    assert "kcw.pay_notes.theme" in html
+    assert "สร้างโน้ต" not in html
+    assert "ค้างจ่าย" not in html
+    assert "รอหลักฐาน" not in html
 
 
 def test_create_pay_note_write_disabled():
@@ -78,8 +87,8 @@ def test_create_voucher_write_disabled():
 
 def test_page_has_voucher_and_proof_tabs():
     html = page(user_name="x", site="HQ", write_enabled=True)
-    assert "รอหลักฐาน" in html
-    assert "ทำจ่าย" in html
+    assert "ใบสำคัญจ่าย" in html
+    assert "บันทึกใบสำคัญจ่าย" in html
     assert "WRITE_ENABLED = true" in html
     assert "/vouchers" in html
     assert "/awaiting-proof" in html

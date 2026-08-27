@@ -162,12 +162,12 @@ def test_ops_rich_menu_is_separate_from_staff_default():
 
     staff = json.loads(STAFF_SPEC.read_text(encoding="utf-8"))
     ops = json.loads(OPS_SPEC.read_text(encoding="utf-8"))
-    staff_texts = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "โน้ตจ่าย"]
-    ops_texts = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "โน้ตจ่าย"]
+    staff_texts = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "ชำระเจ้าหนี้"]
+    ops_texts = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "สถานะใบสั่งซื้อ", "รูป", "ชำระเจ้าหนี้"]
     assert [a["action"]["text"] for a in staff["areas"]] == staff_texts
     assert [a["action"]["text"] for a in ops["areas"]] == ops_texts
     assert ops["areas"][3]["action"]["label"] == "PO โอนสินค้า"
-    assert ops["areas"][5]["action"]["label"] == "โน้ตจ่าย"
+    assert ops["areas"][5]["action"]["label"] == "ชำระเจ้าหนี้"
     assert staff["size"] == {"width": 2500, "height": 1686}
     assert ops["size"] == {"width": 2500, "height": 1686}
     assert staff["name"] != ops["name"]
