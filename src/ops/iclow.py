@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from src.ops.pi import resolve_pimas_batch
 from src.ops.po import _row, _s, _site, default_date_window
 from src.ops.tf_prepare import attach_bcode_prepare
 from src.parts9_explorer.db import get_site_engine
@@ -83,9 +84,44 @@ def list_iclow(
             data["rows"] = rows[off : off + lim]
         else:
             data["rows"] = rows
+    elif site_key == "hq" and rows and st in ("pending_receive", "partially_received"):
+        _attach_hq_pimas(rows)
     data["prepare"] = prep
     data["live"] = True
     return data
+
+
+def _attach_hq_pimas(rows: list[dict[str, Any]]) -> None:
+    rcvdnos = [str(r.get("rcvdno") or "").strip() for r in rows if r.get("rcvdno")]
+    if not rcvdnos:
+        for r in rows:
+            r.setdefault("pimas_matched_billno", None)
+            r.setdefault("pimas_match_method", None)
+            r.setdefault("pimas_link_missing", False)
+        return
+    try:
+        resolved = resolve_pimas_batch(rcvdnos)
+    except Exception:
+        for r in rows:
+            r["pimas_matched_billno"] = None
+            r["pimas_match_method"] = None
+            r["pimas_link_missing"] = bool(str(r.get("rcvdno") or "").strip())
+        return
+    for r in rows:
+        key = str(r.get("rcvdno") or "").strip()
+        if not key:
+            r["pimas_matched_billno"] = None
+            r["pimas_match_method"] = None
+            r["pimas_link_missing"] = False
+            continue
+        info = resolved.get(key) or {
+            "pimas_matched_billno": None,
+            "pimas_match_method": None,
+            "pimas_link_missing": True,
+        }
+        r["pimas_matched_billno"] = info.get("pimas_matched_billno")
+        r["pimas_match_method"] = info.get("pimas_match_method")
+        r["pimas_link_missing"] = bool(info.get("pimas_link_missing"))
 
 
 def _q_clause(qn: str | None, params: dict[str, Any], extra: tuple[str, ...] = ()) -> str:
