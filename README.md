@@ -169,6 +169,10 @@ client application.
 In Supabase, expose the `tiger_pay` schema (Dashboard → Settings → API → Exposed
 Schemas) so the RPC can be called through the Supabase API.
 
+Pay notes (`pay_note` schema) needs the same: Exposed schemas must include
+`pay_note`. Migration `20260827122000_pay_note_expose_postgrest.sql` also sets
+`authenticator.pgrst.db_schemas` and grants API roles.
+
 Tiger Pay documentation mentions HMAC-SHA256 for the HTTP body in places, but the
 vendor Node.js example hashes the raw request body with plain SHA-256. This
 service follows the executable example.

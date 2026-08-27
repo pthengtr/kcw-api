@@ -1,0 +1,322 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+from src.pay_notes.config import PayNotesSettings
+from src.stock_check.parts9 import get_parts9_engine
+
+_BKK = ZoneInfo("Asia/Bangkok")
+
+
+class PayNoteWriteError(RuntimeError):
+    def __init__(self, message: str, *, code: str = "write_failed"):
+        super().__init__(message)
+        self.code = code
+
+
+def _writer_engine(settings: PayNotesSettings) -> Engine:
+    use_writer = bool(settings.pos_mssql_writer_username)
+    if not use_writer:
+        raise PayNoteWriteError(
+            "POS_MSSQL_WRITER_USERNAME not configured",
+            code="writer_not_configured",
+        )
+    return get_parts9_engine(writer=True)
+
+
+def create_pay_note(
+    *,
+    settings: PayNotesSettings,
+    acctno: str,
+    acctname: str,
+    noteno: str,
+    billnos: list[str],
+    operator: str | None = None,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    if not settings.pay_notes_write_enabled:
+        raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    name = (acctname or "").strip()
+    if not acct or not note:
+        raise PayNoteWriteError("acctno and noteno required", code="validation")
+    if len(note) > 15:
+        raise PayNoteWriteError("NOTENO exceeds 15 chars", code="validation")
+
+    from src.pay_notes.parts9 import fetch_bills_for_note, note_exists
+
+    site = settings.site
+    eng = engine or _writer_engine(settings)
+    if note_exists(site, acct, note, engine=eng):
+        raise PayNoteWriteError("note already exists in KSS", code="duplicate_note")
+
+    bills = fetch_bills_for_note(site, acct, billnos, engine=eng)
+    if len(bills) != len(set(b.strip() for b in billnos if b.strip())):
+        raise PayNoteWriteError("one or more bills unavailable for note", code="bill_invalid")
+
+    jourmodes = {str(b.get("JOURMODE") or "1").strip() or "1" for b in bills}
+    if len(jourmodes) > 1:
+        raise PayNoteWriteError(
+            "mixed VAT/non-VAT bills — split note per JOURMODE",
+            code="mixed_jourmode",
+        )
+    jourmode = jourmodes.pop()
+    billamt = sum(float(b.get("AFTERTAX") or 0) for b in bills)
+    billcnt = len(bills)
+    notedate = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    try:
+        with eng.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO dbo.PVMAS (
+                      JOURMODE, JOURTYPE, NOTED, NOTEDATE, NOTENO,
+                      ACCTNO, ACCTNAME, BILLCNT, BILLAMT,
+                      DEPTNO, BOOKNO, VOUCED,
+                      POSTED1, POSTED2, DONE, CANCELED
+                    )
+                    OUTPUT INSERTED.ID
+                    VALUES (
+                      :jourmode, 'NP', 'Y', :notedate, :noteno,
+                      :acctno, :acctname, :billcnt, :billamt,
+                      '1', '1', 'N',
+                      'N', 'N', 'N', 'N'
+                    )
+                    """
+                ),
+                {
+                    "jourmode": jourmode,
+                    "notedate": notedate,
+                    "noteno": note,
+                    "acctno": acct,
+                    "acctname": name[:60],
+                    "billcnt": billcnt,
+                    "billamt": billamt,
+                },
+            )
+            for bill in bills:
+                bno = str(bill.get("BILLNO") or "").strip()
+                conn.execute(
+                    text(
+                        """
+                        UPDATE dbo.PIMAS
+                        SET NOTENO = :noteno, NOTEDATE = :notedate
+                        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                          AND LTRIM(RTRIM(BILLNO)) = :billno
+                          AND ISNULL(LTRIM(RTRIM(NOTENO)), '') = ''
+                          AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+                          AND ISNULL(PAID, 'N') = 'N'
+                        """
+                    ),
+                    {
+                        "noteno": note,
+                        "notedate": notedate,
+                        "acctno": acct,
+                        "billno": bno,
+                    },
+                )
+    except PayNoteWriteError:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "permission" in msg or "denied" in msg:
+            raise PayNoteWriteError("KSS writer permission denied", code="permission_denied") from exc
+        raise PayNoteWriteError(str(exc), code="write_failed") from exc
+
+    _ = operator
+    return {
+        "acctno": acct,
+        "noteno": note,
+        "billcnt": billcnt,
+        "billamt": billamt,
+        "notedate": notedate.date().isoformat(),
+        "jourmode": jourmode,
+    }
+
+
+def next_kcpn_voucno(conn, when: datetime | None = None) -> str:
+    """Allocate next KCPN{YYMM}-### from live PVMAS."""
+    when = when or datetime.now(_BKK)
+    # Thai Buddhist year often used in PARTS9 (2569 → 69)
+    yy = (when.year + 543) % 100
+    mm = when.month
+    stem = f"KCPN{yy:02d}{mm:02d}-"
+    row = conn.execute(
+        text("SELECT MAX(VOUCNO) AS max_no FROM dbo.PVMAS WHERE VOUCNO LIKE :pat"),
+        {"pat": stem + "%"},
+    ).mappings().first()
+    max_no = (row or {}).get("max_no") or ""
+    seq = 1
+    if max_no and "-" in str(max_no):
+        try:
+            seq = int(str(max_no).rsplit("-", 1)[-1]) + 1
+        except ValueError:
+            seq = 1
+    candidate = f"{stem}{seq:03d}"
+    if len(candidate) > 15:
+        raise PayNoteWriteError("generated VOUCNO exceeds 15 chars", code="voucno_overflow")
+    return candidate
+
+
+def create_voucher(
+    *,
+    settings: PayNotesSettings,
+    acctno: str,
+    noteno: str,
+    bpdet_lines: list[dict[str, Any]],
+    discount: float = 0.0,
+    operator: str | None = None,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    """Finance mark-paid: update PVMAS + stamp PIMAS + insert BPDET (operator key-in)."""
+    if not settings.pay_notes_write_enabled:
+        raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise PayNoteWriteError("acctno and noteno required", code="validation")
+    if not bpdet_lines:
+        raise PayNoteWriteError("at least one BPDET line required", code="validation")
+
+    eng = engine or _writer_engine(settings)
+    voucd = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
+    disc = float(discount or 0)
+
+    try:
+        with eng.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 ID, JOURMODE, BILLAMT, VOUCED, VOUCNO
+                    FROM dbo.PVMAS
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND NOTED = 'Y'
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            ).mappings().first()
+            if not header:
+                raise PayNoteWriteError("note not found in KSS", code="not_found")
+            if str(header.get("VOUCED") or "N").strip().upper() == "Y" or (header.get("VOUCNO") or "").strip():
+                raise PayNoteWriteError("note already vouchered", code="already_vouchered")
+
+            billamt = float(header.get("BILLAMT") or 0)
+            netamt = billamt - disc
+            if netamt < 0:
+                raise PayNoteWriteError("discount exceeds BILLAMT", code="validation")
+
+            voucno = next_kcpn_voucno(conn, voucd)
+            jourmode = str(header.get("JOURMODE") or "1").strip() or "1"
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.PVMAS
+                    SET VOUCED = 'Y',
+                        VOUCDATE = :voucd,
+                        VOUCNO = :voucno,
+                        JOURTYPE = 'CP',
+                        DISCOUNT = :discount,
+                        NETAMT = :netamt,
+                        PAYAMT = :netamt,
+                        CHKAMT = :netamt,
+                        PAID = 'Y'
+                    WHERE ID = :id
+                    """
+                ),
+                {
+                    "voucd": voucd,
+                    "voucno": voucno,
+                    "discount": disc if disc else None,
+                    "netamt": netamt,
+                    "id": header["ID"],
+                },
+            )
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.PIMAS
+                    SET VOUCNO2 = :voucno,
+                        VOUCDATE2 = :voucd,
+                        PAID = 'Y',
+                        PAYSTAT = '$'
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"voucno": voucno, "voucd": voucd, "acctno": acct, "noteno": note},
+            )
+
+            for line in bpdet_lines:
+                chkno = str(line.get("chkno") or "").strip()
+                if not chkno:
+                    raise PayNoteWriteError("BPDET CHKNO required", code="validation")
+                chkamt = float(line.get("chkamt") or 0)
+                if chkamt <= 0:
+                    raise PayNoteWriteError("BPDET CHKAMT must be > 0", code="validation")
+                bankname = str(line.get("bankname") or "").strip()[:60]
+                bank_gl = str(line.get("acctno") or "2101.7").strip()[:10]
+                paytype = int(line.get("paytype") or 2)
+                chkdate_raw = str(line.get("chkdate") or "").strip()
+                if chkdate_raw:
+                    chkdate = datetime.strptime(chkdate_raw[:10], "%Y-%m-%d")
+                else:
+                    chkdate = voucd
+
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO dbo.BPDET (
+                          JOURMODE, JOURTYPE, VOUCDATE, VOUCNO, ACCTNO, PAYTYPE,
+                          CHKNO, CHKDATE, CHKAMT, BANKNAME, STATUS, CANCELED, DONE
+                        )
+                        VALUES (
+                          :jourmode, 'CP', :voucd, :voucno, :bank_gl, :paytype,
+                          :chkno, :chkdate, :chkamt, :bankname, '=', 'N', 'N'
+                        )
+                        """
+                    ),
+                    {
+                        "jourmode": jourmode,
+                        "voucd": voucd,
+                        "voucno": voucno,
+                        "bank_gl": bank_gl,
+                        "paytype": paytype,
+                        "chkno": chkno[:15],
+                        "chkdate": chkdate,
+                        "chkamt": chkamt,
+                        "bankname": bankname or None,
+                    },
+                )
+    except PayNoteWriteError:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "permission" in msg or "denied" in msg:
+            raise PayNoteWriteError("KSS writer permission denied", code="permission_denied") from exc
+        raise PayNoteWriteError(str(exc), code="write_failed") from exc
+
+    _ = operator
+    return {
+        "acctno": acct,
+        "noteno": note,
+        "voucno": voucno,
+        "voucdate": voucd.date().isoformat(),
+        "billamt": billamt,
+        "discount": disc,
+        "netamt": netamt,
+        "bpdet_count": len(bpdet_lines),
+    }

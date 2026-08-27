@@ -1,0 +1,16 @@
+[Unit]
+Description=KCW pay notes LAN+Tailscale UI (:8791)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/kcw-api
+EnvironmentFile=%h/projects/kcw-api/.env
+Environment=TZ=Asia/Bangkok
+ExecStart=%h/projects/kcw-api/.venv/bin/python -m uvicorn app.pay_notes_app:app --host 0.0.0.0 --port 8791
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

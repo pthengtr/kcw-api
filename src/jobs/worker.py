@@ -22,6 +22,10 @@ from src.parts9_explorer.net import (
     resolve_explorer_public_base_url,
     resolve_explorer_tailscale_base_url,
 )
+from src.pay_notes.net import (
+    resolve_pay_notes_public_base_url,
+    resolve_pay_notes_tailscale_base_url,
+)
 
 
 load_dotenv()
@@ -66,6 +70,8 @@ def run_worker_forever():
                 tailscale_public_base_url = resolve_stock_check_tailscale_base_url()
                 companion_tailscale_base_url = resolve_companion_tailscale_base_url()
                 explorer_tailscale_base_url = resolve_explorer_tailscale_base_url()
+                pay_notes_public_base_url = resolve_pay_notes_public_base_url()
+                pay_notes_tailscale_base_url = resolve_pay_notes_tailscale_base_url()
                 upsert_worker_heartbeat(
                     engine=engine,
                     worker_name=worker_name,
@@ -76,6 +82,8 @@ def run_worker_forever():
                     tailscale_public_base_url=tailscale_public_base_url,
                     companion_tailscale_base_url=companion_tailscale_base_url,
                     explorer_tailscale_base_url=explorer_tailscale_base_url,
+                    pay_notes_public_base_url=pay_notes_public_base_url,
+                    pay_notes_tailscale_base_url=pay_notes_tailscale_base_url,
                     update_urls=True,
                 )
                 last_heartbeat_at = now_ts

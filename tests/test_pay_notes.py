@@ -1,0 +1,85 @@
+from src.handlers.pay_notes_entry import is_pay_notes_command
+from src.pay_notes.net import rewrite_base_port
+from src.pay_notes.ui import page
+from src.pay_notes.writer import PayNoteWriteError, create_pay_note
+from src.pay_notes.config import PayNotesSettings
+
+
+def test_pay_notes_commands():
+    assert is_pay_notes_command("โน้ตจ่าย")
+    assert is_pay_notes_command(" โน้ต ")
+    assert is_pay_notes_command("paynote")
+    assert not is_pay_notes_command("ค้นหา")
+
+
+def test_rewrite_explorer_port_to_pay_notes():
+    assert rewrite_base_port("http://100.113.143.97:8788", 8791) == "http://100.113.143.97:8791"
+    assert rewrite_base_port("", 8791) is None
+
+
+def test_pay_notes_page_renders():
+    html = page(user_name="ทดสอบ", site="HQ", write_enabled=False)
+    assert "โน้ตจ่าย" in html
+    assert "ทดสอบ" in html
+    assert "WRITE_ENABLED = false" in html
+
+
+def test_create_pay_note_write_disabled():
+    settings = PayNotesSettings(pay_notes_write_enabled=False)
+    try:
+        create_pay_note(
+            settings=settings,
+            acctno="7GP",
+            acctname="Test Vendor",
+            noteno="TEST-NOTE-001",
+            billnos=["B1"],
+        )
+        raised = False
+    except PayNoteWriteError as exc:
+        raised = True
+        assert exc.code == "write_disabled"
+    assert raised
+
+
+def test_noteno_max_length_validation_in_writer():
+    settings = PayNotesSettings(pay_notes_write_enabled=True, pos_mssql_writer_username="x")
+    try:
+        create_pay_note(
+            settings=settings,
+            acctno="7GP",
+            acctname="Test",
+            noteno="X" * 16,
+            billnos=["B1"],
+        )
+        raised = False
+    except PayNoteWriteError as exc:
+        raised = True
+        assert exc.code == "validation"
+    assert raised
+
+
+def test_create_voucher_write_disabled():
+    settings = PayNotesSettings(pay_notes_write_enabled=False)
+    try:
+        from src.pay_notes.writer import create_voucher
+
+        create_voucher(
+            settings=settings,
+            acctno="7GP",
+            noteno="TEST",
+            bpdet_lines=[{"chkno": "โอน", "chkamt": 100}],
+        )
+        raised = False
+    except PayNoteWriteError as exc:
+        raised = True
+        assert exc.code == "write_disabled"
+    assert raised
+
+
+def test_page_has_voucher_and_proof_tabs():
+    html = page(user_name="x", site="HQ", write_enabled=True)
+    assert "รอหลักฐาน" in html
+    assert "ทำจ่าย" in html
+    assert "WRITE_ENABLED = true" in html
+    assert "/vouchers" in html
+    assert "/awaiting-proof" in html
