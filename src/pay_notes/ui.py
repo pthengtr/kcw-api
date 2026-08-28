@@ -633,7 +633,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <button type="button" data-mode="assist" id="btnModeAssist">ช่วยอ่านเอกสาร</button>
       </div>
       <div class="wizard-nav hidden" id="wizardNav">
-        <span class="muted" id="wizardProgress">ขั้น 1/6</span>
+        <span class="muted" id="wizardProgress">ขั้น 1/5</span>
         <div style="display:flex;gap:.4rem">
           <button type="button" class="btn sm ghost" id="btnWizardBack">ย้อนกลับ</button>
           <button type="button" class="btn sm primary" id="btnWizardNext">ถัดไป</button>
@@ -659,13 +659,14 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <div class="step-num">2</div>
           <div class="step-body">
             <h3>สแกนเอกสารจากเจ้าหนี้</h3>
-            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement แล้วเลือกบิลในระบบให้ตรง</p>
+            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement · ไฟล์นี้จะเป็นเอกสารอ้างอิงและอัปโหลดอัตโนมัติเมื่อบันทึก</p>
             <div class="drop" id="dropScan" tabindex="0">
               <div style="font-size:1.4rem;margin-bottom:.25rem">📄</div>
               <div>คลิกหรือลากเอกสารมาวางที่นี่</div>
               <div class="date-hint">JPG, PNG, PDF (ไม่เกิน 10 MB)</div>
             </div>
             <input id="scanFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf"/>
+            <div class="thumbs" id="scanThumbs"></div>
             <div id="scanStatus" class="muted" style="margin-top:.45rem"></div>
             <button type="button" class="btn sm ghost hidden" id="btnScanSkip" style="margin-top:.45rem">ข้ามไปเลือกบิลเอง</button>
           </div>
@@ -1163,6 +1164,7 @@ const SITE = "__SITE__";
 const PAGE_SIZE = 10;
 const DUE_SOON_DAYS = 7;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ASSIST_MAX_STEP = 5;
 
 let picked = null;
 let uploadedPaths = [];
@@ -1186,6 +1188,7 @@ let detailPayload = null;
 let createMode = 'manual';
 let wizardStep = 1;
 let scanResult = null;
+let scanRefFile = null;
 let proofVerifyResult = null;
 let proofPendingComplete = false;
 let editTarget = null;
@@ -2098,6 +2101,8 @@ async function pickVendor(acctno, acctname) {
   uploadedPaths = [];
   $('billThumbs').innerHTML = '';
   scanResult = null;
+  scanRefFile = null;
+  if ($('scanThumbs')) $('scanThumbs').innerHTML = '';
   $('aiLineMatch')?.classList.add('hidden');
   $('billMatchAckWrap')?.classList.add('hidden');
   if ($('billMatchAck')) $('billMatchAck').checked = false;
@@ -2242,6 +2247,18 @@ function applyScanResult(result) {
   if ($('billMatchAck')) $('billMatchAck').checked = false;
 }
 
+function renderScanRefPreview(file) {
+  const box = $('scanThumbs');
+  if (!box) return;
+  if (!file) { box.innerHTML = ''; return; }
+  if (file.type && file.type.startsWith('image/')) {
+    const url = URL.createObjectURL(file);
+    box.innerHTML = `<img src="${url}" alt="เอกสารอ้างอิง"/>`;
+  } else {
+    box.innerHTML = `<span class="file-chip">${esc(file.name)}</span>`;
+  }
+}
+
 async function scanBillDocument(files) {
   if (!picked) { alert('เลือกเจ้าหนี้ก่อน'); return false; }
   const file = files && files[0];
@@ -2256,13 +2273,17 @@ async function scanBillDocument(files) {
     const r = await fetch('/pay-notes/api/ai/scan-bills', {method:'POST', body: fd});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
+    scanRefFile = file;
+    renderScanRefPreview(file);
     await loadBills();
     applyScanResult(j);
-    $('scanStatus').textContent = `อ่านได้ ${(j.lines||[]).length} รายการ · จับคู่ ${(j.auto_selected_billnos||[]).length} บิล`;
+    $('scanStatus').textContent = `อ่านได้ ${(j.lines||[]).length} รายการ · จับคู่ ${(j.auto_selected_billnos||[]).length} บิล · จะแนบเอกสารนี้เมื่อบันทึก`;
     if (createMode === 'assist') wizardStep = 3;
     applyCreateMode();
     return true;
   } catch (e) {
+    scanRefFile = null;
+    renderScanRefPreview(null);
     $('scanStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`;
     $('btnScanSkip').classList.remove('hidden');
     return false;
@@ -2276,6 +2297,7 @@ function applyCreateMode() {
   $('btnModeManual')?.classList.toggle('on', createMode === 'manual' || !AI_ENABLED);
   $('btnModeAssist')?.classList.toggle('on', assist);
   $('wizardScanBlock')?.classList.toggle('hidden', !assist);
+  $('wizardStepUpload')?.classList.toggle('hidden', assist);
   document.querySelectorAll('.wizard-block').forEach(el => {
     const n = Number(el.dataset.assistStep || 0);
     if (!assist) {
@@ -2284,10 +2306,10 @@ function applyCreateMode() {
       el.classList.toggle('wizard-hidden', n !== wizardStep);
     }
   });
-  $('btnCreateNote').classList.toggle('hidden', assist && wizardStep < 6);
-  $('wizardProgress').textContent = `ขั้น ${wizardStep}/6`;
+  $('btnCreateNote').classList.toggle('hidden', assist && wizardStep < ASSIST_MAX_STEP);
+  $('wizardProgress').textContent = `ขั้น ${wizardStep}/${ASSIST_MAX_STEP}`;
   $('btnWizardBack').classList.toggle('hidden', wizardStep <= 1);
-  $('btnWizardNext').classList.toggle('hidden', wizardStep >= 6);
+  $('btnWizardNext').classList.toggle('hidden', wizardStep >= ASSIST_MAX_STEP);
   updateWizardNextState();
   try { localStorage.setItem('kcw.pay_notes.create_mode', createMode); } catch (e) {}
 }
@@ -2314,11 +2336,14 @@ $('btnWizardBack').onclick = () => {
 };
 $('btnWizardNext').onclick = () => {
   if (wizardStep === 1 && !picked) { alert('เลือกเจ้าหนี้ก่อน'); return; }
-  if (wizardStep < 6) { wizardStep += 1; applyCreateMode(); }
+  if (wizardStep === 2 && !scanRefFile) { alert('สแกนเอกสารก่อน หรือกดข้ามไปเลือกบิลเอง'); return; }
+  if (wizardStep < ASSIST_MAX_STEP) { wizardStep += 1; applyCreateMode(); }
 };
 $('billMatchAck')?.addEventListener('change', updateWizardNextState);
 $('btnScanSkip').onclick = () => {
   scanResult = null;
+  scanRefFile = null;
+  renderScanRefPreview(null);
   $('aiLineMatch').classList.add('hidden');
   $('billMatchAckWrap').classList.add('hidden');
   wizardStep = 3;
@@ -2411,6 +2436,19 @@ async function uploadBillFiles(files) {
     appendUploadThumb($('billThumbs'), file, j);
   }
 }
+
+async function uploadScanRefBillImage(noteno) {
+  if (!scanRefFile || !picked || !noteno) return false;
+  const fd = new FormData();
+  fd.append('acctno', picked.acctno);
+  fd.append('noteno', noteno);
+  fd.append('file', scanRefFile, scanRefFile.name || 'scan.jpg');
+  const r = await fetch('/pay-notes/api/images/bill', {method:'POST', body: fd});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
+  uploadedPaths.push(j.path);
+  return true;
+}
 wireDropZone($('dropBill'), $('billImages'), uploadBillFiles);
 
 $('btnCreateNote').onclick = async () => {
@@ -2423,7 +2461,28 @@ $('btnCreateNote').onclick = async () => {
   if (!picked) { $('createMsg').innerHTML = '<p class="err">เลือกเจ้าหนี้</p>'; return; }
   if (!noteno || !due || !bank_id) { $('createMsg').innerHTML = '<p class="err">กรอกเลขใบวางบิล เลือกวันครบกำหนด และบัญชีธนาคาร</p>'; return; }
   if (!billnos.length) { $('createMsg').innerHTML = '<p class="err">เลือกบิลอย่างน้อย 1</p>'; return; }
-  if (!uploadedPaths.length) { $('createMsg').innerHTML = '<p class="err">อัปโหลดเอกสารอย่างน้อย 1</p>'; return; }
+  const assist = createMode === 'assist' && AI_ENABLED;
+  if (assist && !scanRefFile && !uploadedPaths.length) {
+    $('createMsg').innerHTML = '<p class="err">สแกนเอกสารอ้างอิงก่อนบันทึก หรือเปลี่ยนเป็นกรอกเอง</p>';
+    return;
+  }
+  if (!assist && !uploadedPaths.length) {
+    $('createMsg').innerHTML = '<p class="err">อัปโหลดเอกสารอย่างน้อย 1</p>';
+    return;
+  }
+  if (assist && scanRefFile && !uploadedPaths.length) {
+    $('createMsg').innerHTML = '<p class="muted">กำลังอัปโหลดเอกสารอ้างอิง…</p>';
+    try {
+      await uploadScanRefBillImage(noteno);
+    } catch (e) {
+      $('createMsg').innerHTML = `<p class="err">อัปโหลดเอกสารไม่สำเร็จ: ${esc(e.message)}</p>`;
+      return;
+    }
+  }
+  if (!uploadedPaths.length) {
+    $('createMsg').innerHTML = '<p class="err">อัปโหลดเอกสารอย่างน้อย 1</p>';
+    return;
+  }
   const { total } = selectedBillTotal();
   if (resolveDiscAmount(total) - total > 1e-9) {
     $('createMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
@@ -2443,6 +2502,8 @@ $('btnCreateNote').onclick = async () => {
     const netShow = Math.max(0, Number(res.billamt || total) - discShow);
     $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${esc(res.noteno)} · จ่าย ${fmtMoney(netShow)}</p>`;
     uploadedPaths = [];
+    scanRefFile = null;
+    renderScanRefPreview(null);
     $('billThumbs').innerHTML = '';
     $('discInput').value = '0.00';
     $('noteRemark').value = '';
