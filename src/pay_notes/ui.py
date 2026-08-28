@@ -92,11 +92,14 @@ h1 { margin:0; font-size:1.2rem; font-weight:700; letter-spacing:-.01em; }
   flex:0 0 auto;
 }
 html[data-theme="dark"] .avatar { background:#1e3a5f; color:#93c5fd; }
-.tabs { display:flex; gap:1.35rem; margin-top:.7rem; }
+.tabs { display:flex; gap:.85rem; margin-top:.7rem; overflow-x:auto; -webkit-overflow-scrolling:touch; scroll-snap-type:x proximity; scrollbar-width:none; }
+.tabs::-webkit-scrollbar { display:none; }
 .tabs button {
   appearance:none; background:none; border:0; border-bottom:2px solid transparent;
   color:var(--muted); padding:.45rem 0 .7rem; font-weight:500; font-size:.95rem;
+  flex:0 0 auto; scroll-snap-align:start; white-space:nowrap;
 }
+.tabs .t-short { display:none; }
 .tabs button.on { color:var(--acc); font-weight:600; border-bottom-color:var(--acc); }
 main { max-width:1120px; margin:0 auto; padding:1.1rem 1.15rem 2.5rem; }
 .panel { display:none; }
@@ -150,7 +153,8 @@ main { max-width:1120px; margin:0 auto; padding:1.1rem 1.15rem 2.5rem; }
 .kpi-today .mark { background:#fed7aa; color:var(--warn); }
 .kpi-soon { background:var(--soon-bg); border-color:transparent; }
 .kpi-soon .mark { background:#bbf7d0; color:var(--soon); }
-.table-wrap { overflow:auto; }
+.table-wrap { overflow:auto; -webkit-overflow-scrolling:touch; }
+.mob-cards { --card-pad:.65rem; }
 table { width:100%; border-collapse:collapse; min-width:40rem; }
 th, td { padding:.85rem .75rem; text-align:left; border-bottom:1px solid var(--line); font-size:.9rem; }
 th { font-size:.75rem; color:var(--muted); font-weight:600; letter-spacing:.02em; }
@@ -290,10 +294,95 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 .toggle { display:flex; align-items:center; gap:.35rem; font-size:.82rem; color:var(--muted); }
 @media (max-width: 900px) {
   .kpis, .grid-3, .disc-layout, .sum-box { grid-template-columns:1fr 1fr; }
+  header { padding:.75rem 1rem 0; }
+  main { padding:1rem .85rem 2rem; }
 }
 @media (max-width: 640px) {
+  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  header {
+    padding:.65rem .75rem 0;
+    padding-top:max(.65rem, env(safe-area-inset-top));
+  }
+  main {
+    padding:.75rem .65rem calc(1.5rem + env(safe-area-inset-bottom));
+  }
+  h1 { font-size:1.05rem; line-height:1.25; }
+  #pageCrumb {
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow:hidden; line-height:1.35; max-height:2.7em;
+  }
+  .tabs { gap:.35rem; margin-top:.55rem; padding-bottom:.15rem; }
+  .tabs button { font-size:.8rem; padding:.55rem .5rem .7rem; min-height:2.75rem; }
+  .tabs .t-full { display:none; }
+  .tabs .t-short { display:inline; }
+  .card { padding:.85rem; border-radius:.75rem; }
+  .toolbar { flex-direction:column; align-items:stretch; }
+  .toolbar .field, .toolbar .btn, .toolbar .grow, .combo.grow { width:100%; min-width:0; }
+  .toolbar .btn { justify-content:center; }
   .kpis, .grid-3, .grid-2, .disc-layout, .sum-box, .methods { grid-template-columns:1fr; }
-  table { min-width:32rem; }
+  .kpis { grid-template-columns:1fr 1fr; gap:.5rem; }
+  .kpi { padding:.7rem .75rem; }
+  .kpi b { font-size:.82rem; }
+  .kpi span { font-size:.7rem; }
+  .btn { min-height:2.75rem; }
+  .btn.sm { min-height:2.5rem; padding:.45rem .75rem; font-size:.84rem; }
+  .row-actions { flex-direction:column; align-items:stretch; width:100%; }
+  .row-actions .btn { width:100%; justify-content:center; }
+  .create-head { flex-direction:column; }
+  .create-head .btn { align-self:flex-start; }
+  .step { gap:.6rem; }
+  .seg { display:flex; width:100%; }
+  .seg button { flex:1; padding:.5rem .35rem; font-size:.78rem; min-height:2.5rem; }
+  .bill-head, .bill-foot { flex-direction:column; align-items:flex-start; }
+  .table-foot { flex-direction:column; align-items:stretch; gap:.5rem; }
+  .pager { justify-content:center; flex-wrap:wrap; }
+  .pager button { min-width:2.5rem; height:2.5rem; }
+  .dlg {
+    width:100%; max-width:none; margin:0;
+    max-height:100dvh; border-radius:1rem 1rem 0 0;
+    align-self:flex-end;
+  }
+  .dlg-foot { flex-direction:column-reverse; }
+  .dlg-foot .btn { width:100%; justify-content:center; }
+  .sum-box { grid-template-columns:1fr; }
+  .sec-title { flex-direction:column; align-items:flex-start; }
+  .field[style*="min-width"] { min-width:0 !important; width:100%; }
+  .mob-cards table { min-width:0; }
+  .mob-cards thead { display:none; }
+  .mob-cards tbody tr {
+    display:block; border:1px solid var(--line); border-radius:.75rem;
+    margin-bottom:.65rem; padding:var(--card-pad) .75rem; background:var(--inset);
+    box-shadow:var(--shadow);
+  }
+  .mob-cards tbody tr:last-child { margin-bottom:0; }
+  .mob-cards tbody td {
+    display:flex; justify-content:space-between; align-items:flex-start;
+    gap:.75rem; padding:.4rem 0; border:0; font-size:.88rem;
+  }
+  .mob-cards tbody td::before {
+    content:attr(data-label); color:var(--muted); font-size:.72rem;
+    font-weight:600; flex:0 0 38%; line-height:1.35;
+  }
+  .mob-cards tbody td[data-label=""]::before,
+  .mob-cards tbody td.td-actions::before { display:none; }
+  .mob-cards tbody td.td-actions {
+    display:block; padding-top:.55rem; margin-top:.35rem;
+    border-top:1px solid var(--line);
+  }
+  .mob-cards tbody td.num { text-align:right; }
+  .mob-cards tbody td.num .linkish { margin-left:auto; }
+  .mob-cards tbody td:has(input[type=checkbox]) {
+    justify-content:flex-start; align-items:center; gap:.65rem;
+  }
+  .mob-cards tbody td:has(input[type=checkbox])::before {
+    content:'เลือก'; display:block;
+  }
+  .mob-cards .empty, .mob-cards .err { display:block; padding:1rem; }
+  dialog.dlg { margin:auto 0 0; }
+}
+@media (max-width: 380px) {
+  .kpis { grid-template-columns:1fr; }
+  .tabs button { font-size:.75rem; padding:.5rem .4rem .65rem; }
 }
 </style>
 </head>
@@ -306,67 +395,23 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     </div>
     <button type="button" class="avatar" id="themeBtn" title="สลับธีม" aria-label="สลับธีม">__INITIALS__</button>
   </div>
-  <nav class="tabs">
-    <button type="button" id="tabNotes" class="on">ใบวางบิล</button>
-    <button type="button" id="tabPending">รอชำระ</button>
-    <button type="button" id="tabVouchers">ใบสำคัญจ่าย</button>
+  <nav class="tabs" aria-label="ขั้นตอนงาน">
+    <button type="button" id="tabCreate" class="on"><span class="t-full">1. สร้าง</span><span class="t-short">1. สร้าง</span></button>
+    <button type="button" id="tabPending"><span class="t-full">2. รอชำระ</span><span class="t-short">2. รอจ่าย</span></button>
+    <button type="button" id="tabAwaitProof"><span class="t-full">3. รอแนบหลักฐาน</span><span class="t-short">3. รอหลักฐาน</span></button>
+    <button type="button" id="tabVoucher"><span class="t-full">4. ใบสำคัญจ่าย</span><span class="t-short">4. สำคัญจ่าย</span></button>
+    <button type="button" id="tabByAp"><span class="t-full">รายการตามเจ้าหนี้</span><span class="t-short">ตาม AP</span></button>
   </nav>
 </header>
 <main>
-  <section id="panelNotes" class="panel on">
-    <div id="viewNotesList">
-      <div class="card toolbar">
-        <div class="field grow">
-          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
-          <input id="nfQ" placeholder="ค้นหาเลขที่ใบวางบิล / เจ้าหนี้ / เลขบิล" autocomplete="off"/>
-        </div>
-        <div class="field" style="min-width:9.5rem">
-          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16l-6 7v5l-4 2v-7L4 5z"/></svg></span>
-          <select id="nfStatus" aria-label="สถานะ">
-            <option value="">สถานะ</option>
-            <option value="pending">รอชำระ</option>
-            <option value="overdue">ค้างชำระ</option>
-            <option value="paid">จ่ายแล้ว</option>
-          </select>
-        </div>
-        <div class="field" style="min-width:10.5rem">
-          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
-          <input id="nfDue" class="date-ce" type="date" lang="en" inputmode="none" aria-label="กำหนดชำระ"/>
-        </div>
-        <button type="button" class="btn primary" id="btnOpenCreate">+ สร้างใบวางบิล</button>
-      </div>
-      <div class="card" style="padding:.35rem 0 0">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>เลขที่ใบวางบิล</th>
-                <th>เจ้าหนี้</th>
-                <th class="num">ยอด</th>
-                <th>กำหนดชำระ</th>
-                <th>สถานะ</th>
-              </tr>
-            </thead>
-            <tbody id="notesBody"></tbody>
-          </table>
-        </div>
-        <div id="notesEmpty" class="empty hidden">ยังไม่มีรายการ</div>
-        <div class="table-foot">
-          <div id="notesCount">แสดง 0 รายการ</div>
-          <div class="pager" id="notesPager"></div>
+  <section id="panelCreate" class="panel on">
+    <div class="card">
+      <div class="create-head">
+        <div>
+          <div class="crumb muted">ขั้นที่ 1 · สร้างใบวางบิล</div>
+          <h2>สร้างใบวางบิล · __SITE__</h2>
         </div>
       </div>
-    </div>
-
-    <div id="viewNotesCreate" class="hidden">
-      <div class="card">
-        <div class="create-head">
-          <div>
-            <div class="crumb">__USER__ · HQ only → ใบวางบิล → สร้างใบวางบิล</div>
-            <h2>สร้างใบวางบิล · __SITE__</h2>
-          </div>
-          <button type="button" class="btn ghost" id="btnCancelCreate">ยกเลิก</button>
-        </div>
 
         <div class="step">
           <div class="step-num">1</div>
@@ -430,7 +475,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
                 <button type="button" class="linkish" id="btnRefreshBills">รีเฟรช</button>
               </div>
             </div>
-            <div class="table-wrap" style="border:1px solid var(--line); border-radius:.55rem .55rem 0 0">
+            <div class="table-wrap mob-cards" style="border:1px solid var(--line); border-radius:.55rem .55rem 0 0">
               <table>
                 <thead>
                   <tr>
@@ -488,11 +533,80 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 
         <button type="button" class="btn primary block" id="btnCreateNote">บันทึกใบวางบิล</button>
         <div id="createMsg"></div>
+    </div>
+  </section>
+
+  <section id="panelEdit" class="panel hidden">
+    <div class="card">
+      <div class="create-head">
+        <div>
+          <div class="crumb muted" id="editCrumb">แก้ไขใบวางบิล</div>
+          <h2 id="editTitle">แก้ไขใบวางบิล</h2>
+        </div>
+        <button type="button" class="btn ghost" id="btnCancelEdit">ยกเลิก</button>
       </div>
+      <div class="grid-3" style="margin-bottom:.85rem">
+        <div><label class="lbl">เจ้าหนี้</label><input class="inp" id="editVendor" readonly/></div>
+        <div><label class="lbl">เลขที่ใบวางบิล</label><input class="inp" id="editNoteno" readonly/></div>
+        <div>
+          <label class="lbl" for="editDueDate">วันครบกำหนดชำระ</label>
+          <input class="inp date-ce" id="editDueDate" type="date" lang="en" inputmode="none"/>
+        </div>
+      </div>
+      <div class="grid-3" style="margin-bottom:.85rem">
+        <div>
+          <label class="lbl" for="editBankSelect">บัญชีธนาคารปลายทาง</label>
+          <select class="inp" id="editBankSelect"><option value="">— เลือกบัญชี —</option></select>
+        </div>
+        <div style="grid-column:span 2">
+          <label class="lbl" for="editNoteRemark">หมายเหตุ</label>
+          <textarea class="area" id="editNoteRemark" maxlength="500" style="min-height:2.6rem"></textarea>
+        </div>
+      </div>
+      <div class="bill-head">
+        <h3 style="margin:0">เลือกบิล</h3>
+        <button type="button" class="linkish" id="btnRefreshEditBills">รีเฟรช</button>
+      </div>
+      <div class="table-wrap mob-cards" style="border:1px solid var(--line); border-radius:.55rem .55rem 0 0;margin-bottom:0">
+        <table>
+          <thead><tr><th style="width:2.4rem"></th><th>เลขที่บิล</th><th>วันที่</th><th class="num">ยอด (บาท)</th></tr></thead>
+          <tbody id="editBillList"></tbody>
+        </table>
+      </div>
+      <div class="bill-foot" style="margin-bottom:.85rem">
+        <span id="editBillSelectStatus">เลือก 0 บิล</span>
+        <strong id="editBillSelectTotal">ยอดรวม 0.00 บาท</strong>
+      </div>
+      <div class="disc-layout" style="margin-bottom:.85rem">
+        <div>
+          <div class="seg" role="group">
+            <button type="button" class="on" id="editDiscModeAmount">จำนวนเงิน (บาท)</button>
+            <button type="button" id="editDiscModePercent">% จากยอดรวม</button>
+          </div>
+          <label class="lbl" id="editDiscInputLabel" for="editDiscInput" style="margin-top:.65rem">ส่วนลด (บาท)</label>
+          <input class="inp" id="editDiscInput" type="number" step="0.01" min="0" value="0.00"/>
+        </div>
+        <div class="disc-sum">
+          <div class="pay-line"><span>ยอดรวมก่อนส่วนลด</span><strong id="editDiscBillAmt">0.00</strong></div>
+          <div class="pay-line"><span>ส่วนลด</span><strong id="editDiscResolved">0.00</strong></div>
+          <div class="pay-line pay-net"><span>ยอดสุทธิ</span><strong id="editDiscNetAmt">0.00</strong></div>
+        </div>
+      </div>
+      <label class="lbl">เพิ่มเอกสารแนบ (optional)</label>
+      <div class="drop" id="dropEditBill" tabindex="0">
+        <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
+        <div>คลิกหรือลากไฟล์มาวางที่นี่</div>
+        <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB)</div>
+      </div>
+      <input id="editBillImages" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
+      <div class="thumbs" id="editBillThumbs"></div>
+      <button type="button" class="btn primary block" id="btnSaveEdit" style="margin-top:.85rem">บันทึกการแก้ไข</button>
+      <div id="editMsg"></div>
     </div>
   </section>
 
   <section id="panelPending" class="panel">
+    <p class="muted" style="margin:0 0 .65rem">ขั้นที่ 2 · รอบันทึกการจ่าย · แก้ไขบิล/ส่วนลดได้</p>
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
@@ -523,7 +637,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </button>
     </div>
     <div class="card" style="padding:.35rem 0 0">
-      <div class="table-wrap">
+      <div class="table-wrap mob-cards">
         <table>
           <thead>
             <tr>
@@ -540,13 +654,48 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div id="pendingEmpty" class="empty hidden">ยังไม่มีรายการรอชำระ</div>
       <div class="table-foot">
-        <div class="hint">ⓘ จ่ายแล้วจะย้ายไปในใบสำคัญจ่ายอัตโนมัติ</div>
+        <div class="hint">ⓘ บันทึกการจ่ายแล้วจะย้ายไปแท็บรอแนบหลักฐาน</div>
         <div class="pager" id="pendingPager"></div>
       </div>
     </div>
   </section>
 
-  <section id="panelVouchers" class="panel">
+  <section id="panelAwaitProof" class="panel">
+    <p class="muted" style="margin:0 0 .65rem">ขั้นที่ 3 · บันทึกการจ่ายแล้ว · รออัปโหลดหลักฐาน</p>
+    <div class="card toolbar">
+      <div class="field grow">
+        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
+        <input id="afQ" placeholder="ค้นหาเลขใบสำคัญจ่าย / เจ้าหนี้ / เลขใบวางบิล" autocomplete="off"/>
+      </div>
+      <button type="button" class="btn soft" id="btnRefreshAwaitProof">↻ รีเฟรช</button>
+    </div>
+    <div class="card" style="padding:.35rem 0 0">
+      <div class="table-wrap mob-cards">
+        <table>
+          <thead>
+            <tr>
+              <th>เลขใบสำคัญจ่าย</th>
+              <th>รหัสเจ้าหนี้</th>
+              <th>เลขใบวางบิล</th>
+              <th>วันที่จ่าย</th>
+              <th class="num">ยอดจ่าย</th>
+              <th>วิธีชำระ</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="awaitProofBody"></tbody>
+        </table>
+      </div>
+      <div id="awaitProofEmpty" class="empty hidden">ไม่มีรายการรอแนบหลักฐาน</div>
+      <div class="table-foot">
+        <div id="awaitProofCount">แสดง 0 รายการ</div>
+        <div class="pager" id="awaitProofPager"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="panelVoucher" class="panel">
+    <p class="muted" style="margin:0 0 .65rem">ขั้นที่ 4 · มีหลักฐานครบแล้ว · ดูรูปบิลและหลักฐานชำระ</p>
     <div class="card">
       <div class="sec-title">
         <h2>ใบสำคัญจ่าย</h2>
@@ -571,16 +720,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
             <option value="cash">เงินสด</option>
           </select>
         </div>
-        <div class="field" style="min-width:10.5rem">
-          <select id="vfProof" aria-label="สถานะหลักฐาน">
-            <option value="">สถานะหลักฐาน: ทั้งหมด</option>
-            <option value="awaiting">รอแนบหลักฐาน</option>
-            <option value="done">แนบแล้ว</option>
-          </select>
-        </div>
         <button type="button" class="btn ghost" id="btnClearVoucherFilters">↻ ล้างตัวกรอง</button>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap mob-cards">
         <table>
           <thead>
             <tr>
@@ -590,7 +732,6 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>วันที่จ่าย</th>
               <th class="num">ยอดจ่าย (บาท)</th>
               <th>วิธีชำระ</th>
-              <th>สถานะหลักฐาน</th>
               <th></th>
             </tr>
           </thead>
@@ -610,6 +751,42 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           </label>
           <div class="pager" id="voucherPager"></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="panelByAp" class="panel">
+    <div class="card toolbar">
+      <div class="combo grow">
+        <div class="field">
+          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
+          <input id="byApVendorQ" placeholder="ค้นหาเจ้าหนี้ (รหัส / ชื่อ)" autocomplete="off"/>
+        </div>
+        <div id="byApVendorResults" class="combo-list hidden"></div>
+      </div>
+      <button type="button" class="btn soft" id="btnRefreshByAp">↻ รีเฟรช</button>
+    </div>
+    <div id="byApPicked" class="picked hidden" style="margin-bottom:.65rem"></div>
+    <div class="card" style="padding:.35rem 0 0">
+      <div class="table-wrap mob-cards">
+        <table>
+          <thead>
+            <tr>
+              <th>เลขใบวางบิล</th>
+              <th>เลขใบสำคัญจ่าย</th>
+              <th class="num">ยอดสุทธิ</th>
+              <th>กำหนดชำระ</th>
+              <th>สถานะ</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="byApBody"></tbody>
+        </table>
+      </div>
+      <div id="byApEmpty" class="empty hidden">เลือกเจ้าหนี้เพื่อดูรายการ</div>
+      <div class="table-foot">
+        <div id="byApCount">แสดง 0 รายการ</div>
+        <div class="pager" id="byApPager"></div>
       </div>
     </div>
   </section>
@@ -692,7 +869,12 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <div class="thumbs" id="detProofThumbs"></div>
       <div id="detUploadWrap" class="hidden" style="margin-top:.55rem">
         <label class="lbl">อัปโหลดหลักฐาน</label>
-        <input class="inp" id="detProofFiles" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
+        <div class="drop" id="dropProof" tabindex="0">
+          <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
+          <div>คลิกหรือลากไฟล์มาวางที่นี่</div>
+          <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB)</div>
+        </div>
+        <input id="detProofFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
       </div>
     </div>
   </div>
@@ -714,16 +896,22 @@ let picked = null;
 let uploadedPaths = [];
 let payTarget = null;
 let discMode = 'amount';
+let editDiscMode = 'amount';
 let settleMethod = 'transfer';
 let pendingRows = [];
+let awaitProofRows = [];
 let voucherRows = [];
-let notesPage = 1;
+let byApRows = [];
+let byApVendor = null;
 let pendingPage = 1;
+let awaitProofPage = 1;
 let voucherPage = 1;
+let byApPage = 1;
 let voucherPageSize = 10;
 let pendingBucket = 'all';
-let notesView = 'list';
 let detailRow = null;
+let editTarget = null;
+let editReturnTab = 'pending';
 
 function $(id) { return document.getElementById(id); }
 function esc(s) {
@@ -752,12 +940,11 @@ function addDaysISO(iso, days) {
 }
 function remDue(r) { return String(((r.reminder || {}).due_date) || '').slice(0, 10); }
 function netAmt(r) {
-  const bill = Number(r.NETAMT != null ? r.NETAMT : r.BILLAMT || 0);
-  if (r.stage === 'pending' || !r.voucno) {
-    const disc = Number((r.reminder || {}).discount_amount || 0);
-    return Math.max(0, Number(r.BILLAMT || 0) - disc);
+  if (r.stage === 'voucher' || r.stage === 'await_proof' || r.voucno) {
+    return Number(r.NETAMT != null ? r.NETAMT : r.BILLAMT || 0);
   }
-  return Number(r.NETAMT != null ? r.NETAMT : bill);
+  const disc = Number((r.reminder || {}).discount_amount || 0);
+  return Math.max(0, Number(r.BILLAMT || 0) - disc);
 }
 function dueBucket(due) {
   const today = todayISO();
@@ -767,9 +954,12 @@ function dueBucket(due) {
   if (due <= addDaysISO(today, DUE_SOON_DAYS)) return 'soon';
   return 'later';
 }
-function noteStatus(r) {
-  if (r.voucno || r.stage === 'paid' || r.stage === 'await_proof' || r.has_proof) return 'paid';
-  return dueBucket(remDue(r)) === 'overdue' ? 'overdue' : 'pending';
+function workflowBadge(r) {
+  const st = r.workflow_status || '—';
+  if (r.stage === 'await_proof') return `<span class="badge b-wait">${esc(st)}</span>`;
+  if (r.stage === 'voucher') return `<span class="badge b-done">${esc(st)}</span>`;
+  const ps = pendingStatus(r);
+  return `<span class="badge ${ps.cls}">${esc(st || ps.label)}</span>`;
 }
 function pendingStatus(r) {
   const b = dueBucket(remDue(r));
@@ -822,46 +1012,51 @@ $('themeBtn').onclick = () => {
 applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
 
 function setCrumb(tab, extra) {
-  const base = `${USER_NAME} · HQ only`;
-  if (extra) { $('pageCrumb').textContent = `${base} → ใบวางบิล → ${extra}`; return; }
-  if (tab === 'pending') { $('pageCrumb').textContent = `${base} → ใบวางบิล → รอชำระ`; return; }
-  if (tab === 'vouchers') { $('pageCrumb').textContent = `${base} → ใบวางบิล → รอชำระ → ใบสำคัญจ่าย`; return; }
-  $('pageCrumb').textContent = base;
+  const flow = 'สร้าง → รอชำระ → รอแนบหลักฐาน → ใบสำคัญจ่าย';
+  const base = `${USER_NAME} · HQ only · ${flow}`;
+  const labels = {
+    create: 'สร้างใบวางบิล',
+    pending: 'รอชำระ',
+    awaitproof: 'รอแนบหลักฐาน',
+    voucher: 'ใบสำคัญจ่าย',
+    byap: 'รายการตามเจ้าหนี้',
+    edit: 'แก้ไขใบวางบิล',
+  };
+  $('pageCrumb').textContent = extra ? `${base} → ${extra}` : (labels[tab] ? `${base} → ${labels[tab]}` : base);
 }
 
-function showNotesView(view) {
-  notesView = view;
-  $('viewNotesList').classList.toggle('hidden', view !== 'list');
-  $('viewNotesCreate').classList.toggle('hidden', view !== 'create');
-  if (view === 'create') {
-    $('pageTitle').textContent = `สร้างใบวางบิล · ${SITE}`;
-    setCrumb('notes', 'สร้างใบวางบิล');
-    if (!$('dueDate').value) $('dueDate').value = todayISO();
-  } else {
-    $('pageTitle').textContent = `ชำระเจ้าหนี้ · ${SITE}`;
-    setCrumb('notes');
-  }
+function showEditPanel(on) {
+  document.querySelectorAll('main > .panel').forEach(p => p.classList.remove('on'));
+  $('panelEdit').classList.toggle('hidden', !on);
+  $('panelEdit').classList.toggle('on', on);
+  document.querySelectorAll('header .tabs button').forEach(b => b.classList.remove('on'));
 }
 
 function showTab(name) {
-  const map = {notes:'Notes', pending:'Pending', vouchers:'Vouchers'};
+  showEditPanel(false);
+  const map = {
+    create: 'Create', pending: 'Pending', awaitproof: 'AwaitProof',
+    voucher: 'Voucher', byap: 'ByAp',
+  };
   Object.keys(map).forEach(k => {
     $('tab' + map[k]).classList.toggle('on', name === k);
     $('panel' + map[k]).classList.toggle('on', name === k);
   });
-  if (name !== 'notes') showNotesView('list');
   $('pageTitle').textContent = `ชำระเจ้าหนี้ · ${SITE}`;
   setCrumb(name);
-  if (name === 'notes') loadNotes();
+  if (name === 'create' && !$('dueDate').value) $('dueDate').value = todayISO();
   if (name === 'pending') loadPending();
-  if (name === 'vouchers') loadVouchers();
-  try { history.replaceState(null, '', name === 'notes' ? '#' : '#' + name); } catch (e) {}
+  if (name === 'awaitproof') loadAwaitProof();
+  if (name === 'voucher') loadVouchers();
+  if (name === 'byap') loadByAp();
+  try { history.replaceState(null, '', name === 'create' ? '#' : '#' + name); } catch (e) {}
 }
-$('tabNotes').onclick = () => { showNotesView('list'); showTab('notes'); };
+$('tabCreate').onclick = () => showTab('create');
 $('tabPending').onclick = () => showTab('pending');
-$('tabVouchers').onclick = () => showTab('vouchers');
-$('btnOpenCreate').onclick = () => { showTab('notes'); showNotesView('create'); };
-$('btnCancelCreate').onclick = () => showNotesView('list');
+$('tabAwaitProof').onclick = () => showTab('awaitproof');
+$('tabVoucher').onclick = () => showTab('voucher');
+$('tabByAp').onclick = () => showTab('byap');
+$('btnCancelEdit').onclick = () => { editTarget = null; showTab(editReturnTab); };
 
 function pageItems(page, pages) {
   if (pages <= 1) return [1];
@@ -897,73 +1092,6 @@ function slicePage(rows, page, size) {
   const start = (p - 1) * size;
   return { rows: rows.slice(start, start + size), page: p, pages, start, end: Math.min(start + size, rows.length), total: rows.length };
 }
-
-async function loadNotes() {
-  if (notesView === 'create') return;
-  $('notesBody').innerHTML = `<tr><td colspan="5" class="empty">กำลังโหลด…</td></tr>`;
-  try {
-    const [p, v] = await Promise.all([api('/pending'), api('/vouchered?proof=all')]);
-    pendingRows = p || [];
-    voucherRows = v || [];
-    renderNotes();
-  } catch (e) {
-    $('notesBody').innerHTML = `<tr><td colspan="5" class="err">${esc(e.message)}</td></tr>`;
-  }
-}
-function allNoteRows() {
-  return [...pendingRows.map(r => ({...r, stage:'pending'})), ...voucherRows];
-}
-function filteredNotes() {
-  const q = ($('nfQ').value || '').trim().toLowerCase();
-  const st = $('nfStatus').value;
-  const due = ($('nfDue').value || '').trim();
-  let rows = allNoteRows().filter(r => {
-    const status = noteStatus(r);
-    if (st && status !== st) return false;
-    if (due && remDue(r) !== due) return false;
-    if (q) {
-      const hay = [r.acctno, r.acctname, r.noteno, r.voucno, remDue(r), (r.reminder||{}).remark]
-        .map(x => String(x||'').toLowerCase()).join(' ');
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
-  rows.sort((a, b) => String(remDue(b)).localeCompare(String(remDue(a))) || String(a.noteno).localeCompare(String(b.noteno)));
-  return rows;
-}
-function statusBadge(status) {
-  if (status === 'paid') return '<span class="badge b-paid">จ่ายแล้ว</span>';
-  if (status === 'overdue') return '<span class="badge b-overdue">ค้างชำระ</span>';
-  return '<span class="badge b-pending">รอชำระ</span>';
-}
-function renderNotes() {
-  const all = filteredNotes();
-  const pg = slicePage(all, notesPage, PAGE_SIZE);
-  notesPage = pg.page;
-  $('notesEmpty').classList.toggle('hidden', pg.total !== 0);
-  $('notesCount').textContent = pg.total
-    ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ`
-    : 'แสดง 0 รายการ';
-  $('notesBody').innerHTML = pg.rows.map(r => {
-    const vendor = `${esc(r.acctno || '')}${r.acctname ? ' - ' + esc(r.acctname) : ''}`;
-    return `<tr>
-      <td><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.noteno)}</button></td>
-      <td>${vendor}</td>
-      <td class="num">${fmtMoney(r.BILLAMT)}</td>
-      <td>${fmtDate(remDue(r), true)}</td>
-      <td>${statusBadge(noteStatus(r))}</td>
-    </tr>`;
-  }).join('');
-  renderPager($('notesPager'), pg.page, pg.pages, p => { notesPage = p; renderNotes(); });
-}
-['nfQ','nfStatus','nfDue'].forEach(id => {
-  const el = $(id);
-  el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', () => { notesPage = 1; renderNotes(); });
-});
-$('notesBody').addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-open]');
-  if (btn) openDetailByKey(btn.dataset.open);
-});
 
 async function loadPending() {
   $('pendingBody').innerHTML = `<tr><td colspan="6" class="empty">กำลังโหลด…</td></tr>`;
@@ -1019,12 +1147,13 @@ function renderPending() {
     const bank = ((r.reminder || {}).vendor_bank || {});
     const bankname = `${bank.bank_name || ''} ${bank.bank_account_name || ''} # ${bank.bank_account_number || ''}`.trim();
     return `<tr>
-      <td>${esc(r.acctno)}</td>
-      <td>${esc(r.noteno)}</td>
-      <td class="num">${fmtMoney(pendingNet(r))} บาท</td>
-      <td>${fmtDate(remDue(r))}</td>
-      <td><span class="badge ${st.cls}">${st.label}</span></td>
-      <td><div class="row-actions">
+      <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
+      <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+      <td class="num" data-label="ยอดที่ต้องจ่าย">${fmtMoney(pendingNet(r))} บาท</td>
+      <td data-label="กำหนดชำระ">${fmtDate(remDue(r))}</td>
+      <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
+      <td class="td-actions" data-label=""><div class="row-actions">
+        <button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
         <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
         <button type="button" class="btn sm primary"
           data-pay-acct="${esc(r.acctno)}" data-pay-note="${esc(r.noteno)}"
@@ -1044,6 +1173,8 @@ $('btnRefreshPending').onclick = loadPending;
   el.addEventListener(el.type === 'date' ? 'change' : 'input', () => { pendingPage = 1; renderPending(); });
 });
 $('pendingBody').addEventListener('click', (e) => {
+  const edit = e.target.closest('[data-edit]');
+  if (edit) { openEditNote(edit.dataset.edit, 'pending'); return; }
   const pay = e.target.closest('[data-pay-acct]');
   if (pay) {
     openPay(pay.dataset.payAcct, pay.dataset.payNote, pay.dataset.payAmt, pay.dataset.payDisc, pay.dataset.payBank || '');
@@ -1053,13 +1184,54 @@ $('pendingBody').addEventListener('click', (e) => {
   if (open) openDetailByKey(open.dataset.open, {canPay: true});
 });
 
-async function loadVouchers() {
-  $('voucherBody').innerHTML = `<tr><td colspan="8" class="empty">กำลังโหลด…</td></tr>`;
+async function loadAwaitProof() {
+  $('awaitProofBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
   try {
-    voucherRows = await api('/vouchered?proof=all');
+    awaitProofRows = await api('/vouchered?proof=awaiting');
+    renderAwaitProof();
+  } catch (e) {
+    $('awaitProofBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
+  }
+}
+function filteredAwaitProof() {
+  const q = ($('afQ').value || '').trim().toLowerCase();
+  return awaitProofRows.filter(r => {
+    if (!q) return true;
+    const hay = [r.acctno, r.acctname, r.noteno, r.voucno, voucDate(r)].map(x => String(x||'').toLowerCase()).join(' ');
+    return hay.includes(q);
+  });
+}
+function renderAwaitProof() {
+  const all = filteredAwaitProof();
+  const pg = slicePage(all, awaitProofPage, PAGE_SIZE);
+  awaitProofPage = pg.page;
+  $('awaitProofEmpty').classList.toggle('hidden', pg.total !== 0);
+  $('awaitProofCount').textContent = pg.total ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ` : 'แสดง 0 รายการ';
+  $('awaitProofBody').innerHTML = pg.rows.map(r => `<tr>
+    <td data-label="เลขใบสำคัญจ่าย"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
+    <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
+    <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+    <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
+    <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
+    <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
+    <td class="td-actions" data-label=""><button type="button" class="btn sm primary" data-open="${esc(keyOf(r))}" data-upload="1">แนบหลักฐาน</button></td>
+  </tr>`).join('');
+  renderPager($('awaitProofPager'), pg.page, pg.pages, p => { awaitProofPage = p; renderAwaitProof(); });
+}
+$('btnRefreshAwaitProof').onclick = loadAwaitProof;
+$('afQ').addEventListener('input', () => { awaitProofPage = 1; renderAwaitProof(); });
+$('awaitProofBody').addEventListener('click', (e) => {
+  const open = e.target.closest('[data-open]');
+  if (open) openDetailByKey(open.dataset.open, {awaitProof: true, canUpload: !!open.dataset.upload});
+});
+
+async function loadVouchers() {
+  $('voucherBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
+  try {
+    voucherRows = await api('/vouchered?proof=done');
     renderVouchers();
   } catch (e) {
-    $('voucherBody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`;
+    $('voucherBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function voucDate(r) { return String(r.VOUCDATE || '').slice(0, 10); }
@@ -1068,14 +1240,11 @@ function filteredVouchers() {
   const from = ($('vfFrom').value || '').trim();
   const to = ($('vfTo').value || '').trim();
   const method = $('vfMethod').value;
-  const proof = $('vfProof').value;
   let rows = voucherRows.filter(r => {
     const d = voucDate(r);
     if (from && (!d || d < from)) return false;
     if (to && (!d || d > to)) return false;
     if (method && (r.settle_method || '') !== method) return false;
-    if (proof === 'awaiting' && r.has_proof) return false;
-    if (proof === 'done' && !r.has_proof) return false;
     if (q) {
       const hay = [r.acctno, r.acctname, r.noteno, r.voucno, d].map(x => String(x||'').toLowerCase()).join(' ');
       if (!hay.includes(q)) return false;
@@ -1094,31 +1263,25 @@ function renderVouchers() {
   $('voucherCount').textContent = pg.total
     ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ`
     : 'แสดง 0 รายการ';
-  $('voucherBody').innerHTML = pg.rows.map(r => {
-    const proof = r.has_proof
-      ? '<span class="badge b-done">แนบแล้ว</span>'
-      : '<span class="badge b-wait">รอแนบหลักฐาน</span>';
-    return `<tr data-open="${esc(keyOf(r))}" style="cursor:pointer">
-      <td><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
-      <td>${esc(r.acctno)}</td>
-      <td>${esc(r.noteno)}</td>
-      <td>${fmtDate(voucDate(r))}</td>
-      <td class="num">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
-      <td>${esc(settleLabel(r.settle_method))}</td>
-      <td>${proof}</td>
-      <td style="text-align:right;color:var(--muted)">›</td>
-    </tr>`;
-  }).join('');
+  $('voucherBody').innerHTML = pg.rows.map(r => `<tr data-open="${esc(keyOf(r))}" style="cursor:pointer">
+    <td data-label="เลขใบสำคัญจ่าย"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
+    <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
+    <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+    <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
+    <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
+    <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
+    <td class="td-actions" data-label="" style="text-align:right;color:var(--muted)">›</td>
+  </tr>`).join('');
   renderPager($('voucherPager'), pg.page, pg.pages, p => { voucherPage = p; renderVouchers(); });
 }
 function clearVoucherFilters() {
   $('vfQ').value = ''; $('vfFrom').value = ''; $('vfTo').value = '';
-  $('vfMethod').value = ''; $('vfProof').value = '';
+  $('vfMethod').value = '';
   voucherPage = 1; renderVouchers();
 }
 $('btnClearVoucherFilters').onclick = clearVoucherFilters;
 $('vfSize').onchange = () => { voucherPageSize = Number($('vfSize').value || 10); voucherPage = 1; renderVouchers(); };
-['vfQ','vfFrom','vfTo','vfMethod','vfProof'].forEach(id => {
+['vfQ','vfFrom','vfTo','vfMethod'].forEach(id => {
   const el = $(id);
   el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', () => { voucherPage = 1; renderVouchers(); });
 });
@@ -1127,8 +1290,84 @@ $('voucherBody').addEventListener('click', (e) => {
   if (open) openDetailByKey(open.dataset.open, {voucher: true});
 });
 
+async function loadByAp() {
+  if (!byApVendor) {
+    $('byApBody').innerHTML = '';
+    $('byApEmpty').classList.remove('hidden');
+    $('byApEmpty').textContent = 'เลือกเจ้าหนี้เพื่อดูรายการ';
+    $('byApCount').textContent = 'แสดง 0 รายการ';
+    $('byApPager').innerHTML = '';
+    return;
+  }
+  $('byApBody').innerHTML = `<tr><td colspan="6" class="empty">กำลังโหลด…</td></tr>`;
+  try {
+    byApRows = await api('/notes?acctno=' + encodeURIComponent(byApVendor.acctno));
+    renderByAp();
+  } catch (e) {
+    $('byApBody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`;
+  }
+}
+function renderByAp() {
+  const pg = slicePage(byApRows, byApPage, PAGE_SIZE);
+  byApPage = pg.page;
+  $('byApEmpty').classList.toggle('hidden', pg.total !== 0);
+  $('byApCount').textContent = pg.total ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ` : 'แสดง 0 รายการ';
+  $('byApBody').innerHTML = pg.rows.map(r => {
+    const actions = r.is_editable
+      ? `<button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
+         <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`
+      : `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`;
+    return `<tr>
+      <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+      <td data-label="เลขใบสำคัญจ่าย">${esc(r.voucno || '—')}</td>
+      <td class="num" data-label="ยอดสุทธิ">${fmtMoney(netAmt(r))}</td>
+      <td data-label="กำหนดชำระ">${fmtDate(remDue(r), true)}</td>
+      <td data-label="สถานะ">${workflowBadge(r)}</td>
+      <td class="td-actions" data-label=""><div class="row-actions">${actions}</div></td>
+    </tr>`;
+  }).join('');
+  renderPager($('byApPager'), pg.page, pg.pages, p => { byApPage = p; renderByAp(); });
+}
+$('btnRefreshByAp').onclick = loadByAp;
+$('byApBody').addEventListener('click', (e) => {
+  const edit = e.target.closest('[data-edit]');
+  if (edit) { openEditNote(edit.dataset.edit, 'byap'); return; }
+  const open = e.target.closest('[data-open]');
+  if (open) openDetailByKey(open.dataset.open);
+});
+
+let byApVendorTimer = null;
+async function searchByApVendors() {
+  const q = $('byApVendorQ').value.trim();
+  if (!q) { $('byApVendorResults').classList.add('hidden'); return; }
+  $('byApVendorResults').classList.remove('hidden');
+  $('byApVendorResults').innerHTML = '<div class="muted" style="padding:.6rem">กำลังค้นหา…</div>';
+  try {
+    const rows = await api('/vendors?q=' + encodeURIComponent(q));
+    $('byApVendorResults').innerHTML = rows.map(v =>
+      `<button type="button" data-acct="${esc(v.acctno)}" data-name="${esc(v.acctname)}">${esc(v.acctno)} — ${esc(v.acctname)}</button>`
+    ).join('') || '<div class="muted" style="padding:.6rem">ไม่พบ</div>';
+    $('byApVendorResults').querySelectorAll('button[data-acct]').forEach(b => {
+      b.onclick = () => pickByApVendor(b.dataset.acct, b.dataset.name);
+    });
+  } catch (e) { $('byApVendorResults').innerHTML = `<div class="err" style="padding:.6rem">${esc(e.message)}</div>`; }
+}
+function pickByApVendor(acctno, acctname) {
+  byApVendor = {acctno, acctname};
+  $('byApPicked').textContent = `${acctno} — ${acctname}`;
+  $('byApPicked').classList.remove('hidden');
+  $('byApVendorResults').classList.add('hidden');
+  byApPage = 1;
+  loadByAp();
+}
+$('byApVendorQ').addEventListener('input', () => {
+  clearTimeout(byApVendorTimer);
+  byApVendorTimer = setTimeout(searchByApVendors, 280);
+});
+
 function findRow(key) {
-  return allNoteRows().find(r => keyOf(r) === key);
+  const all = [...pendingRows, ...awaitProofRows, ...voucherRows, ...byApRows];
+  return all.find(r => keyOf(r) === key);
 }
 function thumbsHtml(images) {
   const list = (images || []).filter(x => x && (x.url || x.path));
@@ -1150,15 +1389,17 @@ async function openDetailByKey(key, opts) {
   $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${row.noteno}`;
   const remark = String(rem.remark || '').trim();
   $('detRemark').innerHTML = remark ? `<div class="remark">${esc(remark)}</div>` : '';
-  const canEditDue = !row.voucno && row.stage !== 'paid' && row.stage !== 'await_proof';
-  $('detDueWrap').classList.toggle('hidden', !canEditDue && !remDue(row));
+  const canEditDue = row.is_editable === true;
+  $('detDueWrap').classList.toggle('hidden', !remDue(row));
   $('detDueView').textContent = remDue(row) || '—';
-  $('detDueInput').value = remDue(row);
-  $('detDueInput').dataset.orig = remDue(row);
-  setDueEdit(false);
+  $('detDueEdit').classList.add('hidden');
+  $('detDueInput').classList.add('hidden');
+  $('detDueSave').classList.add('hidden');
+  $('detDueCancel').classList.add('hidden');
   $('detPayBtn').classList.toggle('hidden', !(opts.canPay && canEditDue && WRITE_ENABLED));
   $('detProofWrap').classList.toggle('hidden', !row.voucno);
-  $('detUploadWrap').classList.toggle('hidden', !(row.voucno && !row.has_proof));
+  const canUpload = opts.canUpload || (row.voucno && !row.has_proof && row.stage === 'await_proof');
+  $('detUploadWrap').classList.toggle('hidden', !canUpload);
   $('detBillThumbs').innerHTML = 'กำลังโหลด…';
   $('detProofThumbs').innerHTML = thumbsHtml(row.payment_images || []);
   $('dlgDetail').showModal();
@@ -1170,38 +1411,6 @@ async function openDetailByKey(key, opts) {
     $('detBillThumbs').innerHTML = `<p class="err">${esc(e.message)}</p>`;
   }
 }
-function setDueEdit(on) {
-  $('detDueView').classList.toggle('hidden', on);
-  $('detDueEdit').classList.toggle('hidden', on);
-  $('detDueInput').classList.toggle('hidden', !on);
-  $('detDueSave').classList.toggle('hidden', !on);
-  $('detDueCancel').classList.toggle('hidden', !on);
-  if (on) {
-    $('detDueInput').value = $('detDueInput').dataset.orig || '';
-    try { $('detDueInput').focus(); } catch (_) {}
-  }
-}
-$('detDueEdit').onclick = () => setDueEdit(true);
-$('detDueCancel').onclick = () => setDueEdit(false);
-$('detDueSave').onclick = async () => {
-  if (!detailRow) return;
-  const next = ($('detDueInput').value || '').trim();
-  if (!next) { alert('เลือกวันครบกำหนด'); return; }
-  try {
-    await api(`/reminder/${encodeURIComponent(detailRow.acctno)}/${encodeURIComponent(detailRow.noteno)}`, {
-      method: 'PATCH', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({due_date: next})
-    });
-    if (detailRow.reminder) detailRow.reminder.due_date = next;
-    const row = pendingRows.find(x => keyOf(x) === keyOf(detailRow));
-    if (row && row.reminder) row.reminder.due_date = next;
-    $('detDueInput').dataset.orig = next;
-    $('detDueView').textContent = next;
-    setDueEdit(false);
-    renderPending();
-    renderNotes();
-  } catch (e) { alert(e.message); }
-};
 $('detPayBtn').onclick = () => {
   if (!detailRow) return;
   const bank = (detailRow.reminder || {}).vendor_bank || {};
@@ -1212,12 +1421,34 @@ $('detPayBtn').onclick = () => {
     `${bank.bank_name || ''} ${bank.bank_account_name || ''} # ${bank.bank_account_number || ''}`
   );
 };
-$('btnCloseDetail').onclick = () => $('dlgDetail').close();
-$('btnCloseDetail2').onclick = () => $('dlgDetail').close();
-$('detProofFiles').onchange = async (ev) => {
+function appendUploadThumb(container, file, j) {
+  if (j.url && !/\.pdf$/i.test(file.name)) {
+    container.innerHTML += `<img src="${esc(j.url)}" alt=""/>`;
+  } else {
+    container.innerHTML += `<span class="file-chip">${esc(file.name)}</span>`;
+  }
+}
+function wireDropZone(dropEl, inputEl, onFiles) {
+  if (!dropEl || !inputEl) return;
+  dropEl.onclick = () => inputEl.click();
+  dropEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputEl.click(); }
+  });
+  dropEl.addEventListener('dragover', (e) => { e.preventDefault(); dropEl.classList.add('drag'); });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+  dropEl.addEventListener('drop', async (e) => {
+    e.preventDefault(); dropEl.classList.remove('drag');
+    await onFiles(e.dataTransfer.files);
+  });
+  inputEl.onchange = async (ev) => {
+    await onFiles(ev.target.files);
+    ev.target.value = '';
+  };
+}
+async function uploadProofFiles(files) {
   if (!detailRow || !detailRow.voucno) return;
-  for (const file of ev.target.files) {
-    if (file.size > MAX_FILE_BYTES) { alert('ไฟล์เกิน 10 MB'); continue; }
+  for (const file of files) {
+    if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); continue; }
     const fd = new FormData();
     fd.append('voucno', detailRow.voucno);
     fd.append('file', file);
@@ -1225,11 +1456,21 @@ $('detProofFiles').onchange = async (ev) => {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { alert(j.detail || j.error); return; }
   }
-  ev.target.value = '';
+  await loadAwaitProof();
   await loadVouchers();
-  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow));
-  if (fresh) openDetailByKey(keyOf(fresh), {voucher: true});
-};
+  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow));
+  if (fresh && fresh.has_proof) {
+    $('dlgDetail').close();
+    showTab('voucher');
+    openDetailByKey(keyOf(fresh), {voucher: true});
+  } else if (fresh) {
+    openDetailByKey(keyOf(fresh), {awaitProof: true, canUpload: true});
+  }
+}
+$('btnCloseDetail').onclick = () => $('dlgDetail').close();
+$('btnCloseDetail2').onclick = () => $('dlgDetail').close();
+wireDropZone($('dropProof'), $('detProofFiles'), uploadProofFiles);
+
 
 function setSettleMethod(method) {
   settleMethod = method === 'cheque' ? 'cheque' : (method === 'cash' ? 'cash' : 'transfer');
@@ -1298,7 +1539,7 @@ $('btnConfirmPay').onclick = async () => {
       })
     });
     $('payMsg').innerHTML = `<p class="ok">บันทึกแล้ว · ${esc(res.voucno)}</p>`;
-    setTimeout(() => { $('dlgPay').close(); showTab('vouchers'); }, 700);
+    setTimeout(() => { $('dlgPay').close(); showTab('awaitproof'); }, 700);
   } catch (e) { $('payMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 };
 
@@ -1326,7 +1567,10 @@ $('vendorQ').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); searchVendors(); }
 });
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.combo')) $('vendorResults').classList.add('hidden');
+  if (!e.target.closest('.combo')) {
+    $('vendorResults').classList.add('hidden');
+    $('byApVendorResults').classList.add('hidden');
+  }
 });
 
 async function pickVendor(acctno, acctname) {
@@ -1361,10 +1605,10 @@ async function loadBills() {
     const rows = await api('/bills?acctno=' + encodeURIComponent(picked.acctno));
     $('billList').innerHTML = rows.map(b =>
       `<tr>
-        <td><input type="checkbox" value="${esc(b.BILLNO)}" data-amt="${Number(b.AFTERTAX)||0}"/></td>
-        <td>${esc(b.BILLNO)}</td>
-        <td>${fmtDate(b.BILLDATE)}</td>
-        <td class="num">${fmtMoney(b.AFTERTAX)}</td>
+        <td data-label=""><input type="checkbox" value="${esc(b.BILLNO)}" data-amt="${Number(b.AFTERTAX)||0}" aria-label="เลือกบิล ${esc(b.BILLNO)}"/></td>
+        <td data-label="เลขที่บิล">${esc(b.BILLNO)}</td>
+        <td data-label="วันที่">${fmtDate(b.BILLDATE)}</td>
+        <td class="num" data-label="ยอด (บาท)">${fmtMoney(b.AFTERTAX)}</td>
       </tr>`
     ).join('') || `<tr><td colspan="4" class="empty">ไม่มีบิลว่าง (บิลที่ผูกโน้ตแล้วจะไม่แสดง)</td></tr>`;
     $('billList').querySelectorAll('input[type=checkbox]').forEach(cb => {
@@ -1439,25 +1683,10 @@ async function uploadBillFiles(files) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { alert(j.detail || j.error); continue; }
     uploadedPaths.push(j.path);
-    if (j.url && !/\.pdf$/i.test(file.name)) {
-      $('billThumbs').innerHTML += `<img src="${esc(j.url)}" alt=""/>`;
-    } else {
-      $('billThumbs').innerHTML += `<span class="file-chip">${esc(file.name)}</span>`;
-    }
+    appendUploadThumb($('billThumbs'), file, j);
   }
 }
-$('billImages').onchange = async (ev) => {
-  await uploadBillFiles(ev.target.files);
-  ev.target.value = '';
-};
-const drop = $('dropBill');
-drop.onclick = () => $('billImages').click();
-drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
-drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
-drop.addEventListener('drop', async (e) => {
-  e.preventDefault(); drop.classList.remove('drag');
-  await uploadBillFiles(e.dataTransfer.files);
-});
+wireDropZone($('dropBill'), $('billImages'), uploadBillFiles);
 
 $('btnCreateNote').onclick = async () => {
   const noteno = $('noteno').value.trim();
@@ -1494,11 +1723,129 @@ $('btnCreateNote').onclick = async () => {
     $('noteRemark').value = '';
     setDiscMode('amount');
     await loadBills();
-    setTimeout(() => { showNotesView('list'); showTab('pending'); }, 600);
+    setTimeout(() => { showTab('pending'); }, 600);
   } catch (e) {
     $('createMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
     await loadBills();
   }
+};
+
+async function openEditNote(key, returnTab) {
+  const row = findRow(key) || pendingRows.find(r => keyOf(r) === key);
+  if (!row || !row.is_editable) { alert('ใบวางบิลนี้แก้ไขไม่ได้'); return; }
+  editTarget = row;
+  editReturnTab = returnTab || 'pending';
+  showEditPanel(true);
+  setCrumb('edit', `${row.noteno} · ${row.acctno}`);
+  $('editTitle').textContent = `แก้ไขใบวางบิล ${row.noteno}`;
+  $('editVendor').value = `${row.acctno} — ${row.acctname || ''}`;
+  $('editNoteno').value = row.noteno;
+  const rem = row.reminder || {};
+  $('editDueDate').value = remDue(row);
+  $('editNoteRemark').value = rem.remark || '';
+  editDiscMode = rem.discount_mode === 'percent' ? 'percent' : 'amount';
+  $('editDiscInput').value = rem.discount_input != null ? rem.discount_input : (rem.discount_amount || 0);
+  setEditDiscMode(editDiscMode);
+  $('editMsg').innerHTML = '';
+  $('editBillThumbs').innerHTML = '';
+  const banks = await api('/banks?acctno=' + encodeURIComponent(row.acctno));
+  $('editBankSelect').innerHTML = banks.map(b =>
+    `<option value="${esc(b.bank_id)}">${esc(b.bank_name)} · ${esc(b.bank_account_number)}</option>`
+  ).join('');
+  if (rem.bank_id) $('editBankSelect').value = rem.bank_id;
+  await loadEditBills();
+  const det = await api(`/notes/${encodeURIComponent(row.acctno)}/${encodeURIComponent(row.noteno)}`);
+  $('editBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
+  wireDatePickers($('panelEdit'));
+}
+async function loadEditBills() {
+  if (!editTarget) return;
+  $('editBillList').innerHTML = `<tr><td colspan="4" class="empty">กำลังโหลด…</td></tr>`;
+  const rows = await api('/bills?acctno=' + encodeURIComponent(editTarget.acctno) + '&noteno=' + encodeURIComponent(editTarget.noteno));
+  $('editBillList').innerHTML = rows.map(b =>
+    `<tr>
+      <td data-label=""><input type="checkbox" value="${esc(b.BILLNO)}" data-amt="${Number(b.AFTERTAX)||0}" ${b.attached ? 'checked' : ''} aria-label="เลือกบิล ${esc(b.BILLNO)}"/></td>
+      <td data-label="เลขที่บิล">${esc(b.BILLNO)}</td>
+      <td data-label="วันที่">${fmtDate(b.BILLDATE)}</td>
+      <td class="num" data-label="ยอด (บาท)">${fmtMoney(b.AFTERTAX)}</td>
+    </tr>`
+  ).join('') || `<tr><td colspan="4" class="empty">ไม่มีบิล</td></tr>`;
+  $('editBillList').querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', updateEditBillSelectStatus));
+  updateEditBillSelectStatus();
+}
+function editSelectedBillTotal() {
+  const checked = [...$('editBillList').querySelectorAll('input[type=checkbox]:checked')];
+  return { n: checked.length, total: checked.reduce((s, cb) => s + (Number(cb.dataset.amt) || 0), 0) };
+}
+function resolveEditDiscAmount(bill) {
+  const raw = Math.max(0, Number($('editDiscInput').value || 0));
+  if (editDiscMode === 'percent') return Math.round(bill * Math.min(raw, 100) / 100 * 100) / 100;
+  return Math.round(raw * 100) / 100;
+}
+function syncEditDiscPreview() {
+  const { total } = editSelectedBillTotal();
+  const disc = resolveEditDiscAmount(total);
+  $('editDiscBillAmt').textContent = fmtMoney(total);
+  $('editDiscResolved').textContent = fmtMoney(disc);
+  $('editDiscNetAmt').textContent = fmtMoney(Math.max(0, total - disc));
+}
+function setEditDiscMode(mode) {
+  editDiscMode = mode === 'percent' ? 'percent' : 'amount';
+  $('editDiscModeAmount').classList.toggle('on', editDiscMode === 'amount');
+  $('editDiscModePercent').classList.toggle('on', editDiscMode === 'percent');
+  $('editDiscInputLabel').textContent = editDiscMode === 'percent' ? 'ส่วนลด (%)' : 'ส่วนลด (บาท)';
+  syncEditDiscPreview();
+}
+function updateEditBillSelectStatus() {
+  const { n, total } = editSelectedBillTotal();
+  $('editBillSelectStatus').textContent = `เลือก ${n} บิล`;
+  $('editBillSelectTotal').textContent = `ยอดรวม ${fmtMoney(total)} บาท`;
+  syncEditDiscPreview();
+}
+$('editDiscModeAmount').onclick = () => setEditDiscMode('amount');
+$('editDiscModePercent').onclick = () => setEditDiscMode('percent');
+$('editDiscInput').addEventListener('input', syncEditDiscPreview);
+$('btnRefreshEditBills').onclick = () => loadEditBills();
+async function uploadEditBillFiles(files) {
+  if (!editTarget) return;
+  for (const file of files) {
+    if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); continue; }
+    const fd = new FormData();
+    fd.append('acctno', editTarget.acctno);
+    fd.append('noteno', editTarget.noteno);
+    fd.append('file', file);
+    const r = await fetch('/pay-notes/api/images/bill', {method:'POST', body: fd});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(j.detail || j.error); continue; }
+    appendUploadThumb($('editBillThumbs'), file, j);
+  }
+}
+wireDropZone($('dropEditBill'), $('editBillImages'), uploadEditBillFiles);
+
+$('btnSaveEdit').onclick = async () => {
+  if (!editTarget || !WRITE_ENABLED) { $('editMsg').innerHTML = '<p class="err">KSS write ปิดอยู่</p>'; return; }
+  const billnos = [...$('editBillList').querySelectorAll('input:checked')].map(x => x.value);
+  if (!billnos.length) { $('editMsg').innerHTML = '<p class="err">เลือกบิลอย่างน้อย 1</p>'; return; }
+  const { total } = editSelectedBillTotal();
+  if (resolveEditDiscAmount(total) - total > 1e-9) {
+    $('editMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
+  }
+  try {
+    await api(`/notes/${encodeURIComponent(editTarget.acctno)}/${encodeURIComponent(editTarget.noteno)}`, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        billnos,
+        due_date: $('editDueDate').value,
+        bank_id: $('editBankSelect').value,
+        remark: ($('editNoteRemark').value || '').trim(),
+        discount_mode: editDiscMode,
+        discount_input: Number($('editDiscInput').value || 0),
+      })
+    });
+    $('editMsg').innerHTML = '<p class="ok">บันทึกแล้ว</p>';
+    editTarget = null;
+    setTimeout(() => showTab(editReturnTab), 500);
+  } catch (e) { $('editMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 };
 
 wireDatePickers(document);
@@ -1507,9 +1854,10 @@ $('billList').innerHTML = `<tr><td colspan="4" class="empty">เลือกเ�
 (function boot() {
   const h = (location.hash || '').replace('#','');
   if (h === 'pending') showTab('pending');
-  else if (h === 'vouchers' || h === 'awaitproof' || h === 'paid') showTab('vouchers');
-  else if (h === 'create') { showTab('notes'); showNotesView('create'); }
-  else showTab('notes');
+  else if (h === 'awaitproof') showTab('awaitproof');
+  else if (h === 'voucher' || h === 'vouchers') showTab('voucher');
+  else if (h === 'byap') showTab('byap');
+  else showTab('create');
 })();
 </script>
 </body>

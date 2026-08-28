@@ -6,13 +6,24 @@ LAN + Tailscale UI for AP payment notes on **HQ PARTS9 (`KSS`)**. Port **8791**,
 
 LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ่าย`, `paynote`).
 
-## Scope
+## Scope — workflow tabs
 
-| Tab | What you do | KSS / Supabase |
-|-----|-------------|----------------|
-| ใบวางบิล | List notes (รอชำระ / ค้างชำระ / จ่ายแล้ว) and **สร้างใบวางบิล** (step form) | `PVMAS` INSERT (`JOURTYPE=NP`) + `PIMAS` stamp `NOTENO`; bill images → Supabase; reminder with discount + optional remark |
-| รอชำระ | Unvouchered notes with due-date KPIs; record payment | reminder + unvouchered `PVMAS`; view bill images; record voucher |
-| ใบสำคัญจ่าย | Vouchered notes; filter by method / evidence; attach proof | vouchered `PVMAS`; payment images → Supabase (`รอแนบหลักฐาน` / `แนบแล้ว`) |
+| Tab | What you do | Editable? | KSS / Supabase |
+|-----|-------------|-----------|----------------|
+| 1. สร้าง | Create note (vendor, bills, discount, images) | yes (new) | `PVMAS` INSERT + `PIMAS` stamp; `pay_note.reminder` |
+| 2. รอชำระ | Pending payment board; edit note; record payment | **yes** (bills, discount, due, bank, remark) | unvouchered `PVMAS` + reminder |
+| 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `PVMAS`; `payment/{VOUCNO}/` images |
+| 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view bill + proof images | no | vouchered `PVMAS` with proof |
+| 5. รายการตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
+
+After proof upload on tab 3, the row moves to tab 4 automatically.
+
+### APIs
+
+- `GET /api/notes` — all service notes (optional `acctno` filter); includes `stage`, `workflow_status`, `is_editable`
+- `PATCH /api/notes/{acctno}/{noteno}` — edit pending note (bills, discount, reminder fields)
+- `GET /api/bills?acctno=&noteno=` — bills for edit UI (attached + pickable)
+- `GET /api/vouchered?proof=awaiting|done|all` — vouchered board (removed: `/api/awaiting-proof`, `/api/paid`)
 
 Write rules: [kcw-docs PVMAS/RVMAS dictionary §9](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md).
 

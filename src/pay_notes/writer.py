@@ -152,6 +152,160 @@ def create_pay_note(
     }
 
 
+def update_pay_note(
+    *,
+    settings: PayNotesSettings,
+    acctno: str,
+    noteno: str,
+    billnos: list[str],
+    operator: str | None = None,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    """Update bill membership on an unvouchered pay note."""
+    if not settings.pay_notes_write_enabled:
+        raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    from src.pay_notes.parts9 import fetch_bills_for_note, list_note_bills
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise PayNoteWriteError("acctno and noteno required", code="validation")
+
+    requested = [b.strip() for b in billnos if (b or "").strip()]
+    if not requested:
+        raise PayNoteWriteError("select at least one bill", code="validation")
+    if len(requested) != len(set(requested)):
+        raise PayNoteWriteError("duplicate bill numbers", code="validation")
+
+    site = settings.site
+    write_eng = engine or _writer_engine(settings)
+    billcnt = 0
+    billamt = 0.0
+    try:
+        with write_eng.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 ID, JOURMODE, VOUCED, VOUCNO, NOTEDATE
+                    FROM dbo.PVMAS
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND NOTED = 'Y'
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            ).mappings().first()
+            if not header:
+                raise PayNoteWriteError("note not found in KSS", code="not_found")
+            if str(header.get("VOUCED") or "N").strip().upper() == "Y" or (header.get("VOUCNO") or "").strip():
+                raise PayNoteWriteError("note already vouchered", code="not_editable")
+
+            current_rows = list_note_bills(site, acct, note, engine=write_eng)
+            current_nos = {str(b.get("BILLNO") or "").strip() for b in current_rows}
+            requested_set = set(requested)
+            to_remove = current_nos - requested_set
+            to_add = requested_set - current_nos
+
+            if to_add:
+                new_bills = fetch_bills_for_note(
+                    site, acct, sorted(to_add), engine=write_eng, noteno=note
+                )
+                if len(new_bills) != len(to_add):
+                    raise PayNoteWriteError("one or more bills unavailable for note", code="bill_invalid")
+            else:
+                new_bills = []
+
+            all_bills = fetch_bills_for_note(
+                site, acct, requested, engine=write_eng, noteno=note
+            )
+            if len(all_bills) != len(requested):
+                raise PayNoteWriteError("one or more bills unavailable for note", code="bill_invalid")
+
+            jourmodes = {str(b.get("JOURMODE") or "1").strip() or "1" for b in all_bills}
+            if len(jourmodes) > 1:
+                raise PayNoteWriteError(
+                    "mixed VAT/non-VAT bills — split note per JOURMODE",
+                    code="mixed_jourmode",
+                )
+
+            notedate = header.get("NOTEDATE")
+            if isinstance(notedate, datetime):
+                pass
+            elif notedate:
+                notedate = datetime.strptime(str(notedate)[:10], "%Y-%m-%d")
+            else:
+                notedate = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            for bno in to_remove:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE dbo.PIMAS
+                        SET NOTENO = '', NOTEDATE = NULL
+                        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                          AND LTRIM(RTRIM(BILLNO)) = :billno
+                          AND LTRIM(RTRIM(NOTENO)) = :noteno
+                          AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+                          AND ISNULL(PAID, 'N') = 'N'
+                        """
+                    ),
+                    {"acctno": acct, "billno": bno, "noteno": note},
+                )
+
+            for bill in new_bills:
+                bno = str(bill.get("BILLNO") or "").strip()
+                conn.execute(
+                    text(
+                        """
+                        UPDATE dbo.PIMAS
+                        SET NOTENO = :noteno, NOTEDATE = :notedate
+                        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                          AND LTRIM(RTRIM(BILLNO)) = :billno
+                          AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+                          AND ISNULL(PAID, 'N') = 'N'
+                          AND (
+                            ISNULL(LTRIM(RTRIM(NOTENO)), '') = ''
+                            OR LTRIM(RTRIM(NOTENO)) = :noteno
+                          )
+                        """
+                    ),
+                    {
+                        "noteno": note,
+                        "notedate": notedate,
+                        "acctno": acct,
+                        "billno": bno,
+                    },
+                )
+
+            billamt = sum(float(b.get("AFTERTAX") or 0) for b in all_bills)
+            billcnt = len(all_bills)
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.PVMAS
+                    SET BILLCNT = :billcnt, BILLAMT = :billamt
+                    WHERE ID = :id
+                      AND ISNULL(VOUCED, 'N') <> 'Y'
+                    """
+                ),
+                {"billcnt": billcnt, "billamt": billamt, "id": header["ID"]},
+            )
+    except PayNoteWriteError:
+        raise
+    except Exception as exc:
+        raise _map_write_exc(exc) from exc
+
+    _ = operator
+    return {
+        "acctno": acct,
+        "noteno": note,
+        "billcnt": billcnt,
+        "billamt": billamt,
+    }
+
+
 def cancel_unvouchered_pay_note(
     *,
     settings: PayNotesSettings,

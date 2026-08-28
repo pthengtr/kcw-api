@@ -84,14 +84,29 @@ def list_pickable_bills(site: str, acctno: str, *, limit: int = 200) -> list[dic
     return out
 
 
+def _format_bill_rows(rows) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        bd = item.get("BILLDATE")
+        if isinstance(bd, datetime):
+            item["BILLDATE"] = bd.date().isoformat()
+        elif isinstance(bd, date):
+            item["BILLDATE"] = bd.isoformat()
+        out.append(item)
+    return out
+
+
 def fetch_bills_for_note(
     site: str,
     acctno: str,
     billnos: list[str],
     *,
     engine: Engine | None = None,
+    noteno: str | None = None,
 ) -> list[dict[str, Any]]:
     acct = (acctno or "").strip()
+    note = (noteno or "").strip()
     nums = [b.strip() for b in billnos if (b or "").strip()]
     if not acct or not nums:
         return []
@@ -100,13 +115,21 @@ def fetch_bills_for_note(
     params: dict[str, Any] = {"acctno": acct}
     for i, b in enumerate(nums):
         params[f"b{i}"] = b
+    if note:
+        params["noteno"] = note
+        noteno_clause = (
+            "AND (ISNULL(LTRIM(RTRIM(NOTENO)), '') = ''"
+            " OR LTRIM(RTRIM(NOTENO)) = :noteno)"
+        )
+    else:
+        noteno_clause = "AND ISNULL(LTRIM(RTRIM(NOTENO)), '') = ''"
     sql = text(
         f"""
         SELECT {_BILL_COLS}, JOURMODE
         FROM dbo.PIMAS
         WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
           AND LTRIM(RTRIM(BILLNO)) IN ({placeholders})
-          AND ISNULL(LTRIM(RTRIM(NOTENO)), '') = ''
+          {noteno_clause}
           AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
           AND ISNULL(PAID, 'N') = 'N'
           AND ISNULL(CANCELED, 'N') <> 'Y'
@@ -115,6 +138,59 @@ def fetch_bills_for_note(
     with eng.connect() as conn:
         rows = conn.execute(sql, params).mappings().all()
     return [dict(r) for r in rows]
+
+
+def list_note_bills(
+    site: str,
+    acctno: str,
+    noteno: str,
+    *,
+    engine: Engine | None = None,
+) -> list[dict[str, Any]]:
+    """Bills currently stamped on a pay note."""
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return []
+    eng = engine or get_site_engine(_site_key(site))
+    sql = text(
+        f"""
+        SELECT {_BILL_COLS}, JOURMODE
+        FROM dbo.PIMAS
+        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+          AND LTRIM(RTRIM(NOTENO)) = :noteno
+          AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+          AND ISNULL(PAID, 'N') = 'N'
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        ORDER BY BILLDATE ASC
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, {"acctno": acct, "noteno": note}).mappings().all()
+    except Exception as exc:
+        raise RuntimeError(format_sql_error(exc, site=site)) from exc
+    return _format_bill_rows(rows)
+
+
+def list_bills_for_edit(site: str, acctno: str, noteno: str) -> list[dict[str, Any]]:
+    """Attached bills (attached=true) plus pickable unnoted bills for edit UI."""
+    attached = list_note_bills(site, acctno, noteno)
+    attached_nos = {str(b.get("BILLNO") or "").strip() for b in attached}
+    pickable = list_pickable_bills(site, acctno)
+    out: list[dict[str, Any]] = []
+    for bill in attached:
+        item = dict(bill)
+        item["attached"] = True
+        out.append(item)
+    for bill in pickable:
+        bno = str(bill.get("BILLNO") or "").strip()
+        if bno in attached_nos:
+            continue
+        item = dict(bill)
+        item["attached"] = False
+        out.append(item)
+    return out
 
 
 def note_exists(site: str, acctno: str, noteno: str, *, engine: Engine | None = None) -> bool:
