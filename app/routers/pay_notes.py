@@ -176,6 +176,7 @@ class NoteCreate(BaseModel):
     discount_mode: str = "amount"  # amount | percent
     discount_input: float = 0.0
     remark: str = ""
+    kbiz_datetime: str | None = None
 
 
 class NoteUpdate(BaseModel):
@@ -185,12 +186,14 @@ class NoteUpdate(BaseModel):
     remark: str | None = None
     discount_mode: str | None = None
     discount_input: float | None = None
+    kbiz_datetime: str | None = None
 
 
 class ReminderPatch(BaseModel):
     due_date: str | None = None
     bank_id: str | None = None
     remark: str | None = None
+    kbiz_datetime: str | None = None
 
 
 class VoucherCreate(BaseModel):
@@ -213,6 +216,24 @@ def _parse_due(raw: str) -> str:
     if "T" in text:
         text = text.split("T", 1)[0]
     return datetime.strptime(text[:10], "%Y-%m-%d").date().isoformat()
+
+
+def _parse_kbiz_datetime(raw: str | None) -> str | None:
+    """Optional KBIZ reminder as ISO timestamptz (Asia/Bangkok when no offset)."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if "T" in text:
+        normalized = text.replace("Z", "+00:00")
+        if len(normalized) == 16:
+            normalized = f"{normalized}:00"
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_BKK)
+        else:
+            dt = dt.astimezone(_BKK)
+        return dt.isoformat()
+    return datetime.strptime(text[:10], "%Y-%m-%d").replace(tzinfo=_BKK).isoformat()
 
 
 def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str, float, float]:
@@ -381,6 +402,8 @@ def api_reminder_patch(request: Request, acctno: str, noteno: str, body: Reminde
         patch["bank_id"] = body.bank_id
     if body.remark is not None:
         patch["remark"] = (body.remark or "").strip()[:500]
+    if body.kbiz_datetime is not None:
+        patch["kbiz_datetime"] = _parse_kbiz_datetime(body.kbiz_datetime)
     client = get_pay_notes_supabase_client()
     row = patch_reminder(client, acctno, noteno, patch)
     return row
@@ -490,21 +513,22 @@ def api_create_note(request: Request, body: NoteCreate):
 
     due = _parse_due(body.due_date)
     remark = (body.remark or "").strip()[:500]
+    kbiz_dt = _parse_kbiz_datetime(body.kbiz_datetime)
+    rem_row: dict[str, Any] = {
+        "acctno": acct,
+        "noteno": note,
+        "due_date": due,
+        "bank_id": body.bank_id,
+        "discount_mode": discount_mode,
+        "discount_input": discount_input,
+        "discount_amount": discount_amount,
+        "remark": remark,
+        "created_by": ident.line_user_id if ident else None,
+    }
+    if kbiz_dt:
+        rem_row["kbiz_datetime"] = kbiz_dt
     try:
-        rem = insert_reminder(
-            client,
-            {
-                "acctno": acct,
-                "noteno": note,
-                "due_date": due,
-                "bank_id": body.bank_id,
-                "discount_mode": discount_mode,
-                "discount_input": discount_input,
-                "discount_amount": discount_amount,
-                "remark": remark,
-                "created_by": ident.line_user_id if ident else None,
-            },
-        )
+        rem = insert_reminder(client, rem_row)
     except Exception as exc:
         rolled_back = False
         rollback_error = None
@@ -611,6 +635,8 @@ def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate
         patch["bank_id"] = body.bank_id
     if body.remark is not None:
         patch["remark"] = (body.remark or "").strip()[:500]
+    if body.kbiz_datetime is not None:
+        patch["kbiz_datetime"] = _parse_kbiz_datetime(body.kbiz_datetime)
     if body.discount_mode is not None or body.discount_input is not None:
         mode = body.discount_mode if body.discount_mode is not None else rem.get("discount_mode", "amount")
         raw = body.discount_input if body.discount_input is not None else rem.get("discount_input", 0)

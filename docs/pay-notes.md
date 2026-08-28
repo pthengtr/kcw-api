@@ -70,7 +70,7 @@ SQL grants for `python_writer` (run on HQ `PARTS9` as admin, e.g. WinRM + `sqlcm
 
 `scripts/sql/grant_pay_notes_writer.sql`
 
-Supabase: schema `pay_note` (vendor_bank, reminder) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`, `20260827140000_pay_note_reminder_discount.sql` (`discount_mode` / `discount_input` / `discount_amount` on reminder).
+Supabase: schema `pay_note` (vendor_bank, reminder) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`, `20260827140000_pay_note_reminder_discount.sql` (`discount_mode` / `discount_input` / `discount_amount` on reminder), `20260828120000_pay_note_reminder_kbiz_datetime.sql` (`kbiz_datetime` optional on reminder).
 
 ## Auth
 

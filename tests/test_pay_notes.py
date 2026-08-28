@@ -5,7 +5,7 @@ from src.pay_notes.writer import PayNoteWriteError, create_pay_note
 from src.pay_notes.config import PayNotesSettings
 from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method
 from src.pay_notes.baht_text import baht_text
-from app.routers.pay_notes import _note_totals, _workflow_meta
+from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _workflow_meta
 
 
 def test_pay_notes_commands():
@@ -53,6 +53,8 @@ def test_pay_notes_page_renders():
     assert "class=\"line-row\"" not in html
     assert "<th>วันที่ครบกำหนด</th>" in html
     assert "<th>เลขที่บิล</th>" in html
+    assert 'id="kbizDatetime"' in html
+    assert 'id="editKbizDatetime"' in html
 
 
 def test_page_has_voucher_and_proof_tabs():
@@ -78,6 +80,13 @@ def test_workflow_meta():
     done = _workflow_meta(voucno="KCPN6908-001", has_proof=True)
     assert done["stage"] == "voucher"
     assert done["is_editable"] is False
+
+
+def test_parse_kbiz_datetime():
+    assert _parse_kbiz_datetime(None) is None
+    assert _parse_kbiz_datetime("") is None
+    assert _parse_kbiz_datetime("2026-08-28T14:30") == "2026-08-28T14:30:00+07:00"
+    assert _parse_kbiz_datetime("2026-08-28") == "2026-08-28T00:00:00+07:00"
 
 
 def test_ui_initials():
