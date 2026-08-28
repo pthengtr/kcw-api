@@ -128,6 +128,7 @@ main { max-width:1120px; margin:0 auto; padding:1.1rem 1.15rem 2.5rem; }
 .btn.ghost { background:var(--chip); }
 .btn.soft { background:var(--acc-soft); border-color:transparent; color:var(--acc); }
 .btn.sm { min-height:2.05rem; padding:.3rem .7rem; font-size:.82rem; border-radius:.5rem; }
+.btn.outline { color:var(--acc); border-color:#bfdbfe; background:var(--card); }
 .btn.block { width:100%; }
 .kpis { display:grid; gap:.65rem; grid-template-columns:repeat(4, 1fr); margin:.85rem 0; }
 .kpi {
@@ -316,11 +317,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     <div id="viewNotesList">
       <div class="card toolbar">
         <div class="field grow">
-          <span class="ico">⌕</span>
+          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
           <input id="nfQ" placeholder="ค้นหาเลขที่ใบวางบิล / เจ้าหนี้ / เลขบิล" autocomplete="off"/>
         </div>
         <div class="field" style="min-width:9.5rem">
-          <span class="ico">⚙</span>
+          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16l-6 7v5l-4 2v-7L4 5z"/></svg></span>
           <select id="nfStatus" aria-label="สถานะ">
             <option value="">สถานะ</option>
             <option value="pending">รอชำระ</option>
@@ -329,7 +330,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           </select>
         </div>
         <div class="field" style="min-width:10.5rem">
-          <span class="ico">▦</span>
+          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
           <input id="nfDue" class="date-ce" type="date" lang="en" inputmode="none" aria-label="กำหนดชำระ"/>
         </div>
         <button type="button" class="btn primary" id="btnOpenCreate">+ สร้างใบวางบิล</button>
@@ -373,7 +374,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
             <h3>เลือกเจ้าหนี้</h3>
             <div class="combo">
               <div class="field">
-                <span class="ico">⌕</span>
+                <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
                 <input id="vendorQ" placeholder="ค้นหา รหัส / ชื่อเจ้าหนี้" autocomplete="off"/>
               </div>
               <div id="vendorResults" class="combo-list hidden"></div>
@@ -494,11 +495,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   <section id="panelPending" class="panel">
     <div class="card toolbar">
       <div class="field grow">
-        <span class="ico">⌕</span>
+        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
         <input id="pfQ" placeholder="ค้นหาเจ้าหนี้ / เลขใบวางบิล" autocomplete="off"/>
       </div>
       <div class="field" style="min-width:11rem">
-        <span class="ico">▦</span>
+        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
         <input id="pfDue" class="date-ce" type="date" lang="en" inputmode="none" aria-label="กำหนดชำระ"/>
       </div>
       <button type="button" class="btn soft" id="btnRefreshPending">↻ รีเฟรช</button>
@@ -553,11 +554,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div class="toolbar" style="margin-bottom:.75rem">
         <div class="field grow">
-          <span class="ico">⌕</span>
+          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
           <input id="vfQ" placeholder="เลขใบสำคัญจ่าย / รหัสเจ้าหนี้ / เลขใบวางบิล" autocomplete="off"/>
         </div>
         <div class="field" style="min-width:12rem">
-          <span class="ico">▦</span>
+          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
           <input id="vfFrom" class="date-ce" type="date" lang="en" inputmode="none" aria-label="ตั้งแต่"/>
           <span>–</span>
           <input id="vfTo" class="date-ce" type="date" lang="en" inputmode="none" aria-label="ถึง"/>
@@ -1024,7 +1025,7 @@ function renderPending() {
       <td>${fmtDate(remDue(r))}</td>
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td><div class="row-actions">
-        <button type="button" class="btn sm" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
+        <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
         <button type="button" class="btn sm primary"
           data-pay-acct="${esc(r.acctno)}" data-pay-note="${esc(r.noteno)}"
           data-pay-amt="${Number(r.BILLAMT||0)}" data-pay-disc="${Number((r.reminder||{}).discount_amount||0)}"
@@ -1263,7 +1264,7 @@ function openPay(acct, note, billamt, discount, bankname) {
   $('payDiscountAmt').textContent = fmtMoney(disc);
   $('payNetAmt').textContent = fmtMoney(net);
   $('payBankLine').textContent = (bankname || '').replace(/\s+#\s+$/,'').trim() || '— ไม่พบบัญชีธนาคาร —';
-  $('payChkamt').value = String(net);
+  $('payChkamt').value = net.toFixed(2);
   $('payChkdate').value = todayISO();
   $('payBankGl').value = '2101.7';
   $('payMsg').innerHTML = '';
