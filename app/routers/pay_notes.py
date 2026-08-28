@@ -20,11 +20,14 @@ from src.pay_notes.db import (
     patch_reminder,
 )
 from src.pay_notes.net import is_tailscale_cg_nat
+from src.pay_notes.baht_text import baht_text
 from src.pay_notes.parts9 import (
     get_note_header,
     list_bills_for_edit,
+    list_note_bills_with_lines,
     list_pending_notes,
     list_pickable_bills,
+    list_voucher_payments,
     list_vouchered_notes,
     note_exists,
     search_vendors,
@@ -612,6 +615,25 @@ def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate
     return {**kss, "reminder": updated, **_workflow_meta()}
 
 
+def _note_totals(header: dict[str, Any], reminder: dict[str, Any] | None) -> dict[str, Any]:
+    billamt = float(header.get("BILLAMT") or 0)
+    voucno = (header.get("voucno") or header.get("VOUCNO") or "").strip()
+    rem = reminder or {}
+    if voucno:
+        disc = float(header.get("DISCOUNT") or rem.get("discount_amount") or 0)
+        net = float(header.get("NETAMT") or 0) or round(billamt - disc, 2)
+    else:
+        disc = float(rem.get("discount_amount") or 0)
+        net = round(billamt - disc, 2)
+    return {
+        "billcnt": int(header.get("BILLCNT") or 0),
+        "billamt": billamt,
+        "discount": disc,
+        "netamt": net,
+        "net_text": baht_text(net),
+    }
+
+
 @router.get("/api/notes/{acctno}/{noteno}")
 def api_note_detail(request: Request, acctno: str, noteno: str):
     _, err = _require_api(request)
@@ -622,13 +644,35 @@ def api_note_detail(request: Request, acctno: str, noteno: str):
     if not header:
         return JSONResponse({"error": "not found"}, status_code=404)
     client = get_pay_notes_supabase_client()
-    bills = list_folder(client, bill_image_prefix(acctno, noteno))
+    images = list_folder(client, bill_image_prefix(acctno, noteno))
     proofs: list[dict[str, Any]] = []
     voucno = (header.get("voucno") or "").strip()
     if voucno:
         proofs = list_folder(client, payment_image_prefix(voucno))
     banks = list_vendor_banks(client, acctno)
-    return {"header": header, "bill_images": bills, "payment_images": proofs, "banks": banks}
+    rem = get_reminder(client, acctno, noteno)
+    if rem and rem.get("bank_id"):
+        bank = get_vendor_bank(client, str(rem.get("bank_id") or ""))
+        if bank:
+            rem["vendor_bank"] = bank
+    try:
+        bills = list_note_bills_with_lines(settings.site, acctno, noteno)
+        payments = list_voucher_payments(settings.site, voucno) if voucno else []
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    totals = _note_totals(header, rem)
+    if bills:
+        totals["billcnt"] = len(bills)
+    return {
+        "header": header,
+        "bills": bills,
+        "payments": payments,
+        "reminder": rem,
+        "totals": totals,
+        "bill_images": images,
+        "payment_images": proofs,
+        "banks": banks,
+    }
 
 
 @router.post("/api/vouchers")

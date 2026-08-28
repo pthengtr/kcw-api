@@ -20,6 +20,7 @@ After proof upload on tab 3, the row moves to tab 4 automatically.
 
 ### APIs
 
+- `GET /api/notes/{acctno}/{noteno}` — header, attached purchase bills with `PIDET` lines (qty / price / amount), voucher payments, reminder, images
 - `GET /api/notes` — all service notes (optional `acctno` filter); includes `stage`, `workflow_status`, `is_editable`
 - `PATCH /api/notes/{acctno}/{noteno}` — edit pending note (bills, discount, reminder fields)
 - `GET /api/bills?acctno=&noteno=` — bills for edit UI (attached + pickable)

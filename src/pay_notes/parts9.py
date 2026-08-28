@@ -84,15 +84,45 @@ def list_pickable_bills(site: str, acctno: str, *, limit: int = 200) -> list[dic
     return out
 
 
+def _iso_date(val: Any) -> Any:
+    if isinstance(val, datetime):
+        return val.date().isoformat()
+    if isinstance(val, date):
+        return val.isoformat()
+    return val
+
+
+def _to_float(val: Any, default: float = 0.0) -> float:
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def _format_bill_rows(rows) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
-        bd = item.get("BILLDATE")
-        if isinstance(bd, datetime):
-            item["BILLDATE"] = bd.date().isoformat()
-        elif isinstance(bd, date):
-            item["BILLDATE"] = bd.isoformat()
+        item["BILLDATE"] = _iso_date(item.get("BILLDATE"))
+        if "AFTERTAX" in item:
+            item["AFTERTAX"] = _to_float(item.get("AFTERTAX"))
+        out.append(item)
+    return out
+
+
+def attach_pidet_lines(bills: list[dict[str, Any]], lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach PIDET rows onto each PIMAS bill (qty / price / amount)."""
+    by_bill: dict[str, list[dict[str, Any]]] = {}
+    for line in lines:
+        bno = str(line.get("BILLNO") or "").strip()
+        by_bill.setdefault(bno, []).append(line)
+    out: list[dict[str, Any]] = []
+    for bill in bills:
+        item = dict(bill)
+        bno = str(item.get("BILLNO") or "").strip()
+        item["lines"] = list(by_bill.get(bno, []))
         out.append(item)
     return out
 
@@ -147,20 +177,59 @@ def list_note_bills(
     *,
     engine: Engine | None = None,
 ) -> list[dict[str, Any]]:
-    """Bills currently stamped on a pay note."""
+    """Bills currently stamped on an unvouchered pay note (edit UI)."""
+    return _list_pimas_for_note(
+        site,
+        acctno,
+        noteno,
+        engine=engine,
+        unvouchered_only=True,
+    )
+
+
+def list_attached_bills(
+    site: str,
+    acctno: str,
+    noteno: str,
+    *,
+    engine: Engine | None = None,
+) -> list[dict[str, Any]]:
+    """All PIMAS bills stamped on this note, including vouchered ones."""
+    return _list_pimas_for_note(
+        site,
+        acctno,
+        noteno,
+        engine=engine,
+        unvouchered_only=False,
+    )
+
+
+def _list_pimas_for_note(
+    site: str,
+    acctno: str,
+    noteno: str,
+    *,
+    engine: Engine | None = None,
+    unvouchered_only: bool = False,
+) -> list[dict[str, Any]]:
     acct = (acctno or "").strip()
     note = (noteno or "").strip()
     if not acct or not note:
         return []
     eng = engine or get_site_engine(_site_key(site))
+    extra = ""
+    if unvouchered_only:
+        extra = (
+            "AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = '' "
+            "AND ISNULL(PAID, 'N') = 'N'"
+        )
     sql = text(
         f"""
         SELECT {_BILL_COLS}, JOURMODE
         FROM dbo.PIMAS
         WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
           AND LTRIM(RTRIM(NOTENO)) = :noteno
-          AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
-          AND ISNULL(PAID, 'N') = 'N'
+          {extra}
           AND ISNULL(CANCELED, 'N') <> 'Y'
         ORDER BY BILLDATE ASC
         """
@@ -171,6 +240,110 @@ def list_note_bills(
     except Exception as exc:
         raise RuntimeError(format_sql_error(exc, site=site)) from exc
     return _format_bill_rows(rows)
+
+
+def list_pidet_lines(
+    site: str,
+    billnos: list[str],
+    *,
+    engine: Engine | None = None,
+) -> list[dict[str, Any]]:
+    nums = [str(b or "").strip() for b in billnos if str(b or "").strip()]
+    if not nums:
+        return []
+    eng = engine or get_site_engine(_site_key(site))
+    placeholders = ", ".join(f":b{i}" for i in range(len(nums)))
+    params = {f"b{i}": n for i, n in enumerate(nums)}
+    sql = text(
+        f"""
+        SELECT
+          LTRIM(RTRIM(CONVERT(nvarchar(80), BILLNO))) AS BILLNO,
+          LINE,
+          LTRIM(RTRIM(COALESCE(CONVERT(nvarchar(40), BCODE), ''))) AS BCODE,
+          LTRIM(RTRIM(COALESCE(CONVERT(nvarchar(200), DETAIL), ''))) AS DETAIL,
+          QTY,
+          LTRIM(RTRIM(COALESCE(CONVERT(nvarchar(20), UI), ''))) AS UI,
+          PRICE,
+          AMOUNT
+        FROM dbo.PIDET
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(80), BILLNO))) IN ({placeholders})
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        ORDER BY BILLNO, LINE
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception as exc:
+        raise RuntimeError(format_sql_error(exc, site=site)) from exc
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["QTY"] = _to_float(item.get("QTY"))
+        item["PRICE"] = _to_float(item.get("PRICE"))
+        item["AMOUNT"] = _to_float(item.get("AMOUNT"))
+        try:
+            item["LINE"] = int(item.get("LINE") or 0)
+        except (TypeError, ValueError):
+            item["LINE"] = 0
+        out.append(item)
+    return out
+
+
+def list_note_bills_with_lines(
+    site: str,
+    acctno: str,
+    noteno: str,
+    *,
+    engine: Engine | None = None,
+) -> list[dict[str, Any]]:
+    bills = list_attached_bills(site, acctno, noteno, engine=engine)
+    lines = list_pidet_lines(
+        site,
+        [str(b.get("BILLNO") or "") for b in bills],
+        engine=engine,
+    )
+    return attach_pidet_lines(bills, lines)
+
+
+def list_voucher_payments(
+    site: str,
+    voucno: str,
+    *,
+    engine: Engine | None = None,
+) -> list[dict[str, Any]]:
+    vo = (voucno or "").strip()
+    if not vo:
+        return []
+    eng = engine or get_site_engine(_site_key(site))
+    sql = text(
+        """
+        SELECT
+          LTRIM(RTRIM(COALESCE(CHKNO, ''))) AS CHKNO,
+          CHKDATE,
+          CHKAMT,
+          LTRIM(RTRIM(COALESCE(BANKNAME, ''))) AS BANKNAME,
+          LTRIM(RTRIM(COALESCE(ACCTNO, ''))) AS ACCTNO,
+          PAYTYPE
+        FROM dbo.BPDET
+        WHERE LTRIM(RTRIM(VOUCNO)) = :voucno
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        ORDER BY CHKDATE, CHKNO
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, {"voucno": vo}).mappings().all()
+    except Exception as exc:
+        raise RuntimeError(format_sql_error(exc, site=site)) from exc
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["CHKDATE"] = _iso_date(item.get("CHKDATE"))
+        item["CHKAMT"] = _to_float(item.get("CHKAMT"))
+        item["settle_method"] = infer_settle_method(item.get("CHKNO"))
+        out.append(item)
+    return out
 
 
 def list_bills_for_edit(site: str, acctno: str, noteno: str) -> list[dict[str, Any]]:
