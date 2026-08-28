@@ -256,6 +256,20 @@ label.lbl { display:block; font-size:.78rem; color:var(--muted); margin:0 0 .25r
   padding:0; max-width:40rem; width:calc(100% - 2rem);
   max-height:min(92dvh, 46rem); overflow:auto; box-shadow:0 16px 40px rgba(16,24,40,.18);
 }
+#dlgDetail {
+  max-width:min(58rem, calc(100% - 2rem));
+  max-height:min(94dvh, 54rem);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#dlgDetail .dlg-body { overflow:auto; flex:1 1 auto; min-height:0; }
+#dlgDetail .dlg-head, #dlgDetail .dlg-foot { flex:0 0 auto; }
+.det-bills { min-width:36rem; }
+.det-bills .bill-row td { font-weight:600; background:var(--inset); }
+.det-bills .line-row td:nth-child(3) { padding-left:1.05rem; }
+.det-sum {
+  background:var(--inset); border-radius:.65rem; padding:.7rem .85rem; margin-top:.55rem;
+}
+#printSheet { display:none; }
 .dlg::backdrop { background:rgba(15,23,42,.45); }
 .dlg-head {
   display:flex; justify-content:space-between; align-items:center;
@@ -431,6 +445,54 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   .kpis { grid-template-columns:1fr; }
   .tabs button { font-size:.75rem; padding:.5rem .4rem .65rem; }
 }
+@media print {
+  @page { size: A4 portrait; margin: 10mm 9mm; }
+  html, body { background:#fff !important; }
+  body > *:not(#printSheet) { display:none !important; }
+  #printSheet {
+    display:block !important; position:static; width:100%;
+    color:#111; background:#fff; font-family: "Prompt", "TH Sarabun New", sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+.pv { font-size:11pt; color:#111; }
+.pv-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.pv-logo {
+  font-weight:800; font-size:28pt; color:#c41e3a; letter-spacing:-.03em; line-height:1;
+  font-family: Impact, "Arial Black", Prompt, sans-serif;
+}
+.pv-co { font-size:9.5pt; line-height:1.35; }
+.pv-co-name { font-weight:700; font-size:12pt; margin:.15rem 0 .1rem; }
+.pv-title-wrap { text-align:right; min-width:14rem; }
+.pv-title {
+  display:inline-block; background:#f5d76e; font-weight:800; font-size:13pt;
+  padding:.28rem .7rem; border:1px solid #111; letter-spacing:.01em;
+}
+.pv-month { margin-top:.45rem; font-size:10.5pt; }
+.pv-meta {
+  display:grid; grid-template-columns:1fr 1fr; gap:.2rem 1.2rem;
+  margin:.7rem 0 .5rem; font-size:11pt; border-top:1px solid #111; padding-top:.45rem;
+}
+.pv-meta .span2 { grid-column:1 / -1; }
+.pv-table { width:100%; border-collapse:collapse; margin-top:.15rem; font-size:10pt; }
+.pv-table th, .pv-table td { border:1px solid #111; padding:.22rem .35rem; vertical-align:top; }
+.pv-table th { font-weight:700; text-align:center; background:#f7f7f7; font-size:9.5pt; }
+.pv-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+.pv-table .item { font-size:9pt; }
+.pv-table .bill td { font-weight:600; background:#f3f3f3; }
+.pv-foot { display:flex; justify-content:space-between; gap:1rem; margin-top:.55rem; align-items:flex-start; }
+.pv-words { flex:1; font-size:10.5pt; padding-top:.35rem; }
+.pv-tot { min-width:16rem; font-size:11pt; }
+.pv-tot .row { display:flex; justify-content:space-between; gap:1rem; padding:.12rem 0; }
+.pv-tot .n { font-variant-numeric:tabular-nums; }
+.pv-pay { margin-top:.7rem; display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+.pv-checks { font-size:11pt; }
+.pv-amt-red { color:#c41e3a; font-weight:800; font-size:13pt; font-variant-numeric:tabular-nums; }
+.pv-paytbl { border-collapse:collapse; font-size:10pt; min-width:22rem; }
+.pv-paytbl th, .pv-paytbl td { border:1px solid #111; padding:.2rem .4rem; }
+.pv-sign { display:flex; justify-content:space-between; margin-top:1.6rem; font-size:10.5pt; }
+.pv-sign .col { width:48%; }
+.pv-sign .line { border-bottom:1px dotted #333; min-height:1.6rem; margin:.15rem 0 .35rem; }
 </style>
 </head>
 <body>
@@ -909,6 +971,8 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <button type="button" class="linkish hidden" id="detDueCancel">ยกเลิก</button>
       </div>
     </div>
+    <div id="detBills"></div>
+    <div id="detBillSum"></div>
     <h3 style="margin:1rem 0 .4rem;font-size:.95rem">รูปใบวางบิล</h3>
     <div class="thumbs" id="detBillThumbs"></div>
     <div id="detProofWrap" class="hidden">
@@ -927,9 +991,12 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </div>
   <div class="dlg-foot">
     <button type="button" class="btn ghost" id="btnCloseDetail2">ปิด</button>
+    <button type="button" class="btn outline" id="btnPrintDetail">พิมพ์</button>
     <button type="button" class="btn primary hidden" id="detPayBtn">บันทึกการจ่าย</button>
   </div>
 </dialog>
+
+<div id="printSheet" aria-hidden="true"></div>
 
 <script>
 const WRITE_ENABLED = __WRITE__;
@@ -957,6 +1024,7 @@ let byApPage = 1;
 let voucherPageSize = 10;
 let pendingBucket = 'all';
 let detailRow = null;
+let detailPayload = null;
 let editTarget = null;
 let editReturnTab = 'pending';
 
@@ -1310,14 +1378,17 @@ function renderVouchers() {
   $('voucherCount').textContent = pg.total
     ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ`
     : 'แสดง 0 รายการ';
-  $('voucherBody').innerHTML = pg.rows.map(r => `<tr data-open="${esc(keyOf(r))}" style="cursor:pointer">
+  $('voucherBody').innerHTML = pg.rows.map(r => `<tr>
     <td data-label="เลขใบสำคัญจ่าย"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
     <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
     <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
-    <td class="td-actions" data-label="" style="text-align:right;color:var(--muted)">›</td>
+    <td class="td-actions" data-label=""><div class="row-actions">
+      <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>
+      <button type="button" class="btn sm outline" data-print="${esc(keyOf(r))}">พิมพ์</button>
+    </div></td>
   </tr>`).join('');
   renderPager($('voucherPager'), pg.page, pg.pages, p => { voucherPage = p; renderVouchers(); });
 }
@@ -1333,6 +1404,8 @@ $('vfSize').onchange = () => { voucherPageSize = Number($('vfSize').value || 10)
   el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', () => { voucherPage = 1; renderVouchers(); });
 });
 $('voucherBody').addEventListener('click', (e) => {
+  const printBtn = e.target.closest('[data-print]');
+  if (printBtn) { openDetailByKey(printBtn.dataset.print, {voucher: true, print: true}); return; }
   const open = e.target.closest('[data-open]');
   if (open) openDetailByKey(open.dataset.open, {voucher: true});
 });
@@ -1426,11 +1499,232 @@ function thumbsHtml(images) {
     return url ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""/></a>` : '';
   }).join('');
 }
+function fmtQty(n) {
+  const x = Number(n || 0);
+  if (!Number.isFinite(x)) return '—';
+  if (Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
+  return x.toLocaleString('th-TH', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+}
+function itemName(ln) {
+  const code = String((ln && ln.BCODE) || '').trim();
+  const det = String((ln && ln.DETAIL) || '').trim();
+  if (code && det) return `${code} ${det}`;
+  return det || code || '—';
+}
+function billMonthLabel(bills) {
+  const months = [];
+  (bills || []).forEach(b => {
+    const s = String(b.BILLDATE || '').slice(0, 7);
+    if (s.length === 7 && !months.includes(s)) months.push(s);
+  });
+  months.sort();
+  const fmt = (ym) => {
+    const [y, m] = ym.split('-');
+    return `${Number(m)}/${y}`;
+  };
+  if (!months.length) return '';
+  if (months.length === 1) return fmt(months[0]);
+  return `${fmt(months[0])} – ${fmt(months[months.length - 1])}`;
+}
+function renderDetBills(det) {
+  const bills = (det && det.bills) || [];
+  const due = String(((det.reminder || {}).due_date) || remDue(detailRow || {}) || '').slice(0, 10);
+  const totals = (det && det.totals) || {};
+  if (!bills.length) {
+    $('detBills').innerHTML = '<p class="muted">ไม่พบบิลซื้อในโน้ตนี้</p>';
+    $('detBillSum').innerHTML = '';
+    return;
+  }
+  const rows = [];
+  bills.forEach(b => {
+    const lines = b.lines || [];
+    rows.push(`<tr class="bill-row">
+      <td data-label="วันที่บิล">${fmtDate(b.BILLDATE)}</td>
+      <td data-label="เลขที่บิล">${esc(b.BILLNO)}</td>
+      <td data-label="รายการ">${lines.length ? `${lines.length} รายการ` : '—'}</td>
+      <td class="num" data-label="จำนวน"></td>
+      <td class="num" data-label="ราคา"></td>
+      <td class="num" data-label="จำนวนเงิน">${fmtMoney(b.AFTERTAX)}</td>
+    </tr>`);
+    lines.forEach(ln => {
+      const ui = String(ln.UI || '').trim();
+      rows.push(`<tr class="line-row">
+        <td data-label=""></td>
+        <td data-label=""></td>
+        <td data-label="รายการ">${esc(itemName(ln))}${ui ? ` <span class="muted">${esc(ui)}</span>` : ''}</td>
+        <td class="num" data-label="จำนวน">${fmtQty(ln.QTY)}</td>
+        <td class="num" data-label="ราคา">${fmtMoney(ln.PRICE)}</td>
+        <td class="num" data-label="จำนวนเงิน">${fmtMoney(ln.AMOUNT)}</td>
+      </tr>`);
+    });
+  });
+  $('detBills').innerHTML = `
+    <h3 style="margin:1rem 0 .4rem;font-size:.95rem">รายละเอียดบิลซื้อ</h3>
+    <div class="table-wrap">
+      <table class="det-bills">
+        <thead><tr>
+          <th>วันที่บิล</th><th>เลขที่บิล</th><th>รายการ</th>
+          <th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">จำนวนเงิน</th>
+        </tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </div>`;
+  const disc = Number(totals.discount || 0);
+  const net = Number(totals.netamt != null ? totals.netamt : 0);
+  $('detBillSum').innerHTML = `<div class="det-sum">
+    <div class="pay-line"><span>จำนวนบิล</span><strong>${totals.billcnt || bills.length} ฉบับ</strong></div>
+    <div class="pay-line"><span>จำนวนเงินรวม</span><strong>${fmtMoney(totals.billamt)}</strong></div>
+    <div class="pay-line"><span>ส่วนลด</span><strong>${fmtMoney(disc)}</strong></div>
+    <div class="pay-line pay-net"><span>ยอดสุทธิ</span><strong>${fmtMoney(net)}</strong></div>
+    ${totals.net_text ? `<div class="muted" style="margin-top:.35rem">${esc(totals.net_text)}</div>` : ''}
+    ${due ? `<div class="muted">กำหนดชำระ ${fmtDate(due)}</div>` : ''}
+  </div>`;
+}
+function fillPrintSheet(det, row) {
+  const header = (det && det.header) || {};
+  const bills = (det && det.bills) || [];
+  const rem = (det && det.reminder) || (row && row.reminder) || {};
+  const totals = (det && det.totals) || {};
+  const payments = (det && det.payments) || [];
+  const voucno = String((row && row.voucno) || header.voucno || '').trim();
+  const noteno = String((row && row.noteno) || header.noteno || '').trim();
+  const acctno = String((row && row.acctno) || header.acctno || '').trim();
+  const acctname = String((row && row.acctname) || header.acctname || '').trim();
+  const due = String(rem.due_date || remDue(row || {}) || '').slice(0, 10);
+  const docDate = String(voucno ? (header.VOUCDATE || (row && row.VOUCDATE) || header.NOTEDATE) : (header.NOTEDATE || todayISO())).slice(0, 10);
+  const title = voucno ? 'ใบสำคัญจ่าย / PAYMENT VOUCHER' : 'ใบวางบิล / BILLING NOTE';
+  const docno = voucno || noteno;
+  const month = billMonthLabel(bills);
+  const disc = Number(totals.discount || 0);
+  const net = Number(totals.netamt != null ? totals.netamt : 0);
+  const billamt = Number(totals.billamt != null ? totals.billamt : 0);
+  const billcnt = totals.billcnt || bills.length;
+  const words = totals.net_text || '';
+  const remarkNote = String(rem.remark || '').trim();
+  const bodyRows = [];
+  bills.forEach(b => {
+    const lines = b.lines || [];
+    const billRemark = String(b.REMARKS || '').trim() || (lines.length ? '' : remarkNote);
+    bodyRows.push(`<tr class="bill">
+      <td>${esc(fmtDate(b.BILLDATE))}</td>
+      <td>${esc(b.BILLNO || '')}</td>
+      <td>${lines.length ? '' : '—'}</td>
+      <td class="num"></td>
+      <td class="num"></td>
+      <td class="num">${fmtMoney(b.AFTERTAX)}</td>
+      <td>${esc(fmtDate(due))}</td>
+      <td>${esc(billRemark)}</td>
+    </tr>`);
+    lines.forEach(ln => {
+      bodyRows.push(`<tr>
+        <td></td><td></td>
+        <td class="item">${esc(itemName(ln))}${ln.UI ? ' / ' + esc(ln.UI) : ''}</td>
+        <td class="num">${fmtQty(ln.QTY)}</td>
+        <td class="num">${fmtMoney(ln.PRICE)}</td>
+        <td class="num">${fmtMoney(ln.AMOUNT)}</td>
+        <td></td><td></td>
+      </tr>`);
+    });
+  });
+  if (!bodyRows.length) {
+    bodyRows.push('<tr><td colspan="8" style="text-align:center;color:#666">ไม่พบบิลซื้อ</td></tr>');
+  }
+  const settle = (row && row.settle_method) || (payments[0] && payments[0].settle_method) || '';
+  const isCash = settle === 'cash';
+  const isChequeOrTransfer = settle === 'cheque' || settle === 'transfer' || (!isCash && !!voucno);
+  const payLines = payments.length ? payments : (voucno ? [{
+    CHKNO: settle === 'transfer' ? 'โอน' : (settle === 'cash' ? 'เงินสด' : ''),
+    CHKDATE: docDate,
+    BANKNAME: (() => {
+      const bank = rem.vendor_bank || {};
+      return [bank.bank_name, bank.bank_account_name, bank.bank_account_number ? ('# ' + bank.bank_account_number) : '']
+        .filter(Boolean).join(' ');
+    })(),
+    CHKAMT: net,
+    settle_method: settle,
+  }] : []);
+  const payRows = payLines.map(p => {
+    const kind = p.settle_method === 'cash' ? 'เงินสด' : (String(p.CHKNO || '').trim() || 'โอน');
+    return `<tr>
+      <td>${esc(kind)}</td>
+      <td class="pv-amt-red">${esc(fmtDate(p.CHKDATE || docDate))}</td>
+      <td>${esc(p.BANKNAME || '')}</td>
+      <td class="num pv-amt-red">${fmtMoney(p.CHKAMT != null ? p.CHKAMT : net)}</td>
+    </tr>`;
+  }).join('');
+  $('printSheet').innerHTML = `
+    <div class="pv">
+      <div class="pv-top">
+        <div class="pv-co">
+          <div class="pv-logo">KCW</div>
+          <div class="pv-co-name">บริษัท เกียรติชัยอะไหล่ยนต์ 2007 จำกัด</div>
+          <div>305 ม.1 ต.ชุมแสง อ.วังจันทร์ จ.ระยอง 21210</div>
+          <div>โทร. 038-666078</div>
+        </div>
+        <div class="pv-title-wrap">
+          <div class="pv-title">${esc(title)}</div>
+          <div class="pv-month">บิลเดือน ${esc(month || '…………………………')}</div>
+        </div>
+      </div>
+      <div class="pv-meta">
+        <div>รหัสบัญชี &nbsp; <b>${esc(acctno)}</b></div>
+        <div>ชื่อบัญชี &nbsp; <b>${esc(acctname)}</b></div>
+        <div>วันที่ &nbsp; <b>${esc(fmtDate(docDate))}</b></div>
+        <div>เลขที่ &nbsp; <b>${esc(docno)}</b></div>
+        <div class="span2">เลขที่ใบวางบิล &nbsp; <b>${esc(noteno)}</b></div>
+      </div>
+      <table class="pv-table">
+        <thead>
+          <tr>
+            <th>วันที่บิล</th>
+            <th>เลขที่บิล</th>
+            <th>รายการ</th>
+            <th>จำนวน</th>
+            <th>ราคา</th>
+            <th>จำนวนเงิน</th>
+            <th>วันที่ครบกำหนด</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody>${bodyRows.join('')}</tbody>
+      </table>
+      <div class="pv-foot">
+        <div class="pv-words">${esc(billcnt)} ฉบับ<br/>${esc(words)}</div>
+        <div class="pv-tot">
+          <div class="row"><span>จำนวนเงินรวม</span><span class="n">${fmtMoney(billamt)}</span></div>
+          <div class="row"><span>ส่วนลด</span><span class="n">${fmtMoney(disc)}</span></div>
+        </div>
+      </div>
+      <div class="pv-pay">
+        <div class="pv-checks">
+          <div>${isCash ? '☑' : '☐'} เงินสด</div>
+          <div style="margin-top:.35rem">${isChequeOrTransfer ? '☑' : '☐'} เช็ค / โอน
+            ${voucno ? `<span class="pv-amt-red" style="margin-left:.6rem">${fmtMoney(net)}</span>` : ''}
+          </div>
+        </div>
+        ${voucno && payRows ? `<table class="pv-paytbl">
+          <thead><tr><th>โอน/เช็ค</th><th>ลงวันที่</th><th>ธนาคาร</th><th>จำนวนเงิน</th></tr></thead>
+          <tbody>${payRows}</tbody>
+        </table>` : ''}
+      </div>
+      <div class="pv-sign">
+        <div class="col">ผู้รับเงิน / เช็ค<div class="line"></div>วันที่<div class="line"></div></div>
+        <div class="col" style="text-align:right">ผู้จัดทำ<div class="line">${esc(USER_NAME || '')}</div></div>
+      </div>
+    </div>`;
+}
+function printDetail() {
+  if (!detailPayload) { alert('กำลังโหลดรายละเอียด'); return; }
+  fillPrintSheet(detailPayload, detailRow || {});
+  window.print();
+}
+
 async function openDetailByKey(key, opts) {
   opts = opts || {};
   const row = findRow(key) || pendingRows.find(r => keyOf(r) === key) || voucherRows.find(r => keyOf(r) === key);
   if (!row) return;
   detailRow = row;
+  detailPayload = null;
   const rem = row.reminder || {};
   $('detTitle').textContent = row.voucno ? `ใบสำคัญจ่าย ${row.voucno}` : `ใบวางบิล ${row.noteno}`;
   $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${row.noteno}`;
@@ -1447,14 +1741,21 @@ async function openDetailByKey(key, opts) {
   $('detProofWrap').classList.toggle('hidden', !row.voucno);
   const canUpload = opts.canUpload || (row.voucno && !row.has_proof && row.stage === 'await_proof');
   $('detUploadWrap').classList.toggle('hidden', !canUpload);
+  $('detBills').innerHTML = '<p class="muted">กำลังโหลดบิลซื้อ…</p>';
+  $('detBillSum').innerHTML = '';
   $('detBillThumbs').innerHTML = 'กำลังโหลด…';
   $('detProofThumbs').innerHTML = thumbsHtml(row.payment_images || []);
   $('dlgDetail').showModal();
   try {
     const det = await api(`/notes/${encodeURIComponent(row.acctno)}/${encodeURIComponent(row.noteno)}`);
+    detailPayload = det;
+    renderDetBills(det);
     $('detBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
     if (det.payment_images) $('detProofThumbs').innerHTML = thumbsHtml(det.payment_images);
+    fillPrintSheet(det, row);
+    if (opts.print) printDetail();
   } catch (e) {
+    $('detBills').innerHTML = `<p class="err">${esc(e.message)}</p>`;
     $('detBillThumbs').innerHTML = `<p class="err">${esc(e.message)}</p>`;
   }
 }
@@ -1516,6 +1817,7 @@ async function uploadProofFiles(files) {
 }
 $('btnCloseDetail').onclick = () => $('dlgDetail').close();
 $('btnCloseDetail2').onclick = () => $('dlgDetail').close();
+$('btnPrintDetail').onclick = printDetail;
 wireDropZone($('dropProof'), $('detProofFiles'), uploadProofFiles);
 
 
