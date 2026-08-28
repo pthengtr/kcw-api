@@ -187,6 +187,44 @@ def list_pending_notes(site: str, reminders: list[dict[str, Any]]) -> list[dict[
     return out
 
 
+def infer_settle_method(chkno: str | None) -> str:
+    """Map BPDET.CHKNO to transfer | cheque | cash for the voucher board."""
+    text = (chkno or "").strip()
+    if not text:
+        return "cash"
+    if text == "โอน":
+        return "transfer"
+    return "cheque"
+
+
+def _bpdet_chkno_map(eng: Engine, voucnums: list[str]) -> dict[str, str] | None:
+    nums = [v.strip() for v in voucnums if (v or "").strip()]
+    if not nums:
+        return {}
+    placeholders = ", ".join(f":v{i}" for i in range(len(nums)))
+    params = {f"v{i}": n for i, n in enumerate(nums)}
+    sql = text(
+        f"""
+        SELECT LTRIM(RTRIM(VOUCNO)) AS voucno,
+               LTRIM(RTRIM(COALESCE(CHKNO, ''))) AS chkno
+        FROM dbo.BPDET
+        WHERE LTRIM(RTRIM(VOUCNO)) IN ({placeholders})
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception:
+        return None
+    out: dict[str, str] = {}
+    for row in rows:
+        vo = str(row.get("voucno") or "").strip()
+        if vo and vo not in out:
+            out[vo] = str(row.get("chkno") or "")
+    return out
+
+
 def bangkok_today() -> date:
     return datetime.now(_BKK).date()
 
@@ -276,6 +314,14 @@ def list_vouchered_notes(site: str, reminders: list[dict[str, Any]]) -> list[dic
         vd = pvmas.get("VOUCDATE")
         if isinstance(vd, datetime):
             merged["VOUCDATE"] = vd.date().isoformat()
+        elif isinstance(vd, date):
+            merged["VOUCDATE"] = vd.isoformat()
         out.append(merged)
     out.sort(key=lambda x: x.get("VOUCDATE") or "")
+    chk_map = _bpdet_chkno_map(eng, [str(r.get("voucno") or "") for r in out])
+    if chk_map is not None:
+        for row in out:
+            chkno = chk_map.get(str(row.get("voucno") or "").strip(), "")
+            row["chkno"] = chkno
+            row["settle_method"] = infer_settle_method(chkno)
     return out
