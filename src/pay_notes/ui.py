@@ -20,15 +20,23 @@ def initials(name: str) -> str:
     return who[:2]
 
 
-def page(*, user_name: str = "", site: str = "HQ", write_enabled: bool = False) -> str:
+def page(
+    *,
+    user_name: str = "",
+    site: str = "HQ",
+    write_enabled: bool = False,
+    ai_enabled: bool = False,
+) -> str:
     who = (user_name or "operator").strip()
     site_u = (site or "HQ").upper()
     write_flag = "true" if write_enabled else "false"
+    ai_flag = "true" if ai_enabled else "false"
     return (
         _HTML.replace("__USER_JSON__", json.dumps(who, ensure_ascii=False))
         .replace("__USER__", html_lib.escape(who))
         .replace("__SITE__", site_u)
         .replace("__WRITE__", write_flag)
+        .replace("__AI__", ai_flag)
         .replace("__INITIALS__", html_lib.escape(initials(who)))
     )
 
@@ -60,6 +68,10 @@ _HTML = r"""<!doctype html>
   --soon:#15803d; --soon-bg:#dcfce7;
   --proof:#a16207; --proof-bg:#fef3c7;
   --shadow:0 1px 2px rgba(16,24,40,.06), 0 4px 12px rgba(16,24,40,.04);
+  --space-page-x:1.15rem;
+  --space-page-b:2.5rem;
+  --space-card:1rem;
+  --space-stack:.85rem;
 }
 html[data-theme="dark"] {
   color-scheme: dark;
@@ -81,7 +93,7 @@ a { color:var(--acc); }
 .hidden { display:none !important; }
 header {
   position:sticky; top:0; z-index:5; background:var(--head);
-  border-bottom:1px solid var(--line); padding:.85rem 1.25rem 0;
+  border-bottom:1px solid var(--line); padding:.85rem var(--space-page-x) 0;
 }
 .topbar { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
 h1 { margin:0; font-size:1.2rem; font-weight:700; letter-spacing:-.01em; }
@@ -92,23 +104,34 @@ h1 { margin:0; font-size:1.2rem; font-weight:700; letter-spacing:-.01em; }
   flex:0 0 auto;
 }
 html[data-theme="dark"] .avatar { background:#1e3a5f; color:#93c5fd; }
-.tabs { display:flex; gap:.85rem; margin-top:.7rem; overflow-x:auto; -webkit-overflow-scrolling:touch; scroll-snap-type:x proximity; scrollbar-width:none; }
+.tabs {
+  display:flex; gap:.5rem; margin-top:.7rem; width:100%;
+  overflow-x:visible; scroll-snap-type:none;
+}
 .tabs::-webkit-scrollbar { display:none; }
 .tabs button {
   appearance:none; background:none; border:0; border-bottom:2px solid transparent;
-  color:var(--muted); padding:.45rem 0 .7rem; font-weight:500; font-size:.95rem;
-  flex:0 0 auto; scroll-snap-align:start; white-space:nowrap;
+  color:var(--muted); padding:.45rem .5rem .7rem; font-weight:500; font-size:.95rem;
+  flex:1 1 0; min-width:0; text-align:center; white-space:normal; line-height:1.25;
+  display:flex; align-items:center; justify-content:center;
 }
 .tabs .t-short { display:none; }
 .tabs button.on { color:var(--acc); font-weight:600; border-bottom-color:var(--acc); }
-main { max-width:1120px; margin:0 auto; padding:1.1rem 1.15rem 2.5rem; }
+main { max-width:1120px; margin:0 auto; padding:var(--space-page-y) var(--space-page-x) var(--space-page-b); }
 .panel { display:none; }
 .panel.on { display:block; }
+.panel-intro { margin:0 0 var(--space-stack); font-size:.82rem; color:var(--muted); line-height:1.4; }
 .card {
   background:var(--card); border:1px solid var(--line); border-radius:.85rem;
-  box-shadow:var(--shadow); padding:1rem;
+  box-shadow:var(--shadow); padding:var(--space-card);
 }
-.card + .card, .kpis + .card, .card + .kpis { margin-top:.85rem; }
+.card + .card, .kpis + .card, .card + .kpis { margin-top:var(--space-stack); }
+.card-table { padding:0; overflow:hidden; }
+.card-table .table-wrap th:first-child,
+.card-table .table-wrap td:first-child { padding-left:var(--space-card); }
+.card-table .table-wrap th:last-child,
+.card-table .table-wrap td:last-child { padding-right:var(--space-card); }
+.card-table .empty { padding:1.25rem var(--space-card); }
 .toolbar { display:flex; gap:.55rem; flex-wrap:wrap; align-items:center; }
 .grow { flex:1 1 16rem; min-width:12rem; }
 .field {
@@ -174,9 +197,23 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .b-wait { background:var(--proof-bg); color:var(--proof); }
 .b-done { background:var(--ok-bg); color:var(--ok); }
 .table-foot {
-  display:flex; justify-content:space-between; align-items:center; gap:.75rem; flex-wrap:wrap;
-  padding:.75rem .15rem 0; font-size:.8rem; color:var(--muted);
+  display:flex; justify-content:space-between; align-items:center; gap:.75rem 1rem; flex-wrap:wrap;
+  padding:.7rem var(--space-card) .8rem; font-size:.8rem; color:var(--muted);
+  border-top:1px solid var(--line); min-height:2.75rem;
 }
+.table-foot-meta {
+  flex:1 1 12rem; min-width:0; display:flex; align-items:center; gap:.65rem;
+  flex-wrap:wrap; line-height:1.35;
+}
+.table-foot-nav {
+  flex:0 0 auto; display:flex; align-items:center; gap:.55rem;
+  flex-wrap:wrap; margin-left:auto;
+}
+.page-size {
+  display:inline-flex; align-items:center; gap:.35rem;
+  font-size:inherit; color:var(--muted); white-space:nowrap; margin:0;
+}
+.page-size-select { width:auto; padding:.25rem .4rem; min-height:2rem; }
 .pager { display:flex; gap:.3rem; align-items:center; }
 .pager button {
   min-width:2rem; height:2rem; padding:0 .45rem; border-radius:.45rem;
@@ -185,6 +222,7 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .pager button.on { border-color:var(--acc); color:var(--acc); font-weight:700; }
 .hint {
   display:flex; align-items:center; gap:.4rem; font-size:.8rem; color:var(--muted);
+  margin:0; line-height:1.35;
 }
 .empty { text-align:center; color:var(--muted); padding:1.6rem .8rem; }
 .err { color:var(--down); font-size:.85rem; margin:.35rem 0; }
@@ -251,6 +289,28 @@ label.lbl { display:block; font-size:.78rem; color:var(--muted); margin:0 0 .25r
 }
 .create-head { display:flex; justify-content:space-between; align-items:flex-start; gap:.75rem; margin-bottom:1rem; }
 .create-head h2 { margin:.1rem 0 0; font-size:1.15rem; }
+.create-mode { display:inline-flex; background:var(--chip); border-radius:.55rem; padding:.15rem; gap:.15rem; margin-bottom:.75rem; }
+.create-mode button {
+  border:0; background:transparent; color:var(--muted); border-radius:.4rem;
+  padding:.4rem .85rem; width:auto; font-weight:500; font-size:.82rem;
+}
+.create-mode button.on { background:var(--acc); color:#fff; font-weight:600; }
+.wizard-nav {
+  display:flex; justify-content:space-between; align-items:center; gap:.5rem;
+  margin-bottom:1rem; padding:.55rem .75rem; background:var(--inset); border-radius:.55rem;
+}
+.wizard-nav .muted { font-size:.82rem; }
+.wizard-hidden { display:none !important; }
+.ai-panel {
+  margin:.65rem 0; padding:.65rem .75rem; border-radius:.55rem; border:1px solid var(--line);
+  background:var(--inset); font-size:.84rem;
+}
+.ai-ok { color:var(--ok, #0a7); border-color:rgba(0,160,100,.25); background:rgba(0,160,100,.06); }
+.ai-warn { color:var(--warn, #b45309); border-color:rgba(180,83,9,.25); background:rgba(180,83,9,.06); }
+.ai-warn label { display:flex; align-items:flex-start; gap:.45rem; cursor:pointer; font-size:.84rem; }
+.ai-line-table { width:100%; border-collapse:collapse; font-size:.8rem; margin-top:.45rem; }
+.ai-line-table th, .ai-line-table td { padding:.35rem .4rem; border-bottom:1px solid var(--line); text-align:left; }
+.ai-line-table .num { text-align:right; }
 .dlg {
   border:0; border-radius:.9rem; background:var(--card); color:var(--text);
   padding:0; max-width:40rem; width:calc(100% - 2rem);
@@ -306,31 +366,75 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 .sec-title h2 { margin:0; font-size:1.05rem; }
 .muted { color:var(--muted); font-size:.82rem; }
 .toggle { display:flex; align-items:center; gap:.35rem; font-size:.82rem; color:var(--muted); }
+@media (max-width: 834px) {
+  .tabs {
+    display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:.35rem;
+    margin-top:.6rem; overflow-x:visible; scroll-snap-type:none;
+  }
+  .tabs button {
+    flex:unset; min-width:0; text-align:center; white-space:normal;
+    font-size:.78rem; line-height:1.2; padding:.5rem .3rem;
+    border-bottom:0; border-radius:.55rem; background:var(--chip);
+    min-height:2.35rem; display:flex; align-items:center; justify-content:center;
+  }
+  .tabs button.on {
+    background:var(--acc-soft); color:var(--acc); font-weight:600;
+    box-shadow:inset 0 0 0 1px rgba(47,107,255,.25);
+  }
+  .tabs button#tabByAp {
+    grid-column:1 / -1; margin-top:.1rem; min-height:2.1rem;
+    font-size:.76rem;
+  }
+  .tabs .t-full { display:none; }
+  .tabs .t-short { display:inline; }
+}
+@media (min-width: 835px) and (max-width: 1399px) {
+  .tabs {
+    display:flex; gap:.4rem; margin-top:.6rem;
+    overflow-x:visible; scroll-snap-type:none;
+  }
+  .tabs button {
+    flex:1 1 0; min-width:0; text-align:center; white-space:normal;
+    font-size:.8rem; line-height:1.2; padding:.48rem .35rem;
+    border-bottom:0; border-radius:.55rem; background:var(--chip);
+    min-height:2.35rem; display:flex; align-items:center; justify-content:center;
+  }
+  .tabs button.on {
+    background:var(--acc-soft); color:var(--acc); font-weight:600;
+    box-shadow:inset 0 0 0 1px rgba(47,107,255,.25);
+  }
+  .tabs .t-full { display:none; }
+  .tabs .t-short { display:inline; }
+}
+@media (min-width: 1000px) and (max-width: 1399px) {
+  .tabs button { font-size:.84rem; padding:.5rem .45rem; }
+  .tabs .t-full { display:inline; }
+  .tabs .t-short { display:none; }
+}
 @media (max-width: 900px) {
+  :root { --space-page-x:.85rem; --space-page-y:1rem; --space-page-b:2rem; --space-card:.9rem; --space-stack:.7rem; }
   .kpis, .grid-3, .disc-layout, .sum-box { grid-template-columns:1fr 1fr; }
-  header { padding:.75rem 1rem 0; }
-  main { padding:1rem .85rem 2rem; }
+  header { padding:.75rem var(--space-page-x) 0; }
 }
 @media (max-width: 640px) {
+  :root { --space-page-x:.55rem; --space-page-y:.55rem; --space-page-b:calc(1.25rem + env(safe-area-inset-bottom)); --space-card:.6rem; --space-stack:.45rem; }
   body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   header {
-    padding:.5rem .65rem 0;
+    padding:.5rem var(--space-page-x) 0;
     padding-top:max(.5rem, env(safe-area-inset-top));
-  }
-  main {
-    padding:.55rem .55rem calc(1.25rem + env(safe-area-inset-bottom));
   }
   h1 { font-size:1rem; line-height:1.2; }
   #pageCrumb {
     display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical;
     overflow:hidden; line-height:1.3; max-height:1.3em; font-size:.72rem;
   }
-  .tabs { gap:.3rem; margin-top:.4rem; padding-bottom:.1rem; }
-  .tabs button { font-size:.78rem; padding:.4rem .35rem .55rem; min-height:2.1rem; }
-  .tabs .t-full { display:none; }
-  .tabs .t-short { display:inline; }
-  .panel > .muted { margin:0 0 .35rem !important; font-size:.74rem; line-height:1.35; }
+  .tabs { gap:.25rem; margin-top:.45rem; }
+  .tabs button { font-size:.72rem; padding:.42rem .2rem; min-height:2.05rem; border-radius:.5rem; }
+  .tabs button#tabByAp { min-height:1.95rem; font-size:.7rem; }
+  .panel-intro { margin:0 0 .35rem; font-size:.74rem; line-height:1.35; }
   .card { padding:.55rem .6rem; border-radius:.65rem; }
+  .card.card-table { padding:0; }
+  .card + .picked { margin:.35rem 0 var(--space-stack); }
   .card + .card, .kpis + .card, .card + .kpis { margin-top:.45rem; }
   .card.toolbar { padding:.4rem .5rem; }
   .field {
@@ -395,7 +499,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   .drop { padding:.75rem .55rem; border-radius:.6rem; }
   .drop > div:first-child { font-size:1.1rem !important; margin-bottom:.1rem !important; }
   .picked { margin-top:.3rem; padding:.15rem .55rem; font-size:.76rem; }
-  .table-foot { flex-direction:column; align-items:stretch; gap:.35rem; padding-top:.45rem; font-size:.74rem; }
+  .table-foot { flex-direction:column; align-items:stretch; gap:.5rem; padding:.5rem var(--space-card) .65rem; font-size:.74rem; min-height:0; }
+  .table-foot-meta { flex:unset; justify-content:center; text-align:center; }
+  .table-foot-nav { margin-left:0; justify-content:center; }
   .pager { justify-content:center; flex-wrap:wrap; }
   .pager button { min-width:2.1rem; height:2.1rem; }
   .dlg {
@@ -443,7 +549,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 }
 @media (max-width: 380px) {
   .kpis { grid-template-columns:1fr; }
-  .tabs button { font-size:.75rem; padding:.5rem .4rem .65rem; }
+  .tabs button { font-size:.68rem; }
 }
 @media print {
   @page { size: A4 portrait; margin: 10mm 9mm; }
@@ -507,7 +613,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   <nav class="tabs" aria-label="ขั้นตอนงาน">
     <button type="button" id="tabCreate" class="on"><span class="t-full">1. สร้าง</span><span class="t-short">1. สร้าง</span></button>
     <button type="button" id="tabPending"><span class="t-full">2. รอชำระ</span><span class="t-short">2. รอจ่าย</span></button>
-    <button type="button" id="tabAwaitProof"><span class="t-full">3. รอแนบหลักฐาน</span><span class="t-short">3. รอหลักฐาน</span></button>
+    <button type="button" id="tabAwaitProof"><span class="t-full">3. รอแนบหลักฐาน</span><span class="t-short">3. หลักฐาน</span></button>
     <button type="button" id="tabVoucher"><span class="t-full">4. ใบสำคัญจ่าย</span><span class="t-short">4. สำคัญจ่าย</span></button>
     <button type="button" id="tabByAp"><span class="t-full">ค้นหาตามเจ้าหนี้</span><span class="t-short">ค้นหาเจ้าหนี้</span></button>
   </nav>
@@ -522,7 +628,19 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         </div>
       </div>
 
-        <div class="step">
+      <div class="create-mode" id="createModeToggle">
+        <button type="button" data-mode="manual" class="on" id="btnModeManual">กรอกเอง</button>
+        <button type="button" data-mode="assist" id="btnModeAssist">ช่วยอ่านเอกสาร</button>
+      </div>
+      <div class="wizard-nav hidden" id="wizardNav">
+        <span class="muted" id="wizardProgress">ขั้น 1/6</span>
+        <div style="display:flex;gap:.4rem">
+          <button type="button" class="btn sm ghost" id="btnWizardBack">ย้อนกลับ</button>
+          <button type="button" class="btn sm primary" id="btnWizardNext">ถัดไป</button>
+        </div>
+      </div>
+
+        <div class="step wizard-block" data-assist-step="1" id="wizardStepVendor">
           <div class="step-num">1</div>
           <div class="step-body">
             <h3>เลือกเจ้าหนี้</h3>
@@ -537,7 +655,23 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           </div>
         </div>
 
-        <div class="step">
+        <div class="step wizard-block hidden" data-assist-step="2" id="wizardScanBlock">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3>สแกนเอกสารจากเจ้าหนี้</h3>
+            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement แล้วเลือกบิลในระบบให้ตรง</p>
+            <div class="drop" id="dropScan" tabindex="0">
+              <div style="font-size:1.4rem;margin-bottom:.25rem">📄</div>
+              <div>คลิกหรือลากเอกสารมาวางที่นี่</div>
+              <div class="date-hint">JPG, PNG, PDF (ไม่เกิน 10 MB)</div>
+            </div>
+            <input id="scanFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf"/>
+            <div id="scanStatus" class="muted" style="margin-top:.45rem"></div>
+            <button type="button" class="btn sm ghost hidden" id="btnScanSkip" style="margin-top:.45rem">ข้ามไปเลือกบิลเอง</button>
+          </div>
+        </div>
+
+        <div class="step wizard-block" data-assist-step="5" id="wizardStepDetails">
           <div class="step-num">2</div>
           <div class="step-body">
             <h3>ข้อมูลใบวางบิล</h3>
@@ -573,7 +707,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           </div>
         </div>
 
-        <div class="step">
+        <div class="step wizard-block" data-assist-step="3" id="wizardStepBills">
           <div class="step-num">3</div>
           <div class="step-body">
             <div class="bill-head">
@@ -583,6 +717,13 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
                 แสดงบิลที่ยังไม่ถูกวางบิลเท่านั้น
                 <button type="button" class="linkish" id="btnRefreshBills">รีเฟรช</button>
               </div>
+            </div>
+            <div id="aiLineMatch" class="ai-panel hidden"></div>
+            <div id="billMatchAckWrap" class="ai-panel ai-warn hidden">
+              <label>
+                <input type="checkbox" id="billMatchAck"/>
+                ยืนยันว่าตรวจบิลแล้ว
+              </label>
             </div>
             <div class="table-wrap mob-cards" style="border:1px solid var(--line); border-radius:.55rem .55rem 0 0">
               <table>
@@ -604,7 +745,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           </div>
         </div>
 
-        <div class="step">
+        <div class="step wizard-block" data-assist-step="4" id="wizardStepDiscount">
           <div class="step-num">4</div>
           <div class="step-body">
             <h3>ส่วนลด (ถ้ามี)</h3>
@@ -626,7 +767,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           </div>
         </div>
 
-        <div class="step">
+        <div class="step wizard-block" data-assist-step="6" id="wizardStepUpload">
           <div class="step-num">5</div>
           <div class="step-body">
             <h3>เอกสารแนบ</h3>
@@ -715,7 +856,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </section>
 
   <section id="panelPending" class="panel">
-    <p class="muted" style="margin:0 0 .65rem">ขั้นที่ 2 · รอบันทึกการจ่าย · แก้ไขบิล/ส่วนลดได้</p>
+    <p class="panel-intro">ขั้นที่ 2 · รอบันทึกการจ่าย · แก้ไขบิล/ส่วนลดได้</p>
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
@@ -745,7 +886,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <span><b>ใกล้ครบกำหนด</b><span id="kpiSoon">0 รายการ · 0.00 บาท</span></span>
       </button>
     </div>
-    <div class="card" style="padding:.35rem 0 0">
+    <div class="card card-table">
       <div class="table-wrap mob-cards">
         <table>
           <thead>
@@ -763,14 +904,18 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div id="pendingEmpty" class="empty hidden">ยังไม่มีรายการรอชำระ</div>
       <div class="table-foot">
-        <div class="hint">ⓘ บันทึกการจ่ายแล้วจะย้ายไปแท็บรอแนบหลักฐาน</div>
-        <div class="pager" id="pendingPager"></div>
+        <div class="table-foot-meta">
+          <p class="hint">ⓘ บันทึกการจ่ายแล้วจะย้ายไปแท็บรอแนบหลักฐาน</p>
+        </div>
+        <div class="table-foot-nav">
+          <div class="pager" id="pendingPager"></div>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="panelAwaitProof" class="panel">
-    <p class="muted" style="margin:0 0 .65rem">ขั้นที่ 3 · บันทึกการจ่ายแล้ว · รออัปโหลดหลักฐาน</p>
+    <p class="panel-intro">ขั้นที่ 3 · บันทึกการจ่ายแล้ว · รออัปโหลดหลักฐาน</p>
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
@@ -778,7 +923,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <button type="button" class="btn soft" id="btnRefreshAwaitProof">↻ รีเฟรช</button>
     </div>
-    <div class="card" style="padding:.35rem 0 0">
+    <div class="card card-table">
       <div class="table-wrap mob-cards">
         <table>
           <thead>
@@ -797,40 +942,38 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div id="awaitProofEmpty" class="empty hidden">ไม่มีรายการรอแนบหลักฐาน</div>
       <div class="table-foot">
-        <div id="awaitProofCount">แสดง 0 รายการ</div>
-        <div class="pager" id="awaitProofPager"></div>
+        <div class="table-foot-meta" id="awaitProofCount">แสดง 0 รายการ</div>
+        <div class="table-foot-nav">
+          <div class="pager" id="awaitProofPager"></div>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="panelVoucher" class="panel">
-    <p class="muted" style="margin:0 0 .65rem">ขั้นที่ 4 · มีหลักฐานครบแล้ว · ดูรูปบิลและหลักฐานชำระ</p>
-    <div class="card">
-      <div class="sec-title">
-        <h2>ใบสำคัญจ่าย</h2>
-        <div class="muted" id="voucherTotal">ทั้งหมด 0 รายการ</div>
+    <p class="panel-intro">ขั้นที่ 4 · มีหลักฐานครบแล้ว · ดูรูปบิลและหลักฐานชำระ</p>
+    <div class="card toolbar">
+      <div class="field grow">
+        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
+        <input id="vfQ" placeholder="เลขใบสำคัญจ่าย / รหัสเจ้าหนี้ / เลขใบวางบิล" autocomplete="off"/>
       </div>
-      <div class="toolbar" style="margin-bottom:.75rem">
-        <div class="field grow">
-          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
-          <input id="vfQ" placeholder="เลขใบสำคัญจ่าย / รหัสเจ้าหนี้ / เลขใบวางบิล" autocomplete="off"/>
-        </div>
-        <div class="field" style="min-width:12rem">
-          <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
-          <input id="vfFrom" class="date-ce" type="date" lang="en" inputmode="none" aria-label="ตั้งแต่"/>
-          <span>–</span>
-          <input id="vfTo" class="date-ce" type="date" lang="en" inputmode="none" aria-label="ถึง"/>
-        </div>
-        <div class="field" style="min-width:9.5rem">
-          <select id="vfMethod" aria-label="วิธีชำระ">
-            <option value="">วิธีชำระ: ทั้งหมด</option>
-            <option value="transfer">โอนเงิน</option>
-            <option value="cheque">เช็ค</option>
-            <option value="cash">เงินสด</option>
-          </select>
-        </div>
-        <button type="button" class="btn ghost" id="btnClearVoucherFilters">↻ ล้างตัวกรอง</button>
+      <div class="field" style="min-width:12rem">
+        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
+        <input id="vfFrom" class="date-ce" type="date" lang="en" inputmode="none" aria-label="ตั้งแต่"/>
+        <span>–</span>
+        <input id="vfTo" class="date-ce" type="date" lang="en" inputmode="none" aria-label="ถึง"/>
       </div>
+      <div class="field" style="min-width:9.5rem">
+        <select id="vfMethod" aria-label="วิธีชำระ">
+          <option value="">วิธีชำระ: ทั้งหมด</option>
+          <option value="transfer">โอนเงิน</option>
+          <option value="cheque">เช็ค</option>
+          <option value="cash">เงินสด</option>
+        </select>
+      </div>
+      <button type="button" class="btn ghost" id="btnClearVoucherFilters">↻ ล้างตัวกรอง</button>
+    </div>
+    <div class="card card-table">
       <div class="table-wrap mob-cards">
         <table>
           <thead>
@@ -849,10 +992,13 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div id="voucherEmpty" class="empty hidden">ยังไม่มีใบสำคัญจ่าย</div>
       <div class="table-foot">
-        <div id="voucherCount">แสดง 0 รายการ</div>
-        <div style="display:flex;gap:.55rem;align-items:center;flex-wrap:wrap">
-          <label class="muted" style="display:flex;align-items:center;gap:.35rem">แสดงต่อหน้า
-            <select id="vfSize" class="inp" style="width:auto;padding:.25rem .4rem">
+        <div class="table-foot-meta">
+          <span id="voucherCount">แสดง 0 รายการ</span>
+          <span class="muted" id="voucherTotal">ทั้งหมด 0 รายการ</span>
+        </div>
+        <div class="table-foot-nav">
+          <label class="page-size">แสดงต่อหน้า
+            <select id="vfSize" class="inp page-size-select">
               <option value="10">10</option>
               <option value="20">20</option>
               <option value="50">50</option>
@@ -865,6 +1011,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </section>
 
   <section id="panelByAp" class="panel">
+    <p class="panel-intro">ค้นหารายการใบวางบิล / ใบสำคัญจ่ายตามเจ้าหนี้</p>
     <div class="card toolbar">
       <div class="combo grow">
         <div class="field">
@@ -875,8 +1022,8 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <button type="button" class="btn soft" id="btnRefreshByAp">↻ รีเฟรช</button>
     </div>
-    <div id="byApPicked" class="picked hidden" style="margin-bottom:.65rem"></div>
-    <div class="card" style="padding:.35rem 0 0">
+    <div id="byApPicked" class="picked hidden"></div>
+    <div class="card card-table">
       <div class="table-wrap mob-cards">
         <table>
           <thead>
@@ -894,8 +1041,10 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div id="byApEmpty" class="empty hidden">เลือกเจ้าหนี้เพื่อดูรายการ</div>
       <div class="table-foot">
-        <div id="byApCount">แสดง 0 รายการ</div>
-        <div class="pager" id="byApPager"></div>
+        <div class="table-foot-meta" id="byApCount">แสดง 0 รายการ</div>
+        <div class="table-foot-nav">
+          <div class="pager" id="byApPager"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -986,6 +1135,14 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB)</div>
         </div>
         <input id="detProofFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
+        <div id="detProofVerify" class="ai-panel hidden" style="margin-top:.55rem"></div>
+        <div id="proofMismatchAckWrap" class="ai-panel ai-warn hidden" style="margin-top:.55rem">
+          <label class="ai-warn">
+            <input type="checkbox" id="proofMismatchAck"/>
+            ยืนยันว่ายอดสลิปถูกต้อง (AI อ่านผิด)
+          </label>
+        </div>
+        <button type="button" class="btn primary hidden" id="btnProofDone" style="margin-top:.55rem">เสร็จสิ้น</button>
       </div>
     </div>
   </div>
@@ -1000,6 +1157,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 
 <script>
 const WRITE_ENABLED = __WRITE__;
+const AI_ENABLED = __AI__;
 const USER_NAME = __USER_JSON__;
 const SITE = "__SITE__";
 const PAGE_SIZE = 10;
@@ -1025,6 +1183,11 @@ let voucherPageSize = 10;
 let pendingBucket = 'all';
 let detailRow = null;
 let detailPayload = null;
+let createMode = 'manual';
+let wizardStep = 1;
+let scanResult = null;
+let proofVerifyResult = null;
+let proofPendingComplete = false;
 let editTarget = null;
 let editReturnTab = 'pending';
 
@@ -1705,6 +1868,14 @@ async function openDetailByKey(key, opts) {
   $('detBillSum').innerHTML = '';
   $('detBillThumbs').innerHTML = 'กำลังโหลด…';
   $('detProofThumbs').innerHTML = thumbsHtml(row.payment_images || []);
+  if (!opts.keepVerify) {
+    proofVerifyResult = null;
+    proofPendingComplete = false;
+    $('detProofVerify')?.classList.add('hidden');
+    $('proofMismatchAckWrap')?.classList.add('hidden');
+    $('btnProofDone')?.classList.add('hidden');
+    if ($('proofMismatchAck')) $('proofMismatchAck').checked = false;
+  }
   const dlg = $('dlgDetail');
   if (!dlg.open) dlg.showModal();
   try {
@@ -1756,8 +1927,10 @@ function wireDropZone(dropEl, inputEl, onFiles) {
 }
 async function uploadProofFiles(files) {
   if (!detailRow || !detailRow.voucno) return;
+  let lastFile = null;
   for (const file of files) {
     if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); continue; }
+    lastFile = file;
     const fd = new FormData();
     fd.append('voucno', detailRow.voucno);
     fd.append('file', file);
@@ -1768,7 +1941,29 @@ async function uploadProofFiles(files) {
   await loadAwaitProof();
   await loadVouchers();
   const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow));
+  if (fresh) detailRow = fresh;
+
+  let verifyResult = null;
+  if (AI_ENABLED && lastFile) {
+    try {
+      const vfd = new FormData();
+      vfd.append('voucno', detailRow.voucno);
+      vfd.append('file', lastFile);
+      const vr = await fetch('/pay-notes/api/ai/verify-payment', {method:'POST', body: vfd});
+      verifyResult = await vr.json().catch(() => ({}));
+      if (!vr.ok) verifyResult = null;
+    } catch (_) { verifyResult = null; }
+  }
+
   if (fresh && fresh.has_proof) {
+    if (verifyResult) {
+      renderProofVerify(verifyResult);
+      openDetailByKey(keyOf(fresh), {awaitProof: true, canUpload: true, keepVerify: true});
+      if (verifyResult.match) {
+        setTimeout(() => completeProofFlow(fresh), 300);
+      }
+      return;
+    }
     $('dlgDetail').close();
     showTab('voucher');
     openDetailByKey(keyOf(fresh), {voucher: true});
@@ -1776,11 +1971,18 @@ async function uploadProofFiles(files) {
     openDetailByKey(keyOf(fresh), {awaitProof: true, canUpload: true});
   }
 }
-$('btnCloseDetail').onclick = () => $('dlgDetail').close();
-$('btnCloseDetail2').onclick = () => $('dlgDetail').close();
+function tryCloseDetail() {
+  if (proofPendingComplete && !proofCanComplete()) {
+    alert('กรุณายืนยันว่ายอดสลิปถูกต้อง (AI อ่านผิด) ก่อนปิด');
+    return;
+  }
+  $('dlgDetail').close();
+}
+$('btnCloseDetail').onclick = tryCloseDetail;
+$('btnCloseDetail2').onclick = tryCloseDetail;
 $('btnPrintDetail').onclick = printDetail;
 $('dlgDetail').addEventListener('click', (e) => {
-  if (e.target === $('dlgDetail')) $('dlgDetail').close();
+  if (e.target === $('dlgDetail')) tryCloseDetail();
 });
 wireDropZone($('dropProof'), $('detProofFiles'), uploadProofFiles);
 
@@ -1895,8 +2097,16 @@ async function pickVendor(acctno, acctname) {
   if (!$('dueDate').value) $('dueDate').value = todayISO();
   uploadedPaths = [];
   $('billThumbs').innerHTML = '';
+  scanResult = null;
+  $('aiLineMatch')?.classList.add('hidden');
+  $('billMatchAckWrap')?.classList.add('hidden');
+  if ($('billMatchAck')) $('billMatchAck').checked = false;
   await loadBanks();
   await loadBills();
+  if (createMode === 'assist' && AI_ENABLED) {
+    wizardStep = 2;
+    applyCreateMode();
+  }
 }
 
 async function loadBanks() {
@@ -1965,7 +2175,209 @@ function updateBillSelectStatus() {
   $('billSelectStatus').textContent = `เลือก ${n} บิล`;
   $('billSelectTotal').textContent = `ยอดรวม ${fmtMoney(total)} บาท`;
   syncDiscPreview();
+  updateWizardNextState();
 }
+
+function billMatchNeedsAck() {
+  if (!scanResult) return false;
+  const badLines = (scanResult.lines || []).some(ln => ln.status !== 'matched');
+  const totalBad = scanResult.total_match === false;
+  return badLines || totalBad || (scanResult.unmatched || []).length || (scanResult.ambiguous || []).length;
+}
+
+function renderAiLineMatch(result) {
+  const box = $('aiLineMatch');
+  if (!box) return;
+  if (!result || !(result.lines || []).length) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  const rows = (result.lines || []).map(ln => {
+    const ex = ln.extracted || {};
+    const m = ln.matched;
+    const kssBill = m ? esc(m.billno) : '—';
+    const kssAmt = m ? fmtMoney(m.aftertax) : '—';
+    const reason = m ? esc(m.match_label || m.match || '') : esc(ln.status || '');
+    const st = m ? '✓' : '⚠';
+    return `<tr>
+      <td>${esc(ex.billno || '—')}</td>
+      <td class="num">${fmtMoney(ex.amount)}</td>
+      <td>${kssBill}</td>
+      <td class="num">${kssAmt}</td>
+      <td>${reason}</td>
+      <td>${st}</td>
+    </tr>`;
+  }).join('');
+  const docTotal = result.document_total != null ? result.document_total : result.extracted_total;
+  const selTotal = result.selected_total;
+  const totalCls = result.total_match ? 'ai-ok' : 'ai-warn';
+  box.className = `ai-panel ${totalCls}`;
+  box.innerHTML = `
+    <div><strong>ผลการจับคู่จากเอกสาร</strong></div>
+    <table class="ai-line-table">
+      <thead><tr>
+        <th>เอกสาร</th><th class="num">ยอดเอกสาร</th>
+        <th>บิล KSS</th><th class="num">ยอด KSS</th>
+        <th>วิธีจับคู่</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:.45rem">ยอดเอกสาร (ก่อนส่วนลด) <strong>${fmtMoney(docTotal)}</strong>
+      · ยอดเลือก <strong>${fmtMoney(selTotal)}</strong></div>
+    ${(result.unmatched || []).length ? `<div class="ai-warn" style="margin-top:.35rem">ไม่พบในระบบ: ${(result.unmatched||[]).map(esc).join(', ')}</div>` : ''}
+  `;
+  box.classList.remove('hidden');
+}
+
+function applyScanResult(result) {
+  scanResult = result;
+  renderAiLineMatch(result);
+  const auto = new Set(result.auto_selected_billnos || []);
+  $('billList').querySelectorAll('input[type=checkbox]').forEach(cb => {
+    if (auto.has(cb.value)) cb.checked = true;
+  });
+  updateBillSelectStatus();
+  $('billMatchAckWrap').classList.toggle('hidden', createMode !== 'assist' || !billMatchNeedsAck());
+  if ($('billMatchAck')) $('billMatchAck').checked = false;
+}
+
+async function scanBillDocument(files) {
+  if (!picked) { alert('เลือกเจ้าหนี้ก่อน'); return false; }
+  const file = files && files[0];
+  if (!file) return false;
+  if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); return false; }
+  $('scanStatus').textContent = 'กำลังอ่านรายการบิล…';
+  $('btnScanSkip').classList.add('hidden');
+  const fd = new FormData();
+  fd.append('acctno', picked.acctno);
+  fd.append('file', file);
+  try {
+    const r = await fetch('/pay-notes/api/ai/scan-bills', {method:'POST', body: fd});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
+    await loadBills();
+    applyScanResult(j);
+    $('scanStatus').textContent = `อ่านได้ ${(j.lines||[]).length} รายการ · จับคู่ ${(j.auto_selected_billnos||[]).length} บิล`;
+    if (createMode === 'assist') wizardStep = 3;
+    applyCreateMode();
+    return true;
+  } catch (e) {
+    $('scanStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    $('btnScanSkip').classList.remove('hidden');
+    return false;
+  }
+}
+
+function applyCreateMode() {
+  const assist = createMode === 'assist' && AI_ENABLED;
+  $('createModeToggle')?.classList.toggle('hidden', !AI_ENABLED);
+  $('wizardNav')?.classList.toggle('hidden', !assist);
+  $('btnModeManual')?.classList.toggle('on', createMode === 'manual' || !AI_ENABLED);
+  $('btnModeAssist')?.classList.toggle('on', assist);
+  $('wizardScanBlock')?.classList.toggle('hidden', !assist);
+  document.querySelectorAll('.wizard-block').forEach(el => {
+    const n = Number(el.dataset.assistStep || 0);
+    if (!assist) {
+      el.classList.remove('wizard-hidden');
+    } else {
+      el.classList.toggle('wizard-hidden', n !== wizardStep);
+    }
+  });
+  $('btnCreateNote').classList.toggle('hidden', assist && wizardStep < 6);
+  $('wizardProgress').textContent = `ขั้น ${wizardStep}/6`;
+  $('btnWizardBack').classList.toggle('hidden', wizardStep <= 1);
+  $('btnWizardNext').classList.toggle('hidden', wizardStep >= 6);
+  updateWizardNextState();
+  try { localStorage.setItem('kcw.pay_notes.create_mode', createMode); } catch (e) {}
+}
+
+function updateWizardNextState() {
+  if (createMode !== 'assist' || !AI_ENABLED) return;
+  let blocked = false;
+  if (wizardStep === 1 && !picked) blocked = true;
+  if (wizardStep === 3 && billMatchNeedsAck() && !($('billMatchAck') && $('billMatchAck').checked)) blocked = true;
+  $('btnWizardNext').disabled = blocked;
+}
+
+function setCreateMode(mode) {
+  if (mode === 'assist' && !AI_ENABLED) return;
+  createMode = mode === 'assist' ? 'assist' : 'manual';
+  if (createMode === 'assist') wizardStep = picked ? Math.max(wizardStep, 1) : 1;
+  applyCreateMode();
+}
+
+$('btnModeManual').onclick = () => setCreateMode('manual');
+$('btnModeAssist').onclick = () => setCreateMode('assist');
+$('btnWizardBack').onclick = () => {
+  if (wizardStep > 1) { wizardStep -= 1; applyCreateMode(); }
+};
+$('btnWizardNext').onclick = () => {
+  if (wizardStep === 1 && !picked) { alert('เลือกเจ้าหนี้ก่อน'); return; }
+  if (wizardStep < 6) { wizardStep += 1; applyCreateMode(); }
+};
+$('billMatchAck')?.addEventListener('change', updateWizardNextState);
+$('btnScanSkip').onclick = () => {
+  scanResult = null;
+  $('aiLineMatch').classList.add('hidden');
+  $('billMatchAckWrap').classList.add('hidden');
+  wizardStep = 3;
+  applyCreateMode();
+};
+wireDropZone($('dropScan'), $('scanFiles'), scanBillDocument);
+
+function renderProofVerify(result) {
+  const box = $('detProofVerify');
+  const ackWrap = $('proofMismatchAckWrap');
+  const btnDone = $('btnProofDone');
+  if (!box) return;
+  proofVerifyResult = result;
+  if (!result || !AI_ENABLED) {
+    box.classList.add('hidden');
+    ackWrap?.classList.add('hidden');
+    btnDone?.classList.add('hidden');
+    return;
+  }
+  if (result.match) {
+    box.className = 'ai-panel ai-ok';
+    box.innerHTML = `✓ ยอดสลิปตรงกับยอดชำระ ${fmtMoney(result.expected_amount)} บาท`;
+    ackWrap?.classList.add('hidden');
+    if ($('proofMismatchAck')) $('proofMismatchAck').checked = false;
+    btnDone?.classList.add('hidden');
+    proofPendingComplete = false;
+  } else {
+    box.className = 'ai-panel ai-warn';
+    box.innerHTML = `⚠ ยอดสลิป ${fmtMoney(result.extracted_amount)} บาท ไม่ตรงกับยอดชำระ ${fmtMoney(result.expected_amount)} บาท (ต่าง ${fmtMoney(result.difference)})`;
+    ackWrap?.classList.remove('hidden');
+    if ($('proofMismatchAck')) $('proofMismatchAck').checked = false;
+    btnDone?.classList.remove('hidden');
+    if (btnDone) btnDone.disabled = true;
+    proofPendingComplete = true;
+  }
+  box.classList.remove('hidden');
+}
+
+function proofCanComplete() {
+  if (!proofPendingComplete) return true;
+  return !!($('proofMismatchAck') && $('proofMismatchAck').checked);
+}
+
+function completeProofFlow(fresh) {
+  if (!proofCanComplete()) return;
+  proofPendingComplete = false;
+  $('dlgDetail').close();
+  showTab('voucher');
+  if (fresh) openDetailByKey(keyOf(fresh), {voucher: true});
+}
+
+$('proofMismatchAck')?.addEventListener('change', () => {
+  $('btnProofDone').disabled = !proofCanComplete();
+});
+$('btnProofDone').onclick = () => {
+  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow));
+  completeProofFlow(fresh);
+};
+
 $('btnRefreshBills').onclick = () => loadBills();
 $('btnAddBank').onclick = async () => {
   if (!picked) { alert('เลือกเจ้าหนี้ก่อน'); return; }
@@ -2164,6 +2576,11 @@ $('btnSaveEdit').onclick = async () => {
 wireDatePickers(document);
 setDiscMode('amount');
 $('billList').innerHTML = `<tr><td colspan="4" class="empty">เลือกเจ้าหนี้ก่อน</td></tr>`;
+try {
+  const saved = localStorage.getItem('kcw.pay_notes.create_mode');
+  if (saved === 'assist' && AI_ENABLED) createMode = 'assist';
+} catch (e) {}
+applyCreateMode();
 (function boot() {
   const h = (location.hash || '').replace('#','');
   if (h === 'pending') showTab('pending');

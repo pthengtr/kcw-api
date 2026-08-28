@@ -16,7 +16,23 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 | 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view bill + proof images | no | vouchered `PVMAS` with proof |
 | 5. ค้นหาตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
 
-After proof upload on tab 3, the row moves to tab 4 automatically.
+After proof upload on tab 3, the row moves to tab 4 automatically (if AI payment verify passes, or AI is off). If AI detects a slip amount mismatch, the operator must tick **ยืนยันว่ายอดสลิปถูกต้อง (AI อ่านผิด)** before completing.
+
+### Tab 1 create modes
+
+| Mode | Label | Behavior |
+|------|-------|----------|
+| **กรอกเอง** | Manual | Original form — all steps visible |
+| **ช่วยอ่านเอกสาร** | AI assist | 6-step wizard: vendor → scan document → confirm bills → discount → note details → upload |
+
+AI assist scans vendor bill/statement images, extracts bill numbers + amounts per line, matches to KSS pickable bills (billno + amount scoring), and shows a line-by-line review with total compare (**ก่อนส่วนลด**). If scan fails, use **ข้ามไปเลือกบิลเอง**.
+
+### AI APIs
+
+- `POST /api/ai/scan-bills` — `acctno` + `file` → line match result
+- `POST /api/ai/verify-payment` — `voucno` + `file` → slip amount vs net payable
+
+Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key is set).
 
 ### APIs
 
@@ -35,6 +51,9 @@ PAY_NOTES_ENABLED=true
 PAY_NOTES_SITE=HQ
 PAY_NOTES_LISTEN_PORT=8791
 PAY_NOTES_WRITE_ENABLED=true
+PAY_NOTES_AI_ENABLED=true
+PAY_NOTES_AI_MODEL=gpt-4o-mini
+PAY_NOTES_AI_TIMEOUT_SECONDS=45
 PAY_NOTES_TOKEN_SECRET=   # optional; falls back to STOCK_CHECK_TOKEN_SECRET
 POS_MSSQL_WRITER_USERNAME=python_writer
 POS_MSSQL_WRITER_PASSWORD=...

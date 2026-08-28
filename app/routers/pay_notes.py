@@ -8,6 +8,11 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from src.pay_notes.ai_vision import (
+    extract_bill_lines_from_image,
+    match_bill_lines,
+    verify_payment_from_image,
+)
 from src.pay_notes.config import get_pay_notes_settings
 from src.pay_notes.db import (
     get_pay_notes_supabase_client,
@@ -22,6 +27,7 @@ from src.pay_notes.db import (
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.pay_notes.baht_text import baht_text
 from src.pay_notes.parts9 import (
+    get_note_by_voucno,
     get_note_header,
     list_bills_for_edit,
     list_note_bills_with_lines,
@@ -270,7 +276,12 @@ def home(request: Request, t: str | None = None):
     if err:
         return err
     name = ident.display_name if ident else "operator"
-    html = page(user_name=name, site=settings.site, write_enabled=settings.pay_notes_write_enabled)
+    html = page(
+        user_name=name,
+        site=settings.site,
+        write_enabled=settings.pay_notes_write_enabled,
+        ai_enabled=settings.ai_available,
+    )
     resp = HTMLResponse(html)
     if ident and ident.line_user_id != "tailscale":
         _set_session(resp, ident)
@@ -836,3 +847,107 @@ def api_list_payment_images(request: Request, voucno: str = ""):
         return err
     client = get_pay_notes_supabase_client()
     return list_folder(client, payment_image_prefix(voucno))
+
+
+def _ai_settings_ok():
+    settings = _settings()
+    if not settings.ai_available:
+        return None, JSONResponse({"error": "ai_disabled", "code": "ai_disabled"}, status_code=503)
+    return settings, None
+
+
+@router.post("/api/ai/scan-bills")
+async def api_ai_scan_bills(
+    request: Request,
+    acctno: str = Form(...),
+    file: UploadFile = File(...),
+):
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings, ai_err = _ai_settings_ok()
+    if ai_err:
+        return ai_err
+
+    acct = acctno.strip()
+    if not acct:
+        return JSONResponse({"error": "acctno required"}, status_code=400)
+
+    data = await file.read()
+    if not data:
+        return JSONResponse({"error": "empty file"}, status_code=400)
+
+    try:
+        pickable = list_pickable_bills(settings.site, acct)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    try:
+        extracted = extract_bill_lines_from_image(
+            data,
+            file.content_type,
+            model=settings.pay_notes_ai_model,
+            timeout=settings.pay_notes_ai_timeout_seconds,
+        )
+    except Exception as exc:
+        logger_msg = str(exc)
+        return JSONResponse({"error": f"scan failed: {logger_msg}", "code": "ai_error"}, status_code=502)
+
+    matched = match_bill_lines(extracted.get("lines") or [], pickable)
+    doc_total = float(extracted.get("total_amount") or 0)
+    if doc_total > 0:
+        matched["document_total"] = round(doc_total, 2)
+        matched["document_total_match"] = abs(doc_total - matched["selected_total"]) <= 0.01
+    matched["extraction_warnings"] = list(extracted.get("warnings") or [])
+    if extracted.get("usage"):
+        matched["usage"] = extracted["usage"]
+    return matched
+
+
+@router.post("/api/ai/verify-payment")
+async def api_ai_verify_payment(
+    request: Request,
+    voucno: str = Form(...),
+    file: UploadFile = File(...),
+):
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings, ai_err = _ai_settings_ok()
+    if ai_err:
+        return ai_err
+
+    vo = voucno.strip()
+    if not vo:
+        return JSONResponse({"error": "voucno required"}, status_code=400)
+
+    try:
+        header = get_note_by_voucno(settings.site, vo)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    if not header:
+        return JSONResponse({"error": "voucher not found"}, status_code=404)
+
+    acct = str(header.get("acctno") or "").strip()
+    note = str(header.get("noteno") or "").strip()
+    client = get_pay_notes_supabase_client()
+    rem = get_reminder(client, acct, note) if acct and note else None
+    totals = _note_totals(header, rem)
+    expected = float(totals.get("netamt") or 0)
+
+    data = await file.read()
+    if not data:
+        return JSONResponse({"error": "empty file"}, status_code=400)
+
+    try:
+        result = verify_payment_from_image(
+            data,
+            file.content_type,
+            expected_amount=expected,
+            model=settings.pay_notes_ai_model,
+            timeout=settings.pay_notes_ai_timeout_seconds,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": f"verify failed: {exc}", "code": "ai_error"}, status_code=502)
+
+    return {**result, "voucno": vo, "acctno": acct, "noteno": note}
