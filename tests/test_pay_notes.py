@@ -29,7 +29,7 @@ def test_pay_notes_page_renders():
     assert "รอชำระ" in html
     assert "ใบสำคัญจ่าย" in html
     assert "รอแนบหลักฐาน" in html
-    assert "รายการตามเจ้าหนี้" in html
+    assert "ค้นหาตามเจ้าหนี้" in html
     assert "themeBtn" in html
     assert "kcw.pay_notes.theme" in html
     assert 'id="tabCreate"' in html

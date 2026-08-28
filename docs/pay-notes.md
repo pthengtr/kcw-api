@@ -14,7 +14,7 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 | 2. รอชำระ | Pending payment board; edit note; record payment | **yes** (bills, discount, due, bank, remark) | unvouchered `PVMAS` + reminder |
 | 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `PVMAS`; `payment/{VOUCNO}/` images |
 | 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view bill + proof images | no | vouchered `PVMAS` with proof |
-| 5. รายการตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
+| 5. ค้นหาตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
 
 After proof upload on tab 3, the row moves to tab 4 automatically.
 
