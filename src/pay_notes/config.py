@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from pydantic import Field
@@ -22,6 +23,11 @@ class PayNotesSettings(BaseSettings):
     )
     pay_notes_token_secret: str = Field(default="", validation_alias="PAY_NOTES_TOKEN_SECRET")
     pay_notes_write_enabled: bool = Field(default=False, validation_alias="PAY_NOTES_WRITE_ENABLED")
+    pay_notes_ai_enabled: bool = Field(default=True, validation_alias="PAY_NOTES_AI_ENABLED")
+    pay_notes_ai_model: str = Field(default="gpt-4o-mini", validation_alias="PAY_NOTES_AI_MODEL")
+    pay_notes_ai_timeout_seconds: float = Field(
+        default=45.0, validation_alias="PAY_NOTES_AI_TIMEOUT_SECONDS"
+    )
 
     stock_check_token_secret: str = Field(default="", validation_alias="STOCK_CHECK_TOKEN_SECRET")
     stock_check_token_ttl_seconds: int = Field(
@@ -42,6 +48,13 @@ class PayNotesSettings(BaseSettings):
     @property
     def site(self) -> str:
         return (self.pay_notes_site or "HQ").strip().upper() or "HQ"
+
+    @property
+    def ai_available(self) -> bool:
+        key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if not key or key == "placeholder":
+            return False
+        return bool(self.pay_notes_ai_enabled)
 
 
 @lru_cache

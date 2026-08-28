@@ -255,3 +255,100 @@ def test_note_detail_api_includes_pidet_lines():
     assert body["payments"][0]["CHKNO"] == "โอน"
     assert body["totals"]["netamt"] == 18454.25
     assert body["totals"]["net_text"] == "หนึ่งหมื่นแปดพันสี่ร้อยห้าสิบสี่บาทยี่สิบห้าสตางค์"
+
+
+def test_page_has_ai_create_mode_elements():
+    html = page(user_name="Test", site="HQ", write_enabled=True, ai_enabled=True)
+    assert "createModeToggle" in html
+    assert "btnModeAssist" in html
+    assert "wizardNav" in html
+    assert "dropScan" in html
+    assert "aiLineMatch" in html
+    assert "billMatchAck" in html
+    assert "detProofVerify" in html
+    assert "proofMismatchAck" in html
+    assert "AI_ENABLED = true" in html
+
+
+def test_page_ai_disabled_hides_flag():
+    html = page(user_name="Test", site="HQ", write_enabled=True, ai_enabled=False)
+    assert "AI_ENABLED = false" in html
+
+
+def test_scan_bills_requires_acctno():
+    from io import BytesIO
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    settings = PayNotesSettings(pay_notes_ai_enabled=True)
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes._ai_settings_ok") as ai_ok,
+    ):
+        ai_ok.return_value = (settings, None)
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/ai/scan-bills",
+            data={"acctno": ""},
+            files={"file": ("x.jpg", BytesIO(b"fake"), "image/jpeg")},
+        )
+    assert res.status_code in (400, 422)
+
+
+def test_verify_payment_api_mock():
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    settings = PayNotesSettings(pay_notes_ai_enabled=True)
+    header = {
+        "acctno": "BRC",
+        "noteno": "N-001",
+        "BILLAMT": 1000,
+        "NETAMT": 900,
+        "voucno": "KCPN6908-001",
+    }
+    verify_payload = {
+        "extracted_amount": 800.0,
+        "expected_amount": 900.0,
+        "difference": -100.0,
+        "match": False,
+        "confidence": "high",
+        "transfer_date": "",
+        "reference": "",
+        "warnings": [],
+    }
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes._ai_settings_ok", return_value=(settings, None)),
+        patch("app.routers.pay_notes.get_note_by_voucno", return_value=header),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.get_reminder", return_value={"discount_amount": 100}),
+        patch("app.routers.pay_notes.verify_payment_from_image", return_value=verify_payload),
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/ai/verify-payment",
+            data={"voucno": "KCPN6908-001"},
+            files={"file": ("slip.jpg", BytesIO(b"fake"), "image/jpeg")},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["match"] is False
+    assert body["expected_amount"] == 900.0

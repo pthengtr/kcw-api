@@ -513,6 +513,39 @@ def get_note_header(site: str, acctno: str, noteno: str) -> dict[str, Any] | Non
     return out
 
 
+def get_note_by_voucno(site: str, voucno: str) -> dict[str, Any] | None:
+    vo = (voucno or "").strip()
+    if not vo:
+        return None
+    eng = get_site_engine(_site_key(site))
+    sql = text(
+        """
+        SELECT TOP 1
+          LTRIM(RTRIM(ACCTNO)) AS acctno,
+          LTRIM(RTRIM(ACCTNAME)) AS acctname,
+          LTRIM(RTRIM(NOTENO)) AS noteno,
+          NOTEDATE, BILLCNT, BILLAMT, DISCOUNT, NETAMT,
+          LTRIM(RTRIM(COALESCE(VOUCNO, ''))) AS voucno,
+          VOUCDATE, VOUCED, JOURMODE, PAID, CHKAMT
+        FROM dbo.PVMAS
+        WHERE LTRIM(RTRIM(VOUCNO)) = :voucno
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        """
+    )
+    with eng.connect() as conn:
+        row = conn.execute(sql, {"voucno": vo}).mappings().first()
+    if not row:
+        return None
+    out = dict(row)
+    for key in ("NOTEDATE", "VOUCDATE"):
+        val = out.get(key)
+        if isinstance(val, datetime):
+            out[key] = val.date().isoformat()
+        elif isinstance(val, date):
+            out[key] = val.isoformat()
+    return out
+
+
 def list_vouchered_notes(site: str, reminders: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Notes from this service that are vouchered in KSS (for proof queue)."""
     if not reminders:
