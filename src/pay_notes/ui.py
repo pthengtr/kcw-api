@@ -705,6 +705,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <textarea class="area" id="noteRemark" maxlength="500" placeholder="เช่น รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
               <p class="date-hint">เก็บในระบบชำระเจ้าหนี้เท่านั้น · ไม่เขียนลง KSS</p>
             </div>
+            <div style="margin-top:.65rem">
+              <label class="lbl" for="kbizDatetime">เตือนโอน KBIZ (optional)</label>
+              <input class="inp" id="kbizDatetime" type="datetime-local" step="60"/>
+              <p class="date-hint">วันเวลาที่ต้องการเตือนโอนผ่าน KBIZ · เก็บใน reminder เท่านั้น</p>
+            </div>
           </div>
         </div>
 
@@ -809,7 +814,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <label class="lbl" for="editBankSelect">บัญชีธนาคารปลายทาง</label>
           <select class="inp" id="editBankSelect"><option value="">— เลือกบัญชี —</option></select>
         </div>
-        <div style="grid-column:span 2">
+        <div>
+          <label class="lbl" for="editKbizDatetime">เตือนโอน KBIZ (optional)</label>
+          <input class="inp" id="editKbizDatetime" type="datetime-local" step="60"/>
+        </div>
+        <div>
           <label class="lbl" for="editNoteRemark">หมายเหตุ</label>
           <textarea class="area" id="editNoteRemark" maxlength="500" style="min-height:2.6rem"></textarea>
         </div>
@@ -1121,6 +1130,10 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <button type="button" class="linkish hidden" id="detDueCancel">ยกเลิก</button>
       </div>
     </div>
+    <div id="detKbizWrap" class="hidden" style="margin-top:.75rem">
+      <label class="lbl">เตือนโอน KBIZ</label>
+      <div id="detKbizView" class="muted"></div>
+    </div>
     <div id="detBills"></div>
     <div id="detBillSum"></div>
     <h3 style="margin:1rem 0 .4rem;font-size:.95rem">รูปใบวางบิล</h3>
@@ -1209,6 +1222,22 @@ function fmtDate(iso, short) {
   const [y, m, d] = s.split('-');
   return short ? `${d}/${m}/${y.slice(2)}` : `${d}/${m}/${y}`;
 }
+function fmtDateTime(iso) {
+  const s = String(iso || '').trim();
+  if (!s) return '—';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short', hour12: false });
+}
+function toDatetimeLocal(iso) {
+  const s = String(iso || '').trim();
+  if (!s) return '';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function remKbiz(r) { return String(((r.reminder || {}).kbiz_datetime) || '').trim(); }
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1856,6 +1885,9 @@ async function openDetailByKey(key, opts) {
   $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${row.noteno}`;
   const remark = String(rem.remark || '').trim();
   $('detRemark').innerHTML = remark ? `<div class="remark">${esc(remark)}</div>` : '';
+  const kbiz = remKbiz(row);
+  $('detKbizWrap').classList.toggle('hidden', !kbiz);
+  $('detKbizView').textContent = kbiz ? fmtDateTime(kbiz) : '';
   const canEditDue = row.is_editable === true;
   $('detDueWrap').classList.toggle('hidden', !remDue(row));
   $('detDueView').textContent = remDue(row) || '—';
@@ -2494,7 +2526,8 @@ $('btnCreateNote').onclick = async () => {
         acctno: picked.acctno, acctname: picked.acctname, noteno, due_date: due,
         bank_id, billnos, discount_mode: discMode,
         discount_input: Number($('discInput').value || 0),
-        remark: ($('noteRemark').value || '').trim()
+        remark: ($('noteRemark').value || '').trim(),
+        kbiz_datetime: ($('kbizDatetime').value || '').trim() || null
       })
     });
     const rem = res.reminder || {};
@@ -2507,6 +2540,7 @@ $('btnCreateNote').onclick = async () => {
     $('billThumbs').innerHTML = '';
     $('discInput').value = '0.00';
     $('noteRemark').value = '';
+    $('kbizDatetime').value = '';
     setDiscMode('amount');
     await loadBills();
     setTimeout(() => { showTab('pending'); }, 600);
@@ -2529,6 +2563,7 @@ async function openEditNote(key, returnTab) {
   const rem = row.reminder || {};
   $('editDueDate').value = remDue(row);
   $('editNoteRemark').value = rem.remark || '';
+  $('editKbizDatetime').value = toDatetimeLocal(rem.kbiz_datetime);
   editDiscMode = rem.discount_mode === 'percent' ? 'percent' : 'amount';
   $('editDiscInput').value = rem.discount_input != null ? rem.discount_input : (rem.discount_amount || 0);
   setEditDiscMode(editDiscMode);
@@ -2624,6 +2659,7 @@ $('btnSaveEdit').onclick = async () => {
         due_date: $('editDueDate').value,
         bank_id: $('editBankSelect').value,
         remark: ($('editNoteRemark').value || '').trim(),
+        kbiz_datetime: ($('editKbizDatetime').value || '').trim() || null,
         discount_mode: editDiscMode,
         discount_input: Number($('editDiscInput').value || 0),
       })
