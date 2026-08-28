@@ -8,12 +8,11 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 
 ## Scope
 
-| Step | Tab | KSS / Supabase |
-|------|-----|----------------|
-| 1 Create note | สร้างใบวางบิล | `PVMAS` INSERT (`JOURTYPE=NP`) + `PIMAS` stamp `NOTENO`; bill images → Supabase; reminder with discount + optional remark |
-| 2 Pending pay | รอชำระ | reminder + unvouchered `PVMAS`; search/filter; view bill images; record voucher |
-| 3 Await proof | รอหลักฐาน | vouchered `PVMAS` **without** payment images; upload proof; search/filter |
-| 4 Paid | ชำระแล้ว | vouchered **with** payment images; view bill + proof; search/filter |
+| Tab | What you do | KSS / Supabase |
+|-----|-------------|----------------|
+| ใบวางบิล | List notes (รอชำระ / ค้างชำระ / จ่ายแล้ว) and **สร้างใบวางบิล** (step form) | `PVMAS` INSERT (`JOURTYPE=NP`) + `PIMAS` stamp `NOTENO`; bill images → Supabase; reminder with discount + optional remark |
+| รอชำระ | Unvouchered notes with due-date KPIs; record payment | reminder + unvouchered `PVMAS`; view bill images; record voucher |
+| ใบสำคัญจ่าย | Vouchered notes; filter by method / evidence; attach proof | vouchered `PVMAS`; payment images → Supabase (`รอแนบหลักฐาน` / `แนบแล้ว`) |
 
 Write rules: [kcw-docs PVMAS/RVMAS dictionary §9](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md).
 
