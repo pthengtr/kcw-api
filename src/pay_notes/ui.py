@@ -256,7 +256,13 @@ label.lbl { display:block; font-size:.78rem; color:var(--muted); margin:0 0 .25r
   padding:0; max-width:40rem; width:calc(100% - 2rem);
   max-height:min(92dvh, 46rem); overflow:auto; box-shadow:0 16px 40px rgba(16,24,40,.18);
 }
-#dlgDetail { max-width:min(58rem, calc(100% - 2rem)); max-height:min(94dvh, 54rem); }
+#dlgDetail {
+  max-width:min(58rem, calc(100% - 2rem));
+  max-height:min(94dvh, 54rem);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#dlgDetail .dlg-body { overflow:auto; flex:1 1 auto; min-height:0; }
+#dlgDetail .dlg-head, #dlgDetail .dlg-foot { flex:0 0 auto; }
 .det-bills { min-width:36rem; }
 .det-bills .bill-row td { font-weight:600; background:var(--inset); }
 .det-bills .line-row td:nth-child(3) { padding-left:1.05rem; }
