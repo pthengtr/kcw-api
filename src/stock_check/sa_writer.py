@@ -56,12 +56,38 @@ def _next_billno(conn, prefix: str, when: datetime) -> str:
     return candidate
 
 
+def _sql_nvarchar_len(text: str) -> int:
+    """SQL Server nvarchar length: supplementary-plane chars count as 2."""
+    return sum(2 if ord(ch) > 0xFFFF else 1 for ch in text)
+
+
+def _truncate_sql_nvarchar(text: str, max_len: int) -> str:
+    """Truncate so the value fits an nvarchar(max_len) column."""
+    if max_len <= 0:
+        return ""
+    out: list[str] = []
+    used = 0
+    for ch in text:
+        units = 2 if ord(ch) > 0xFFFF else 1
+        if used + units > max_len:
+            break
+        out.append(ch)
+        used += units
+    return "".join(out)
+
+
+def _sa_sale_name(operator_name: str) -> str:
+    """SIMAS.SALE is nvarchar(15)."""
+    name = (operator_name or "STOCK").strip() or "STOCK"
+    return _truncate_sql_nvarchar(name, 15)
+
+
 def _sa_remarks(operator_name: str, approver_name: str | None = None) -> str:
-    """SIMAS.REMARKS is typically short (~30); encode counter + approver."""
+    """SIMAS.REMARKS is nvarchar(30); encode counter + approver."""
     op = (operator_name or "STOCK").strip() or "STOCK"
     ap = (approver_name or "").strip()
     raw = f"SC:{op}/{ap}" if ap else f"SC:{op}"
-    return raw[:30]
+    return _truncate_sql_nvarchar(raw, 30)
 
 
 def post_stock_adjustment(
@@ -150,7 +176,7 @@ def post_stock_adjustment(
                     "billtype": billtype,
                     "billtime": billtime,
                     "billno": billno,
-                    "sale": (operator_name or "STOCK")[:15],
+                    "sale": _sa_sale_name(operator_name),
                     "remarks": remarks,
                 },
             )
