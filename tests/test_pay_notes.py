@@ -47,6 +47,12 @@ def test_pay_notes_page_renders():
     assert 'id="printSheet"' in html
     assert "รายละเอียดบิลซื้อ" in html
     assert "ใบสำคัญจ่าย / PAYMENT VOUCHER" in html
+    assert "#dlgDetail[open]" in html
+    assert "dialog.dlg:not([open])" in html
+    assert "function closeDialogs" in html
+    assert "class=\"line-row\"" not in html
+    assert "<th>วันที่ครบกำหนด</th>" in html
+    assert "<th>เลขที่บิล</th>" in html
 
 
 def test_page_has_voucher_and_proof_tabs():

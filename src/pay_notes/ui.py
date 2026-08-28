@@ -256,16 +256,16 @@ label.lbl { display:block; font-size:.78rem; color:var(--muted); margin:0 0 .25r
   padding:0; max-width:40rem; width:calc(100% - 2rem);
   max-height:min(92dvh, 46rem); overflow:auto; box-shadow:0 16px 40px rgba(16,24,40,.18);
 }
-#dlgDetail {
+#dlgDetail[open] {
   max-width:min(58rem, calc(100% - 2rem));
   max-height:min(94dvh, 54rem);
   display:flex; flex-direction:column; overflow:hidden;
 }
 #dlgDetail .dlg-body { overflow:auto; flex:1 1 auto; min-height:0; }
 #dlgDetail .dlg-head, #dlgDetail .dlg-foot { flex:0 0 auto; }
-.det-bills { min-width:36rem; }
-.det-bills .bill-row td { font-weight:600; background:var(--inset); }
-.det-bills .line-row td:nth-child(3) { padding-left:1.05rem; }
+dialog.dlg:not([open]) { display:none !important; }
+.det-bills { min-width:28rem; }
+.det-bills .bill-row td { font-weight:600; }
 .det-sum {
   background:var(--inset); border-radius:.65rem; padding:.7rem .85rem; margin-top:.55rem;
 }
@@ -1147,7 +1147,15 @@ function showEditPanel(on) {
   document.querySelectorAll('header .tabs button').forEach(b => b.classList.remove('on'));
 }
 
+function closeDialogs() {
+  ['dlgDetail', 'dlgPay'].forEach((id) => {
+    const el = $(id);
+    if (el && typeof el.close === 'function' && el.open) el.close();
+  });
+}
+
 function showTab(name) {
+  closeDialogs();
   showEditPanel(false);
   const map = {
     create: 'Create', pending: 'Pending', awaitproof: 'AwaitProof',
@@ -1499,18 +1507,6 @@ function thumbsHtml(images) {
     return url ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""/></a>` : '';
   }).join('');
 }
-function fmtQty(n) {
-  const x = Number(n || 0);
-  if (!Number.isFinite(x)) return '—';
-  if (Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
-  return x.toLocaleString('th-TH', {minimumFractionDigits: 0, maximumFractionDigits: 2});
-}
-function itemName(ln) {
-  const code = String((ln && ln.BCODE) || '').trim();
-  const det = String((ln && ln.DETAIL) || '').trim();
-  if (code && det) return `${code} ${det}`;
-  return det || code || '—';
-}
 function billMonthLabel(bills) {
   const months = [];
   (bills || []).forEach(b => {
@@ -1535,38 +1531,21 @@ function renderDetBills(det) {
     $('detBillSum').innerHTML = '';
     return;
   }
-  const rows = [];
-  bills.forEach(b => {
-    const lines = b.lines || [];
-    rows.push(`<tr class="bill-row">
+  const rows = bills.map(b => `<tr class="bill-row">
       <td data-label="วันที่บิล">${fmtDate(b.BILLDATE)}</td>
       <td data-label="เลขที่บิล">${esc(b.BILLNO)}</td>
-      <td data-label="รายการ">${lines.length ? `${lines.length} รายการ` : '—'}</td>
-      <td class="num" data-label="จำนวน"></td>
-      <td class="num" data-label="ราคา"></td>
       <td class="num" data-label="จำนวนเงิน">${fmtMoney(b.AFTERTAX)}</td>
-    </tr>`);
-    lines.forEach(ln => {
-      const ui = String(ln.UI || '').trim();
-      rows.push(`<tr class="line-row">
-        <td data-label=""></td>
-        <td data-label=""></td>
-        <td data-label="รายการ">${esc(itemName(ln))}${ui ? ` <span class="muted">${esc(ui)}</span>` : ''}</td>
-        <td class="num" data-label="จำนวน">${fmtQty(ln.QTY)}</td>
-        <td class="num" data-label="ราคา">${fmtMoney(ln.PRICE)}</td>
-        <td class="num" data-label="จำนวนเงิน">${fmtMoney(ln.AMOUNT)}</td>
-      </tr>`);
-    });
-  });
+      <td data-label="กำหนดชำระ">${fmtDate(due)}</td>
+    </tr>`).join('');
   $('detBills').innerHTML = `
     <h3 style="margin:1rem 0 .4rem;font-size:.95rem">รายละเอียดบิลซื้อ</h3>
     <div class="table-wrap">
       <table class="det-bills">
         <thead><tr>
-          <th>วันที่บิล</th><th>เลขที่บิล</th><th>รายการ</th>
-          <th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">จำนวนเงิน</th>
+          <th>วันที่บิล</th><th>เลขที่บิล</th>
+          <th class="num">จำนวนเงิน</th><th>กำหนดชำระ</th>
         </tr></thead>
-        <tbody>${rows.join('')}</tbody>
+        <tbody>${rows}</tbody>
       </table>
     </div>`;
   const disc = Number(totals.discount || 0);
@@ -1577,7 +1556,6 @@ function renderDetBills(det) {
     <div class="pay-line"><span>ส่วนลด</span><strong>${fmtMoney(disc)}</strong></div>
     <div class="pay-line pay-net"><span>ยอดสุทธิ</span><strong>${fmtMoney(net)}</strong></div>
     ${totals.net_text ? `<div class="muted" style="margin-top:.35rem">${esc(totals.net_text)}</div>` : ''}
-    ${due ? `<div class="muted">กำหนดชำระ ${fmtDate(due)}</div>` : ''}
   </div>`;
 }
 function fillPrintSheet(det, row) {
@@ -1601,33 +1579,18 @@ function fillPrintSheet(det, row) {
   const billcnt = totals.billcnt || bills.length;
   const words = totals.net_text || '';
   const remarkNote = String(rem.remark || '').trim();
-  const bodyRows = [];
-  bills.forEach(b => {
-    const lines = b.lines || [];
-    const billRemark = String(b.REMARKS || '').trim() || (lines.length ? '' : remarkNote);
-    bodyRows.push(`<tr class="bill">
+  const bodyRows = bills.map(b => {
+    const billRemark = String(b.REMARKS || '').trim() || remarkNote;
+    return `<tr>
       <td>${esc(fmtDate(b.BILLDATE))}</td>
       <td>${esc(b.BILLNO || '')}</td>
-      <td>${lines.length ? '' : '—'}</td>
-      <td class="num"></td>
-      <td class="num"></td>
       <td class="num">${fmtMoney(b.AFTERTAX)}</td>
       <td>${esc(fmtDate(due))}</td>
       <td>${esc(billRemark)}</td>
-    </tr>`);
-    lines.forEach(ln => {
-      bodyRows.push(`<tr>
-        <td></td><td></td>
-        <td class="item">${esc(itemName(ln))}${ln.UI ? ' / ' + esc(ln.UI) : ''}</td>
-        <td class="num">${fmtQty(ln.QTY)}</td>
-        <td class="num">${fmtMoney(ln.PRICE)}</td>
-        <td class="num">${fmtMoney(ln.AMOUNT)}</td>
-        <td></td><td></td>
-      </tr>`);
-    });
+    </tr>`;
   });
   if (!bodyRows.length) {
-    bodyRows.push('<tr><td colspan="8" style="text-align:center;color:#666">ไม่พบบิลซื้อ</td></tr>');
+    bodyRows.push('<tr><td colspan="5" style="text-align:center;color:#666">ไม่พบบิลซื้อ</td></tr>');
   }
   const settle = (row && row.settle_method) || (payments[0] && payments[0].settle_method) || '';
   const isCash = settle === 'cash';
@@ -1678,9 +1641,6 @@ function fillPrintSheet(det, row) {
           <tr>
             <th>วันที่บิล</th>
             <th>เลขที่บิล</th>
-            <th>รายการ</th>
-            <th>จำนวน</th>
-            <th>ราคา</th>
             <th>จำนวนเงิน</th>
             <th>วันที่ครบกำหนด</th>
             <th>หมายเหตุ</th>
@@ -1745,7 +1705,8 @@ async function openDetailByKey(key, opts) {
   $('detBillSum').innerHTML = '';
   $('detBillThumbs').innerHTML = 'กำลังโหลด…';
   $('detProofThumbs').innerHTML = thumbsHtml(row.payment_images || []);
-  $('dlgDetail').showModal();
+  const dlg = $('dlgDetail');
+  if (!dlg.open) dlg.showModal();
   try {
     const det = await api(`/notes/${encodeURIComponent(row.acctno)}/${encodeURIComponent(row.noteno)}`);
     detailPayload = det;
@@ -1818,6 +1779,9 @@ async function uploadProofFiles(files) {
 $('btnCloseDetail').onclick = () => $('dlgDetail').close();
 $('btnCloseDetail2').onclick = () => $('dlgDetail').close();
 $('btnPrintDetail').onclick = printDetail;
+$('dlgDetail').addEventListener('click', (e) => {
+  if (e.target === $('dlgDetail')) $('dlgDetail').close();
+});
 wireDropZone($('dropProof'), $('detProofFiles'), uploadProofFiles);
 
 
