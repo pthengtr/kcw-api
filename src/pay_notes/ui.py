@@ -702,7 +702,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
             </details>
             <div style="margin-top:.65rem">
               <label class="lbl" for="noteRemark">หมายเหตุ (optional)</label>
-              <textarea class="area" id="noteRemark" maxlength="500" placeholder="เช่น รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
+              <textarea class="area" id="noteRemark" maxlength="500" placeholder="เช่น รหัสเจ้าหนี้-บิลเดือน mm/yyyy / รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
               <p class="date-hint">เก็บในระบบชำระเจ้าหนี้เท่านั้น · ไม่เขียนลง KSS</p>
             </div>
             <div style="margin-top:.65rem">
@@ -820,7 +820,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         </div>
         <div>
           <label class="lbl" for="editNoteRemark">หมายเหตุ</label>
-          <textarea class="area" id="editNoteRemark" maxlength="500" style="min-height:2.6rem"></textarea>
+          <textarea class="area" id="editNoteRemark" maxlength="500" style="min-height:2.6rem" placeholder="เช่น รหัสเจ้าหนี้-บิลเดือน mm/yyyy / รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
         </div>
       </div>
       <div class="bill-head">
