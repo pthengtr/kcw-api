@@ -4,6 +4,7 @@ from src.pay_notes.ui import initials, page
 from src.pay_notes.writer import PayNoteWriteError, create_pay_note
 from src.pay_notes.config import PayNotesSettings
 from src.pay_notes.parts9 import infer_settle_method
+from app.routers.pay_notes import _workflow_meta
 
 
 def test_pay_notes_commands():
@@ -28,19 +29,18 @@ def test_pay_notes_page_renders():
     assert "รอชำระ" in html
     assert "ใบสำคัญจ่าย" in html
     assert "รอแนบหลักฐาน" in html
-    assert "จ่ายแล้ว" in html
+    assert "รายการตามเจ้าหนี้" in html
     assert "themeBtn" in html
     assert "kcw.pay_notes.theme" in html
-    assert 'id="tabNotes"' in html
+    assert 'id="tabCreate"' in html
     assert 'id="tabPending"' in html
-    assert 'id="tabVouchers"' in html
-    assert 'id="tabCreate"' not in html
-    assert 'id="tabAwaitProof"' not in html
-    assert 'id="tabPaid"' not in html
-    assert ">สร้างโน้ต<" not in html
-    assert ">ค้างจ่าย<" not in html
-    assert 'id="tabProof"' not in html
-    assert "ทด" in html  # avatar initials
+    assert 'id="tabAwaitProof"' in html
+    assert 'id="tabVoucher"' in html
+    assert 'id="tabByAp"' in html
+    assert 'id="tabNotes"' not in html
+    assert 'id="tabVouchers"' not in html
+    assert 'id="panelEdit"' in html
+    assert 'mob-cards' in html
 
 
 def test_page_has_voucher_and_proof_tabs():
@@ -50,7 +50,20 @@ def test_page_has_voucher_and_proof_tabs():
     assert "WRITE_ENABLED = true" in html
     assert "/vouchers" in html
     assert "/vouchered" in html
+    assert "openEditNote" in html
     assert "AD" in html
+
+
+def test_workflow_meta():
+    pending = _workflow_meta()
+    assert pending["stage"] == "pending"
+    assert pending["is_editable"] is True
+    await_proof = _workflow_meta(voucno="KCPN6908-001", has_proof=False)
+    assert await_proof["stage"] == "await_proof"
+    assert await_proof["is_editable"] is False
+    done = _workflow_meta(voucno="KCPN6908-001", has_proof=True)
+    assert done["stage"] == "voucher"
+    assert done["is_editable"] is False
 
 
 def test_ui_initials():

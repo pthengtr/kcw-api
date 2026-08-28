@@ -22,6 +22,7 @@ from src.pay_notes.db import (
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.pay_notes.parts9 import (
     get_note_header,
+    list_bills_for_edit,
     list_pending_notes,
     list_pickable_bills,
     list_vouchered_notes,
@@ -36,7 +37,13 @@ from src.pay_notes.storage import (
     upload_bytes,
 )
 from src.pay_notes.ui import APP, SESSION_COOKIE, page
-from src.pay_notes.writer import PayNoteWriteError, cancel_unvouchered_pay_note, create_pay_note, create_voucher
+from src.pay_notes.writer import (
+    PayNoteWriteError,
+    cancel_unvouchered_pay_note,
+    create_pay_note,
+    create_voucher,
+    update_pay_note,
+)
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
 router = APIRouter(prefix="/pay-notes", tags=["pay-notes"])
@@ -162,6 +169,15 @@ class NoteCreate(BaseModel):
     remark: str = ""
 
 
+class NoteUpdate(BaseModel):
+    billnos: list[str] = Field(default_factory=list)
+    due_date: str | None = None
+    bank_id: str | None = None
+    remark: str | None = None
+    discount_mode: str | None = None
+    discount_input: float | None = None
+
+
 class ReminderPatch(BaseModel):
     due_date: str | None = None
     bank_id: str | None = None
@@ -209,6 +225,32 @@ def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str,
     return m, val, amount
 
 
+def _workflow_meta(*, voucno: str = "", has_proof: bool = False) -> dict[str, Any]:
+    vo = (voucno or "").strip()
+    if not vo:
+        return {
+            "stage": "pending",
+            "workflow_status": "รอชำระ",
+            "is_editable": True,
+        }
+    if not has_proof:
+        return {
+            "stage": "await_proof",
+            "workflow_status": "รอแนบหลักฐาน",
+            "is_editable": False,
+        }
+    return {
+        "stage": "voucher",
+        "workflow_status": "ใบสำคัญจ่าย",
+        "is_editable": False,
+    }
+
+
+def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str, Any]:
+    voucno = (row.get("voucno") or row.get("VOUCNO") or "").strip()
+    return {**row, **_workflow_meta(voucno=voucno, has_proof=has_proof)}
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, t: str | None = None):
     settings = _settings()
@@ -246,13 +288,20 @@ def api_vendors(request: Request, q: str = ""):
 
 
 @router.get("/api/bills")
-def api_bills(request: Request, acctno: str = ""):
+def api_bills(request: Request, acctno: str = "", noteno: str = ""):
     _, err = _require_api(request)
     if err:
         return err
     settings = _settings()
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct:
+        return []
     try:
-        rows = list_pickable_bills(settings.site, acctno)
+        if note:
+            rows = list_bills_for_edit(settings.site, acct, note)
+        else:
+            rows = list_pickable_bills(settings.site, acct)
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
     return rows
@@ -302,7 +351,7 @@ def api_pending(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=502)
     out = []
     for row in rows:
-        out.append({**row, "stage": "pending"})
+        out.append(_with_workflow({**row, "stage": "pending"}))
     return out
 
 
@@ -463,6 +512,106 @@ def api_create_note(request: Request, body: NoteCreate):
     return {**kss, "reminder": rem}
 
 
+@router.get("/api/notes")
+def api_list_notes(request: Request, acctno: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    client = get_pay_notes_supabase_client()
+    reminders = list_reminders(client)
+    if acctno.strip():
+        acct = acctno.strip()
+        reminders = [r for r in reminders if (r.get("acctno") or "").strip() == acct]
+    try:
+        pending = list_pending_notes(settings.site, reminders)
+        vouchered = list_vouchered_notes(settings.site, reminders)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in pending:
+        key = (row.get("acctno", "").strip(), row.get("noteno", "").strip())
+        seen.add(key)
+        out.append(_with_workflow(row))
+    for row in vouchered:
+        key = (row.get("acctno", "").strip(), row.get("noteno", "").strip())
+        if key in seen:
+            continue
+        voucno = (row.get("voucno") or "").strip()
+        proofs = list_folder(client, payment_image_prefix(voucno)) if voucno else []
+        has_proof = bool(proofs)
+        out.append(_with_workflow({**row, "has_proof": has_proof, "payment_images": proofs}, has_proof=has_proof))
+    out.sort(
+        key=lambda x: (
+            (x.get("reminder") or {}).get("due_date") or "",
+            x.get("noteno") or "",
+        )
+    )
+    return out
+
+
+@router.patch("/api/notes/{acctno}/{noteno}")
+def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    acct = acctno.strip()
+    note = noteno.strip()
+    if not body.billnos:
+        return JSONResponse({"error": "select at least one bill"}, status_code=400)
+
+    client = get_pay_notes_supabase_client()
+    rem = get_reminder(client, acct, note)
+    if not rem:
+        return JSONResponse({"error": "reminder not found"}, status_code=404)
+
+    header = get_note_header(settings.site, acct, note)
+    if not header:
+        return JSONResponse({"error": "note not found in KSS"}, status_code=404)
+    if (header.get("voucno") or "").strip() or str(header.get("VOUCED") or "N").strip().upper() == "Y":
+        return JSONResponse({"error": "note is not editable", "code": "not_editable"}, status_code=409)
+
+    try:
+        kss = update_pay_note(
+            settings=settings,
+            acctno=acct,
+            noteno=note,
+            billnos=body.billnos,
+            operator=ident.display_name if ident else None,
+        )
+    except PayNoteWriteError as exc:
+        status = 409 if exc.code == "not_editable" else 400
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+    billamt = float(kss.get("billamt") or 0)
+    patch: dict[str, Any] = {"updated_at": datetime.now(_BKK).isoformat()}
+    if body.due_date:
+        patch["due_date"] = _parse_due(body.due_date)
+    if body.bank_id:
+        bank = get_vendor_bank(client, body.bank_id)
+        if not bank or bank.get("acctno", "").strip() != acct:
+            return JSONResponse({"error": "invalid bank for vendor"}, status_code=400)
+        patch["bank_id"] = body.bank_id
+    if body.remark is not None:
+        patch["remark"] = (body.remark or "").strip()[:500]
+    if body.discount_mode is not None or body.discount_input is not None:
+        mode = body.discount_mode if body.discount_mode is not None else rem.get("discount_mode", "amount")
+        raw = body.discount_input if body.discount_input is not None else rem.get("discount_input", 0)
+        try:
+            discount_mode, discount_input, discount_amount = _resolve_discount(billamt, mode, float(raw or 0))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+        patch["discount_mode"] = discount_mode
+        patch["discount_input"] = discount_input
+        patch["discount_amount"] = discount_amount
+
+    updated = patch_reminder(client, acct, note, patch)
+    return {**kss, "reminder": updated, **_workflow_meta()}
+
+
 @router.get("/api/notes/{acctno}/{noteno}")
 def api_note_detail(request: Request, acctno: str, noteno: str):
     _, err = _require_api(request)
@@ -575,18 +724,6 @@ def api_create_voucher(request: Request, body: VoucherCreate):
     return {**result, "reminder": rem, "settle_method": method}
 
 
-@router.get("/api/awaiting-proof")
-def api_awaiting_proof(request: Request):
-    """Vouchered notes that still need payment proof images."""
-    return _api_vouchered_board(request, proof="awaiting")
-
-
-@router.get("/api/paid")
-def api_paid(request: Request):
-    """Vouchered notes with at least one payment proof image (ชำระแล้ว)."""
-    return _api_vouchered_board(request, proof="done")
-
-
 @router.get("/api/vouchered")
 def api_vouchered(request: Request, proof: str = "all"):
     """All vouchered notes from this service. proof=awaiting|done|all."""
@@ -616,8 +753,12 @@ def _api_vouchered_board(request: Request, *, proof: str = "all"):
             continue
         if mode == "done" and not has_proof:
             continue
-        stage = "paid" if has_proof else "await_proof"
-        out.append({**row, "payment_images": proofs, "has_proof": has_proof, "stage": stage})
+        out.append(
+            _with_workflow(
+                {**row, "payment_images": proofs, "has_proof": has_proof},
+                has_proof=has_proof,
+            )
+        )
     return out
 
 
