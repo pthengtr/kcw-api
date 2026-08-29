@@ -3,7 +3,7 @@ from src.pay_notes.net import rewrite_base_port
 from src.pay_notes.ui import initials, page
 from src.pay_notes.writer import PayNoteWriteError, create_pay_note
 from src.pay_notes.config import PayNotesSettings
-from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method
+from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines
 from src.pay_notes.baht_text import baht_text
 from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _workflow_meta
 
@@ -361,3 +361,64 @@ def test_verify_payment_api_mock():
     body = res.json()
     assert body["match"] is False
     assert body["expected_amount"] == 900.0
+
+
+def test_list_note_bills_with_lines_unvouchered_only(monkeypatch):
+    from src.pay_notes import parts9 as p9
+
+    def fake_note_bills(*_a, **_kw):
+        return [{"BILLNO": "OPEN-1"}]
+
+    def fake_attached(*_a, **_kw):
+        return [{"BILLNO": "PAID-1"}, {"BILLNO": "OPEN-1"}]
+
+    monkeypatch.setattr(p9, "list_note_bills", fake_note_bills)
+    monkeypatch.setattr(p9, "list_attached_bills", fake_attached)
+    monkeypatch.setattr(p9, "list_pidet_lines", lambda *_a, **_kw: [])
+
+    open_only = list_note_bills_with_lines("HQ", "THL", "EE1044-04", unvouchered_only=True)
+    all_bills = list_note_bills_with_lines("HQ", "THL", "EE1044-04", unvouchered_only=False)
+
+    assert [b["BILLNO"] for b in open_only] == ["OPEN-1"]
+    assert [b["BILLNO"] for b in all_bills] == ["PAID-1", "OPEN-1"]
+
+
+def test_note_detail_uses_unvouchered_bills_for_open_note(monkeypatch):
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    header = {
+        "acctno": "THL",
+        "acctname": "ตั้งเฮงล้ง",
+        "noteno": "EE1044-04",
+        "BILLCNT": 2,
+        "BILLAMT": 4500.0,
+        "voucno": "",
+        "VOUCED": "N",
+    }
+    captured: dict[str, object] = {}
+
+    def fake_list_note_bills_with_lines(*_a, **kw):
+        captured.update(kw)
+        return []
+
+    ident = MagicMock(line_user_id="u1", display_name="op")
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_note_header", return_value=header),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", return_value=[]),
+        patch("app.routers.pay_notes.list_vendor_banks", return_value=[]),
+        patch("app.routers.pay_notes.get_reminder", return_value=None),
+        patch("app.routers.pay_notes.list_note_bills_with_lines", side_effect=fake_list_note_bills_with_lines),
+        patch("app.routers.pay_notes.get_pay_notes_settings") as settings_m,
+    ):
+        settings_m.return_value.site = "HQ"
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.get("/pay-notes/api/notes/THL/EE1044-04")
+
+    assert res.status_code == 200
+    assert captured.get("unvouchered_only") is True
+    assert res.json()["totals"]["billcnt"] == 2
