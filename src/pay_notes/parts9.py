@@ -296,8 +296,12 @@ def list_note_bills_with_lines(
     noteno: str,
     *,
     engine: Engine | None = None,
+    unvouchered_only: bool = False,
 ) -> list[dict[str, Any]]:
-    bills = list_attached_bills(site, acctno, noteno, engine=engine)
+    if unvouchered_only:
+        bills = list_note_bills(site, acctno, noteno, engine=engine)
+    else:
+        bills = list_attached_bills(site, acctno, noteno, engine=engine)
     lines = list_pidet_lines(
         site,
         [str(b.get("BILLNO") or "") for b in bills],

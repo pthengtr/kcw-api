@@ -693,13 +693,17 @@ def api_note_detail(request: Request, acctno: str, noteno: str):
         if bank:
             rem["vendor_bank"] = bank
     try:
-        bills = list_note_bills_with_lines(settings.site, acctno, noteno)
+        vouced = str(header.get("VOUCED") or "N").strip().upper() == "Y"
+        bills = list_note_bills_with_lines(
+            settings.site,
+            acctno,
+            noteno,
+            unvouchered_only=not voucno and not vouced,
+        )
         payments = list_voucher_payments(settings.site, voucno) if voucno else []
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
     totals = _note_totals(header, rem)
-    if bills:
-        totals["billcnt"] = len(bills)
     return {
         "header": header,
         "bills": bills,
