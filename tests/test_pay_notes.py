@@ -3,7 +3,8 @@ from src.pay_notes.net import rewrite_base_port
 from src.pay_notes.ui import initials, page
 from src.pay_notes.writer import PayNoteWriteError, create_pay_note
 from src.pay_notes.config import PayNotesSettings
-from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines
+from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, parse_noteno_suffix
+from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines, resolve_stored_noteno
 from src.pay_notes.baht_text import baht_text
 from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _workflow_meta
 
@@ -422,3 +423,31 @@ def test_note_detail_uses_unvouchered_bills_for_open_note(monkeypatch):
     assert res.status_code == 200
     assert captured.get("unvouchered_only") is True
     assert res.json()["totals"]["billcnt"] == 2
+
+
+def test_display_noteno_strips_auto_suffix():
+    assert display_noteno("EE1044-04") == "EE1044-04"
+    assert display_noteno("EE1044-04_1") == "EE1044-04"
+    assert display_noteno("THL3/69_2") == "THL3/69"
+    assert parse_noteno_suffix("EE1044-04_1") == ("EE1044-04", 1)
+
+
+def test_format_suffixed_noteno_respects_max_length():
+    assert format_suffixed_noteno("EE1044-04", 1) == "EE1044-04_1"
+    try:
+        format_suffixed_noteno("X" * 14, 12)
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised
+
+
+def test_resolve_stored_noteno_allocates_suffix_on_collision(monkeypatch):
+    from src.pay_notes import parts9 as p9
+
+    def in_use(_site, _acct, label, *, engine=None):
+        return label in {"EE1044-04", "EE1044-04_1"}
+
+    monkeypatch.setattr(p9, "noteno_label_in_use", in_use)
+    assert resolve_stored_noteno("HQ", "THL", "EE1044-04") == "EE1044-04_2"
+    assert resolve_stored_noteno("HQ", "THL", "THL3/69") == "THL3/69"

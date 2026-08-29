@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from src.parts9_explorer.db import format_sql_error, get_site_engine
+from src.pay_notes.noteno import NOTENO_MAX_LEN, display_noteno, format_suffixed_noteno
 
 _BKK = ZoneInfo("Asia/Bangkok")
 
@@ -387,6 +388,124 @@ def note_exists(site: str, acctno: str, noteno: str, *, engine: Engine | None = 
     with eng.connect() as conn:
         row = conn.execute(sql, {"acctno": acct, "noteno": note}).first()
     return row is not None
+
+
+def open_unvouchered_note_exists(
+    site: str,
+    acctno: str,
+    noteno: str,
+    *,
+    engine: Engine | None = None,
+) -> bool:
+    """Active pay note row waiting for voucher (create/recover gate)."""
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return False
+    eng = engine or get_site_engine(_site_key(site))
+    sql = text(
+        """
+        SELECT TOP 1 1 AS ok FROM dbo.PVMAS
+        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+          AND LTRIM(RTRIM(NOTENO)) = :noteno
+          AND NOTED = 'Y'
+          AND ISNULL(VOUCED, 'N') = 'N'
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        """
+    )
+    with eng.connect() as conn:
+        row = conn.execute(sql, {"acctno": acct, "noteno": note}).first()
+    return row is not None
+
+
+def noteno_label_in_use(
+    site: str,
+    acctno: str,
+    label: str,
+    *,
+    engine: Engine | None = None,
+) -> bool:
+    """True when any live PVMAS row or PIMAS stamp uses this exact NOTENO."""
+    acct = (acctno or "").strip()
+    note = (label or "").strip()
+    if not acct or not note:
+        return False
+    eng = engine or get_site_engine(_site_key(site))
+    sql = text(
+        """
+        SELECT TOP 1 1 AS ok
+        FROM (
+          SELECT LTRIM(RTRIM(NOTENO)) AS noteno
+          FROM dbo.PVMAS
+          WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+            AND ISNULL(CANCELED, 'N') <> 'Y'
+            AND ISNULL(LTRIM(RTRIM(NOTENO)), '') <> ''
+          UNION
+          SELECT LTRIM(RTRIM(NOTENO)) AS noteno
+          FROM dbo.PIMAS
+          WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+            AND ISNULL(CANCELED, 'N') <> 'Y'
+            AND ISNULL(LTRIM(RTRIM(NOTENO)), '') <> ''
+        ) x
+        WHERE LTRIM(RTRIM(noteno)) = :noteno
+        """
+    )
+    with eng.connect() as conn:
+        row = conn.execute(sql, {"acctno": acct, "noteno": note}).first()
+    return row is not None
+
+
+def resolve_stored_noteno(
+    site: str,
+    acctno: str,
+    bare_noteno: str,
+    *,
+    engine: Engine | None = None,
+) -> str:
+    """Return bare label or bare_N when vendor label is already stamped in KSS."""
+    bare = display_noteno(bare_noteno)
+    if not bare:
+        raise ValueError("noteno required")
+    if len(bare) > NOTENO_MAX_LEN:
+        raise ValueError(f"NOTENO exceeds {NOTENO_MAX_LEN} chars")
+    if not noteno_label_in_use(site, acctno, bare, engine=engine):
+        return bare
+    for suffix in range(1, 1000):
+        candidate = format_suffixed_noteno(bare, suffix)
+        if not noteno_label_in_use(site, acctno, candidate, engine=engine):
+            return candidate
+    raise RuntimeError(f"no available NOTENO suffix for {acctno}/{bare}")
+
+
+def open_note_has_mixed_pi_stamps(
+    site: str,
+    acctno: str,
+    noteno: str,
+    *,
+    engine: Engine | None = None,
+) -> bool:
+    """Open note with both paid and unpaid PIMAS rows on the same NOTENO."""
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return False
+    eng = engine or get_site_engine(_site_key(site))
+    sql = text(
+        """
+        SELECT
+          SUM(CASE WHEN i.PAID = 'Y' OR ISNULL(LTRIM(RTRIM(i.VOUCNO2)), '') <> '' THEN 1 ELSE 0 END) AS paid_cnt,
+          SUM(CASE WHEN ISNULL(i.PAID, 'N') = 'N' AND ISNULL(LTRIM(RTRIM(i.VOUCNO2)), '') = '' THEN 1 ELSE 0 END) AS open_cnt
+        FROM dbo.PIMAS i
+        WHERE LTRIM(RTRIM(i.ACCTNO)) = :acctno
+          AND LTRIM(RTRIM(i.NOTENO)) = :noteno
+          AND ISNULL(i.CANCELED, 'N') <> 'Y'
+        """
+    )
+    with eng.connect() as conn:
+        row = conn.execute(sql, {"acctno": acct, "noteno": note}).mappings().first()
+    if not row:
+        return False
+    return int(row.get("paid_cnt") or 0) > 0 and int(row.get("open_cnt") or 0) > 0
 
 
 def list_pending_notes(site: str, reminders: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -102,6 +102,33 @@ def patch_reminder(
     return _first_row(resp)
 
 
+def rename_reminder(
+    client: Client,
+    acctno: str,
+    from_noteno: str,
+    to_noteno: str,
+) -> dict[str, Any] | None:
+    """Change reminder PK noteno (acctno, noteno) when KSS gains _N suffix."""
+    acct = acctno.strip()
+    src = from_noteno.strip()
+    dst = to_noteno.strip()
+    if not acct or not src or not dst or src == dst:
+        return None
+    row = get_reminder(client, acct, src)
+    if not row:
+        return None
+    new_row = {k: v for k, v in row.items() if k not in ("created_at", "updated_at")}
+    new_row["noteno"] = dst
+    (
+        _table(client, "reminder")
+        .delete()
+        .eq("acctno", acct)
+        .eq("noteno", src)
+        .execute()
+    )
+    return insert_reminder(client, new_row)
+
+
 def list_reminders(client: Client) -> list[dict[str, Any]]:
     resp = (
         _table(client, "reminder")

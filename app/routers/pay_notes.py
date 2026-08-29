@@ -26,6 +26,7 @@ from src.pay_notes.db import (
 )
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.pay_notes.baht_text import baht_text
+from src.pay_notes.noteno import display_noteno
 from src.pay_notes.parts9 import (
     get_note_by_voucno,
     get_note_header,
@@ -36,6 +37,7 @@ from src.pay_notes.parts9 import (
     list_voucher_payments,
     list_vouchered_notes,
     note_exists,
+    open_unvouchered_note_exists,
     search_vendors,
 )
 from src.pay_notes.storage import (
@@ -43,6 +45,7 @@ from src.pay_notes.storage import (
     list_folder,
     payment_image_prefix,
     public_url,
+    relocate_bill_images,
     upload_bytes,
 )
 from src.pay_notes.ui import APP, SESSION_COOKIE, page
@@ -450,8 +453,10 @@ def api_create_note(request: Request, body: NoteCreate):
         return err
     settings = _settings()
     acct = body.acctno.strip()
-    note = body.noteno.strip()
-    if len(note) > 15:
+    bare = display_noteno(body.noteno.strip())
+    if not bare:
+        return JSONResponse({"error": "noteno required"}, status_code=400)
+    if len(bare) > 15:
         return JSONResponse({"error": "NOTENO max 15 chars"}, status_code=400)
     if not body.billnos:
         return JSONResponse({"error": "select at least one bill"}, status_code=400)
@@ -461,23 +466,26 @@ def api_create_note(request: Request, body: NoteCreate):
     if not bank or bank.get("acctno", "").strip() != acct:
         return JSONResponse({"error": "invalid bank for vendor"}, status_code=400)
 
-    images = list_folder(client, bill_image_prefix(acct, note))
+    images = list_folder(client, bill_image_prefix(acct, bare))
     if not images:
         return JSONResponse({"error": "upload at least one bill image first"}, status_code=400)
 
     # KSS + Supabase cannot share one ACID tx. Write KSS first, then reminder;
     # if reminder fails, compensate by canceling the unvouchered KSS note.
     recovered = False
-    if note_exists(settings.site, acct, note):
+    stored = bare
+    if open_unvouchered_note_exists(settings.site, acct, bare):
         # Legacy orphan from before compensate: attach reminder only.
-        if get_reminder(client, acct, note):
+        if get_reminder(client, acct, bare):
             return JSONResponse({"error": "note already exists in KSS"}, status_code=409)
-        header = get_note_header(settings.site, acct, note)
+        header = get_note_header(settings.site, acct, bare)
         if not header:
             return JSONResponse({"error": "note already exists in KSS"}, status_code=409)
+        stored = bare
         kss = {
             "acctno": acct,
-            "noteno": note,
+            "noteno": stored,
+            "noteno_display": display_noteno(stored),
             "billcnt": int(header.get("BILLCNT") or 0),
             "billamt": float(header.get("BILLAMT") or 0),
             "notedate": header.get("NOTEDATE"),
@@ -491,12 +499,17 @@ def api_create_note(request: Request, body: NoteCreate):
                 settings=settings,
                 acctno=acct,
                 acctname=body.acctname.strip(),
-                noteno=note,
+                noteno=bare,
                 billnos=body.billnos,
                 operator=ident.display_name if ident else None,
             )
+            stored = str(kss.get("noteno") or bare).strip()
+            if stored != bare:
+                relocate_bill_images(client, acct, bare, stored)
         except PayNoteWriteError as exc:
             return JSONResponse({"error": str(exc), "code": exc.code}, status_code=400)
+
+    note = stored
 
     billamt = float(kss.get("billamt") or 0)
     try:

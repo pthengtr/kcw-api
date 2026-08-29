@@ -54,20 +54,36 @@ def create_pay_note(
         raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")
 
     acct = (acctno or "").strip()
-    note = (noteno or "").strip()
     name = (acctname or "").strip()
-    if not acct or not note:
-        raise PayNoteWriteError("acctno and noteno required", code="validation")
-    if len(note) > 15:
-        raise PayNoteWriteError("NOTENO exceeds 15 chars", code="validation")
+    from src.pay_notes.noteno import display_noteno
+    from src.pay_notes.parts9 import (
+        fetch_bills_for_note,
+        note_exists,
+        open_unvouchered_note_exists,
+        resolve_stored_noteno,
+    )
 
-    from src.pay_notes.parts9 import fetch_bills_for_note, note_exists
+    bare = display_noteno((noteno or "").strip())
+    if not acct or not bare:
+        raise PayNoteWriteError("acctno and noteno required", code="validation")
+    if len(bare) > 15:
+        raise PayNoteWriteError("NOTENO exceeds 15 chars", code="validation")
 
     site = settings.site
     # SELECTs use the reader login; python_writer is INSERT/UPDATE-only until grants include SELECT.
     # Injected `engine` (tests) is used for both read and write.
     write_eng = engine or _writer_engine(settings)
     try:
+        if open_unvouchered_note_exists(site, acct, bare, engine=engine):
+            raise PayNoteWriteError("note already exists in KSS", code="duplicate_note")
+
+        try:
+            note = resolve_stored_noteno(site, acct, bare, engine=engine)
+        except ValueError as exc:
+            raise PayNoteWriteError(str(exc), code="validation") from exc
+        except RuntimeError as exc:
+            raise PayNoteWriteError(str(exc), code="noteno_exhausted") from exc
+
         if note_exists(site, acct, note, engine=engine):
             raise PayNoteWriteError("note already exists in KSS", code="duplicate_note")
 
@@ -145,6 +161,7 @@ def create_pay_note(
     return {
         "acctno": acct,
         "noteno": note,
+        "noteno_display": bare,
         "billcnt": billcnt,
         "billamt": billamt,
         "notedate": notedate.date().isoformat(),
