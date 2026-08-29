@@ -4,6 +4,8 @@ LAN + Tailscale UI for HQ→SYP stock transfers. Port **8792**, routes under `/t
 
 **Operator runbook:** [kcw-docs ops/transfer.md](https://github.com/pthengtr/kcw-docs/blob/main/ops/transfer.md).
 
+**SYP box one-time setup:** [kcw-docs ops/syp-linux-transfer-setup.md](https://github.com/pthengtr/kcw-docs/blob/main/ops/syp-linux-transfer-setup.md).
+
 LINE command: `โอนสินค้า` (aliases: `โอน`, `transfer`).
 
 ## Operator flow
