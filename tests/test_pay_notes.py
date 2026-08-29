@@ -308,9 +308,51 @@ def test_scan_bills_requires_acctno():
         res = client.post(
             "/pay-notes/api/ai/scan-bills",
             data={"acctno": ""},
-            files={"file": ("x.jpg", BytesIO(b"fake"), "image/jpeg")},
+            files=[("files", ("x.jpg", BytesIO(b"fake"), "image/jpeg"))],
         )
     assert res.status_code in (400, 422)
+
+
+def test_scan_bills_multiple_files_mock():
+    from io import BytesIO
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    settings = PayNotesSettings(pay_notes_ai_enabled=True)
+    extracted = {
+        "lines": [{"billno": "A1", "amount": 100.0}],
+        "total_amount": 100.0,
+        "warnings": [],
+        "usage": {"input_tokens": 120, "output_tokens": 30, "total_tokens": 150},
+    }
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes._ai_settings_ok", return_value=(settings, None)),
+        patch("app.routers.pay_notes.list_pickable_bills", return_value=[{"BILLNO": "A1", "AFTERTAX": 100.0}]),
+        patch("app.routers.pay_notes.extract_bill_lines_from_images", return_value=extracted),
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/ai/scan-bills",
+            data={"acctno": "BRC"},
+            files=[
+                ("files", ("a.jpg", BytesIO(b"fake1"), "image/jpeg")),
+                ("files", ("b.jpg", BytesIO(b"fake2"), "image/jpeg")),
+            ],
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["image_count"] == 2
+    assert body["usage"]["total_tokens"] == 150
+    assert body["auto_selected_billnos"] == ["A1"]
 
 
 def test_verify_payment_api_mock():

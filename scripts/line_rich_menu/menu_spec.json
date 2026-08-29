@@ -48,7 +48,7 @@
       "bounds": { "x": 1667, "y": 749, "width": 833, "height": 937 },
       "action": {
         "type": "message",
-        "label": "ชำระเจ้าหนี้",
+        "label": "เจาหน",
         "text": "ชำระเจ้าหนี้"
       }
     }

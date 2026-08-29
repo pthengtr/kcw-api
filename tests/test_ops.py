@@ -167,7 +167,7 @@ def test_ops_rich_menu_is_separate_from_staff_default():
     assert [a["action"]["text"] for a in staff["areas"]] == staff_texts
     assert [a["action"]["text"] for a in ops["areas"]] == ops_texts
     assert ops["areas"][3]["action"]["label"] == "PO โอนสินค้า"
-    assert ops["areas"][5]["action"]["label"] == "ชำระเจ้าหนี้"
+    assert ops["areas"][5]["action"]["label"] == "เจาหน"
     assert staff["size"] == {"width": 2500, "height": 1686}
     assert ops["size"] == {"width": 2500, "height": 1686}
     assert staff["name"] != ops["name"]

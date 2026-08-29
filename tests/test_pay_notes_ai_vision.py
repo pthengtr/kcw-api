@@ -3,6 +3,8 @@
 from src.pay_notes.ai_vision import (
     amounts_match,
     compare_payment_amounts,
+    dedupe_extracted_lines,
+    extract_bill_lines_from_images,
     match_bill_lines,
     normalize_billno,
 )
@@ -10,6 +12,30 @@ from src.pay_notes.ai_vision import (
 
 def test_normalize_billno_strips_separators():
     assert normalize_billno("INV-2401/001") == normalize_billno("INV2401001")
+
+
+def test_extract_bill_lines_from_images_single_image():
+    """Test extract_bill_lines_from_images works with single image."""
+    assert callable(extract_bill_lines_from_images)
+
+
+def test_dedupe_extracted_lines_drops_exact_duplicates():
+    lines, warnings = dedupe_extracted_lines([
+        {"billno": "INV-001", "amount": 100.0},
+        {"billno": "INV-001", "amount": 100.0},
+        {"billno": "INV-002", "amount": 200.0},
+    ])
+    assert len(lines) == 2
+    assert not warnings
+
+
+def test_dedupe_extracted_lines_warns_conflicting_amounts():
+    lines, warnings = dedupe_extracted_lines([
+        {"billno": "INV-001", "amount": 100.0},
+        {"billno": "INV-001", "amount": 200.0},
+    ])
+    assert len(lines) == 2
+    assert warnings
 
 
 def test_match_bill_lines_amount_unique():

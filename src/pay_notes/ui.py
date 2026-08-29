@@ -673,9 +673,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
             <div class="drop" id="dropScan" tabindex="0">
               <div style="font-size:1.4rem;margin-bottom:.25rem">📄</div>
               <div>คลิกหรือลากเอกสารมาวางที่นี่</div>
-              <div class="date-hint">JPG, PNG, PDF (ไม่เกิน 10 MB)</div>
+              <div class="date-hint">JPG, PNG, PDF (ไม่เกิน 10 MB) · สูงสุด 5 ไฟล์</div>
             </div>
-            <input id="scanFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf"/>
+            <input id="scanFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
             <div class="thumbs" id="scanThumbs"></div>
             <div id="scanStatus" class="muted" style="margin-top:.45rem"></div>
             <button type="button" class="btn sm ghost hidden" id="btnScanSkip" style="margin-top:.45rem">ข้ามไปเลือกบิลเอง</button>
@@ -1213,7 +1213,7 @@ let detailPayload = null;
 let createMode = 'manual';
 let wizardStep = 1;
 let scanResult = null;
-let scanRefFile = null;
+let scanRefFiles = [];
 let proofVerifyResult = null;
 let proofPendingComplete = false;
 let editTarget = null;
@@ -1227,6 +1227,17 @@ function esc(s) {
 }
 function fmtMoney(n) {
   return Number(n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function fmtTokens(n) {
+  return Number(n || 0).toLocaleString('en-US');
+}
+function scanUsageText(usage) {
+  if (!usage) return '';
+  const inTok = Number(usage.input_tokens || 0);
+  const outTok = Number(usage.output_tokens || 0);
+  const totalTok = Number(usage.total_tokens || (inTok + outTok));
+  if (!totalTok) return '';
+  return ` · โทเคน in ${fmtTokens(inTok)} · out ${fmtTokens(outTok)} · รวม ${fmtTokens(totalTok)}`;
 }
 function fmtDate(iso, short) {
   const s = String(iso || '').slice(0, 10);
@@ -2198,7 +2209,7 @@ async function pickVendor(acctno, acctname) {
   uploadedPaths = [];
   $('billThumbs').innerHTML = '';
   scanResult = null;
-  scanRefFile = null;
+  scanRefFiles = [];
   if ($('scanThumbs')) $('scanThumbs').innerHTML = '';
   $('aiLineMatch')?.classList.add('hidden');
   $('billMatchAckWrap')?.classList.add('hidden');
@@ -2314,6 +2325,18 @@ function renderAiLineMatch(result) {
   const docTotal = result.document_total != null ? result.document_total : result.extracted_total;
   const selTotal = result.selected_total;
   const totalCls = result.total_match ? 'ai-ok' : 'ai-warn';
+  let tokenInfo = '';
+  if (result.usage) {
+    const usage = result.usage;
+    tokenInfo = `
+      <div style="margin-top:.45rem">
+        <strong>โทเคน:</strong>
+        in ${fmtTokens(usage.input_tokens || 0)} · 
+        out ${fmtTokens(usage.output_tokens || 0)} · 
+        รวม ${fmtTokens(usage.total_tokens || 0)}
+      </div>
+    `;
+  }
   box.className = `ai-panel ${totalCls}`;
   box.innerHTML = `
     <div><strong>ผลการจับคู่จากเอกสาร</strong></div>
@@ -2327,6 +2350,7 @@ function renderAiLineMatch(result) {
     </table>
     <div style="margin-top:.45rem">ยอดเอกสาร (ก่อนส่วนลด) <strong>${fmtMoney(docTotal)}</strong>
       · ยอดเลือก <strong>${fmtMoney(selTotal)}</strong></div>
+    ${tokenInfo}
     ${(result.unmatched || []).length ? `<div class="ai-warn" style="margin-top:.35rem">ไม่พบในระบบ: ${(result.unmatched||[]).map(esc).join(', ')}</div>` : ''}
   `;
   box.classList.remove('hidden');
@@ -2344,43 +2368,76 @@ function applyScanResult(result) {
   if ($('billMatchAck')) $('billMatchAck').checked = false;
 }
 
-function renderScanRefPreview(file) {
+function renderScanRefPreview(files) {
   const box = $('scanThumbs');
   if (!box) return;
-  if (!file) { box.innerHTML = ''; return; }
-  if (file.type && file.type.startsWith('image/')) {
-    const url = URL.createObjectURL(file);
-    box.innerHTML = `<img src="${url}" alt="เอกสารอ้างอิง"/>`;
-  } else {
-    box.innerHTML = `<span class="file-chip">${esc(file.name)}</span>`;
-  }
+  const list = Array.isArray(files) ? files : (files ? [files] : []);
+  if (!list.length) { box.innerHTML = ''; return; }
+  box.innerHTML = list.map(file => {
+    if (file.type && file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      return `<img src="${url}" alt="เอกสารอ้างอิง"/>`;
+    }
+    return `<span class="file-chip">${esc(file.name)}</span>`;
+  }).join('');
 }
 
 async function scanBillDocument(files) {
   if (!picked) { alert('เลือกเจ้าหนี้ก่อน'); return false; }
-  const file = files && files[0];
-  if (!file) return false;
-  if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); return false; }
+  if (!files || files.length === 0) return false;
+  
+  // Check file limits
+  if (files.length > 5) {
+    alert('สูงสุด 5 ไฟล์ต่อการอ่านเอกสาร');
+    return false;
+  }
+  
+  // Validate each file
+  for (const file of files) {
+    if (file.size > MAX_FILE_BYTES) { 
+      alert(`${file.name} เกิน 10 MB`); 
+      return false; 
+    }
+  }
+  
   $('scanStatus').textContent = 'กำลังอ่านรายการบิล…';
   $('btnScanSkip').classList.add('hidden');
   const fd = new FormData();
   fd.append('acctno', picked.acctno);
-  fd.append('file', file);
+  
+  // Upload all files to the server's API
+  for (const file of files) {
+    fd.append('files', file);
+  }
+  
   try {
     const r = await fetch('/pay-notes/api/ai/scan-bills', {method:'POST', body: fd});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
-    scanRefFile = file;
-    renderScanRefPreview(file);
+    
+    scanRefFiles = [...files];
+    renderScanRefPreview(scanRefFiles);
     await loadBills();
     applyScanResult(j);
-    $('scanStatus').textContent = `อ่านได้ ${(j.lines||[]).length} รายการ · จับคู่ ${(j.auto_selected_billnos||[]).length} บิล · จะแนบเอกสารนี้เมื่อบันทึก`;
+    
+    const fileCount = scanRefFiles.length;
+    let statusMessage = `อ่านได้ ${(j.lines||[]).length} รายการ · จับคู่ ${(j.auto_selected_billnos||[]).length} บิล`;
+    
+    if (fileCount > 1) {
+      statusMessage += ` จากไฟล์ ${fileCount} เอกสาร`;
+    }
+    
+    statusMessage += ` · จะแนบเอกสารเมื่อบันทึก`;
+    statusMessage += scanUsageText(j.usage);
+    
+    $('scanStatus').textContent = statusMessage;
+    
     if (createMode === 'assist') wizardStep = 3;
     applyCreateMode();
     return true;
   } catch (e) {
-    scanRefFile = null;
-    renderScanRefPreview(null);
+    scanRefFiles = [];
+    renderScanRefPreview([]);
     $('scanStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`;
     $('btnScanSkip').classList.remove('hidden');
     return false;
@@ -2433,14 +2490,14 @@ $('btnWizardBack').onclick = () => {
 };
 $('btnWizardNext').onclick = () => {
   if (wizardStep === 1 && !picked) { alert('เลือกเจ้าหนี้ก่อน'); return; }
-  if (wizardStep === 2 && !scanRefFile) { alert('สแกนเอกสารก่อน หรือกดข้ามไปเลือกบิลเอง'); return; }
+  if (wizardStep === 2 && !scanRefFiles.length) { alert('สแกนเอกสารก่อน หรือกดข้ามไปเลือกบิลเอง'); return; }
   if (wizardStep < ASSIST_MAX_STEP) { wizardStep += 1; applyCreateMode(); }
 };
 $('billMatchAck')?.addEventListener('change', updateWizardNextState);
 $('btnScanSkip').onclick = () => {
   scanResult = null;
-  scanRefFile = null;
-  renderScanRefPreview(null);
+  scanRefFiles = [];
+  renderScanRefPreview([]);
   $('aiLineMatch').classList.add('hidden');
   $('billMatchAckWrap').classList.add('hidden');
   wizardStep = 3;
@@ -2534,16 +2591,18 @@ async function uploadBillFiles(files) {
   }
 }
 
-async function uploadScanRefBillImage(noteno) {
-  if (!scanRefFile || !picked || !noteno) return false;
-  const fd = new FormData();
-  fd.append('acctno', picked.acctno);
-  fd.append('noteno', noteno);
-  fd.append('file', scanRefFile, scanRefFile.name || 'scan.jpg');
-  const r = await fetch('/pay-notes/api/images/bill', {method:'POST', body: fd});
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
-  uploadedPaths.push(j.path);
+async function uploadScanRefBillImages(noteno) {
+  if (!scanRefFiles.length || !picked || !noteno) return false;
+  for (const file of scanRefFiles) {
+    const fd = new FormData();
+    fd.append('acctno', picked.acctno);
+    fd.append('noteno', noteno);
+    fd.append('file', file, file.name || 'scan.jpg');
+    const r = await fetch('/pay-notes/api/images/bill', {method:'POST', body: fd});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
+    uploadedPaths.push(j.path);
+  }
   return true;
 }
 wireDropZone($('dropBill'), $('billImages'), uploadBillFiles);
@@ -2559,7 +2618,7 @@ $('btnCreateNote').onclick = async () => {
   if (!noteno || !due || !bank_id) { $('createMsg').innerHTML = '<p class="err">กรอกเลขใบวางบิล เลือกวันครบกำหนด และบัญชีธนาคาร</p>'; return; }
   if (!billnos.length) { $('createMsg').innerHTML = '<p class="err">เลือกบิลอย่างน้อย 1</p>'; return; }
   const assist = createMode === 'assist' && AI_ENABLED;
-  if (assist && !scanRefFile && !uploadedPaths.length) {
+  if (assist && !scanRefFiles.length && !uploadedPaths.length) {
     $('createMsg').innerHTML = '<p class="err">สแกนเอกสารอ้างอิงก่อนบันทึก หรือเปลี่ยนเป็นกรอกเอง</p>';
     return;
   }
@@ -2567,10 +2626,10 @@ $('btnCreateNote').onclick = async () => {
     $('createMsg').innerHTML = '<p class="err">อัปโหลดเอกสารอย่างน้อย 1</p>';
     return;
   }
-  if (assist && scanRefFile && !uploadedPaths.length) {
+  if (assist && scanRefFiles.length && !uploadedPaths.length) {
     $('createMsg').innerHTML = '<p class="muted">กำลังอัปโหลดเอกสารอ้างอิง…</p>';
     try {
-      await uploadScanRefBillImage(noteno);
+      await uploadScanRefBillImages(noteno);
     } catch (e) {
       $('createMsg').innerHTML = `<p class="err">อัปโหลดเอกสารไม่สำเร็จ: ${esc(e.message)}</p>`;
       return;
@@ -2604,8 +2663,8 @@ $('btnCreateNote').onclick = async () => {
       : '';
     $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel} · จ่าย ${fmtMoney(netShow)}${reuseNote}</p>`;
     uploadedPaths = [];
-    scanRefFile = null;
-    renderScanRefPreview(null);
+    scanRefFiles = [];
+    renderScanRefPreview([]);
     $('billThumbs').innerHTML = '';
     $('discInput').value = '0.00';
     $('noteRemark').value = '';

@@ -46,7 +46,7 @@ CELLS = [
     {"title": "ค้นหา", "sub": "", "icon": "search"},
     {"title": "PO โอนสินค้า", "sub": "", "icon": "po"},
     {"title": "จัดการรูปสินค้า", "sub": "", "icon": "image"},
-    {"title": "ชำระเจ้าหนี้", "sub": "", "icon": "help"},
+    {"title": "เจาหน", "sub": "", "icon": "help"},
 ]
 
 
