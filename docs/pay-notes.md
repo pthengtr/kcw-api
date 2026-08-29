@@ -86,6 +86,14 @@ PARTS9 and Supabase **cannot** share one ACID transaction. Create-note order:
 
 Do not leave a live KSS note without a reminder going forward.
 
+### Vendor NOTENO reuse (`_1` suffix)
+
+`NOTENO` is the supplier’s label (≤15 chars) and may be reused across payment cycles. When KSS already has PIMAS/PVMAS stamps on that label, pay-notes auto-allocates `EE1044-04_1`, `EE1044-04_2`, … on create. The UI shows the bare vendor label (`EE1044-04`); storage/API use the suffixed KSS value.
+
+Remediate existing open notes with paid+open PIMAS on one label:
+
+`python scripts/remediate_noteno_collisions.py` (dry-run) · `--apply` to write.
+
 ## Not on SYP
 
 Do not copy `kcw-pay-notes.service` to the SYP box. Do not set `PAY_NOTES_SITE=SYP`. SYP deploy scripts intentionally omit this unit.

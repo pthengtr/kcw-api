@@ -62,3 +62,40 @@ def upload_bytes(client, path: str, data: bytes, *, content_type: str = "image/j
             file_options={"content-type": content_type, "cache-control": "3600"},
         )
     return clean
+
+
+def relocate_bill_images(client, acctno: str, from_noteno: str, to_noteno: str) -> list[str]:
+    """Move bill images when KSS NOTENO gains an auto suffix (_1)."""
+    src = from_noteno.strip()
+    dst = to_noteno.strip()
+    if not src or not dst or src == dst:
+        return []
+    settings = get_pay_notes_settings()
+    bucket = settings.supabase_image_bucket or "pictures"
+    src_prefix = bill_image_prefix(acctno, src).strip("/")
+    dst_prefix = bill_image_prefix(acctno, dst).strip("/")
+    moved: list[str] = []
+    for item in list_folder(client, src_prefix):
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        src_path = f"{src_prefix}/{name}"
+        dst_path = f"{dst_prefix}/{name}"
+        try:
+            data = client.storage.from_(bucket).download(src_path)
+        except Exception:
+            continue
+        content_type = "application/octet-stream"
+        if name.lower().endswith((".jpg", ".jpeg")):
+            content_type = "image/jpeg"
+        elif name.lower().endswith(".png"):
+            content_type = "image/png"
+        elif name.lower().endswith(".pdf"):
+            content_type = "application/pdf"
+        upload_bytes(client, dst_path, data, content_type=content_type)
+        try:
+            client.storage.from_(bucket).remove([src_path])
+        except Exception:
+            pass
+        moved.append(dst_path)
+    return moved

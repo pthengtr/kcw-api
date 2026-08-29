@@ -1282,6 +1282,11 @@ function settleLabel(m) {
   return m === 'cheque' ? 'เช็ค' : (m === 'cash' ? 'เงินสด' : (m === 'transfer' ? 'โอนเงิน' : '—'));
 }
 function keyOf(r) { return `${r.acctno}|${r.noteno}`; }
+function displayNoteno(stored) {
+  const s = String(stored || '');
+  const m = s.match(/^(.+)_(\d+)$/);
+  return m ? m[1] : s;
+}
 
 async function api(path, opts) {
   const r = await fetch('/pay-notes/api' + path, opts || {});
@@ -1466,7 +1471,7 @@ function renderPending() {
     const bankname = `${bank.bank_name || ''} ${bank.bank_account_name || ''} # ${bank.bank_account_number || ''}`.trim();
     return `<tr>
       <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
-      <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+      <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
       <td class="num" data-label="ยอดที่ต้องจ่าย">${fmtMoney(pendingNet(r))} บาท</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r))}</td>
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
@@ -1528,7 +1533,7 @@ function renderAwaitProof() {
   $('awaitProofBody').innerHTML = pg.rows.map(r => `<tr>
     <td data-label="เลขใบสำคัญจ่าย"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
-    <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+    <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
     <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
@@ -1584,7 +1589,7 @@ function renderVouchers() {
   $('voucherBody').innerHTML = pg.rows.map(r => `<tr>
     <td data-label="เลขใบสำคัญจ่าย"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
-    <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+    <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
     <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
@@ -1641,7 +1646,7 @@ function renderByAp() {
          <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`
       : `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`;
     return `<tr>
-      <td data-label="เลขใบวางบิล">${esc(r.noteno)}</td>
+      <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
       <td data-label="เลขใบสำคัญจ่าย">${esc(r.voucno || '—')}</td>
       <td class="num" data-label="ยอดสุทธิ">${fmtMoney(netAmt(r))}</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r), true)}</td>
@@ -1829,7 +1834,7 @@ function fillPrintSheet(det, row) {
         <div>ชื่อบัญชี &nbsp; <b>${esc(acctname)}</b></div>
         <div>วันที่ &nbsp; <b>${esc(fmtDate(docDate))}</b></div>
         <div>เลขที่ &nbsp; <b>${esc(docno)}</b></div>
-        <div class="span2">เลขที่ใบวางบิล &nbsp; <b>${esc(noteno)}</b></div>
+        <div class="span2">เลขที่ใบวางบิล &nbsp; <b>${esc(displayNoteno(noteno))}</b></div>
       </div>
       <table class="pv-table">
         <thead>
@@ -1881,8 +1886,8 @@ async function openDetailByKey(key, opts) {
   detailRow = row;
   detailPayload = null;
   const rem = row.reminder || {};
-  $('detTitle').textContent = row.voucno ? `ใบสำคัญจ่าย ${row.voucno}` : `ใบวางบิล ${row.noteno}`;
-  $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${row.noteno}`;
+  $('detTitle').textContent = row.voucno ? `ใบสำคัญจ่าย ${row.voucno}` : `ใบวางบิล ${displayNoteno(row.noteno)}`;
+  $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${displayNoteno(row.noteno)}`;
   const remark = String(rem.remark || '').trim();
   $('detRemark').innerHTML = remark ? `<div class="remark">${esc(remark)}</div>` : '';
   const kbiz = remKbiz(row);
@@ -2050,7 +2055,7 @@ function openPay(acct, note, billamt, discount, bankname) {
   const net = Math.max(0, bill - disc);
   payTarget = {acctno: acct, noteno: note, billamt: bill, discount: disc, netamt: net};
   $('payAcct').textContent = acct;
-  $('payNote').textContent = note;
+  $('payNote').textContent = displayNoteno(note);
   $('payBillAmt').textContent = fmtMoney(bill);
   $('payDiscountAmt').textContent = fmtMoney(disc);
   $('payNetAmt').textContent = fmtMoney(net);
@@ -2533,7 +2538,8 @@ $('btnCreateNote').onclick = async () => {
     const rem = res.reminder || {};
     const discShow = Number(rem.discount_amount != null ? rem.discount_amount : resolveDiscAmount(total));
     const netShow = Math.max(0, Number(res.billamt || total) - discShow);
-    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${esc(res.noteno)} · จ่าย ${fmtMoney(netShow)}</p>`;
+    const noteLabel = esc(res.noteno_display || displayNoteno(res.noteno));
+    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel} · จ่าย ${fmtMoney(netShow)}</p>`;
     uploadedPaths = [];
     scanRefFile = null;
     renderScanRefPreview(null);
@@ -2556,8 +2562,8 @@ async function openEditNote(key, returnTab) {
   editTarget = row;
   editReturnTab = returnTab || 'pending';
   showEditPanel(true);
-  setCrumb('edit', `${row.noteno} · ${row.acctno}`);
-  $('editTitle').textContent = `แก้ไขใบวางบิล ${row.noteno}`;
+  setCrumb('edit', `${displayNoteno(row.noteno)} · ${row.acctno}`);
+  $('editTitle').textContent = `แก้ไขใบวางบิล ${displayNoteno(row.noteno)}`;
   $('editVendor').value = `${row.acctno} — ${row.acctname || ''}`;
   $('editNoteno').value = row.noteno;
   const rem = row.reminder || {};
