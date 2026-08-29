@@ -1,0 +1,16 @@
+[Unit]
+Description=KCW transfer / โอนสินค้า HQ↔SYP LAN+Tailscale UI (:8792)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/kcw-api
+EnvironmentFile=%h/projects/kcw-api/.env
+Environment=TZ=Asia/Bangkok
+ExecStart=%h/projects/kcw-api/.venv/bin/python -m uvicorn app.transfer_app:app --host 0.0.0.0 --port 8792
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -13,7 +13,13 @@ if [[ -x "$PY" ]]; then
     "$PY" -m pip install -r requirements.txt
   fi
 fi
-systemctl --user restart kcw-stock-check.service kcw-parts9-explorer.service kcw-ops.service
+_units=(kcw-stock-check kcw-parts9-explorer kcw-ops)
+if systemctl --user cat kcw-transfer.service &>/dev/null; then
+  _units+=(kcw-transfer)
+fi
+for u in "${_units[@]}"; do
+  systemctl --user restart "${u}.service"
+done
 if systemctl --user is-active --quiet kcw-worker.service; then
   if [[ "${FORCE_WORKER_RESTART:-}" == "1" ]]; then
     systemctl --user restart kcw-worker.service
@@ -23,4 +29,4 @@ if systemctl --user is-active --quiet kcw-worker.service; then
 else
   systemctl --user start kcw-worker.service
 fi
-systemctl --user --no-pager --full status kcw-stock-check.service kcw-parts9-explorer.service kcw-ops.service kcw-worker.service | tail -n 50
+systemctl --user --no-pager --full status "${_units[@]/%/.service}" kcw-worker.service | tail -n 50

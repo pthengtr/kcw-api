@@ -20,7 +20,7 @@ ufw allow in on tailscale0 comment 'Tailscale interface'
 ufw allow 4000/tcp comment 'NoMachine'
 ufw allow 4000/udp comment 'NoMachine'
 
-for port in 8787 8788 8790; do
+for port in 8787 8788 8790 8792; do
   ufw allow in on "$LAN_IF" to any port "$port" proto tcp comment "KCW :$port LAN"
 done
 

@@ -42,6 +42,14 @@ from src.handlers.pay_notes_entry import (
     is_pay_notes_command,
     handle_pay_notes_command,
 )
+from src.handlers.transfer_entry import (
+    is_transfer_command,
+    handle_transfer_command,
+)
+from src.handlers.services_menu import (
+    is_services_menu_request,
+    handle_services_menu,
+)
 
 
 def route_user_text(
@@ -74,6 +82,9 @@ def route_user_text(
             access=access,
             line_user_id=line_user_id,
         )
+
+    if is_services_menu_request(text):
+        return handle_services_menu()
 
     if is_help_request(user_text):
         return {"type": "text", "text": GREETING_MESSAGE}
@@ -123,6 +134,16 @@ def route_user_text(
 
     if is_pay_notes_command(text):
         return handle_pay_notes_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+            access=access,
+        )
+
+    if is_transfer_command(text):
+        return handle_transfer_command(
             engine,
             line_user_id=line_user_id or "unknown",
             display_name=(access or {}).get("display_name")
