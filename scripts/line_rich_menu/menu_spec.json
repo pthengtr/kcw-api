@@ -32,8 +32,8 @@
       "bounds": { "x": 0, "y": 749, "width": 833, "height": 937 },
       "action": {
         "type": "message",
-        "label": "PO โอนสินค้า",
-        "text": "สถานะใบสั่งซื้อ"
+        "label": "โอนสินค้า",
+        "text": "โอนสินค้า"
       }
     },
     {
@@ -48,7 +48,7 @@
       "bounds": { "x": 1667, "y": 749, "width": 833, "height": 937 },
       "action": {
         "type": "message",
-        "label": "เจาหน",
+        "label": "ชำระเจ้าหนี้",
         "text": "ชำระเจ้าหนี้"
       }
     }
