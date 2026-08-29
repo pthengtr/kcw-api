@@ -3,7 +3,7 @@ from src.pay_notes.net import rewrite_base_port
 from src.pay_notes.ui import initials, page
 from src.pay_notes.writer import PayNoteWriteError, create_pay_note
 from src.pay_notes.config import PayNotesSettings
-from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, parse_noteno_suffix
+from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, noteno_meta, parse_noteno_suffix
 from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines, resolve_stored_noteno
 from src.pay_notes.baht_text import baht_text
 from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _workflow_meta
@@ -391,7 +391,7 @@ def test_note_detail_uses_unvouchered_bills_for_open_note(monkeypatch):
     header = {
         "acctno": "THL",
         "acctname": "ตั้งเฮงล้ง",
-        "noteno": "EE1044-04",
+        "noteno": "EE1044-04_1",
         "BILLCNT": 2,
         "BILLAMT": 4500.0,
         "voucno": "",
@@ -418,11 +418,14 @@ def test_note_detail_uses_unvouchered_bills_for_open_note(monkeypatch):
         from app.pay_notes_app import app
 
         client = TestClient(app)
-        res = client.get("/pay-notes/api/notes/THL/EE1044-04")
+        res = client.get("/pay-notes/api/notes/THL/EE1044-04_1")
 
     assert res.status_code == 200
     assert captured.get("unvouchered_only") is True
-    assert res.json()["totals"]["billcnt"] == 2
+    body = res.json()
+    assert body["totals"]["billcnt"] == 2
+    assert body["is_reused_label"] is True
+    assert body["noteno_display"] == "EE1044-04"
 
 
 def test_display_noteno_strips_auto_suffix():
@@ -430,6 +433,17 @@ def test_display_noteno_strips_auto_suffix():
     assert display_noteno("EE1044-04_1") == "EE1044-04"
     assert display_noteno("THL3/69_2") == "THL3/69"
     assert parse_noteno_suffix("EE1044-04_1") == ("EE1044-04", 1)
+
+
+def test_noteno_meta_marks_reused_labels():
+    plain = noteno_meta("EE1044-04")
+    reused = noteno_meta("EE1044-04_1")
+    assert plain["is_reused_label"] is False
+    assert plain["reuse_badge"] == ""
+    assert reused["is_reused_label"] is True
+    assert reused["noteno_display"] == "EE1044-04"
+    assert reused["reuse_round"] == 2
+    assert "EE1044-04_1" in reused["reuse_hint"]
 
 
 def test_format_suffixed_noteno_respects_max_length():

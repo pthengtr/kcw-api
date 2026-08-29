@@ -196,6 +196,16 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .b-soon { background:var(--soon-bg); color:var(--soon); }
 .b-wait { background:var(--proof-bg); color:var(--proof); }
 .b-done { background:var(--ok-bg); color:var(--ok); }
+.note-reuse-badge {
+  display:inline-flex; align-items:center; margin-left:.35rem;
+  border-radius:999px; padding:.12rem .5rem; font-size:.68rem; font-weight:700;
+  background:#fff3e0; color:#b45309; border:1px solid #f5c78a; vertical-align:middle;
+}
+.note-reuse-hint {
+  margin:.65rem 0 0; padding:.55rem .7rem; border-radius:.55rem;
+  background:#fff8eb; border:1px solid #f0d88a; color:#8a5a00; font-size:.84rem; line-height:1.45;
+}
+.note-kss-id { font-size:.78rem; color:var(--muted); margin-top:.2rem; }
 .table-foot {
   display:flex; justify-content:space-between; align-items:center; gap:.75rem 1rem; flex-wrap:wrap;
   padding:.7rem var(--space-card) .8rem; font-size:.8rem; color:var(--muted);
@@ -804,6 +814,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <div class="grid-3" style="margin-bottom:.85rem">
         <div><label class="lbl">เจ้าหนี้</label><input class="inp" id="editVendor" readonly/></div>
         <div><label class="lbl">เลขที่ใบวางบิล</label><input class="inp" id="editNoteno" readonly/></div>
+        <div id="editReuseWrap" class="note-reuse-hint hidden" style="margin-top:.35rem"></div>
         <div>
           <label class="lbl" for="editDueDate">วันครบกำหนดชำระ</label>
           <input class="inp date-ce" id="editDueDate" type="date" lang="en" inputmode="none"/>
@@ -1119,6 +1130,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </div>
   <div class="dlg-body">
     <div id="detMeta" class="muted"></div>
+    <div id="detReuseWrap" class="note-reuse-hint hidden"></div>
     <div id="detRemark"></div>
     <div id="detDueWrap" class="hidden" style="margin-top:.75rem">
       <label class="lbl">วันครบกำหนดชำระ</label>
@@ -1286,6 +1298,52 @@ function displayNoteno(stored) {
   const s = String(stored || '');
   const m = s.match(/^(.+)_(\d+)$/);
   return m ? m[1] : s;
+}
+function notenoReuseMeta(r) {
+  if (!r) return { reused: false, display: '', badge: '', hint: '', stored: '', kss: '' };
+  const stored = String(r.noteno || '');
+  if (r.is_reused_label != null) {
+    return {
+      reused: !!r.is_reused_label,
+      display: r.noteno_display || displayNoteno(stored),
+      badge: r.reuse_badge || '',
+      hint: r.reuse_hint || '',
+      stored,
+      kss: stored,
+      round: r.reuse_round || null,
+    };
+  }
+  const display = displayNoteno(stored);
+  const m = stored.match(/^(.+)_(\d+)$/);
+  const reused = !!m;
+  const round = reused ? Number(m[2]) + 1 : 1;
+  return {
+    reused,
+    display,
+    badge: reused ? `ใช้ซ้ำ·รอบ ${round}` : '',
+    hint: reused ? `เลขใบวางบิล ${display} เคยถูกใช้ใน KSS แล้ว ระบบบันทึกเป็น ${stored} (รอบที่ ${round})` : '',
+    stored,
+    kss: stored,
+    round,
+  };
+}
+function notenoCellHtml(r) {
+  const m = notenoReuseMeta(r);
+  const badge = m.reused
+    ? `<span class="note-reuse-badge" title="${esc(m.hint)}">${esc(m.badge || 'ใช้ซ้ำ')}</span>`
+    : '';
+  return `${esc(m.display)}${badge}`;
+}
+function renderNotenoReuseHint(el, r) {
+  if (!el) return;
+  const m = notenoReuseMeta(r);
+  if (!m.reused) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = `${esc(m.hint)}<div class="note-kss-id">KSS NOTENO: <code>${esc(m.kss)}</code></div>`;
 }
 
 async function api(path, opts) {
@@ -1471,7 +1529,7 @@ function renderPending() {
     const bankname = `${bank.bank_name || ''} ${bank.bank_account_name || ''} # ${bank.bank_account_number || ''}`.trim();
     return `<tr>
       <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
-      <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
+      <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
       <td class="num" data-label="ยอดที่ต้องจ่าย">${fmtMoney(pendingNet(r))} บาท</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r))}</td>
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
@@ -1533,7 +1591,7 @@ function renderAwaitProof() {
   $('awaitProofBody').innerHTML = pg.rows.map(r => `<tr>
     <td data-label="เลขใบสำคัญจ่าย"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
-    <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
+    <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
     <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
@@ -1589,7 +1647,7 @@ function renderVouchers() {
   $('voucherBody').innerHTML = pg.rows.map(r => `<tr>
     <td data-label="เลขใบสำคัญจ่าย"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
-    <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
+    <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
     <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
@@ -1646,7 +1704,7 @@ function renderByAp() {
          <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`
       : `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`;
     return `<tr>
-      <td data-label="เลขใบวางบิล">${esc(displayNoteno(r.noteno))}</td>
+      <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
       <td data-label="เลขใบสำคัญจ่าย">${esc(r.voucno || '—')}</td>
       <td class="num" data-label="ยอดสุทธิ">${fmtMoney(netAmt(r))}</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r), true)}</td>
@@ -1886,8 +1944,9 @@ async function openDetailByKey(key, opts) {
   detailRow = row;
   detailPayload = null;
   const rem = row.reminder || {};
-  $('detTitle').textContent = row.voucno ? `ใบสำคัญจ่าย ${row.voucno}` : `ใบวางบิล ${displayNoteno(row.noteno)}`;
-  $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${displayNoteno(row.noteno)}`;
+  $('detTitle').textContent = row.voucno ? `ใบสำคัญจ่าย ${row.voucno}` : `ใบวางบิล ${notenoReuseMeta(row).display}`;
+  $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${notenoReuseMeta(row).display}`;
+  renderNotenoReuseHint($('detReuseWrap'), row);
   const remark = String(rem.remark || '').trim();
   $('detRemark').innerHTML = remark ? `<div class="remark">${esc(remark)}</div>` : '';
   const kbiz = remKbiz(row);
@@ -1922,6 +1981,7 @@ async function openDetailByKey(key, opts) {
     const det = await api(`/notes/${encodeURIComponent(row.acctno)}/${encodeURIComponent(row.noteno)}`);
     detailPayload = det;
     renderDetBills(det);
+    renderNotenoReuseHint($('detReuseWrap'), {...row, ...det});
     $('detBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
     if (det.payment_images) $('detProofThumbs').innerHTML = thumbsHtml(det.payment_images);
     fillPrintSheet(det, row);
@@ -2539,7 +2599,10 @@ $('btnCreateNote').onclick = async () => {
     const discShow = Number(rem.discount_amount != null ? rem.discount_amount : resolveDiscAmount(total));
     const netShow = Math.max(0, Number(res.billamt || total) - discShow);
     const noteLabel = esc(res.noteno_display || displayNoteno(res.noteno));
-    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel} · จ่าย ${fmtMoney(netShow)}</p>`;
+    const reuseNote = res.is_reused_label && res.reuse_hint
+      ? `<br/><span class="note-reuse-hint" style="display:inline-block;margin-top:.45rem">${esc(res.reuse_hint)}</span>`
+      : '';
+    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel} · จ่าย ${fmtMoney(netShow)}${reuseNote}</p>`;
     uploadedPaths = [];
     scanRefFile = null;
     renderScanRefPreview(null);
@@ -2562,10 +2625,11 @@ async function openEditNote(key, returnTab) {
   editTarget = row;
   editReturnTab = returnTab || 'pending';
   showEditPanel(true);
-  setCrumb('edit', `${displayNoteno(row.noteno)} · ${row.acctno}`);
-  $('editTitle').textContent = `แก้ไขใบวางบิล ${displayNoteno(row.noteno)}`;
+  setCrumb('edit', `${notenoReuseMeta(row).display} · ${row.acctno}`);
+  $('editTitle').textContent = `แก้ไขใบวางบิล ${notenoReuseMeta(row).display}`;
   $('editVendor').value = `${row.acctno} — ${row.acctname || ''}`;
-  $('editNoteno').value = row.noteno;
+  $('editNoteno').value = notenoReuseMeta(row).display;
+  renderNotenoReuseHint($('editReuseWrap'), row);
   const rem = row.reminder || {};
   $('editDueDate').value = remDue(row);
   $('editNoteRemark').value = rem.remark || '';
