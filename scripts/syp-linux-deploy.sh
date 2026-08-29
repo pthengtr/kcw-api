@@ -6,6 +6,14 @@ PY="${REPO}/.venv/bin/python"
 cd "$REPO"
 git fetch origin
 git reset --hard origin/master
+DOCS="${SYP_KCW_DOCS_DIR:-$HOME/projects/kcw-docs}"
+if [[ -d "$DOCS/.git" ]]; then
+  cd "$DOCS"
+  git fetch origin
+  git reset --hard origin/main
+  echo "kcw-docs at $(git rev-parse --short HEAD)"
+  cd "$REPO"
+fi
 if [[ -x "$PY" ]]; then
   if command -v uv >/dev/null 2>&1; then
     uv pip install --python "$PY" -r requirements.txt
