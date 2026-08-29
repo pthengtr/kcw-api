@@ -29,7 +29,7 @@ AI assist scans vendor bill/statement images, extracts bill numbers + amounts pe
 
 ### AI APIs
 
-- `POST /api/ai/scan-bills` — `acctno` + `file` → line match result
+- `POST /api/ai/scan-bills` — `acctno` + 1–5 `files` → line match result (+ `usage` token stats)
 - `POST /api/ai/verify-payment` — `voucno` + `file` → slip amount vs net payable
 
 Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key is set).

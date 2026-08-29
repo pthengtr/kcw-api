@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from src.pay_notes.ai_vision import (
-    extract_bill_lines_from_image,
+    extract_bill_lines_from_images,
     match_bill_lines,
     verify_payment_from_image,
 )
@@ -905,7 +905,7 @@ def _ai_settings_ok():
 async def api_ai_scan_bills(
     request: Request,
     acctno: str = Form(...),
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
 ):
     _, err = _require_api(request)
     if err:
@@ -918,9 +918,24 @@ async def api_ai_scan_bills(
     if not acct:
         return JSONResponse({"error": "acctno required"}, status_code=400)
 
-    data = await file.read()
-    if not data:
-        return JSONResponse({"error": "empty file"}, status_code=400)
+    # Validate files
+    if not files:
+        return JSONResponse({"error": "at least one file required"}, status_code=400)
+    
+    if len(files) > 5:
+        return JSONResponse({"error": "maximum 5 files allowed"}, status_code=400)
+        
+    # Read all file contents
+    image_data = []
+    for i, file in enumerate(files):
+        data = await file.read()
+        if not data:
+            return JSONResponse({"error": f"empty file {i+1}"}, status_code=400)
+        
+        if len(data) > 10 * 1024 * 1024:  # 10MB limit
+            return JSONResponse({"error": f"file {i+1} too large (max 10MB)"}, status_code=400)
+            
+        image_data.append((data, file.content_type))
 
     try:
         pickable = list_pickable_bills(settings.site, acct)
@@ -928,9 +943,8 @@ async def api_ai_scan_bills(
         return JSONResponse({"error": str(exc)}, status_code=502)
 
     try:
-        extracted = extract_bill_lines_from_image(
-            data,
-            file.content_type,
+        extracted = extract_bill_lines_from_images(
+            image_data,
             model=settings.pay_notes_ai_model,
             timeout=settings.pay_notes_ai_timeout_seconds,
         )
@@ -944,6 +958,7 @@ async def api_ai_scan_bills(
         matched["document_total"] = round(doc_total, 2)
         matched["document_total_match"] = abs(doc_total - matched["selected_total"]) <= 0.01
     matched["extraction_warnings"] = list(extracted.get("warnings") or [])
+    matched["image_count"] = len(files)
     if extracted.get("usage"):
         matched["usage"] = extracted["usage"]
     return matched

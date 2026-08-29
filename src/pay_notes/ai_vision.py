@@ -35,6 +35,7 @@ Rules:
 - "billno" = invoice/bill number as printed (preserve Thai/alphanumeric).
 - "amount" = amount for that bill row (after tax if that's what is shown).
 - "total_amount" = document grand total if visible (ยอดรวม / จำนวนเงินรวม).
+- If multiple pages/images are provided, extract rows from all pages.
 - Do not invent rows. Skip unreadable rows and add a warning.
 - If no bill table found: {"lines": [], "total_amount": 0, "warnings": ["no bills detected"]}
 """.strip()
@@ -82,6 +83,44 @@ def _safe_parse_json(text: str) -> dict[str, Any]:
 def normalize_billno(value: str) -> str:
     text = (value or "").strip().upper()
     return re.sub(r"[\s\-_/\\.]", "", text)
+
+
+def dedupe_extracted_lines(
+    lines: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Drop exact duplicate rows; warn when same billno has different amounts."""
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, float]] = set()
+    billno_amounts: dict[str, set[float]] = {}
+    warnings: list[str] = []
+
+    for raw in lines or []:
+        if not isinstance(raw, dict):
+            continue
+        billno = str(raw.get("billno") or "").strip()
+        try:
+            amount = round(float(raw.get("amount") or 0), 2)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if not billno and amount <= 0:
+            continue
+
+        key = billno, amount
+        if key in seen:
+            continue
+        seen.add(key)
+
+        norm = normalize_billno(billno)
+        if norm:
+            billno_amounts.setdefault(norm, set()).add(amount)
+
+        deduped.append({"billno": billno, "amount": amount})
+
+    for norm, amounts in billno_amounts.items():
+        if len(amounts) > 1:
+            warnings.append(f"billno {norm} has multiple amounts across pages")
+
+    return deduped, warnings
 
 
 def amounts_match(a: float, b: float, *, tolerance: float = AMOUNT_TOLERANCE) -> bool:
@@ -304,6 +343,121 @@ def _vision_extract(
     parsed = _safe_parse_json(raw_text)
     parsed["usage"] = extract_usage_from_response(resp)
     return parsed
+
+
+def extract_bill_lines_from_images(
+    images: list[tuple[bytes, str | None]],
+    *,
+    model: str | None = None,
+    timeout: float = 45.0,
+) -> dict[str, Any]:
+    """
+    Extract bill lines from multiple image files.
+    
+    Args:
+        images: List of tuples (image_bytes, content_type)
+        model: OpenAI model to use
+        timeout: Request timeout
+        
+    Returns:
+        Dictionary with extracted lines and usage statistics
+    """
+    if not images:
+        return {
+            "lines": [],
+            "total_amount": 0.0,
+            "warnings": ["No images provided"],
+            "usage": {},
+        }
+
+    # For a single image, use the original function
+    if len(images) == 1:
+        return extract_bill_lines_from_image(
+            images[0][0], images[0][1], model=model, timeout=timeout
+        )
+
+    # Multi-image processing - combine all images into one vision call
+    client = get_openai_client()
+
+    # Create input_image blocks for each image
+    image_blocks = []
+    for image_bytes, content_type in images:
+        if not image_bytes:
+            continue
+            
+        mime = (content_type or "image/jpeg").split(";")[0].strip() or "image/jpeg"
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        image_url = f"data:{mime};base64,{b64}"
+        image_blocks.append({"type": "input_image", "image_url": image_url})
+    
+    if not image_blocks:
+        return {
+            "lines": [],
+            "total_amount": 0.0,
+            "warnings": ["No valid images provided"],
+            "usage": {},
+        }
+        
+    # Combine all images in the user prompt
+    resp = client.responses.create(
+        model=(model or os.getenv("PAY_NOTES_AI_MODEL") or "gpt-4o-mini").strip(),
+        input=[
+            {"role": "system", "content": [{"type": "input_text", "text": BILL_LINES_SYSTEM_PROMPT}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": (
+                        "Extract bill/invoice rows from all vendor documents combined. "
+                        "One row per bill with billno and amount. Return JSON only. "
+                        "If multiple pages are provided, extract rows from all pages."
+                    )},
+                    *image_blocks,
+                ],
+            },
+        ],
+        timeout=timeout,
+    )
+    
+    raw_text = extract_text_from_response(resp)
+    parsed = _safe_parse_json(raw_text)
+    parsed["usage"] = extract_usage_from_response(resp)
+    
+    if parsed.get("error"):
+        return {
+            "lines": [],
+            "total_amount": 0.0,
+            "warnings": list(parsed.get("warnings") or [str(parsed.get("error"))]),
+            "usage": parsed.get("usage") or {},
+        }
+
+    raw_lines: list[dict[str, Any]] = []
+    for raw in parsed.get("lines") or []:
+        if not isinstance(raw, dict):
+            continue
+        billno = str(raw.get("billno") or "").strip()
+        try:
+            amount = round(float(raw.get("amount") or 0), 2)
+        except (TypeError, ValueError):
+            amount = 0.0
+        raw_lines.append({"billno": billno, "amount": amount})
+
+    lines, dedupe_warnings = dedupe_extracted_lines(raw_lines)
+
+    try:
+        total_amount = round(float(parsed.get("total_amount") or 0), 2)
+    except (TypeError, ValueError):
+        total_amount = 0.0
+    if not total_amount and lines:
+        total_amount = round(sum(ln["amount"] for ln in lines), 2)
+
+    warnings = [str(w).strip() for w in (parsed.get("warnings") or []) if str(w).strip()]
+    warnings.extend(dedupe_warnings)
+    return {
+        "lines": lines,
+        "total_amount": total_amount,
+        "warnings": warnings,
+        "usage": parsed.get("usage") or {},
+    }
 
 
 def extract_bill_lines_from_image(
