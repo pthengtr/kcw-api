@@ -26,7 +26,7 @@ from src.pay_notes.db import (
 )
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.pay_notes.baht_text import baht_text
-from src.pay_notes.noteno import display_noteno
+from src.pay_notes.noteno import display_noteno, noteno_meta
 from src.pay_notes.parts9 import (
     get_note_by_voucno,
     get_note_header,
@@ -281,7 +281,8 @@ def _workflow_meta(*, voucno: str = "", has_proof: bool = False) -> dict[str, An
 
 def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str, Any]:
     voucno = (row.get("voucno") or row.get("VOUCNO") or "").strip()
-    return {**row, **_workflow_meta(voucno=voucno, has_proof=has_proof)}
+    stored = (row.get("noteno") or row.get("NOTENO") or "").strip()
+    return {**row, **_workflow_meta(voucno=voucno, has_proof=has_proof), **noteno_meta(stored)}
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -560,7 +561,7 @@ def api_create_note(request: Request, body: NoteCreate):
         if rollback_error:
             payload["kss_rollback_error"] = rollback_error
         return JSONResponse(payload, status_code=500)
-    return {**kss, "reminder": rem}
+    return {**kss, "reminder": rem, **noteno_meta(stored)}
 
 
 @router.get("/api/notes")
@@ -726,6 +727,7 @@ def api_note_detail(request: Request, acctno: str, noteno: str):
         "bill_images": images,
         "payment_images": proofs,
         "banks": banks,
+        **noteno_meta(noteno),
     }
 
 
