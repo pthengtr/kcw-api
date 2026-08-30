@@ -1,9 +1,53 @@
 from src.handlers.explorer_entry import is_explorer_command
 from src.parts9_explorer.net import is_tailscale_cg_nat
-from src.parts9_explorer.query import infer_doc_kind, maybe_document_query, parse_query
+from src.parts9_explorer.query import (
+    format_size_line,
+    infer_doc_kind,
+    maybe_document_query,
+    parse_query,
+    size_labels,
+)
 from src.parts9_explorer.search import _DOC_SPECS, _pack_doc, product_image_urls
 from src.parts9_explorer.config import get_explorer_settings
 from src.parts9_explorer.ui import page
+
+
+def test_parse_code_size_query():
+    from src.parts9_explorer.query import code_size_query_valid, parse_code_size_query, parse_query
+
+    seal = parse_code_size_query("ซีล 31×46×7")
+    assert seal.code1 == "C"
+    assert seal.size1 == "31"
+    assert seal.size2 == "46"
+    assert seal.size3 == "7"
+    assert code_size_query_valid(seal)
+
+    bearing = parse_code_size_query("I นอก 72 หนา 17")
+    assert bearing.code1 == "I"
+    assert bearing.size2 == "72"
+    assert bearing.size3 == "17"
+    assert code_size_query_valid(bearing)
+
+    prefixed = parse_query("รหัสขนาด C 31 46 7")
+    assert prefixed.search_mode == "code_size"
+    assert prefixed.code1 == "C"
+
+    assert not code_size_query_valid(parse_code_size_query("ซีล"))
+
+
+def test_explorer_page_has_code_size_mode():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
+    assert 'data-k="code_size"' in html
+    assert "รหัส+ขนาด" in html
+
+
+def test_format_size_line_by_code1():
+    assert format_size_line("C", "31", "46", "7", compact=True) == "ใน 31 / นอก 46 / หนา 7"
+    assert format_size_line("O", "35", "3", None, compact=True) == "ใน 35 / หนา 3"
+    assert format_size_line("I", None, "72", "17", compact=True) == "นอก 72 / หนา 17"
+    assert format_size_line("C", "", "", "") == ""
+    assert "ขนาด:" in format_size_line("C", "31", "46", "7")
+    assert size_labels("Q") == ("เตเปอร์", "แกนโต", None)
 
 
 def test_explorer_commands():
@@ -128,6 +172,7 @@ def test_explorer_page_mentions_oem_and_code1():
     assert "เบอร์โรงงาน" in html
     assert "PCODE" in html
     assert "MCODE" in html
+    assert "function sizeBits" in html
 
 
 def test_pack_note_only_pv_uses_noteno():

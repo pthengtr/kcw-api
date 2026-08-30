@@ -109,6 +109,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
   <div class="modes" id="modes">
     <button type="button" data-k="all" class="on">ทั้งหมด</button>
     <button type="button" data-k="product">สินค้า</button>
+    <button type="button" data-k="code_size">รหัส+ขนาด</button>
     <button type="button" data-k="si">SI บิลขาย</button>
     <button type="button" data-k="pi">PI บิลซื้อ</button>
     <button type="button" data-k="po">PO สั่งซื้อ</button>
@@ -131,6 +132,7 @@ const $ = (id) => document.getElementById(id);
 const MODES = [
   {id:"all", label:"ทั้งหมด"},
   {id:"product", label:"สินค้า"},
+  {id:"code_size", label:"รหัส+ขนาด"},
   {id:"si", label:"SI บิลขาย"},
   {id:"pi", label:"PI บิลซื้อ"},
   {id:"po", label:"PO สั่งซื้อ"},
@@ -141,6 +143,7 @@ const MODES = [
 const PLACE = {
   all: "รหัส / เบอร์แท้ PCODE / เบอร์โรงงาน MCODE / I K ซีล 31 46 / PO เลขบิล",
   product: "รหัสสินค้า / เบอร์แท้ / เบอร์โรงงาน / I K C ซีล 31 46 / ยี่ห้อ",
+  code_size: "ประเภท + ขนาด — C หรือ ซีล 31×46×7 · I นอก 72 หนา 17",
   si: "เลขบิลขาย เช่น 8K69-0013225",
   pi: "เลขบิลซื้อ / เลขโน้ต / เลขใบสำคัญจ่าย",
   po: "เลขใบสั่งซื้อ เช่น PO6905-392",
@@ -203,12 +206,20 @@ function codeBits(p) {
   if (p.mcode) bits.push("โรงงาน "+p.mcode);
   return bits.length ? "<div class='meta'>"+esc(bits.join(" · "))+"</div>" : "";
 }
+function sizeBits(p) {
+  const line = p.size_display || "";
+  return line ? "<div class='meta'>"+esc(line)+"</div>" : "";
+}
 function imgErr(el) { el.style.display="none"; }
 function setKind(k) {
   KIND = k;
   document.querySelectorAll("#modes button").forEach(b => b.classList.toggle("on", b.dataset.k === k));
   $("q").placeholder = PLACE[k] || PLACE.all;
   if (k === "iclow" || $("q").value.trim()) go();
+  else if (k === "code_size") {
+    $("list").innerHTML = "<div class='empty'>พิมพ์ประเภทชิ้นส่วน + ขนาด เช่น ซีล 31×46×7</div>";
+    $("detail").innerHTML = "";
+  }
   else { $("list").innerHTML = "<div class='empty'>พิมพ์ค้นหาด้านบน</div>"; $("detail").innerHTML = ""; }
 }
 function drawModes() {
@@ -277,7 +288,7 @@ function render(data) {
     const src = (p.photos && p.photos[0]) || "";
     html += "<button class='card' id='c"+i+"' onclick='showP("+i+")'><img class='thumb' src='"+src+"' onerror='imgErr(this)'/><div><strong>"+esc(p.bcode)+"</strong>"
       +(p.do_not_restock?" <span class='badge'>ไม่สั่งซ้ำ</span>":"")
-      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")+"</div>"+codeBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+p.qtyoh2+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
+      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")+"</div>"+codeBits(p)+sizeBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+p.qtyoh2+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
   });
   $("list").innerHTML = html || "<div class='empty'>ไม่พบ</div>";
   if (KIND === "iclow" && SUMMARY && !DOCS.length) showSummary();
@@ -403,16 +414,12 @@ function showP(i) {
   if (!p) return;
   document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
   const el = document.getElementById("c"+i); if (el) el.classList.add("active");
-  const L = p.size_labels || {};
-  const sizes = [];
-  if (p.size1) sizes.push((L.size1||"SIZE1")+": "+p.size1);
-  if (p.size2) sizes.push((L.size2||"SIZE2")+": "+p.size2);
-  if (p.size3) sizes.push((L.size3||"SIZE3")+": "+p.size3);
+  const sizes = p.size_display || "";
   const photos = (p.photos||[]).map(u => "<img src='"+u+"' onerror='imgErr(this)'/>").join("");
   $("detail").innerHTML = "<h2 style='margin:.2rem 0'>"+esc(p.bcode)+"</h2><div>"+esc(p.descr)+"</div>"
     +"<div class='meta'>เบอร์แท้ "+esc(p.pcode||"—")+" · เบอร์โรงงาน "+esc(p.mcode||"—")
     +" · "+esc(p.brand)+" "+esc(p.model)+"</div>"
-    +"<div class='meta'>"+esc(p.category)+" · "+esc(p.code1 ? (p.code1+" "+(p.code1_label||"")) : (p.code1_label||""))+" · "+esc(sizes.join(" / "))+"</div>"
+    +"<div class='meta'>"+esc(p.category)+" · "+esc(p.code1 ? (p.code1+" "+(p.code1_label||"")) : (p.code1_label||""))+(sizes ? " · "+esc(sizes) : "")+"</div>"
     +"<div class='meta'>ที่เก็บ "+esc(p.location1)+" "+esc(p.location2)+" · "+esc(p.ui1)+"/"+esc(p.ui2)+"</div>"
     +"<div class='prices'>"+fmtPrices(p.prices)+"</div><div class='photos'>"+photos+"</div>"
     +"<p class='meta'>คงเหลือ QTYOH2 = "+p.qtyoh2+" "+esc(p.ui1)+(p.do_not_restock?" (ไม่สั่งซ้ำ)":"")+"</p>"
