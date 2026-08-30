@@ -4,6 +4,8 @@ import html as html_lib
 import json
 import re
 
+from src.pay_notes.company_banks import DEFAULT_PAY_BANK_KEY, list_company_pay_accounts
+
 APP = "pay-notes"
 SESSION_COOKIE = "kcw_pay_notes"
 
@@ -31,6 +33,7 @@ def page(
     site_u = (site or "HQ").upper()
     write_flag = "true" if write_enabled else "false"
     ai_flag = "true" if ai_enabled else "false"
+    company_pay = list_company_pay_accounts()
     return (
         _HTML.replace("__USER_JSON__", json.dumps(who, ensure_ascii=False))
         .replace("__USER__", html_lib.escape(who))
@@ -38,6 +41,8 @@ def page(
         .replace("__WRITE__", write_flag)
         .replace("__AI__", ai_flag)
         .replace("__INITIALS__", html_lib.escape(initials(who)))
+        .replace("__COMPANY_PAY_JSON__", json.dumps(company_pay, ensure_ascii=False))
+        .replace("__DEFAULT_PAY_BANK__", json.dumps(DEFAULT_PAY_BANK_KEY))
     )
 
 
@@ -1106,14 +1111,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <label class="lbl" id="payChknoLabel" for="payChkno">เลขที่เช็ค</label>
       <input class="inp" id="payChkno" maxlength="15"/>
     </div>
-    <div style="margin-top:.65rem">
-      <label class="lbl" for="payBankGl">บัญชีที่ใช้จ่าย</label>
-      <select class="inp" id="payBankGl">
-        <option value="2101.7">2101.7 - ธนาคารกรุงไทย กระแสรายวัน</option>
-        <option value="2101.1">2101.1 - ธนาคารไทยพาณิชย์</option>
-        <option value="2101.2">2101.2 - ธนาคารกสิกรไทย</option>
-        <option value="2101.3">2101.3 - ธนาคารกรุงเทพ</option>
-      </select>
+    <div id="payBankWrap" style="margin-top:.65rem">
+      <label class="lbl" for="payBankSelect">บัญชีที่ใช้จ่าย</label>
+      <select class="inp" id="payBankSelect"></select>
     </div>
     <div id="payMsg"></div>
   </div>
@@ -2098,6 +2098,18 @@ $('dlgDetail').addEventListener('click', (e) => {
 wireDropZone($('dropProof'), $('detProofFiles'), uploadProofFiles);
 
 
+const COMPANY_PAY_ACCOUNTS = __COMPANY_PAY_JSON__;
+const DEFAULT_PAY_BANK = __DEFAULT_PAY_BANK__;
+
+function initPayBankSelect() {
+  const sel = $('payBankSelect');
+  if (!sel) return;
+  sel.innerHTML = (COMPANY_PAY_ACCOUNTS || []).map(a =>
+    `<option value="${esc(a.key)}">${esc(a.label)}</option>`
+  ).join('');
+  sel.value = DEFAULT_PAY_BANK || (COMPANY_PAY_ACCOUNTS[0] && COMPANY_PAY_ACCOUNTS[0].key) || '';
+}
+
 function setSettleMethod(method) {
   settleMethod = method === 'cheque' ? 'cheque' : (method === 'cash' ? 'cash' : 'transfer');
   ['transfer','cheque','cash'].forEach(m => {
@@ -2105,6 +2117,7 @@ function setSettleMethod(method) {
     if (el) el.classList.toggle('on', settleMethod === m);
   });
   $('payChknoWrap').classList.toggle('hidden', settleMethod !== 'cheque');
+  $('payBankWrap').classList.toggle('hidden', settleMethod === 'cash');
   if (settleMethod === 'transfer') {
     if (!$('payChkno').value.trim() || $('payChkno').dataset.auto === '1') {
       $('payChkno').value = 'โอน';
@@ -2133,7 +2146,7 @@ function openPay(acct, note, billamt, discount, bankname) {
   $('payBankLine').textContent = (bankname || '').replace(/\s+#\s+$/,'').trim() || '— ไม่พบบัญชีธนาคาร —';
   $('payChkamt').value = net.toFixed(2);
   $('payChkdate').value = todayISO();
-  $('payBankGl').value = '2101.7';
+  $('payBankSelect').value = DEFAULT_PAY_BANK;
   $('payMsg').innerHTML = '';
   $('payChkno').dataset.auto = '1';
   setSettleMethod('transfer');
@@ -2161,7 +2174,8 @@ $('btnConfirmPay').onclick = async () => {
       body: JSON.stringify({
         acctno: payTarget.acctno, noteno: payTarget.noteno,
         settle_method: settleMethod, chkno, chkamt,
-        chkdate: $('payChkdate').value, bank_gl: $('payBankGl').value.trim()
+        chkdate: $('payChkdate').value,
+        pay_bank: $('payBankSelect').value.trim()
       })
     });
     $('payMsg').innerHTML = `<p class="ok">บันทึกแล้ว · ${esc(res.voucno)}</p>`;
@@ -2807,6 +2821,7 @@ try {
   if (saved === 'assist' && AI_ENABLED) createMode = 'assist';
 } catch (e) {}
 applyCreateMode();
+initPayBankSelect();
 (function boot() {
   const h = (location.hash || '').replace('#','');
   if (h === 'pending') showTab('pending');
