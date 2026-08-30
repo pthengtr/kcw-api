@@ -376,6 +376,13 @@ dialog.dlg:not([open]) { display:none !important; }
   margin:.4rem 0 0; padding:.45rem .55rem; border-radius:.45rem;
   border:1px dashed var(--line); background:var(--inset); font-size:.88rem; white-space:pre-wrap;
 }
+.remark-form .remark-ap {
+  display:flex; align-items:center; min-height:2.4rem; padding:.45rem .65rem;
+  background:var(--inset); border:1px solid var(--line); border-radius:.45rem; font-weight:600;
+}
+.remark-form .remark-extra-wrap { margin-top:.45rem; }
+.remark-form .remark-extra-wrap.hidden { display:none; }
+.remark-preview { margin-top:.35rem; font-style:italic; }
 input[type="date"] { min-height:2.4rem; cursor:pointer; }
 .sec-title { display:flex; justify-content:space-between; align-items:baseline; gap:.5rem; margin-bottom:.7rem; }
 .sec-title h2 { margin:0; font-size:1.05rem; }
@@ -715,10 +722,26 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               </div>
               <button type="button" class="btn sm" id="btnAddBank" style="margin-top:.45rem">บันทึกบัญชี</button>
             </details>
-            <div style="margin-top:.65rem">
-              <label class="lbl" for="noteRemark">หมายเหตุ (optional)</label>
-              <textarea class="area" id="noteRemark" maxlength="500" placeholder="เช่น รหัสเจ้าหนี้-บิลเดือน mm/yyyy / รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
-              <p class="date-hint">เก็บในระบบชำระเจ้าหนี้เท่านั้น · ไม่เขียนลง KSS</p>
+            <div class="remark-form" id="noteRemarkWrap" style="margin-top:.65rem">
+              <label class="lbl">หมายเหตุ (optional)</label>
+              <div class="grid-2" style="margin-bottom:.35rem">
+                <div>
+                  <label class="lbl muted">รหัสเจ้าหนี้</label>
+                  <div class="remark-ap" id="noteRemarkAp">—</div>
+                </div>
+                <div>
+                  <label class="lbl" for="noteBillMonth">บิลเดือน</label>
+                  <input class="inp" id="noteBillMonth" type="month"/>
+                </div>
+              </div>
+              <label class="toggle" style="margin:.15rem 0 .35rem">
+                <input type="checkbox" id="noteRemarkExtraToggle"/>
+                เพิ่มหมายเหตุเพิ่มเติม
+              </label>
+              <div class="remark-extra-wrap hidden" id="noteRemarkExtraWrap">
+                <textarea class="area" id="noteRemarkExtra" maxlength="200" rows="2" placeholder="เช่น รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
+              </div>
+              <p class="date-hint remark-preview" id="noteRemarkPreview">เก็บในระบบชำระเจ้าหนี้เท่านั้น · ไม่เขียนลง KSS</p>
             </div>
             <div style="margin-top:.65rem">
               <label class="lbl" for="kbizDatetime">เตือนโอน KBIZ (optional)</label>
@@ -834,9 +857,26 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <label class="lbl" for="editKbizDatetime">เตือนโอน KBIZ (optional)</label>
           <input class="inp" id="editKbizDatetime" type="datetime-local" step="60"/>
         </div>
-        <div>
-          <label class="lbl" for="editNoteRemark">หมายเหตุ</label>
-          <textarea class="area" id="editNoteRemark" maxlength="500" style="min-height:2.6rem" placeholder="เช่น รหัสเจ้าหนี้-บิลเดือน mm/yyyy / รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
+        <div class="remark-form" id="editRemarkWrap">
+          <label class="lbl">หมายเหตุ</label>
+          <div class="grid-2" style="margin-bottom:.35rem">
+            <div>
+              <label class="lbl muted">รหัสเจ้าหนี้</label>
+              <div class="remark-ap" id="editRemarkAp">—</div>
+            </div>
+            <div>
+              <label class="lbl" for="editBillMonth">บิลเดือน</label>
+              <input class="inp" id="editBillMonth" type="month"/>
+            </div>
+          </div>
+          <label class="toggle" style="margin:.15rem 0 .35rem">
+            <input type="checkbox" id="editRemarkExtraToggle"/>
+            เพิ่มหมายเหตุเพิ่มเติม
+          </label>
+          <div class="remark-extra-wrap hidden" id="editRemarkExtraWrap">
+            <textarea class="area" id="editRemarkExtra" maxlength="200" rows="2" placeholder="เช่น รอใบลดหนี้ / นัดโอนวันศุกร์"></textarea>
+          </div>
+          <p class="date-hint remark-preview" id="editRemarkPreview"></p>
         </div>
       </div>
       <div class="bill-head">
@@ -892,6 +932,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
         <input id="pfDue" class="date-ce" type="date" lang="en" inputmode="none" aria-label="กำหนดชำระ"/>
       </div>
+      <div class="field" style="min-width:9.5rem">
+        <input id="pfBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
+      </div>
       <button type="button" class="btn soft" id="btnRefreshPending">↻ รีเฟรช</button>
     </div>
     <div class="kpis">
@@ -921,6 +964,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>เลขใบวางบิล</th>
               <th class="num">ยอดที่ต้องจ่าย</th>
               <th>กำหนดชำระ</th>
+              <th>หมายเหตุ</th>
               <th>สถานะ</th>
               <th></th>
             </tr>
@@ -948,6 +992,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <input id="afQ" placeholder="ค้นหาเลขใบสำคัญจ่าย / เจ้าหนี้ / เลขใบวางบิล" autocomplete="off"/>
       </div>
       <button type="button" class="btn soft" id="btnRefreshAwaitProof">↻ รีเฟรช</button>
+      <div class="field" style="min-width:9.5rem">
+        <input id="afBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
+      </div>
     </div>
     <div class="card card-table">
       <div class="table-wrap mob-cards">
@@ -958,6 +1005,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>รหัสเจ้าหนี้</th>
               <th>เลขใบวางบิล</th>
               <th>วันที่จ่าย</th>
+              <th>หมายเหตุ</th>
               <th class="num">ยอดจ่าย</th>
               <th>วิธีชำระ</th>
               <th></th>
@@ -998,6 +1046,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         </select>
       </div>
       <button type="button" class="btn ghost" id="btnClearVoucherFilters">↻ ล้างตัวกรอง</button>
+      <div class="field" style="min-width:9.5rem">
+        <input id="vfBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
+      </div>
     </div>
     <div class="card card-table">
       <div class="table-wrap mob-cards">
@@ -1008,6 +1059,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>รหัสเจ้าหนี้</th>
               <th>เลขใบวางบิล</th>
               <th>วันที่จ่าย</th>
+              <th>หมายเหตุ</th>
               <th class="num">ยอดจ่าย (บาท)</th>
               <th>วิธีชำระ</th>
               <th></th>
@@ -1047,6 +1099,9 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <div id="byApVendorResults" class="combo-list hidden"></div>
       </div>
       <button type="button" class="btn soft" id="btnRefreshByAp">↻ รีเฟรช</button>
+      <div class="field" style="min-width:9.5rem">
+        <input id="byApBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
+      </div>
     </div>
     <div id="byApPicked" class="picked hidden"></div>
     <div class="card card-table">
@@ -1058,6 +1113,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>เลขใบสำคัญจ่าย</th>
               <th class="num">ยอดสุทธิ</th>
               <th>กำหนดชำระ</th>
+              <th>หมายเหตุ</th>
               <th>สถานะ</th>
               <th></th>
             </tr>
@@ -1490,12 +1546,12 @@ function slicePage(rows, page, size) {
 }
 
 async function loadPending() {
-  $('pendingBody').innerHTML = `<tr><td colspan="6" class="empty">กำลังโหลด…</td></tr>`;
+  $('pendingBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
   try {
     pendingRows = await api('/pending');
     renderPending();
   } catch (e) {
-    $('pendingBody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`;
+    $('pendingBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function pendingNet(r) {
@@ -1504,12 +1560,14 @@ function pendingNet(r) {
 function filteredPending() {
   const q = ($('pfQ').value || '').trim().toLowerCase();
   const due = ($('pfDue').value || '').trim();
+  const billMonth = ($('pfBillMonth').value || '').trim();
   let rows = pendingRows.filter(r => {
     const st = pendingStatus(r);
     if (pendingBucket !== 'all' && st.bucket !== pendingBucket) return false;
     if (due && remDue(r) !== due) return false;
+    if (billMonth && remBillMonth(r) !== billMonth) return false;
     if (q) {
-      const hay = [r.acctno, r.acctname, r.noteno, remDue(r)].map(x => String(x||'').toLowerCase()).join(' ');
+      const hay = [r.acctno, r.acctname, r.noteno, remDue(r), remarkSearchHay(r)].map(x => String(x||'').toLowerCase()).join(' ');
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1547,6 +1605,7 @@ function renderPending() {
       <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
       <td class="num" data-label="ยอดที่ต้องจ่าย">${fmtMoney(pendingNet(r))} บาท</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r))}</td>
+      <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="td-actions" data-label=""><div class="row-actions">
         <button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
@@ -1564,9 +1623,9 @@ document.querySelectorAll('.kpi[data-bucket]').forEach(btn => {
   btn.onclick = () => { pendingBucket = btn.dataset.bucket; pendingPage = 1; renderPending(); };
 });
 $('btnRefreshPending').onclick = loadPending;
-['pfQ','pfDue'].forEach(id => {
+['pfQ','pfDue','pfBillMonth'].forEach(id => {
   const el = $(id);
-  el.addEventListener(el.type === 'date' ? 'change' : 'input', () => { pendingPage = 1; renderPending(); });
+  el.addEventListener(el.type === 'date' || el.type === 'month' ? 'change' : 'input', () => { pendingPage = 1; renderPending(); });
 });
 $('pendingBody').addEventListener('click', (e) => {
   const edit = e.target.closest('[data-edit]');
@@ -1581,19 +1640,21 @@ $('pendingBody').addEventListener('click', (e) => {
 });
 
 async function loadAwaitProof() {
-  $('awaitProofBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
+  $('awaitProofBody').innerHTML = `<tr><td colspan="8" class="empty">กำลังโหลด…</td></tr>`;
   try {
     awaitProofRows = await api('/vouchered?proof=awaiting');
     renderAwaitProof();
   } catch (e) {
-    $('awaitProofBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
+    $('awaitProofBody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function filteredAwaitProof() {
   const q = ($('afQ').value || '').trim().toLowerCase();
+  const billMonth = ($('afBillMonth').value || '').trim();
   return awaitProofRows.filter(r => {
+    if (billMonth && remBillMonth(r) !== billMonth) return false;
     if (!q) return true;
-    const hay = [r.acctno, r.acctname, r.noteno, r.voucno, voucDate(r)].map(x => String(x||'').toLowerCase()).join(' ');
+    const hay = [r.acctno, r.acctname, r.noteno, r.voucno, voucDate(r), remarkSearchHay(r)].map(x => String(x||'').toLowerCase()).join(' ');
     return hay.includes(q);
   });
 }
@@ -1608,6 +1669,7 @@ function renderAwaitProof() {
     <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
     <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
     <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
+    <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
     <td class="td-actions" data-label=""><button type="button" class="btn sm primary" data-open="${esc(keyOf(r))}" data-upload="1">แนบหลักฐาน</button></td>
@@ -1616,18 +1678,19 @@ function renderAwaitProof() {
 }
 $('btnRefreshAwaitProof').onclick = loadAwaitProof;
 $('afQ').addEventListener('input', () => { awaitProofPage = 1; renderAwaitProof(); });
+$('afBillMonth')?.addEventListener('change', () => { awaitProofPage = 1; renderAwaitProof(); });
 $('awaitProofBody').addEventListener('click', (e) => {
   const open = e.target.closest('[data-open]');
   if (open) openDetailByKey(open.dataset.open, {awaitProof: true, canUpload: !!open.dataset.upload});
 });
 
 async function loadVouchers() {
-  $('voucherBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
+  $('voucherBody').innerHTML = `<tr><td colspan="8" class="empty">กำลังโหลด…</td></tr>`;
   try {
     voucherRows = await api('/vouchered?proof=done');
     renderVouchers();
   } catch (e) {
-    $('voucherBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
+    $('voucherBody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function voucDate(r) { return String(r.VOUCDATE || '').slice(0, 10); }
@@ -1636,13 +1699,15 @@ function filteredVouchers() {
   const from = ($('vfFrom').value || '').trim();
   const to = ($('vfTo').value || '').trim();
   const method = $('vfMethod').value;
+  const billMonth = ($('vfBillMonth').value || '').trim();
   let rows = voucherRows.filter(r => {
     const d = voucDate(r);
     if (from && (!d || d < from)) return false;
     if (to && (!d || d > to)) return false;
     if (method && (r.settle_method || '') !== method) return false;
+    if (billMonth && remBillMonth(r) !== billMonth) return false;
     if (q) {
-      const hay = [r.acctno, r.acctname, r.noteno, r.voucno, d].map(x => String(x||'').toLowerCase()).join(' ');
+      const hay = [r.acctno, r.acctname, r.noteno, r.voucno, d, remarkSearchHay(r)].map(x => String(x||'').toLowerCase()).join(' ');
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1664,6 +1729,7 @@ function renderVouchers() {
     <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
     <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
     <td data-label="วันที่จ่าย">${fmtDate(voucDate(r))}</td>
+    <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
     <td class="td-actions" data-label=""><div class="row-actions">
@@ -1675,14 +1741,14 @@ function renderVouchers() {
 }
 function clearVoucherFilters() {
   $('vfQ').value = ''; $('vfFrom').value = ''; $('vfTo').value = '';
-  $('vfMethod').value = '';
+  $('vfMethod').value = ''; $('vfBillMonth').value = '';
   voucherPage = 1; renderVouchers();
 }
 $('btnClearVoucherFilters').onclick = clearVoucherFilters;
 $('vfSize').onchange = () => { voucherPageSize = Number($('vfSize').value || 10); voucherPage = 1; renderVouchers(); };
-['vfQ','vfFrom','vfTo','vfMethod'].forEach(id => {
+['vfQ','vfFrom','vfTo','vfMethod','vfBillMonth'].forEach(id => {
   const el = $(id);
-  el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', () => { voucherPage = 1; renderVouchers(); });
+  el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' || el.type === 'month' ? 'change' : 'input', () => { voucherPage = 1; renderVouchers(); });
 });
 $('voucherBody').addEventListener('click', (e) => {
   const printBtn = e.target.closest('[data-print]');
@@ -1700,16 +1766,22 @@ async function loadByAp() {
     $('byApPager').innerHTML = '';
     return;
   }
-  $('byApBody').innerHTML = `<tr><td colspan="6" class="empty">กำลังโหลด…</td></tr>`;
+  $('byApBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
   try {
     byApRows = await api('/notes?acctno=' + encodeURIComponent(byApVendor.acctno));
     renderByAp();
   } catch (e) {
-    $('byApBody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`;
+    $('byApBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
   }
 }
+function filteredByAp() {
+  const billMonth = ($('byApBillMonth').value || '').trim();
+  if (!billMonth) return byApRows;
+  return byApRows.filter(r => remBillMonth(r) === billMonth);
+}
 function renderByAp() {
-  const pg = slicePage(byApRows, byApPage, PAGE_SIZE);
+  const all = filteredByAp();
+  const pg = slicePage(all, byApPage, PAGE_SIZE);
   byApPage = pg.page;
   $('byApEmpty').classList.toggle('hidden', pg.total !== 0);
   $('byApCount').textContent = pg.total ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ` : 'แสดง 0 รายการ';
@@ -1723,6 +1795,7 @@ function renderByAp() {
       <td data-label="เลขใบสำคัญจ่าย">${esc(r.voucno || '—')}</td>
       <td class="num" data-label="ยอดสุทธิ">${fmtMoney(netAmt(r))}</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r), true)}</td>
+      <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
       <td data-label="สถานะ">${workflowBadge(r)}</td>
       <td class="td-actions" data-label=""><div class="row-actions">${actions}</div></td>
     </tr>`;
@@ -1730,6 +1803,7 @@ function renderByAp() {
   renderPager($('byApPager'), pg.page, pg.pages, p => { byApPage = p; renderByAp(); });
 }
 $('btnRefreshByAp').onclick = loadByAp;
+$('byApBillMonth')?.addEventListener('change', () => { byApPage = 1; renderByAp(); });
 $('byApBody').addEventListener('click', (e) => {
   const edit = e.target.closest('[data-edit]');
   if (edit) { openEditNote(edit.dataset.edit, 'byap'); return; }
@@ -1795,6 +1869,122 @@ function billMonthLabel(bills) {
   if (months.length === 1) return fmt(months[0]);
   return `${fmt(months[0])} – ${fmt(months[months.length - 1])}`;
 }
+function suggestBillMonthYm(bills) {
+  const months = [];
+  (bills || []).forEach(b => {
+    const s = String(b.BILLDATE || '').slice(0, 7);
+    if (s.length === 7 && !months.includes(s)) months.push(s);
+  });
+  months.sort();
+  return months.length ? months[months.length - 1] : '';
+}
+const _REMARK_RE = /^(.+?)-บิลเดือน\s+(\d{1,2})\/(\d{4})(?:\s*\/\s*(.+))?$/;
+function parseRemark(rem) {
+  rem = rem || {};
+  let billMonth = String(rem.bill_month || '').slice(0, 7);
+  let remarkExtra = String(rem.remark_extra || '').trim();
+  if (!billMonth && rem.remark) {
+    const m = String(rem.remark).trim().match(_REMARK_RE);
+    if (m) {
+      billMonth = `${m[3]}-${String(m[2]).padStart(2, '0')}`;
+      if (!remarkExtra && m[4]) remarkExtra = m[4].trim();
+    } else if (!remarkExtra) {
+      remarkExtra = String(rem.remark || '').trim();
+    }
+  }
+  return { billMonth, remarkExtra };
+}
+function composeRemarkPreview(acctno, billMonth, remarkExtra) {
+  const acct = String(acctno || '').trim();
+  const extra = String(remarkExtra || '').trim();
+  if (billMonth) {
+    const [y, m] = billMonth.split('-');
+    const label = `${acct}-บิลเดือน ${Number(m)}/${y}`;
+    return extra ? `${label} / ${extra}` : label;
+  }
+  return extra;
+}
+function getRemarkEls(prefix) {
+  return {
+    ap: $(prefix + 'RemarkAp'),
+    month: $(prefix + 'BillMonth'),
+    extraToggle: $(prefix + 'RemarkExtraToggle'),
+    extraWrap: $(prefix + 'RemarkExtraWrap'),
+    extra: $(prefix + 'RemarkExtra'),
+    preview: $(prefix + 'RemarkPreview'),
+  };
+}
+function syncRemarkPreview(prefix, acctno) {
+  const els = getRemarkEls(prefix);
+  if (!els.preview) return;
+  const composed = composeRemarkPreview(acctno, els.month?.value || '', els.extra?.value || '');
+  els.preview.textContent = composed
+    ? `ตัวอย่าง: ${composed}`
+    : 'เก็บในระบบชำระเจ้าหนี้เท่านั้น · ไม่เขียนลง KSS';
+}
+function fillRemarkForm(prefix, rem, acctno) {
+  const els = getRemarkEls(prefix);
+  const parsed = parseRemark(rem);
+  if (els.ap) els.ap.textContent = acctno || '—';
+  if (els.month) els.month.value = parsed.billMonth || '';
+  const hasExtra = !!parsed.remarkExtra;
+  if (els.extraToggle) els.extraToggle.checked = hasExtra;
+  if (els.extraWrap) els.extraWrap.classList.toggle('hidden', !hasExtra);
+  if (els.extra) els.extra.value = parsed.remarkExtra || '';
+  syncRemarkPreview(prefix, acctno);
+}
+function readRemarkForm(prefix) {
+  const els = getRemarkEls(prefix);
+  const billMonth = (els.month?.value || '').trim();
+  const remarkExtra = els.extraToggle?.checked ? (els.extra?.value || '').trim() : '';
+  return { bill_month: billMonth || null, remark_extra: remarkExtra };
+}
+function resetRemarkForm(prefix, acctno) {
+  fillRemarkForm(prefix, {}, acctno || '');
+}
+function remBillMonth(r) {
+  const bm = (r.reminder || {}).bill_month;
+  return bm ? String(bm).slice(0, 7) : '';
+}
+function formatBillMonthDisplay(ym) {
+  if (!ym || ym.length < 7) return '';
+  const [y, m] = ym.split('-');
+  return `${Number(m)}/${y}`;
+}
+function formatRemarkShort(r) {
+  const rem = r.reminder || {};
+  const acctno = r.acctno || '';
+  const bm = remBillMonth(r);
+  if (bm) {
+    const extra = String(rem.remark_extra || '').trim();
+    const base = `${acctno} ${formatBillMonthDisplay(bm)}`;
+    return extra ? `${base} / ${extra.slice(0, 24)}${extra.length > 24 ? '…' : ''}` : base;
+  }
+  const text = String(rem.remark || '').trim();
+  if (!text) return '—';
+  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+}
+function remarkSearchHay(r) {
+  const rem = r.reminder || {};
+  const bm = remBillMonth(r);
+  return [
+    r.acctno, rem.remark, rem.remark_extra,
+    bm, formatBillMonthDisplay(bm),
+  ].map(x => String(x || '').toLowerCase()).join(' ');
+}
+function wireRemarkForm(prefix, acctnoGetter) {
+  const els = getRemarkEls(prefix);
+  const sync = () => syncRemarkPreview(prefix, typeof acctnoGetter === 'function' ? acctnoGetter() : acctnoGetter);
+  els.extraToggle?.addEventListener('change', () => {
+    if (els.extraWrap) els.extraWrap.classList.toggle('hidden', !els.extraToggle.checked);
+    if (!els.extraToggle.checked && els.extra) els.extra.value = '';
+    sync();
+  });
+  els.month?.addEventListener('change', sync);
+  els.extra?.addEventListener('input', sync);
+}
+wireRemarkForm('note', () => picked?.acctno || '');
+wireRemarkForm('edit', () => editTarget?.acctno || '');
 function renderDetBills(det) {
   const bills = (det && det.bills) || [];
   const due = String(((det.reminder || {}).due_date) || remDue(detailRow || {}) || '').slice(0, 10);
@@ -2223,6 +2413,7 @@ async function pickVendor(acctno, acctname) {
   $('pickedVendor').textContent = `${acctno} — ${acctname}`;
   $('pickedVendor').classList.remove('hidden');
   $('vendorResults').classList.add('hidden');
+  fillRemarkForm('note', {}, acctno);
   if (!$('dueDate').value) $('dueDate').value = todayISO();
   uploadedPaths = [];
   $('billThumbs').innerHTML = '';
@@ -2259,7 +2450,7 @@ async function loadBills() {
     const rows = await api('/bills?acctno=' + encodeURIComponent(picked.acctno));
     $('billList').innerHTML = rows.map(b =>
       `<tr>
-        <td data-label=""><input type="checkbox" value="${esc(b.BILLNO)}" data-amt="${Number(b.AFTERTAX)||0}" aria-label="เลือกบิล ${esc(b.BILLNO)}"/></td>
+        <td data-label=""><input type="checkbox" value="${esc(b.BILLNO)}" data-amt="${Number(b.AFTERTAX)||0}" data-billdate="${esc(String(b.BILLDATE||'').slice(0,10))}" aria-label="เลือกบิล ${esc(b.BILLNO)}"/></td>
         <td data-label="เลขที่บิล">${esc(b.BILLNO)}</td>
         <td data-label="วันที่">${fmtDate(b.BILLDATE)}</td>
         <td class="num" data-label="ยอด (บาท)">${fmtMoney(b.AFTERTAX)}</td>
@@ -2307,6 +2498,14 @@ function updateBillSelectStatus() {
   $('billSelectTotal').textContent = `ยอดรวม ${fmtMoney(total)} บาท`;
   syncDiscPreview();
   updateWizardNextState();
+  if (!$('noteBillMonth').value) {
+    const bills = [...$('billList').querySelectorAll('input:checked')].map(cb => ({ BILLDATE: cb.dataset.billdate }));
+    const ym = suggestBillMonthYm(bills);
+    if (ym) {
+      $('noteBillMonth').value = ym;
+      syncRemarkPreview('note', picked?.acctno || '');
+    }
+  }
 }
 
 function billMatchNeedsAck() {
@@ -2668,7 +2867,7 @@ $('btnCreateNote').onclick = async () => {
         acctno: picked.acctno, acctname: picked.acctname, noteno, due_date: due,
         bank_id, billnos, discount_mode: discMode,
         discount_input: Number($('discInput').value || 0),
-        remark: ($('noteRemark').value || '').trim(),
+        ...readRemarkForm('note'),
         kbiz_datetime: ($('kbizDatetime').value || '').trim() || null
       })
     });
@@ -2685,7 +2884,7 @@ $('btnCreateNote').onclick = async () => {
     renderScanRefPreview([]);
     $('billThumbs').innerHTML = '';
     $('discInput').value = '0.00';
-    $('noteRemark').value = '';
+    resetRemarkForm('note', picked?.acctno || '');
     $('kbizDatetime').value = '';
     setDiscMode('amount');
     await loadBills();
@@ -2709,7 +2908,7 @@ async function openEditNote(key, returnTab) {
   renderNotenoReuseHint($('editReuseWrap'), row);
   const rem = row.reminder || {};
   $('editDueDate').value = remDue(row);
-  $('editNoteRemark').value = rem.remark || '';
+  fillRemarkForm('edit', rem, row.acctno);
   $('editKbizDatetime').value = toDatetimeLocal(rem.kbiz_datetime);
   editDiscMode = rem.discount_mode === 'percent' ? 'percent' : 'amount';
   $('editDiscInput').value = rem.discount_input != null ? rem.discount_input : (rem.discount_amount || 0);
@@ -2732,7 +2931,7 @@ async function loadEditBills() {
   const rows = await api('/bills?acctno=' + encodeURIComponent(editTarget.acctno) + '&noteno=' + encodeURIComponent(editTarget.noteno));
   $('editBillList').innerHTML = rows.map(b =>
     `<tr>
-      <td data-label=""><input type="checkbox" value="${esc(b.BILLNO)}" data-amt="${Number(b.AFTERTAX)||0}" ${b.attached ? 'checked' : ''} aria-label="เลือกบิล ${esc(b.BILLNO)}"/></td>
+      <td data-label=""><input type="checkbox" value="${esc(b.BILLNO)}" data-amt="${Number(b.AFTERTAX)||0}" data-billdate="${esc(String(b.BILLDATE||'').slice(0,10))}" ${b.attached ? 'checked' : ''} aria-label="เลือกบิล ${esc(b.BILLNO)}"/></td>
       <td data-label="เลขที่บิล">${esc(b.BILLNO)}</td>
       <td data-label="วันที่">${fmtDate(b.BILLDATE)}</td>
       <td class="num" data-label="ยอด (บาท)">${fmtMoney(b.AFTERTAX)}</td>
@@ -2769,6 +2968,14 @@ function updateEditBillSelectStatus() {
   $('editBillSelectStatus').textContent = `เลือก ${n} บิล`;
   $('editBillSelectTotal').textContent = `ยอดรวม ${fmtMoney(total)} บาท`;
   syncEditDiscPreview();
+  if (!$('editBillMonth').value) {
+    const bills = [...$('editBillList').querySelectorAll('input:checked')].map(cb => ({ BILLDATE: cb.dataset.billdate }));
+    const ym = suggestBillMonthYm(bills);
+    if (ym) {
+      $('editBillMonth').value = ym;
+      syncRemarkPreview('edit', editTarget?.acctno || '');
+    }
+  }
 }
 $('editDiscModeAmount').onclick = () => setEditDiscMode('amount');
 $('editDiscModePercent').onclick = () => setEditDiscMode('percent');
@@ -2805,7 +3012,7 @@ $('btnSaveEdit').onclick = async () => {
         billnos,
         due_date: $('editDueDate').value,
         bank_id: $('editBankSelect').value,
-        remark: ($('editNoteRemark').value || '').trim(),
+        ...readRemarkForm('edit'),
         kbiz_datetime: ($('editKbizDatetime').value || '').trim() || null,
         discount_mode: editDiscMode,
         discount_input: Number($('editDiscInput').value || 0),

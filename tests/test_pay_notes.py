@@ -56,6 +56,10 @@ def test_pay_notes_page_renders():
     assert "<th>เลขที่บิล</th>" in html
     assert 'id="kbizDatetime"' in html
     assert 'id="editKbizDatetime"' in html
+    assert 'id="noteBillMonth"' in html
+    assert 'id="editBillMonth"' in html
+    assert 'id="pfBillMonth"' in html
+    assert 'formatRemarkShort' in html
 
 
 def test_page_has_voucher_and_proof_tabs():
@@ -580,3 +584,31 @@ def test_note_detail_query_accepts_slash_in_noteno():
     body = res.json()
     assert body["bill_images"][0]["name"] == "line_oa_chat_260829_113830.jpg"
     assert body["noteno_display"] == "CTS3/69"
+
+
+def test_compose_remark_month_only():
+    from datetime import date
+    from src.pay_notes.remark import compose_remark, parse_legacy_remark, resolve_remark_fields
+
+    bm = date(2026, 8, 1)
+    assert compose_remark("BRC", bm, "") == "BRC-บิลเดือน 8/2026"
+    assert compose_remark("BRC", bm, "รอใบลดหนี้") == "BRC-บิลเดือน 8/2026 / รอใบลดหนี้"
+    assert compose_remark("BRC", None, "นัดโอนวันศุกร์") == "นัดโอนวันศุกร์"
+    assert compose_remark("BRC", None, "") == ""
+
+    parsed = parse_legacy_remark("BRC-บิลเดือน 08/2026 / รอใบลดหนี้")
+    assert parsed["bill_month"] == date(2026, 8, 1)
+    assert parsed["remark_extra"] == "รอใบลดหนี้"
+
+    parsed2 = parse_legacy_remark("legacy free text")
+    assert parsed2["bill_month"] is None
+    assert parsed2["remark_extra"] == "legacy free text"
+
+    fields = resolve_remark_fields("BRC", bill_month="2026-08", remark_extra="extra")
+    assert fields["bill_month"] == "2026-08-01"
+    assert fields["remark_extra"] == "extra"
+    assert fields["remark"] == "BRC-บิลเดือน 8/2026 / extra"
+
+    fields2 = resolve_remark_fields("BRC", remark="BRC-บิลเดือน 7/2025")
+    assert fields2["bill_month"] == "2025-07-01"
+    assert fields2["remark"] == "BRC-บิลเดือน 7/2025"
