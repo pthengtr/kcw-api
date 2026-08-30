@@ -41,6 +41,7 @@ class TransferSettings(BaseSettings):
     transfer_syp_receive_enabled: bool = Field(
         default=False, validation_alias="TRANSFER_SYP_RECEIVE_ENABLED"
     )
+    stock_check_token_secret: str = Field(default="", validation_alias="STOCK_CHECK_TOKEN_SECRET")
 
     @property
     def hq_ship_write_enabled(self) -> bool:
