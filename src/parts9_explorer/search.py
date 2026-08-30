@@ -11,7 +11,10 @@ from src.parts9_explorer.query import (
     DOC_KIND_LABELS,
     category_label,
     code1_label,
+    code_size_query_valid,
+    format_size_line,
     infer_doc_kind,
+    parse_code_size_query,
     parse_query,
     size_labels,
 )
@@ -111,6 +114,9 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
         "size2": str(row.get("SIZE2") or "").strip(),
         "size3": str(row.get("SIZE3") or "").strip(),
         "size_labels": {"size1": s1, "size2": s2, "size3": s3},
+        "size_display": format_size_line(
+            code1, row.get("SIZE1"), row.get("SIZE2"), row.get("SIZE3"), compact=True
+        ),
         "ui1": str(row.get("UI1") or "").strip(),
         "ui2": str(row.get("UI2") or "").strip(),
         "mtp2": _num(row.get("MTP2")),
@@ -143,9 +149,25 @@ def _term_match_sql(key: str, *, include_size_slot: int | None = None) -> str:
     return "(" + " OR ".join(parts) + ")"
 
 
-def search_products(raw: str, *, site: str, include_skip: bool = False, limit: int = 50):
-    parsed = parse_query(raw)
+def _size_exact_sql(slot: int, key: str) -> str:
+    return (
+        f"LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE{slot}), ''))) = :{key}"
+    )
+
+
+def search_products(
+    raw: str,
+    *,
+    site: str,
+    include_skip: bool = False,
+    limit: int = 50,
+    mode: str | None = None,
+):
+    code_size = (mode or "").strip().lower() == "code_size"
+    parsed = parse_code_size_query(raw) if code_size else parse_query(raw)
     site_key = (site or "hq").strip().lower()
+    if code_size and not code_size_query_valid(parsed):
+        return [], "ระบุประเภทชิ้นส่วน (C/I/ซีล) และขนาดอย่างน้อย 1 มิติ"
     try:
         engine = get_site_engine(site_key)
     except Exception as exc:
@@ -168,15 +190,31 @@ def search_products(raw: str, *, site: str, include_skip: bool = False, limit: i
     if parsed.code1:
         where.append("UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) = :code1")
         params["code1"] = parsed.code1
-    for i, sz in enumerate(parsed.sizes, start=1):
-        key = f"sz{i}"
-        where.append(_term_match_sql(key, include_size_slot=i))
-        params[key] = f"%{sz}%"
-    for i, term in enumerate(parsed.text_terms):
-        key = f"t{i}"
-        where.append(_term_match_sql(key))
-        params[key] = f"%{term}%"
-    if not parsed.bcode_prefix and not parsed.code1 and not parsed.sizes and not parsed.text_terms:
+    if code_size:
+        for slot, val, key in (
+            (1, parsed.size1, "sz1"),
+            (2, parsed.size2, "sz2"),
+            (3, parsed.size3, "sz3"),
+        ):
+            if val:
+                where.append(_size_exact_sql(slot, key))
+                params[key] = val
+        for i, term in enumerate(parsed.text_terms):
+            key = f"t{i}"
+            where.append(
+                "(DESCR LIKE :{k} OR BRAND LIKE :{k} OR MODEL LIKE :{k})".format(k=key)
+            )
+            params[key] = f"%{term}%"
+    else:
+        for i, sz in enumerate(parsed.sizes, start=1):
+            key = f"sz{i}"
+            where.append(_term_match_sql(key, include_size_slot=i))
+            params[key] = f"%{sz}%"
+        for i, term in enumerate(parsed.text_terms):
+            key = f"t{i}"
+            where.append(_term_match_sql(key))
+            params[key] = f"%{term}%"
+    if not code_size and not parsed.bcode_prefix and not parsed.code1 and not parsed.sizes and not parsed.text_terms:
         if parsed.raw:
             where.append(_term_match_sql("q"))
             params["q"] = f"%{parsed.raw}%"

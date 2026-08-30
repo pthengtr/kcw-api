@@ -129,15 +129,20 @@ def api_search(
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
     _ = ident
     mode = (kind or "all").strip().lower()
-    parsed = parse_query((mode + " " + q).strip() if mode not in ("all", "product") and q else q)
+    parsed = parse_query((mode + " " + q).strip() if mode not in ("all", "product", "code_size") and q else q)
     if mode == "product":
         parsed = parse_query("สินค้า " + q) if q else parsed
     products, errp = ([], None)
     documents, errd = ([], None)
     summary, errs = (None, None)
-    want_products = mode == "product" or (mode == "all" and parsed.want_product)
+    want_products = mode in ("product", "code_size") or (mode == "all" and parsed.want_product)
     if want_products and q.strip():
-        products, errp = search_products(q, site=site, include_skip=include_skip in ("1", "true", "yes"))
+        products, errp = search_products(
+            q,
+            site=site,
+            include_skip=include_skip in ("1", "true", "yes"),
+            mode="code_size" if mode == "code_size" else None,
+        )
     want_docs = mode in ("si", "pi", "po", "pv", "rv", "iclow") or (
         mode == "all" and q.strip() and (parsed.kind == "document" or not parsed.want_product)
     )

@@ -19,6 +19,7 @@ SIZE_LABELS = {
     "E": ("ใน", "นอก", "หนา"), "F": ("ใน", "นอก", "สูง"), "G": ("ปลอก", "ยาว", None),
     "I": ("ใน", "นอก", "หนา"), "K": ("ยาว(นิ้ว)", "ฟัน", "ขนาดรูเฟือง"),
     "L": ("หัวสาย 1", "หัวสาย 2", "ยาว"), "O": ("ใน", "หนา", None), "P": ("ใน", "นอก", "สูง"),
+    "Q": ("เตเปอร์", "แกนโต", None), "R": ("ใน", "นอก", "หนา"),
 }
 CATEGORY_LABELS = {
     "01": "TX จิ๊ป แลนด์", "02": "I/S JCM บรรทุก 10 ล้อ", "03": "I/S D-MAX กระบะ",
@@ -45,7 +46,8 @@ _FIELD_PREFIX = re.compile(
     re.I,
 )
 _KIND_PREFIX = re.compile(
-    r"^(si|pi|po|pv|rv|np|iclow|สินค้า|บิลขาย|บิลซื้อ|ใบสั่ง(?:ซื้อ)?|"
+    r"^(si|pi|po|pv|rv|np|iclow|code_size|codesize|code-size|รหัสขนาด|"
+    r"สินค้า|บิลขาย|บิลซื้อ|ใบสั่ง(?:ซื้อ)?|"
     r"ค้างรับ|ใบสำคัญจ่าย|ใบสำคัญรับ|โน้ต|ใบจ่าย|note)[:\s]+",
     re.I,
 )
@@ -57,6 +59,8 @@ _KIND_ALIASES = {
     "rv": "rv", "ใบสำคัญรับ": "rv",
     "iclow": "iclow", "ค้างรับ": "iclow",
     "สินค้า": "product",
+    "code_size": "code_size", "codesize": "code_size", "code-size": "code_size",
+    "รหัสขนาด": "code_size",
 }
 DOC_KIND_LABELS = {
     "si": "บิลขาย SI",
@@ -66,6 +70,7 @@ DOC_KIND_LABELS = {
     "rv": "ใบสำคัญรับ RV",
     "iclow": "ค้างรับ ICLOW",
     "product": "สินค้า",
+    "code_size": "รหัส+ขนาด",
 }
 
 
@@ -107,6 +112,10 @@ class ParsedQuery:
     docno: str | None = None
     doc_kind: str | None = None
     want_product: bool = True
+    search_mode: str | None = None
+    size1: str | None = None
+    size2: str | None = None
+    size3: str | None = None
 
 
 def category_label(bcode: str) -> str:
@@ -126,6 +135,133 @@ def size_labels(code1: str | None) -> tuple[str | None, str | None, str | None]:
     return SIZE_LABELS.get(letter, ("SIZE1", "SIZE2", "SIZE3"))
 
 
+def _safe_size_value(value: object) -> str:
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() == "nan":
+        return ""
+    return s
+
+
+def format_size_line(
+    code1: str | None,
+    size1: object,
+    size2: object,
+    size3: object,
+    *,
+    compact: bool = False,
+) -> str:
+    """Label SIZE1–3 by CODE1 per kcw-docs ICMAS dictionary §7."""
+    letter = (code1 or "").strip().upper()
+    values = [_safe_size_value(size1), _safe_size_value(size2), _safe_size_value(size3)]
+    if not any(values):
+        return ""
+    labels = SIZE_LABELS.get(letter)
+    if not labels:
+        shown = [v for v in values if v]
+        return " / ".join(shown)
+    pairs: list[str] = []
+    for idx, label in enumerate(labels):
+        if label and idx < len(values) and values[idx]:
+            pairs.append(f"{label} {values[idx]}")
+    if not pairs:
+        shown = [v for v in values if v]
+        return " / ".join(shown)
+    sep = " | " if not compact else " / "
+    body = sep.join(pairs)
+    return body if compact else f"ขนาด: {body}"
+
+
+def _strip_size_patterns(text: str) -> str:
+    t = re.sub(
+        r"(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)(?:\s*[x×*]\s*(\d+(?:\.\d+)?))?",
+        " ",
+        text or "",
+        flags=re.I,
+    )
+    return re.sub(
+        r"(?:size[123]|ใน|นอก|หนา|สูง|ยาว)\s*[:=]?\s*\d+(?:\.\d+)?",
+        " ",
+        t,
+        flags=re.I,
+    ).strip()
+
+
+def _parse_size_slots(text: str) -> tuple[str | None, str | None, str | None]:
+    s1 = s2 = s3 = None
+    m1 = re.search(r"(?:size1|ใน|id|i\.?d\.?)\s*[:=]?\s*(\d+(?:\.\d+)?)", text, re.I)
+    m2 = re.search(r"(?:size2|นอก|od|o\.?d\.?)\s*[:=]?\s*(\d+(?:\.\d+)?)", text, re.I)
+    m3 = re.search(r"(?:size3|หนา|สูง|ยาว|width|thick)\s*[:=]?\s*(\d+(?:\.\d+)?)", text, re.I)
+    if m1:
+        s1 = m1.group(1)
+    if m2:
+        s2 = m2.group(1)
+    if m3:
+        s3 = m3.group(1)
+    if not (s1 or s2 or s3):
+        triple = re.search(
+            r"(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)", text, re.I
+        )
+        pair = re.search(r"(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)", text, re.I)
+        if triple:
+            return triple.group(1), triple.group(2), triple.group(3)
+        if pair:
+            return pair.group(1), pair.group(2), None
+    return s1, s2, s3
+
+
+def parse_code_size_query(raw: str) -> ParsedQuery:
+    """CODE1 + exact SIZE1/2/3 — ICMAS dictionary §7."""
+    q = (raw or "").strip()
+    if not q:
+        return ParsedQuery(raw="", kind="product", search_mode="code_size")
+    size1, size2, size3 = _parse_size_slots(q)
+    q_tokens = _strip_size_patterns(q)
+    tokens = [t for t in re.split(r"\s+", q_tokens) if t]
+    code1 = None
+    text_terms: list[str] = []
+    for tok in tokens:
+        low = tok.lower()
+        if low in ("ขนาด", "size"):
+            continue
+        if tok in CODE1_FROM_THAI:
+            code1 = CODE1_FROM_THAI[tok]
+            continue
+        if _CODE1_TOKEN.match(tok) and tok.upper() in CODE1_LABELS:
+            code1 = tok.upper()
+            continue
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", tok):
+            continue
+        text_terms.append(tok)
+    if not (size1 or size2 or size3):
+        nums = [t for t in re.split(r"\s+", q) if re.fullmatch(r"-?\d+(?:\.\d+)?", t)]
+        if len(nums) >= 3:
+            size1, size2, size3 = nums[0], nums[1], nums[2]
+        elif len(nums) == 2:
+            size1, size2 = nums[0], nums[1]
+        elif len(nums) == 1:
+            size1 = nums[0]
+    sizes = [s for s in (size1, size2, size3) if s]
+    return ParsedQuery(
+        raw=q,
+        kind="product",
+        code1=code1,
+        sizes=sizes[:3],
+        size1=size1,
+        size2=size2,
+        size3=size3,
+        text_terms=text_terms,
+        want_product=True,
+        search_mode="code_size",
+    )
+
+
+def code_size_query_valid(parsed: ParsedQuery) -> bool:
+    has_size = bool(parsed.size1 or parsed.size2 or parsed.size3 or parsed.sizes)
+    return bool(parsed.code1) and has_size
+
+
 def parse_query(raw: str) -> ParsedQuery:
     q = (raw or "").strip()
     if not q:
@@ -135,6 +271,9 @@ def parse_query(raw: str) -> ParsedQuery:
     if m:
         forced = _KIND_ALIASES.get(m.group(1).lower())
         q = q[m.end():].strip()
+    if forced == "code_size":
+        parsed = parse_code_size_query(q)
+        return parsed
     field = None
     fm = _FIELD_PREFIX.match(q)
     if fm:
