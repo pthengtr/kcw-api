@@ -56,12 +56,12 @@ _HTML = r"""<!doctype html>
 .hdr{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);padding:.85rem 1rem;box-shadow:var(--shadow)}
 .hdr h1{margin:0;font-size:1.15rem}.hdr .sub{font-size:.8rem;color:var(--muted)}
 .tabs{display:flex;gap:.35rem;overflow:auto;padding:.65rem 1rem;background:#fff;border-bottom:1px solid var(--line)}
-.tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:.45rem .85rem;font-size:.82rem;white-space:nowrap;cursor:pointer}
+.tab{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:999px;padding:.45rem .85rem;font-size:.82rem;white-space:nowrap;cursor:pointer;font-family:inherit}
 .tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .panel{display:none;padding:1rem;max-width:1120px;margin:0 auto}
 .panel.on{display:block}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem;box-shadow:var(--shadow);margin-bottom:.85rem}
-.table-wrap{overflow:auto;border:1px solid var(--line;border-radius:12px}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}
 table{width:100%;border-collapse:collapse;font-size:.88rem}
 th,td{padding:.55rem .65rem;border-bottom:1px solid var(--line);text-align:left}
 th{background:#f8fafc;position:sticky;top:0}
