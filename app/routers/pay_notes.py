@@ -49,6 +49,12 @@ from src.pay_notes.storage import (
     upload_bytes,
 )
 from src.pay_notes.ui import APP, SESSION_COOKIE, page
+from src.pay_notes.company_banks import (
+    DEFAULT_PAY_BANK_KEY,
+    bpdet_line_from_payment,
+    list_company_pay_accounts,
+    resolve_company_pay_account,
+)
 from src.pay_notes.writer import (
     PayNoteWriteError,
     cancel_unvouchered_pay_note,
@@ -207,7 +213,8 @@ class VoucherCreate(BaseModel):
     chkno: str = ""
     chkamt: float
     chkdate: str | None = None
-    bank_gl: str = "2101.7"
+    pay_bank: str = DEFAULT_PAY_BANK_KEY
+    bank_gl: str | None = None  # legacy; prefer pay_bank
 
 
 def _parse_due(raw: str) -> str:
@@ -353,6 +360,14 @@ def api_banks(request: Request, acctno: str = ""):
         return err
     client = get_pay_notes_supabase_client()
     return list_vendor_banks(client, acctno)
+
+
+@router.get("/api/company-pay-accounts")
+def api_company_pay_accounts(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    return list_company_pay_accounts()
 
 
 @router.post("/api/banks")
@@ -779,36 +794,25 @@ def api_create_voucher(request: Request, body: VoucherCreate):
             status_code=400,
         )
 
-    bankname = " ".join(
-        p
-        for p in (
-            str(bank.get("bank_name") or "").strip(),
-            str(bank.get("bank_account_name") or "").strip(),
-            ("# " + str(bank.get("bank_account_number") or "").strip())
-            if bank.get("bank_account_number")
-            else "",
-        )
-        if p
-    )[:60]
-    if method == "cash":
-        # Cash rows historically often have empty BANKNAME / GL
-        bankname = ""
-        bank_gl = (body.bank_gl or "").strip()[:10]
-    else:
-        bank_gl = (body.bank_gl or "2101.7").strip()[:10] or "2101.7"
+    pay_bank_key = (body.pay_bank or "").strip() or DEFAULT_PAY_BANK_KEY
+    if body.bank_gl and not (body.pay_bank or "").strip():
+        gl = (body.bank_gl or "").strip()
+        for acct in list_company_pay_accounts():
+            if acct.get("gl") == gl:
+                pay_bank_key = acct["key"]
+                break
 
     chkdate = (body.chkdate or "").strip() or datetime.now(_BKK).date().isoformat()
     bpdet_lines: list[dict[str, Any]] = []
     if chkamt > 1e-9:
         bpdet_lines = [
-            {
-                "chkno": chkno,  # may be blank for cash
-                "chkamt": round(chkamt, 2),
-                "bankname": bankname,
-                "acctno": bank_gl,
-                "paytype": 2,
-                "chkdate": chkdate,
-            }
+            bpdet_line_from_payment(
+                settle_method=method,
+                chkno=chkno,
+                chkamt=chkamt,
+                chkdate=chkdate,
+                pay_bank_key=pay_bank_key,
+            )
         ]
     try:
         result = create_voucher(
@@ -821,7 +825,18 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         )
     except PayNoteWriteError as exc:
         return JSONResponse({"error": str(exc), "code": exc.code}, status_code=400)
-    return {**result, "reminder": rem, "settle_method": method}
+    pay_acct = resolve_company_pay_account(pay_bank_key)
+    rem = patch_reminder(
+        client,
+        acct,
+        note,
+        {
+            "settle_method": method,
+            "pay_bank": pay_acct["key"],
+            "updated_at": datetime.now(_BKK).isoformat(),
+        },
+    )
+    return {**result, "reminder": rem, "settle_method": method, "pay_bank": pay_acct["key"]}
 
 
 @router.get("/api/vouchered")
