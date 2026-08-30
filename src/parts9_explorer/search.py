@@ -668,16 +668,16 @@ def iclow_summary(site: str) -> tuple[dict[str, Any] | None, str | None]:
     }, None
 
 
-def recent_for_product(bcode: str, *, site: str, limit: int = 15) -> dict[str, Any]:
+def recent_for_product(bcode: str, *, site: str, limit: int = 10) -> dict[str, Any]:
     code = (bcode or "").strip()
     site_key = (site or "hq").strip().lower()
-    out: dict[str, Any] = {"sales": [], "pi": [], "po": [], "iclow": [], "error": None}
+    row_limit = max(1, min(int(limit), 50))
+    out: dict[str, Any] = {"sales": [], "pi": [], "iclow": [], "error": None}
     try:
         engine = get_site_engine(site_key)
         queries = {
-            "sales": "SELECT TOP 15 BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.SIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
-            "pi": "SELECT TOP 15 BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
-            "po": "SELECT TOP 15 DOCNO, DOCDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PODET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY DOCDATE DESC",
+            "sales": f"SELECT TOP {row_limit} BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.SIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
+            "pi": f"SELECT TOP {row_limit} BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
             "iclow": "SELECT TOP 15 DOCNO, DOCDATE, ORDERED, RECEIVED, CANCELED, RCVDNO, QTY, BCODE FROM dbo.ICLOW WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY DOCDATE DESC",
         }
         with engine.connect() as conn:

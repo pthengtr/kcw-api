@@ -673,9 +673,8 @@ function showP(i) {
         return "<h3>"+title+"</h3>"+lineTable(rows, cols);
       }
       $("more").innerHTML =
-        tbl("ขายล่าสุด SI", m.sales, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
-        tbl("บิลซื้อ PI", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
-        tbl("PO", m.po, ["DOCNO","DOCDATE","QTY","UI","PRICE","AMOUNT"]) +
+        tbl("ประวัติการขาย", m.sales, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
+        tbl("ประวัติการซื้อ", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
     }).catch(() => { $("more").innerHTML = ""; });
 }
