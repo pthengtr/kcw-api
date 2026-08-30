@@ -27,6 +27,7 @@ from src.pay_notes.db import (
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.pay_notes.baht_text import baht_text
 from src.pay_notes.noteno import display_noteno, noteno_meta
+from src.pay_notes.remark import resolve_remark_fields
 from src.pay_notes.parts9 import (
     get_note_by_voucno,
     get_note_header,
@@ -185,6 +186,8 @@ class NoteCreate(BaseModel):
     discount_mode: str = "amount"  # amount | percent
     discount_input: float = 0.0
     remark: str = ""
+    bill_month: str | None = None
+    remark_extra: str | None = None
     kbiz_datetime: str | None = None
 
 
@@ -193,6 +196,8 @@ class NoteUpdate(BaseModel):
     due_date: str | None = None
     bank_id: str | None = None
     remark: str | None = None
+    bill_month: str | None = None
+    remark_extra: str | None = None
     discount_mode: str | None = None
     discount_input: float | None = None
     kbiz_datetime: str | None = None
@@ -202,6 +207,8 @@ class ReminderPatch(BaseModel):
     due_date: str | None = None
     bank_id: str | None = None
     remark: str | None = None
+    bill_month: str | None = None
+    remark_extra: str | None = None
     kbiz_datetime: str | None = None
 
 
@@ -414,16 +421,24 @@ def api_reminder_patch(request: Request, acctno: str, noteno: str, body: Reminde
     _, err = _require_api(request)
     if err:
         return err
+    client = get_pay_notes_supabase_client()
     patch: dict[str, Any] = {"updated_at": datetime.now(_BKK).isoformat()}
     if body.due_date:
         patch["due_date"] = _parse_due(body.due_date)
     if body.bank_id:
         patch["bank_id"] = body.bank_id
-    if body.remark is not None:
-        patch["remark"] = (body.remark or "").strip()[:500]
+    if body.remark is not None or body.bill_month is not None or body.remark_extra is not None:
+        existing = get_reminder(client, acctno, noteno) or {}
+        rem_fields = resolve_remark_fields(
+            acctno,
+            bill_month=body.bill_month,
+            remark_extra=body.remark_extra,
+            remark=body.remark,
+            existing=existing,
+        )
+        patch.update(rem_fields)
     if body.kbiz_datetime is not None:
         patch["kbiz_datetime"] = _parse_kbiz_datetime(body.kbiz_datetime)
-    client = get_pay_notes_supabase_client()
     row = patch_reminder(client, acctno, noteno, patch)
     return row
 
@@ -541,7 +556,12 @@ def api_create_note(request: Request, body: NoteCreate):
         return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
 
     due = _parse_due(body.due_date)
-    remark = (body.remark or "").strip()[:500]
+    rem_fields = resolve_remark_fields(
+        acct,
+        bill_month=body.bill_month,
+        remark_extra=body.remark_extra,
+        remark=body.remark,
+    )
     kbiz_dt = _parse_kbiz_datetime(body.kbiz_datetime)
     rem_row: dict[str, Any] = {
         "acctno": acct,
@@ -551,7 +571,7 @@ def api_create_note(request: Request, body: NoteCreate):
         "discount_mode": discount_mode,
         "discount_input": discount_input,
         "discount_amount": discount_amount,
-        "remark": remark,
+        **rem_fields,
         "created_by": ident.line_user_id if ident else None,
     }
     if kbiz_dt:
@@ -668,8 +688,15 @@ def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate
         if not bank or bank.get("acctno", "").strip() != acct:
             return JSONResponse({"error": "invalid bank for vendor"}, status_code=400)
         patch["bank_id"] = body.bank_id
-    if body.remark is not None:
-        patch["remark"] = (body.remark or "").strip()[:500]
+    if body.remark is not None or body.bill_month is not None or body.remark_extra is not None:
+        rem_fields = resolve_remark_fields(
+            acct,
+            bill_month=body.bill_month,
+            remark_extra=body.remark_extra,
+            remark=body.remark,
+            existing=rem,
+        )
+        patch.update(rem_fields)
     if body.kbiz_datetime is not None:
         patch["kbiz_datetime"] = _parse_kbiz_datetime(body.kbiz_datetime)
     if body.discount_mode is not None or body.discount_input is not None:
