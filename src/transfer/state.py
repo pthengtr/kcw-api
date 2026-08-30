@@ -104,8 +104,9 @@ def can_action(action: str, ctx: dict[str, Any]) -> ActionResult:
             return ActionResult(False, "ยกเลิกรายการไม่ได้หลังจัดแล้ว")
         return ActionResult(True)
 
-    if action == "hq_prepare":
-        if ctx.get("status") not in ("requested", "partial_prepared", "awaiting_receive"):
+    if action in ("hq_prepare", "prepare_ship"):
+        header_status = ctx.get("status") or "requested"
+        if header_status not in ("requested", "partial_prepared", "awaiting_receive"):
             return ActionResult(False, "สถานะคำขอไม่พร้อมจัด")
         qty_ship = float(ctx.get("qty_ship") or 0)
         if qty_ship <= 0:

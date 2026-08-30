@@ -51,11 +51,34 @@ def delete_need(client: Client, need_id: str) -> None:
     _table(client, "need_list").delete().eq("need_id", need_id).execute()
 
 
-def list_requests(client: Client, *, status: str | None = None) -> list[dict[str, Any]]:
+def list_requests(
+    client: Client,
+    *,
+    status: str | None = None,
+    from_branch: str | None = None,
+    to_branch: str | None = None,
+    role: str | None = None,
+    site: str | None = None,
+) -> list[dict[str, Any]]:
     q = _table(client, "requests").select("*").order("created_at", desc=True)
     if status:
         q = q.eq("status", status)
-    return _rows(q.execute())
+    if from_branch:
+        q = q.eq("from_branch", from_branch.upper())
+    if to_branch:
+        q = q.eq("to_branch", to_branch.upper())
+    items = _rows(q.execute())
+    if not role or not site:
+        return items
+    site_u = site.upper()
+    role_l = role.lower()
+    if role_l == "prepare":
+        return [r for r in items if (r.get("from_branch") or "HQ").upper() == site_u]
+    if role_l == "receive":
+        return [r for r in items if (r.get("to_branch") or "SYP").upper() == site_u]
+    if role_l == "mine":
+        return [r for r in items if (r.get("to_branch") or "").upper() == site_u]
+    return items
 
 
 def get_request(client: Client, transfer_id: str) -> dict[str, Any]:
@@ -74,13 +97,22 @@ def list_lines(client: Client, transfer_id: str) -> list[dict[str, Any]]:
     return _rows(resp)
 
 
-def create_draft(client: Client, *, actor: str, site: str = "SYP") -> dict[str, Any]:
+def create_draft(
+    client: Client,
+    *,
+    actor: str,
+    site: str = "SYP",
+    from_branch: str = "HQ",
+    to_branch: str = "SYP",
+) -> dict[str, Any]:
     transfer_id = str(uuid4())
     row = {
         "transfer_id": transfer_id,
         "short_id": make_short_id(transfer_id),
         "status": "draft",
         "site": site,
+        "from_branch": from_branch.upper(),
+        "to_branch": to_branch.upper(),
         "requested_by": actor,
     }
     resp = _table(client, "requests").insert(row).select("*").execute()
@@ -178,22 +210,42 @@ def enrich_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def create_shipment(client: Client, *, transfer_id: str, tf_billno: str, client_token: str) -> dict[str, Any]:
+def refresh_request_status(client: Client, transfer_id: str) -> dict[str, Any]:
+    header = get_request(client, transfer_id)
+    lines = list_lines(client, transfer_id)
+    has_shipments = bool(
+        _rows(_table(client, "shipments").select("shipment_id").eq("transfer_id", transfer_id).execute())
+    )
+    status = derive_request_status(
+        header_status=header.get("status") or "draft",
+        lines=enrich_lines(lines),
+        has_shipments=has_shipments,
+    )
+    patch = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
+    resp = (
+        _table(client, "requests")
+        .update(patch)
+        .eq("transfer_id", transfer_id)
+        .select("*")
+        .execute()
+    )
+    return _first_row(resp)
+
+
+def create_shipment(
+    client: Client, *, transfer_id: str, tf_billno: str, client_token: str
+) -> dict[str, Any]:
     """Create a shipment record for tracking."""
-    from uuid import uuid4
-    
     shipment_id = str(uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    
     row = {
         "shipment_id": shipment_id,
         "transfer_id": transfer_id,
         "tf_billno": tf_billno,
+        "ship_billno": tf_billno,
         "client_token": client_token,
-        "status": "prepared",
         "created_at": now,
     }
-    
     resp = client.schema(TRANSFER_SCHEMA).from_("shipments").insert(row).select("*").execute()
     return _first_row(resp)
 
@@ -229,7 +281,6 @@ def list_shipments(client: Client, *, transfer_id: str) -> list[dict[str, Any]]:
 
 def add_shipment_lines(client: Client, *, shipment_id: str, lines: list[dict[str, Any]]) -> None:
     """Add lines to a shipment."""
-    from uuid import uuid4
     rows = []
     for line in lines:
         rows.append({
@@ -237,42 +288,44 @@ def add_shipment_lines(client: Client, *, shipment_id: str, lines: list[dict[str
             "shipment_id": shipment_id,
             "line_id": line.get("line_id"),
             "bcode": str(line.get("bcode") or "").strip(),
-            "qty_ship": float(line.get("qty_ship") or 0),
-            "descr": (line.get("descr") or "").strip() or None
+            "qty_shipped": float(line.get("qty_ship") or line.get("qty_shipped") or 0),
         })
-    
     if rows:
         client.schema(TRANSFER_SCHEMA).from_("shipment_lines").insert(rows).execute()
 
 
 def bump_line_prepared(client: Client, *, line_id: str, qty_ship: float) -> None:
-    """Update prepared quantity for a line."""
+    """Add to prepared quantity for a line."""
     resp = (
-        client.schema(TRANSFER_SCHEMA)
-        .from_("lines")
-        .update({
-            "qty_prepared": float(qty_ship),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        _table(client, "lines")
+        .select("qty_prepared")
         .eq("line_id", line_id)
-        .select("*")
+        .limit(1)
         .execute()
     )
+    current = float((_first_row(resp) or {}).get("qty_prepared") or 0)
+    new_qty = current + float(qty_ship)
+    _table(client, "lines").update({
+        "qty_prepared": new_qty,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("line_id", line_id).execute()
 
 
 def bump_line_received(client: Client, *, line_id: str, qty_receive: float) -> None:
-    """Update received quantity for a line."""
+    """Add to received quantity for a line."""
     resp = (
-        client.schema(TRANSFER_SCHEMA)
-        .from_("lines") 
-        .update({
-            "qty_received": float(qty_receive),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        _table(client, "lines")
+        .select("qty_received")
         .eq("line_id", line_id)
-        .select("*")
+        .limit(1)
         .execute()
     )
+    current = float((_first_row(resp) or {}).get("qty_received") or 0)
+    new_qty = current + float(qty_receive)
+    _table(client, "lines").update({
+        "qty_received": new_qty,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("line_id", line_id).execute()
 
 
 def cancel_request(client: Client, *, transfer_id: str) -> dict[str, Any]:
