@@ -20,6 +20,18 @@ class TransferSettings(BaseSettings):
     transfer_hq_write_enabled: bool = Field(
         default=False, validation_alias="TRANSFER_HQ_WRITE_ENABLED"
     )
+    transfer_hq_ship_write_enabled: bool = Field(
+        default=False, validation_alias="TRANSFER_HQ_SHIP_WRITE_ENABLED"
+    )
+    transfer_syp_ship_write_enabled: bool = Field(
+        default=False, validation_alias="TRANSFER_SYP_SHIP_WRITE_ENABLED"
+    )
+    transfer_hq_receive_write_enabled: bool = Field(
+        default=False, validation_alias="TRANSFER_HQ_RECEIVE_WRITE_ENABLED"
+    )
+    transfer_syp_receive_write_enabled: bool = Field(
+        default=False, validation_alias="TRANSFER_SYP_RECEIVE_WRITE_ENABLED"
+    )
     transfer_syp_write_enabled: bool = Field(
         default=False, validation_alias="TRANSFER_SYP_WRITE_ENABLED"
     )
@@ -30,7 +42,22 @@ class TransferSettings(BaseSettings):
         default=False, validation_alias="TRANSFER_SYP_RECEIVE_ENABLED"
     )
 
-    stock_check_token_secret: str = Field(default="", validation_alias="STOCK_CHECK_TOKEN_SECRET")
+    @property
+    def hq_ship_write_enabled(self) -> bool:
+        return self.transfer_hq_ship_write_enabled or self.transfer_hq_write_enabled
+
+    @property
+    def syp_ship_write_enabled(self) -> bool:
+        return self.transfer_syp_ship_write_enabled or self.transfer_syp_write_enabled
+
+    @property
+    def hq_receive_write_enabled(self) -> bool:
+        return self.transfer_hq_receive_write_enabled
+
+    @property
+    def syp_receive_write_enabled(self) -> bool:
+        return self.transfer_syp_receive_write_enabled or self.transfer_syp_receive_enabled
+
     stock_check_token_ttl_seconds: int = Field(
         default=86400, validation_alias="STOCK_CHECK_TOKEN_TTL_SECONDS"
     )

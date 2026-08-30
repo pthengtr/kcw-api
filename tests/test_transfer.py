@@ -38,7 +38,14 @@ def test_rewrite_port():
 
 
 def test_transfer_page_renders():
-    html = page(user_name="ทดสอบ", site="SYP", hq_write_enabled=False, syp_write_enabled=False)
+    html = page(
+        user_name="ทดสอบ",
+        site="SYP",
+        hq_ship_enabled=False,
+        syp_ship_enabled=False,
+        hq_receive_enabled=False,
+        syp_receive_enabled=False,
+    )
     assert "โอนสินค้า · SYP" in html
     assert "แนะนำโอน" in html
-    assert "mob-cards" not in html or "แนะนำโอน" in html
+    assert "รอจัด (ออก)" in html
