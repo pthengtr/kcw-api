@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+
+from src.bot.branch_link_buttons import BRANCH_LABEL
+from src.parts9_explorer.query import CODE1_LABELS, SIZE_LABELS
+
 APP = "parts9-explorer"
 SESSION_COOKIE = "kcw_parts9_explorer"
 _HTML = r"""<!doctype html>
@@ -27,6 +32,8 @@ _HTML = r"""<!doctype html>
 :root {
   --acc:#3d9cf0; --ok:#3ecf8e; --down:#e25c5c; --warn:#e6b450; --pend:#f0a35a;
   --on-acc:#071018;
+  --field-h:2.75rem; --field-pad-y:.62rem; --field-pad-x:.75rem;
+  --field-radius:.6rem; --field-font:1rem;
 }
 html[data-theme="dark"] {
   color-scheme: dark;
@@ -45,13 +52,74 @@ html[data-theme="light"] {
 * { box-sizing:border-box; }
 body { margin:0; font-family: Prompt, ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--text); }
 header { position:sticky; top:0; z-index:5; background:var(--header); border-bottom:1px solid var(--line); padding:.7rem 1rem .8rem; }
-.brand { display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin:0 0 .5rem; }
+.brand { display:flex; align-items:flex-start; justify-content:space-between; gap:.6rem; margin:0 0 .5rem; }
+.brand-title { flex:1; min-width:0; }
+.brand-actions { display:flex; gap:.35rem; align-items:center; flex-shrink:0; }
+.search-summary { font-size:.78rem; color:var(--muted); margin:.2rem 0 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:none; }
+header.search-collapsed .search-summary { display:block; }
+button.search-toggle { font-size:.82rem; padding:.45rem .65rem; white-space:nowrap; }
 h1 { font-size:1.02rem; margin:0; letter-spacing:.02em; }
 .row { display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; }
-input[type=search] { flex:1; min-width:12rem; font: inherit; font-size:1.05rem; padding:.7rem .8rem; border-radius:.6rem; border:1px solid var(--line); background:var(--inset); color:var(--text); }
+.search-form { display:grid; gap:.5rem; align-items:end; grid-template-columns:1fr; }
+.search-main { min-width:0; width:100%; display:flex; flex-direction:column; gap:.35rem; }
+.search-main #codeSizePanel { display:none; }
+.search-main.mode-code-size #q { display:none; }
+.search-main.mode-code-size #codeSizePanel { display:flex; }
+.search-actions { display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; }
+#site { min-width:5.5rem; }
+#searchBtn { flex:1; min-width:6.5rem; }
+input[type=search], .field-inp, #code1, #site, #searchBtn {
+  font: inherit; font-size:var(--field-font); line-height:1.25;
+  min-height:var(--field-h); padding:var(--field-pad-y) var(--field-pad-x);
+  border-radius:var(--field-radius); border:1px solid var(--line); background:var(--inset); color:var(--text);
+}
+input[type=search], .field-inp, #code1, #site { width:100%; }
 button, select { font: inherit; font-size:.92rem; padding:.6rem .75rem; border-radius:.55rem; border:1px solid var(--line); background:var(--chip); color:var(--text); }
+#searchBtn { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:650; font-size:var(--field-font); }
+input[type=search] { -webkit-appearance:none; appearance:none; }
+#q { width:100%; min-width:0; }
 button.primary { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:650; }
 button.theme { min-width:2.6rem; padding:.55rem .65rem; }
+.code-size-panel { flex-direction:column; gap:.35rem; width:100%; }
+.code-size-fields { display:grid; gap:.45rem; align-items:end; width:100%; grid-template-columns:1fr; }
+.code-field { min-width:0; }
+.size-fields { display:grid; gap:.45rem; grid-template-columns:1fr; min-width:0; }
+.field { display:flex; flex-direction:column; gap:.2rem; min-width:0; }
+.field-lbl { font-size:.75rem; color:var(--muted); line-height:1.2; }
+.size-slot[hidden] { display:none !important; }
+.code-size-hint { font-size:.78rem; margin:0; color:var(--muted); line-height:1.35; }
+button.primary:disabled { opacity:.45; cursor:not-allowed; }
+@media (min-width:560px) {
+  .search-form { grid-template-columns:1fr auto; }
+  .search-actions { flex-wrap:nowrap; }
+  #searchBtn { flex:0 0 auto; min-width:5.5rem; }
+  .code-size-fields { grid-template-columns:1fr 1fr; }
+  .code-field { grid-column:1 / -1; }
+  .size-fields { grid-column:1 / -1; grid-template-columns:repeat(3,1fr); }
+}
+@media (min-width:768px) {
+  .code-size-fields { grid-template-columns:minmax(9rem,1.1fr) repeat(3,minmax(4.5rem,1fr)); }
+  .code-field { grid-column:auto; }
+  .size-fields { display:contents; grid-column:auto; grid-template-columns:none; }
+}
+@media (min-width:880px) {
+  .search-form { gap:.55rem; }
+  .code-size-fields { grid-template-columns:minmax(11rem,1.15fr) repeat(3,minmax(5rem,1fr)); }
+}
+@media (max-width:879px) {
+  .search-actions { width:100%; }
+  label.chk { flex:1 1 100%; }
+  header.search-collapsed { padding-bottom:.55rem; }
+  header.search-collapsed .search-panel { display:none; }
+  button.search-toggle { display:inline-flex; }
+}
+@media (min-width:880px) {
+  button.search-toggle { display:none; }
+  .search-summary { display:none !important; }
+}
+@media (max-width:559px) {
+  .search-actions { width:100%; }
+}
 .modes { display:flex; gap:.3rem; overflow-x:auto; padding:.15rem 0 .15rem; margin-top:.5rem; -webkit-overflow-scrolling:touch; }
 .modes button { white-space:nowrap; padding:.4rem .7rem; font-size:.8rem; border-radius:999px; }
 .modes button.on { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:700; }
@@ -92,19 +160,46 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
 </style>
 </head>
 <body>
-<header>
+<header id="hdr">
   <div class="brand">
-    <h1>PARTS9 explorer</h1>
-    <button type="button" class="theme" id="themeBtn" aria-label="สลับธีม">มืด</button>
+    <div class="brand-title">
+      <h1>PARTS9 explorer</h1>
+      <p class="search-summary" id="searchSummary" aria-live="polite"></p>
+    </div>
+    <div class="brand-actions">
+      <button type="button" class="search-toggle" id="searchToggle" aria-expanded="true" aria-controls="searchPanel">ซ่อน</button>
+      <button type="button" class="theme" id="themeBtn" aria-label="สลับธีม">มืด</button>
+    </div>
   </div>
-  <form class="row" id="f" onsubmit="go(event); return false;">
-    <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / I K ซีล / PO เลขบิล" autofocus />
-    <select id="site">
-      <option value="hq" __HQSEL__>HQ</option>
-      <option value="syp" __SYPSEL__>SYP</option>
-    </select>
-    <button class="primary" type="submit">ค้นหา</button>
-    <label class="chk"><input type="checkbox" id="skip"/> รวมไม่สั่งซ้ำ</label>
+  <div class="search-panel" id="searchPanel">
+  <form class="search-form" id="f" onsubmit="go(event); return false;">
+    <div class="search-main">
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / I K ซีล / PO เลขบิล" autofocus />
+      <div id="codeSizePanel" class="code-size-panel" aria-hidden="true">
+        <div class="code-size-fields">
+          <label class="field code-field" for="code1">
+            <span class="field-lbl">ประเภท</span>
+            <select id="code1" aria-label="ประเภทชิ้นส่วน">
+              <option value="">— เลือกประเภท —</option>
+            </select>
+          </label>
+          <div class="size-fields" id="sizeFields" aria-live="polite">
+            <label class="field size-slot" data-slot="1" hidden><span class="field-lbl size-lbl"></span><input class="field-inp size-inp" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next"/></label>
+            <label class="field size-slot" data-slot="2" hidden><span class="field-lbl size-lbl"></span><input class="field-inp size-inp" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next"/></label>
+            <label class="field size-slot" data-slot="3" hidden><span class="field-lbl size-lbl"></span><input class="field-inp size-inp" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="search"/></label>
+          </div>
+        </div>
+        <p class="code-size-hint" id="codeSizeHint">เลือกประเภทชิ้นส่วน แล้วกรอกขนาด (กรอกบางช่องก็ค้นได้)</p>
+      </div>
+    </div>
+    <div class="search-actions">
+      <select id="site">
+        <option value="hq" __HQSEL__>__HQ_LABEL__</option>
+        <option value="syp" __SYPSEL__>__SYP_LABEL__</option>
+      </select>
+      <button class="primary" type="submit" id="searchBtn">ค้นหา</button>
+      <label class="chk"><input type="checkbox" id="skip"/> รวมไม่สั่งซ้ำ</label>
+    </div>
   </form>
   <div class="modes" id="modes">
     <button type="button" data-k="all" class="on">ทั้งหมด</button>
@@ -118,9 +213,10 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
     <button type="button" data-k="iclow">ICLOW ค้างรับ</button>
   </div>
   <div class="row" style="margin-top:.45rem">
-    <span class="badge __HQBADGE__">HQ SQL __HQSQL__</span>
-    <span class="badge __SYPBADGE__">SYP SQL __SYPSQL__</span>
+    <span class="badge __HQBADGE__">__HQ_LABEL__ SQL __HQSQL__</span>
+    <span class="badge __SYPBADGE__">__SYP_LABEL__ SQL __SYPSQL__</span>
     <span class="who">__USER__</span>
+  </div>
   </div>
 </header>
 <main>
@@ -171,6 +267,8 @@ const COL_TH = {
   PRICEM4:"ราคาสมาชิก 4", PRICEM5:"ราคาสมาชิก 5"
 };
 const MONEY_KEYS = new Set(["PRICE","AMOUNT","CHKAMT","AFTERTAX","BILLAMT","NETAMT","CASHAMT","PAYAMT"]);
+const CODE1_LABELS = __CODE1_LABELS_JSON__;
+const SIZE_LABELS = __SIZE_LABELS_JSON__;
 let KIND = "all";
 let ITEMS = [];
 let DOCS = [];
@@ -211,13 +309,151 @@ function sizeBits(p) {
   return line ? "<div class='meta'>"+esc(line)+"</div>" : "";
 }
 function imgErr(el) { el.style.display="none"; }
+const SEARCH_PANEL_KEY = "kcw.parts9.searchPanel";
+function isMobileLayout() { return window.matchMedia("(max-width:879px)").matches; }
+function searchSummaryText() {
+  const mode = (MODES.find((m) => m.id === KIND) || {}).label || KIND;
+  const q = currentQuery();
+  const site = $("site") ? $("site").options[$("site").selectedIndex].text : "";
+  if (!q) return mode + (site ? " · " + site : "");
+  return mode + " · " + q + (site ? " · " + site : "");
+}
+function updateSearchSummary() {
+  const el = $("searchSummary");
+  if (el) el.textContent = searchSummaryText();
+}
+function setSearchPanelOpen(open) {
+  const hdr = $("hdr");
+  const btn = $("searchToggle");
+  if (!hdr || !btn) return;
+  if (!isMobileLayout()) {
+    hdr.classList.remove("search-collapsed");
+    btn.setAttribute("aria-expanded", "true");
+    btn.textContent = "ซ่อน";
+    return;
+  }
+  const show = !!open;
+  hdr.classList.toggle("search-collapsed", !show);
+  btn.setAttribute("aria-expanded", show ? "true" : "false");
+  btn.textContent = show ? "ซ่อน" : "ค้นหา";
+  updateSearchSummary();
+  try { localStorage.setItem(SEARCH_PANEL_KEY, show ? "1" : "0"); } catch (e) {}
+}
+function collapseSearchPanelIfMobile() {
+  if (isMobileLayout()) setSearchPanelOpen(false);
+}
+function expandSearchPanel() {
+  setSearchPanelOpen(true);
+}
+function isCodeSizeMode() { return KIND === "code_size"; }
+function initCode1Select() {
+  const sel = $("code1");
+  if (!sel) return;
+  Object.keys(CODE1_LABELS).sort().forEach((letter) => {
+    const opt = document.createElement("option");
+    opt.value = letter;
+    opt.textContent = letter + " — " + CODE1_LABELS[letter];
+    sel.appendChild(opt);
+  });
+}
+function resetCodeSizeForm() {
+  const sel = $("code1");
+  if (sel) sel.value = "";
+  document.querySelectorAll("#sizeFields .size-slot").forEach((slot) => {
+    slot.hidden = true;
+    const inp = slot.querySelector(".size-inp");
+    if (inp) inp.value = "";
+  });
+  const hint = $("codeSizeHint");
+  if (hint) hint.hidden = false;
+  const panel = $("codeSizePanel");
+  if (panel) panel.setAttribute("aria-hidden", "true");
+}
+function toggleSearchChrome() {
+  const main = document.querySelector(".search-main");
+  const panel = $("codeSizePanel");
+  const q = $("q");
+  if (!main || !panel || !q) return;
+  if (isCodeSizeMode()) {
+    main.classList.add("mode-code-size");
+    panel.setAttribute("aria-hidden", "false");
+    q.setAttribute("aria-hidden", "true");
+    updateSearchButton();
+  } else {
+    main.classList.remove("mode-code-size");
+    panel.setAttribute("aria-hidden", "true");
+    q.setAttribute("aria-hidden", "false");
+    resetCodeSizeForm();
+    const btn = $("searchBtn");
+    if (btn) btn.disabled = false;
+  }
+}
+function renderSizeFields(code) {
+  const labels = SIZE_LABELS[code] || [null, null, null];
+  document.querySelectorAll("#sizeFields .size-slot").forEach((slot) => {
+    const idx = parseInt(slot.dataset.slot, 10) - 1;
+    const lbl = labels[idx];
+    const inp = slot.querySelector(".size-inp");
+    const lblEl = slot.querySelector(".size-lbl");
+    if (lbl) {
+      slot.hidden = false;
+      lblEl.textContent = lbl;
+      inp.setAttribute("aria-label", lbl + " ขนาด");
+      inp.placeholder = lbl;
+    } else {
+      slot.hidden = true;
+      inp.value = "";
+    }
+  });
+  const hint = $("codeSizeHint");
+  if (hint) hint.hidden = !!code;
+  updateSearchButton();
+  if (code) {
+    const first = document.querySelector("#sizeFields .size-slot:not([hidden]) .size-inp");
+    if (first) first.focus();
+  }
+}
+function codeSizeValid() {
+  const code = ($("code1") && $("code1").value) || "";
+  if (!code) return false;
+  return Array.from(document.querySelectorAll("#sizeFields .size-inp")).some((inp) => {
+    const slot = inp.closest(".size-slot");
+    return slot && !slot.hidden && inp.value.trim();
+  });
+}
+function buildCodeSizeQuery() {
+  const code = (($("code1") && $("code1").value) || "").trim();
+  if (!code) return "";
+  const labels = SIZE_LABELS[code] || [];
+  const parts = [code];
+  document.querySelectorAll("#sizeFields .size-slot").forEach((slot) => {
+    if (slot.hidden) return;
+    const idx = parseInt(slot.dataset.slot, 10) - 1;
+    const lbl = labels[idx];
+    const val = slot.querySelector(".size-inp").value.trim();
+    if (lbl && val) parts.push(lbl, val);
+  });
+  return parts.join(" ");
+}
+function updateSearchButton() {
+  const btn = $("searchBtn");
+  if (!btn) return;
+  btn.disabled = isCodeSizeMode() && !codeSizeValid();
+}
+function currentQuery() {
+  if (isCodeSizeMode()) return buildCodeSizeQuery();
+  return $("q").value.trim();
+}
 function setKind(k) {
   KIND = k;
   document.querySelectorAll("#modes button").forEach(b => b.classList.toggle("on", b.dataset.k === k));
-  $("q").placeholder = PLACE[k] || PLACE.all;
-  if (k === "iclow" || $("q").value.trim()) go();
+  toggleSearchChrome();
+  if (!isCodeSizeMode()) $("q").placeholder = PLACE[k] || PLACE.all;
+  if (isMobileLayout()) setSearchPanelOpen(true);
+  updateSearchSummary();
+  if (k === "iclow" || currentQuery()) go();
   else if (k === "code_size") {
-    $("list").innerHTML = "<div class='empty'>พิมพ์ประเภทชิ้นส่วน + ขนาด เช่น ซีล 31×46×7</div>";
+    $("list").innerHTML = "<div class='empty'>เลือกประเภทชิ้นส่วน แล้วกรอกขนาด (กรอกบางช่องก็ค้นได้)</div>";
     $("detail").innerHTML = "";
   }
   else { $("list").innerHTML = "<div class='empty'>พิมพ์ค้นหาด้านบน</div>"; $("detail").innerHTML = ""; }
@@ -232,7 +468,7 @@ function scheduleGo() {
 }
 async function go(ev) {
   if (ev) ev.preventDefault();
-  const q = $("q").value.trim();
+  const q = currentQuery();
   const site = $("site").value;
   const skip = $("skip").checked ? "1" : "0";
   if (!q && KIND !== "iclow") return false;
@@ -295,6 +531,8 @@ function render(data) {
   else if (DOCS.length && !products.length) showDoc(0);
   else if (products[0]) showP(0);
   else if (DOCS.length) showDoc(0);
+  updateSearchSummary();
+  if (products.length || DOCS.length || SUMMARY) collapseSearchPanelIfMobile();
 }
 function kvTable(obj) {
   const skip = new Set(["ID"]);
@@ -320,6 +558,7 @@ function lineTable(rows, cols) {
 function jumpProduct(bcode) {
   KIND = "product";
   drawModes();
+  toggleSearchChrome();
   $("q").placeholder = PLACE.product;
   $("q").value = bcode;
   go();
@@ -327,6 +566,7 @@ function jumpProduct(bcode) {
 function jumpIclow(q) {
   KIND = "iclow";
   drawModes();
+  toggleSearchChrome();
   $("q").placeholder = PLACE.iclow;
   $("q").value = q;
   go();
@@ -404,7 +644,8 @@ function showDoc(i) {
 function jumpKind(kind, qv) {
   KIND = kind;
   drawModes();
-  $("q").placeholder = PLACE[kind] || PLACE.all;
+  toggleSearchChrome();
+  if (!isCodeSizeMode()) $("q").placeholder = PLACE[kind] || PLACE.all;
   $("q").value = qv;
   go();
 }
@@ -451,10 +692,39 @@ document.addEventListener("click", (ev) => {
   else if (kind === "iclow") jumpIclow(qv);
   else jumpKind(kind, qv);
 });
-$("site").addEventListener("change", () => { if ($("q").value.trim() || KIND==="iclow") go(); });
+$("searchToggle").addEventListener("click", () => {
+  const hdr = $("hdr");
+  if (!hdr) return;
+  setSearchPanelOpen(hdr.classList.contains("search-collapsed"));
+});
+window.addEventListener("resize", () => {
+  if (!isMobileLayout()) setSearchPanelOpen(true);
+  else updateSearchSummary();
+});
+$("site").addEventListener("change", () => {
+  updateSearchSummary();
+  if (currentQuery() || KIND==="iclow") go();
+});
 $("q").addEventListener("input", scheduleGo);
 $("q").addEventListener("search", () => go());
-$("skip").addEventListener("change", () => { if ($("q").value.trim()) go(); });
+$("skip").addEventListener("change", () => { if (currentQuery()) go(); });
+$("code1").addEventListener("change", () => {
+  renderSizeFields($("code1").value);
+  if (codeSizeValid()) scheduleGo();
+  else {
+    $("list").innerHTML = "<div class='empty'>เลือกประเภทชิ้นส่วน แล้วกรอกขนาด (กรอกบางช่องก็ค้นได้)</div>";
+    $("detail").innerHTML = "";
+  }
+});
+document.querySelectorAll("#sizeFields .size-inp").forEach((inp) => {
+  inp.addEventListener("input", () => {
+    updateSearchButton();
+    if (codeSizeValid()) scheduleGo();
+  });
+  inp.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && codeSizeValid()) go(ev);
+  });
+});
 const THEME_KEY = "kcw.parts9.theme";
 function currentTheme() {
   const t = document.documentElement.getAttribute("data-theme");
@@ -474,7 +744,13 @@ function applyTheme(t) {
 }
 $("themeBtn").addEventListener("click", () => applyTheme(currentTheme() === "light" ? "dark" : "light"));
 applyTheme(currentTheme());
+initCode1Select();
+toggleSearchChrome();
 drawModes();
+updateSearchSummary();
+try {
+  if (isMobileLayout() && localStorage.getItem(SEARCH_PANEL_KEY) === "0") setSearchPanelOpen(false);
+} catch (e) {}
 </script>
 </body>
 </html>
@@ -491,7 +767,11 @@ def page(*, user_name: str, site: str, probes: dict) -> str:
     hq = probes.get("hq") or {}
     syp = probes.get("syp") or {}
     return (
-        _HTML.replace("__USER__", user_name or "")
+        _HTML.replace("__CODE1_LABELS_JSON__", json.dumps(CODE1_LABELS, ensure_ascii=False))
+        .replace("__SIZE_LABELS_JSON__", json.dumps(SIZE_LABELS, ensure_ascii=False))
+        .replace("__USER__", user_name or "")
+        .replace("__HQ_LABEL__", BRANCH_LABEL["HQ"])
+        .replace("__SYP_LABEL__", BRANCH_LABEL["SYP"])
         .replace("__HQSEL__", "selected" if site.lower()=="hq" else "")
         .replace("__SYPSEL__", "selected" if site.lower()=="syp" else "")
         .replace("__HQBADGE__", "ok" if hq.get("ok") else "down")

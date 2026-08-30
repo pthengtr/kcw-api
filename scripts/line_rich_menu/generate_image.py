@@ -42,7 +42,7 @@ TAP_SPLIT_Y = ROW0_Y + ROW0_CARD_H + GAP // 2  # 749 — matches menu_spec.json
 
 CELLS = [
     {"title": "เช็คสต็อก", "sub": "", "icon": "boxes"},
-    {"title": "Tiger Pay", "sub": "เก็บเงิน", "icon": "pay"},
+    {"title": "ไทเกอร์เพย์", "sub": "เก็บเงิน", "icon": "pay"},
     {"title": "ค้นหา", "sub": "", "icon": "search"},
     {"title": "โอนสินค้า", "sub": "", "icon": "po"},
     {"title": "จัดการรูปสินค้า", "sub": "", "icon": "image"},
