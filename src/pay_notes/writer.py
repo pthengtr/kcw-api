@@ -399,13 +399,20 @@ def cancel_unvouchered_pay_note(
     return {"acctno": acct, "noteno": note, "canceled": True}
 
 
-def next_kcpn_voucno(conn, when: datetime | None = None) -> str:
-    """Allocate next KCPN{YYMM}-### from live PVMAS."""
+def voucher_stem(jourmode: str, when: datetime | None = None) -> str:
+    """PARTS9 pay voucher prefix: JOURMODE 1 (VAT / 7* vendors) → P{YYMM}-; else KCPN{YYMM}-."""
     when = when or datetime.now(_BKK)
-    # Thai Buddhist year often used in PARTS9 (2569 → 69)
+    # Thai Buddhist year in PARTS9 (2569 → 69)
     yy = (when.year + 543) % 100
     mm = when.month
-    stem = f"KCPN{yy:02d}{mm:02d}-"
+    if str(jourmode or "2").strip() == "1":
+        return f"P{yy:02d}{mm:02d}-"
+    return f"KCPN{yy:02d}{mm:02d}-"
+
+
+def next_voucno(conn, *, jourmode: str, when: datetime | None = None) -> str:
+    """Allocate next payment VOUCNO for the note's JOURMODE from live PVMAS."""
+    stem = voucher_stem(jourmode, when)
     row = conn.execute(
         text("SELECT MAX(VOUCNO) AS max_no FROM dbo.PVMAS WHERE VOUCNO LIKE :pat"),
         {"pat": stem + "%"},
@@ -421,6 +428,11 @@ def next_kcpn_voucno(conn, when: datetime | None = None) -> str:
     if len(candidate) > 15:
         raise PayNoteWriteError("generated VOUCNO exceeds 15 chars", code="voucno_overflow")
     return candidate
+
+
+def next_kcpn_voucno(conn, when: datetime | None = None) -> str:
+    """Backward-compatible non-VAT allocator."""
+    return next_voucno(conn, jourmode="2", when=when)
 
 
 def create_voucher(
@@ -473,8 +485,8 @@ def create_voucher(
             if not bpdet_lines and netamt > 1e-9:
                 raise PayNoteWriteError("at least one BPDET line required", code="validation")
 
-            voucno = next_kcpn_voucno(conn, voucd)
             jourmode = str(header.get("JOURMODE") or "1").strip() or "1"
+            voucno = next_voucno(conn, jourmode=jourmode, when=voucd)
 
             conn.execute(
                 text(

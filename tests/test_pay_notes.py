@@ -1,7 +1,7 @@
 from src.handlers.pay_notes_entry import is_pay_notes_command
 from src.pay_notes.net import rewrite_base_port
 from src.pay_notes.ui import initials, page
-from src.pay_notes.writer import PayNoteWriteError, create_pay_note
+from src.pay_notes.writer import PayNoteWriteError, create_pay_note, next_voucno, voucher_stem
 from src.pay_notes.config import PayNotesSettings
 from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, noteno_meta, parse_noteno_suffix
 from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines, resolve_stored_noteno
@@ -260,7 +260,7 @@ def test_note_detail_api_includes_pidet_lines():
         from app.pay_notes_app import app
 
         client = TestClient(app)
-        res = client.get("/pay-notes/api/notes/BRC/N-001")
+        res = client.get("/pay-notes/api/notes?acctno=BRC&noteno=N-001")
     assert res.status_code == 200
     body = res.json()
     assert body["bills"][0]["lines"][0]["QTY"] == 2
@@ -463,7 +463,7 @@ def test_note_detail_uses_unvouchered_bills_for_open_note(monkeypatch):
         from app.pay_notes_app import app
 
         client = TestClient(app)
-        res = client.get("/pay-notes/api/notes/THL/EE1044-04_1")
+        res = client.get("/pay-notes/api/notes?acctno=THL&noteno=EE1044-04_1")
 
     assert res.status_code == 200
     assert captured.get("unvouchered_only") is True
@@ -510,3 +510,73 @@ def test_resolve_stored_noteno_allocates_suffix_on_collision(monkeypatch):
     monkeypatch.setattr(p9, "noteno_label_in_use", in_use)
     assert resolve_stored_noteno("HQ", "THL", "EE1044-04") == "EE1044-04_2"
     assert resolve_stored_noteno("HQ", "THL", "THL3/69") == "THL3/69"
+
+
+def test_voucher_stem_follows_jourmode():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    when = datetime(2026, 8, 30, tzinfo=ZoneInfo("Asia/Bangkok"))
+    assert voucher_stem("1", when) == "P6908-"
+    assert voucher_stem("2", when) == "KCPN6908-"
+
+
+def test_next_voucno_uses_vat_prefix_for_jourmode_one():
+    from datetime import datetime
+    from unittest.mock import MagicMock
+    from zoneinfo import ZoneInfo
+
+    conn = MagicMock()
+    conn.execute.return_value.mappings.return_value.first.return_value = {"max_no": "P6908-024"}
+    when = datetime(2026, 8, 30, tzinfo=ZoneInfo("Asia/Bangkok"))
+    assert next_voucno(conn, jourmode="1", when=when) == "P6908-025"
+
+
+def test_next_voucno_uses_kcpn_prefix_for_jourmode_two():
+    from datetime import datetime
+    from unittest.mock import MagicMock
+    from zoneinfo import ZoneInfo
+
+    conn = MagicMock()
+    conn.execute.return_value.mappings.return_value.first.return_value = {"max_no": "KCPN6908-046"}
+    when = datetime(2026, 8, 30, tzinfo=ZoneInfo("Asia/Bangkok"))
+    assert next_voucno(conn, jourmode="2", when=when) == "KCPN6908-047"
+
+
+def test_note_detail_query_accepts_slash_in_noteno():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock(line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes")
+    header = {"acctno": "CTS", "noteno": "CTS3/69", "VOUCED": "N", "voucno": "", "BILLAMT": 8340}
+    images = [
+        {
+            "name": "line_oa_chat_260829_113830.jpg",
+            "url": "https://example.test/img.jpg",
+            "path": "public/pay_note/bill/CTS/CTS3/69/line_oa_chat_260829_113830.jpg",
+        }
+    ]
+
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_note_header", return_value=header),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", return_value=images),
+        patch("app.routers.pay_notes.list_vendor_banks", return_value=[]),
+        patch("app.routers.pay_notes.get_reminder", return_value={"due_date": "2026-08-29"}),
+        patch("app.routers.pay_notes.get_vendor_bank", return_value=None),
+        patch("app.routers.pay_notes.list_note_bills_with_lines", return_value=[]),
+        patch("app.routers.pay_notes.list_voucher_payments", return_value=[]),
+        patch("app.routers.pay_notes.get_pay_notes_settings") as settings_m,
+    ):
+        settings_m.return_value.site = "HQ"
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.get("/pay-notes/api/notes?acctno=CTS&noteno=CTS3/69")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["bill_images"][0]["name"] == "line_oa_chat_260829_113830.jpg"
+    assert body["noteno_display"] == "CTS3/69"
