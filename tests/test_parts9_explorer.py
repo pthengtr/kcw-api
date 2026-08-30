@@ -41,6 +41,29 @@ def test_explorer_page_has_code_size_mode():
     assert "รหัส+ขนาด" in html
 
 
+def test_explorer_page_has_code_size_panel():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
+    assert 'id="codeSizePanel"' in html
+    assert 'id="code1"' in html
+    assert 'id="sizeFields"' in html
+    assert 'id="searchBtn"' in html
+    assert 'class="search-form"' in html
+    assert 'class="search-actions"' in html
+    assert "code-size-fields" in html
+    assert "buildCodeSizeQuery" in html
+    assert "mode-code-size" in html
+    assert "resetCodeSizeForm" in html
+    assert "--field-h" in html
+    assert ">สำนักงานใหญ่</option>" in html
+    assert ">สาขาสี่แยกพัฒนา</option>" in html
+    assert 'id="searchPanel"' in html
+    assert 'id="searchToggle"' in html
+    assert "collapseSearchPanelIfMobile" in html
+    assert '"C": ["ใน", "นอก", "หนา"]' in html
+    assert '"C": "ซีล"' in html
+    assert "กรอกบางช่องก็ค้นได้" in html
+
+
 def test_format_size_line_by_code1():
     assert format_size_line("C", "31", "46", "7", compact=True) == "ใน 31 / นอก 46 / หนา 7"
     assert format_size_line("O", "35", "3", None, compact=True) == "ใน 35 / หนา 3"
@@ -198,8 +221,8 @@ def test_explorer_page_hides_pyodbc_timeout():
             },
         },
     )
-    assert "HQ SQL KSS" in html
-    assert "SYP SQL down" in html
+    assert "สำนักงานใหญ่ SQL KSS" in html
+    assert "สาขาสี่แยกพัฒนา SQL down" in html
     assert "HYT00" not in html
     assert "pyodbc" not in html
 
