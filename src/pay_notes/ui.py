@@ -1357,6 +1357,10 @@ function renderNotenoReuseHint(el, r) {
   el.innerHTML = `${esc(m.hint)}<div class="note-kss-id">KSS NOTENO: <code>${esc(m.kss)}</code></div>`;
 }
 
+function noteQs(acctno, noteno) {
+  return `?acctno=${encodeURIComponent(acctno)}&noteno=${encodeURIComponent(noteno)}`;
+}
+
 async function api(path, opts) {
   const r = await fetch('/pay-notes/api' + path, opts || {});
   const j = await r.json().catch(() => ({}));
@@ -1989,7 +1993,7 @@ async function openDetailByKey(key, opts) {
   const dlg = $('dlgDetail');
   if (!dlg.open) dlg.showModal();
   try {
-    const det = await api(`/notes/${encodeURIComponent(row.acctno)}/${encodeURIComponent(row.noteno)}`);
+    const det = await api(`/notes${noteQs(row.acctno, row.noteno)}`);
     detailPayload = det;
     renderDetBills(det);
     renderNotenoReuseHint($('detReuseWrap'), {...row, ...det});
@@ -2718,7 +2722,7 @@ async function openEditNote(key, returnTab) {
   ).join('');
   if (rem.bank_id) $('editBankSelect').value = rem.bank_id;
   await loadEditBills();
-  const det = await api(`/notes/${encodeURIComponent(row.acctno)}/${encodeURIComponent(row.noteno)}`);
+  const det = await api(`/notes${noteQs(row.acctno, row.noteno)}`);
   $('editBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
   wireDatePickers($('panelEdit'));
 }
@@ -2795,7 +2799,7 @@ $('btnSaveEdit').onclick = async () => {
     $('editMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
   }
   try {
-    await api(`/notes/${encodeURIComponent(editTarget.acctno)}/${encodeURIComponent(editTarget.noteno)}`, {
+    await api(`/notes${noteQs(editTarget.acctno, editTarget.noteno)}`, {
       method:'PATCH', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         billnos,

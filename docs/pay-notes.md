@@ -36,13 +36,13 @@ Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key i
 
 ### APIs
 
-- `GET /api/notes/{acctno}/{noteno}` — header, attached purchase bills with `PIDET` lines (qty / price / amount), voucher payments, reminder, images
+- `GET /api/notes?acctno=&noteno=` — header, attached purchase bills with `PIDET` lines (qty / price / amount), voucher payments, reminder, images (`noteno` may contain `/`; use query params)
 - `GET /api/notes` — all service notes (optional `acctno` filter); includes `stage`, `workflow_status`, `is_editable`
-- `PATCH /api/notes/{acctno}/{noteno}` — edit pending note (bills, discount, reminder fields)
+- `PATCH /api/notes?acctno=&noteno=` — edit pending note (bills, discount, reminder fields)
 - `GET /api/bills?acctno=&noteno=` — bills for edit UI (attached + pickable)
 - `GET /api/vouchered?proof=awaiting|done|all` — vouchered board (removed: `/api/awaiting-proof`, `/api/paid`)
 
-Write rules: [kcw-docs PVMAS/RVMAS dictionary §9](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md).
+Write rules: [kcw-docs PVMAS/RVMAS dictionary §9](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md). Voucher `VOUCNO`: `JOURMODE=1` (VAT / vendor `7*`) → `P{YYMM}-###`; `JOURMODE=2` → `KCPN{YYMM}-###` (Buddhist YY).
 
 ## Enable (HQ Linux)
 

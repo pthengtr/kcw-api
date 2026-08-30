@@ -409,7 +409,7 @@ def api_pending(request: Request):
     return out
 
 
-@router.patch("/api/reminder/{acctno}/{noteno}")
+@router.patch("/api/reminder")
 def api_reminder_patch(request: Request, acctno: str, noteno: str, body: ReminderPatch):
     _, err = _require_api(request)
     if err:
@@ -580,10 +580,16 @@ def api_create_note(request: Request, body: NoteCreate):
 
 
 @router.get("/api/notes")
-def api_list_notes(request: Request, acctno: str = ""):
+def api_list_notes(request: Request, acctno: str = "", noteno: str = ""):
     _, err = _require_api(request)
     if err:
         return err
+    if (noteno or "").strip():
+        acct = (acctno or "").strip()
+        if not acct:
+            return JSONResponse({"error": "acctno required with noteno"}, status_code=400)
+        settings = _settings()
+        return _note_detail_response(settings, acct, noteno.strip())
     settings = _settings()
     client = get_pay_notes_supabase_client()
     reminders = list_reminders(client)
@@ -619,7 +625,7 @@ def api_list_notes(request: Request, acctno: str = ""):
     return out
 
 
-@router.patch("/api/notes/{acctno}/{noteno}")
+@router.patch("/api/notes")
 def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate):
     ident, err = _require_api(request)
     if err:
@@ -700,12 +706,7 @@ def _note_totals(header: dict[str, Any], reminder: dict[str, Any] | None) -> dic
     }
 
 
-@router.get("/api/notes/{acctno}/{noteno}")
-def api_note_detail(request: Request, acctno: str, noteno: str):
-    _, err = _require_api(request)
-    if err:
-        return err
-    settings = _settings()
+def _note_detail_response(settings, acctno: str, noteno: str):
     header = get_note_header(settings.site, acctno, noteno)
     if not header:
         return JSONResponse({"error": "not found"}, status_code=404)
