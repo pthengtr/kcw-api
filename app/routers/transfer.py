@@ -369,7 +369,10 @@ def api_submit(transfer_id: str, request: Request):
                         "line_id", line["line_id"]
                     ).execute()
         except ICLOWStampError as exc:
-            return JSONResponse({"error": f"stamp ICLOW ไม่สำเร็จ: {exc}"}, status_code=500)
+            return JSONResponse(
+                {"error": f"stamp ICLOW ไม่สำเร็จ: {exc}"},
+                status_code=403 if exc.code == "iclow_permission_denied" else 500,
+            )
     req = submit_request(client, transfer_id, actor=ident.display_name)
     if not req:
         return JSONResponse({"error": "ส่งคำขอไม่สำเร็จ"}, status_code=409)

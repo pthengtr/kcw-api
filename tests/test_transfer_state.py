@@ -33,6 +33,14 @@ def test_duplicate_bcode_denied():
     assert not r.allowed
 
 
+def test_submit_transfer_accepts_qty_alias():
+    r = can_action(
+        "submit_transfer",
+        {"lines": [{"bcode": "A", "qty": 3}, {"bcode": "B", "qty": 1}]},
+    )
+    assert r.allowed
+
+
 def test_over_receive_denied():
     r = can_action(
         "syp_receive",

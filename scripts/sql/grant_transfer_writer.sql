@@ -12,5 +12,9 @@ GRANT INSERT ON dbo.PIDET TO [python_writer];
 -- On-hand at both sites
 GRANT UPDATE ON dbo.ICMAS TO [python_writer];
 
+-- ICLOW stamp (SYP kss-pc only): submit/cancel/receive updates ORDERED/DOCNO/RECEIVED
+-- Required when TRANSFER_ICLOW_STAMP_ENABLED=true on syp-ubuntu-server.
+GRANT UPDATE ON dbo.ICLOW TO [python_writer];
+
 -- HQ (KSS): TF SIMAS ship + 3TF PIMAS receive (SYP→HQ)
 -- SYP (kss-pc): 3TF SIMAS ship + TF PIMAS receive (HQ→SYP)
