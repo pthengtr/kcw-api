@@ -67,7 +67,10 @@ def test_transfer_page_renders():
         hq_receive_enabled=False,
         syp_receive_enabled=False,
     )
-    assert "โอนสินค้า · SYP" in html
+    assert "โอนสินค้า · สาขา" in html
+    assert 'OTHER_LABEL = "สำนักงานใหญ่"' in html
+    assert "ใบจัดสินค้า" in html
+    assert "ใบรับสินค้า" in html
     assert "ขอสินค้าจาก" in html
     assert "จัดส่งไป" in html
     assert "ตรวจสอบสถานะ" in html
@@ -80,13 +83,17 @@ def test_transfer_page_renders():
     assert "prepareStepBar" in html
     assert "openPrepareRequest" in html
     assert "@media (max-width:640px)" in html
+    assert "max-width:1200px" in html
+    assert "view-table" in html
+    assert "view-cards" in html
+    assert "item-card" in html
     assert "openRequestDetail" in html
     assert "row-clickable" in html
     assert "position:sticky" in html
     assert "border-collapse:separate" in html
     assert "table-wrap--tall" in html
     assert "card-table" in html
-    assert "card:has(.table-wrap)" in html
+    assert "card:has(.view-table)" in html
     assert "th.num,td.num" in html
 
 
