@@ -669,7 +669,7 @@ async function renderRequest(el){
         <p id="manualPreview" class="meta" style="margin:.5rem 0 0;display:none"></p>
       </div>
 
-      <p class="meta" style="margin:0 0 .5rem">รายการแนะนำจาก ICLOW รอสั่ง + สต๊อกต่ำ (ICMAS) — เลือกจำนวนแล้วกดเพิ่ม</p>`;
+      <p class="meta" style="margin:0 0 .5rem">รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ด้านล่าง (ถ้ามี) คือสต๊อกต่ำ ICMAS หลังโอนครั้งก่อน</p>`;
 
     if(!suggestItems.length){
       html += `<div class="empty">ไม่พบรายการแนะนำ — ใช้เพิ่มรหัสเองด้านบน</div>`;
@@ -680,13 +680,15 @@ async function renderRequest(el){
       }
     } else {
       html += `<div class="table-wrap"><table><thead><tr>
-        <th>รหัส</th><th>รายละเอียด</th><th>คงเหลือ HQ</th><th>คงเหลือ SYP</th><th>แนะนำ</th><th>หน่วย</th><th>จำนวน</th><th></th>
+        <th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th>คงเหลือ HQ</th><th>คงเหลือ SYP</th><th>แนะนำ</th><th>หน่วย</th><th>จำนวน</th><th></th>
       </tr></thead><tbody>`;
       html += filtered.map((r)=>{
         const idx = suggestItems.indexOf(r);
         const entry = defaultEntryQty(r);
         const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
-        return `<tr><td><code>${r.bcode}</code></td><td>${r.descr||""}</td>
+        const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
+        const srcTitle = src==="รอสั่ง" && Number(r.iclow_line_count||0)>1 ? ` title="รวม ${r.iclow_line_count} แถว ICLOW"` : "";
+        return `<tr><td><code>${r.bcode}</code></td><td class="meta"${srcTitle}>${src}</td><td>${r.descr||""}</td>
           <td>${fmtStockDual(r.hq_qtyoh2,r)}</td><td>${fmtStockDual(r.syp_qtyoh2,r)}</td>
           <td>${fmtStockDual(r.suggest_qty,r)}</td>
           <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
