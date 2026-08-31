@@ -29,6 +29,30 @@ def transfer_bill_yymm(when: datetime) -> str:
     return f"{yy:02d}{when.month:02d}"
 
 
+def _branch_site(branch: str) -> str:
+    site = (branch or "HQ").strip().upper()
+    return "syp" if site == "SYP" else "hq"
+
+
+def parts9_host_label(branch: str) -> str:
+    return "kss-pc (SYP)" if _branch_site(branch) == "syp" else "KSS (HQ)"
+
+
+def reader_engine_for_branch(branch: str) -> Engine:
+    """Reader login — used for MAX(BILLNO) so writer only needs INSERT."""
+    return get_site_engine(_branch_site(branch))
+
+
+def transfer_write_permission_hint(exc: Exception, *, branch: str, tables: str) -> str | None:
+    msg = str(exc).lower()
+    if "permission was denied" in msg or "(229)" in msg:
+        return (
+            f"python_writer ยังไม่มีสิทธิ์บน {parts9_host_label(branch)} ({tables}) — "
+            "รัน scripts/sql/grant_transfer_writer.sql ด้วย SQL admin"
+        )
+    return None
+
+
 def _next_billno_on_table(conn, table: str, prefix: str, when: datetime) -> str:
     yymm = transfer_bill_yymm(when)
     stem = f"{prefix}{yymm}-"
@@ -61,18 +85,26 @@ def _next_billno_on_table(conn, table: str, prefix: str, when: datetime) -> str:
     return candidate
 
 
-def next_simas_billno(conn, *, from_branch: str, when: datetime | None = None) -> str:
+def next_simas_billno(
+    conn=None, *, from_branch: str, when: datetime | None = None
+) -> str:
     when = when or datetime.now()
     prefix = ship_billno_prefix(from_branch=from_branch)
-    return _next_billno_on_table(conn, "SIMAS", prefix, when)
+    if conn is not None:
+        return _next_billno_on_table(conn, "SIMAS", prefix, when)
+    with reader_engine_for_branch(from_branch).connect() as reader_conn:
+        return _next_billno_on_table(reader_conn, "SIMAS", prefix, when)
 
 
 def next_pimas_billno(
-    conn, *, from_branch: str, to_branch: str, when: datetime | None = None
+    conn=None, *, from_branch: str, to_branch: str, when: datetime | None = None
 ) -> str:
     when = when or datetime.now()
     prefix = receive_billno_prefix(from_branch=from_branch, to_branch=to_branch)
-    return _next_billno_on_table(conn, "PIMAS", prefix, when)
+    if conn is not None:
+        return _next_billno_on_table(conn, "PIMAS", prefix, when)
+    with reader_engine_for_branch(to_branch).connect() as reader_conn:
+        return _next_billno_on_table(reader_conn, "PIMAS", prefix, when)
 
 
 def _writer_odbc_url(*, site: str) -> str:

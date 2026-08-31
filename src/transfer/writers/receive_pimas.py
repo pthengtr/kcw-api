@@ -4,10 +4,12 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, ProgrammingError
 
 from src.transfer.writers._engine import (
     TransferWriteError,
     next_pimas_billno,
+    transfer_write_permission_hint,
     writer_engine_for_branch,
     _fetch_icmas_row,
 )
@@ -49,92 +51,98 @@ def post_transfer_receive(
     remarks = f"RCV-{str(ship_billno)[:24]}"[:30]
     billtype = "2"
 
-    with engine.begin() as conn:
-        billno = next_pimas_billno(
-            conn, from_branch=from_branch, to_branch=to_branch, when=now
-        )
-        conn.execute(
-            text(
-                """
-                INSERT INTO dbo.PIMAS (
-                  JOURMODE, JOURTYPE, JOURDATE, JOURTIME, DEPTNO, BOOKNO,
-                  BILLTYPE, BILLDATE, BILLTIME, BILLNO, LINES, TAXIC,
-                  DISCOUNT, DEDUCT, BEFORETAX, VAT, TAX, AFTERTAX, EXEMPT, SVCCHG,
-                  PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
-                  SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
-                ) VALUES (
-                  :jourmode, 'PJ', :billdate, :jourtime, '1', '1',
-                  :billtype, :billdate, :billtime, :billno, :lines, 'N',
-                  0, 0, 0, 0, 0, 0, 0, 0,
-                  'N', 'N', 0, 0, 0,
-                  :sale, :remarks, 'N', 'N', 'N', 'N'
-                )
-                """
-            ),
-            {
-                "jourmode": jourmode,
-                "billdate": billdate,
-                "jourtime": billtime,
-                "billtime": billtime,
-                "billtype": billtype,
-                "billno": billno,
-                "lines": len(lines_to_receive),
-                "sale": operator[:15],
-                "remarks": remarks,
-            },
-        )
-
-        pidet_insert = text(
-            """
-            INSERT INTO dbo.PIDET (
-              JOURMODE, JOURTYPE, JOURDATE, BILLTYPE, BILLDATE, BILLNO,
-              LINE, ITEMNO, BCODE, PCODE, MCODE, DETAIL, WHNUMBER, LOCATION1,
-              STATUS, SERIAL, TAXIC, EXMPT, ISVAT,
-              QTY, UI, MTP, PRICE, XPRICE, VAT, AMOUNT,
-              PAID, DONE, CANCELED
-            ) VALUES (
-              :jourmode, 'PJ', :billdate, :billtype, :billdate, :billno,
-              :line, 1, :bcode, :pcode, :mcode, :detail, 'Y', :location1,
-              1, 'N', 'N', 'N', 'N',
-              :qty, :ui, :mtp, 0, 0, 0, 0,
-              'N', 'N', 'N'
+    try:
+        with engine.begin() as conn:
+            billno = next_pimas_billno(
+                from_branch=from_branch, to_branch=to_branch, when=now
             )
-            """
-        )
-        qtyoh2_update = text(
-            """
-            UPDATE dbo.ICMAS SET QTYOH2 = :qty
-            WHERE LTRIM(RTRIM(BCODE)) = :bcode
-            """
-        )
-
-        for i, line in enumerate(lines_to_receive, start=1):
-            bcode = str(line.get("bcode") or "").strip()
-            qty_recv = float(line.get("qty_receive") or 0)
-            descr = (line.get("descr") or "")[:60]
-            product = _fetch_icmas_row(conn, bcode)
-            if not product:
-                continue
             conn.execute(
-                pidet_insert,
+                text(
+                    """
+                    INSERT INTO dbo.PIMAS (
+                      JOURMODE, JOURTYPE, JOURDATE, JOURTIME, DEPTNO, BOOKNO,
+                      BILLTYPE, BILLDATE, BILLTIME, BILLNO, LINES, TAXIC,
+                      DISCOUNT, DEDUCT, BEFORETAX, VAT, TAX, AFTERTAX, EXEMPT, SVCCHG,
+                      PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
+                      SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
+                    ) VALUES (
+                      :jourmode, 'PJ', :billdate, :jourtime, '1', '1',
+                      :billtype, :billdate, :billtime, :billno, :lines, 'N',
+                      0, 0, 0, 0, 0, 0, 0, 0,
+                      'N', 'N', 0, 0, 0,
+                      :sale, :remarks, 'N', 'N', 'N', 'N'
+                    )
+                    """
+                ),
                 {
                     "jourmode": jourmode,
                     "billdate": billdate,
+                    "jourtime": billtime,
+                    "billtime": billtime,
                     "billtype": billtype,
                     "billno": billno,
-                    "line": i * 10,
-                    "bcode": bcode,
-                    "pcode": product.get("PCODE") or None,
-                    "mcode": product.get("MCODE") or None,
-                    "detail": descr,
-                    "location1": str(product.get("LOCATION1") or "")[:10] or None,
-                    "qty": qty_recv,
-                    "ui": str(product.get("UI1") or "unit")[:10],
-                    "mtp": 1.0,
+                    "lines": len(lines_to_receive),
+                    "sale": operator[:15],
+                    "remarks": remarks,
                 },
             )
-            new_qty = float(product.get("QTYOH2") or 0) + qty_recv
-            conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
+
+            pidet_insert = text(
+                """
+                INSERT INTO dbo.PIDET (
+                  JOURMODE, JOURTYPE, JOURDATE, BILLTYPE, BILLDATE, BILLNO,
+                  LINE, ITEMNO, BCODE, PCODE, MCODE, DETAIL, WHNUMBER, LOCATION1,
+                  STATUS, SERIAL, TAXIC, EXMPT, ISVAT,
+                  QTY, UI, MTP, PRICE, XPRICE, VAT, AMOUNT,
+                  PAID, DONE, CANCELED
+                ) VALUES (
+                  :jourmode, 'PJ', :billdate, :billtype, :billdate, :billno,
+                  :line, 1, :bcode, :pcode, :mcode, :detail, 'Y', :location1,
+                  1, 'N', 'N', 'N', 'N',
+                  :qty, :ui, :mtp, 0, 0, 0, 0,
+                  'N', 'N', 'N'
+                )
+                """
+            )
+            qtyoh2_update = text(
+                """
+                UPDATE dbo.ICMAS SET QTYOH2 = :qty
+                WHERE LTRIM(RTRIM(BCODE)) = :bcode
+                """
+            )
+
+            for i, line in enumerate(lines_to_receive, start=1):
+                bcode = str(line.get("bcode") or "").strip()
+                qty_recv = float(line.get("qty_receive") or 0)
+                descr = (line.get("descr") or "")[:60]
+                product = _fetch_icmas_row(conn, bcode)
+                if not product:
+                    continue
+                conn.execute(
+                    pidet_insert,
+                    {
+                        "jourmode": jourmode,
+                        "billdate": billdate,
+                        "billtype": billtype,
+                        "billno": billno,
+                        "line": i * 10,
+                        "bcode": bcode,
+                        "pcode": product.get("PCODE") or None,
+                        "mcode": product.get("MCODE") or None,
+                        "detail": descr,
+                        "location1": str(product.get("LOCATION1") or "")[:10] or None,
+                        "qty": qty_recv,
+                        "ui": str(product.get("UI1") or "unit")[:10],
+                        "mtp": 1.0,
+                    },
+                )
+                new_qty = float(product.get("QTYOH2") or 0) + qty_recv
+                conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
+    except (ProgrammingError, DBAPIError) as exc:
+        hint = transfer_write_permission_hint(exc, branch=to_branch, tables="PIMAS/PIDET/ICMAS")
+        if hint:
+            raise TransferReceiveError(hint, code="permission_denied") from exc
+        raise TransferReceiveError(str(exc), code="sql_error") from exc
 
     return {
         "status": "received",
