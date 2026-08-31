@@ -13,7 +13,7 @@ from src.transfer.direction import (
     receive_billno_prefix,
     ship_billno_prefix,
 )
-from src.transfer.writers._engine import _next_billno_on_table, transfer_bill_yymm
+from src.transfer.writers._engine import _next_billno_on_table, transfer_bill_yymm, transfer_write_permission_hint
 from src.transfer.writers.ship_simas import TransferShipError, post_transfer_ship, post_transfer_tf
 from datetime import datetime
 
@@ -58,6 +58,12 @@ def test_next_billno_numeric_max_beats_string_sort():
     when = datetime(2026, 8, 31)
     billno = _next_billno_on_table(conn, "SIMAS", "TF", when)
     assert billno == "TF6908-0099"
+
+
+def test_transfer_write_permission_hint():
+    exc = Exception("SELECT permission was denied on object 'PIMAS' (229)")
+    hint = transfer_write_permission_hint(exc, branch="SYP", tables="PIMAS/PIDET")
+    assert hint and "kss-pc" in hint and "grant_transfer_writer" in hint
 
 
 def test_site_permissions():

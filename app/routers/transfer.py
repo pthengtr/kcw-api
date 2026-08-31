@@ -471,7 +471,8 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             client_token=client_token,
         )
     except TransferShipError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+        code = 403 if exc.code == "permission_denied" else 500
+        return JSONResponse({"error": str(exc)}, status_code=code)
     billno = result.get("ship_billno") or result.get("tf_billno")
     shipment = create_shipment(
         client, transfer_id=transfer_id, tf_billno=billno, client_token=client_token
@@ -564,7 +565,8 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
             client_token=client_token,
         )
     except TransferReceiveError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+        code = 403 if exc.code == "permission_denied" else 500
+        return JSONResponse({"error": str(exc)}, status_code=code)
     for line in body.lines:
         line_id = line.get("line_id")
         qty_recv = float(line.get("qty_receive") or 0)
