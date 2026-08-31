@@ -25,6 +25,16 @@ def test_cancel_request_denied_after_shipment():
     assert not r.allowed
 
 
+def test_delete_draft_only():
+    assert can_action("delete_draft", {"status": "draft"}).allowed
+    assert not can_action("delete_draft", {"status": "requested"}).allowed
+
+
+def test_edit_draft_only():
+    assert can_action("edit_draft", {"status": "draft"}).allowed
+    assert not can_action("edit_draft", {"status": "requested"}).allowed
+
+
 def test_duplicate_bcode_denied():
     r = can_action(
         "submit_transfer",

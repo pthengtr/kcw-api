@@ -103,6 +103,16 @@ def can_action(action: str, ctx: dict[str, Any]) -> ActionResult:
             return ActionResult(False, "ยกเลิกได้เฉพาะคำขอที่ส่งแล้วและยังไม่จัด")
         return ActionResult(True)
 
+    if action == "delete_draft":
+        if (ctx.get("status") or "draft") != "draft":
+            return ActionResult(False, "ลบได้เฉพาะร่างที่ยังไม่ส่ง")
+        return ActionResult(True)
+
+    if action == "edit_draft":
+        if (ctx.get("status") or "draft") != "draft":
+            return ActionResult(False, "แก้ไขได้เฉพาะร่างที่ยังไม่ส่ง")
+        return ActionResult(True)
+
     if action == "cancel_line":
         if float(ctx.get("qty_prepared") or 0) > 0:
             return ActionResult(False, "ยกเลิกรายการไม่ได้หลังจัดแล้ว")
