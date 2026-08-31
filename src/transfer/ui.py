@@ -6,6 +6,7 @@ import re
 
 APP = "kcw-transfer"
 SESSION_COOKIE = "kcw_transfer"
+_BRANCH_LABELS = {"HQ": "สำนักงานใหญ่", "SYP": "สาขา"}
 
 
 def initials(name: str) -> str:
@@ -34,11 +35,15 @@ def page(
     ship_on = syp_ship_enabled if site_u == "SYP" else hq_ship_enabled
     recv_on = syp_receive_enabled if site_u == "SYP" else hq_receive_enabled
     other = "HQ" if site_u == "SYP" else "SYP"
+    site_label = _BRANCH_LABELS.get(site_u, site_u)
+    other_label = _BRANCH_LABELS.get(other, other)
     return (
         _HTML.replace("__USER_JSON__", json.dumps(who, ensure_ascii=False))
         .replace("__USER__", html_lib.escape(who))
         .replace("__SITE__", site_u)
         .replace("__OTHER__", other)
+        .replace("__SITE_LABEL__", site_label)
+        .replace("__OTHER_LABEL__", other_label)
         .replace('__SHIP_WRITE__ === "true"', "true" if ship_on else "false")
         .replace('__RECV_WRITE__ === "true"', "true" if recv_on else "false")
         .replace("__INITIALS__", html_lib.escape(initials(who)))
@@ -52,7 +57,7 @@ _HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="color-scheme" content="light"/>
 <meta name="theme-color" content="#f3f5f9" id="themeColor"/>
-<title>โอนสินค้า · __SITE__</title>
+<title>โอนสินค้า · __SITE_LABEL__</title>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root{--acc:#2f6bff;--ok:#15803d;--warn:#c2410c;--down:#dc2626;--card:#fff;--line:#e5e9f2;--text:#111827;--muted:#6b7280;--shadow:0 1px 2px rgba(16,24,40,.06),0 4px 12px rgba(16,24,40,.04)}
@@ -62,12 +67,13 @@ button{font:inherit;color:var(--text);-webkit-appearance:none;appearance:none}
 .hdr-main{flex:1;min-width:0}
 .hdr h1{margin:0;font-size:1.05rem;color:var(--text)}.hdr .sub{font-size:.78rem;color:var(--muted)}
 .back-btn{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;padding:.4rem .7rem;font:inherit;cursor:pointer;white-space:nowrap}
-main{padding:1rem;max-width:720px;margin:0 auto}
+main{padding:1rem;max-width:1200px;margin:0 auto;width:100%}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem;box-shadow:var(--shadow);margin-bottom:.85rem}
-.card:has(.table-wrap){overflow:visible}
+.card:has(.view-table){overflow:visible}
 .card-table{padding-bottom:0}
-.card-table > .table-wrap{margin-top:.5rem}
-.card-table > .table-wrap:last-child{margin-bottom:0;border-radius:0 0 12px 12px}
+.card-table > .view-table > .table-wrap{margin-top:.5rem}
+.card-table > .view-table > .table-wrap:last-child{margin-bottom:0;border-radius:0 0 12px 12px}
+.card-table > .view-cards{padding-top:.5rem}
 .card-table > .row-actions{margin:1rem}
 .table-wrap{
   overflow:auto;
@@ -99,6 +105,7 @@ tbody tr:last-child td{border-bottom:0}
 .qty-mismatch{color:#b91c1c;font-weight:600}
 .alert-banner{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:.5rem .75rem;margin:.5rem 0;font-size:.85rem}
 tr.row-mismatch td{background:#fff7f7}
+.item-card.row-mismatch{border-color:#fecaca;background:#fff7f7}
 .btn{border:0;border-radius:10px;padding:.55rem 1rem;font-family:inherit;font-weight:600;cursor:pointer;color:var(--text)}
 .btn-primary{background:var(--acc);color:#fff}.btn-ghost{background:#fff;border:1px solid var(--line);color:var(--text)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
@@ -159,19 +166,44 @@ body.busy #busy{display:flex}
 .pipeline{display:flex;gap:.25rem;align-items:center;font-size:.68rem;color:var(--muted);margin-top:.35rem}
 .pipe-dot{width:.45rem;height:.45rem;border-radius:50%;background:#d1d5db;flex-shrink:0}
 .pipe-dot.on{background:var(--acc)}.pipe-dot.done{background:var(--ok)}
+.view-cards{display:none}
+.item-cards{display:flex;flex-direction:column;gap:.55rem}
+.item-card{border:1px solid var(--line);border-radius:12px;padding:.75rem .85rem;background:#fff}
+.item-card.row-clickable{cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.item-card.row-clickable:hover,.item-card.row-clickable:focus-within{border-color:var(--acc);box-shadow:var(--shadow)}
+.item-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:.35rem}
+.item-card-head code{font-size:.92rem}
+.item-card-desc{font-size:.85rem;margin-bottom:.5rem;line-height:1.4;color:var(--text)}
+.item-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem .75rem;margin-bottom:.45rem}
+.item-field .lbl{display:block;font-size:.68rem;color:var(--muted);margin-bottom:.12rem}
+.item-field .val{font-size:.85rem;line-height:1.35}
+.item-field.num .val{text-align:right;font-variant-numeric:tabular-nums}
+.item-card-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.35rem}
+.item-card-actions .btn{margin-left:auto}
+.item-card-actions .qty-input,.item-card-actions .unit-select{flex:0 0 auto}
+@media (min-width:900px){
+  main{padding:1.25rem 1.5rem}
+  .table-wrap table{table-layout:auto}
+}
 @media (max-width:640px){
-  main{padding:.75rem .65rem calc(.85rem + env(safe-area-inset-bottom,0px));padding-left:max(.65rem,env(safe-area-inset-left,0px));padding-right:max(.65rem,env(safe-area-inset-right,0px));min-width:0;overflow-x:hidden}
+  main{padding:.75rem .65rem calc(.85rem + env(safe-area-inset-bottom,0px));padding-left:max(.65rem,env(safe-area-inset-left,0px));padding-right:max(.65rem,env(safe-area-inset-right,0px));min-width:0}
   .hdr{padding:.65rem max(.65rem,env(safe-area-inset-left,0px)) .65rem max(.65rem,env(safe-area-inset-right,0px))}
   .hdr h1{font-size:.98rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hdr .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .card{padding:.85rem .8rem;border-radius:12px;margin-bottom:.65rem;min-width:0}
-  .card:not(:has(.table-wrap)){overflow:hidden}
-  .card:has(.table-wrap){overflow:visible}
-  .card > .table-wrap{margin-left:-.8rem;margin-right:-.8rem;border-left:0;border-right:0;border-radius:0;max-width:none}
+  .card:not(:has(.view-table)):not(:has(.view-cards)){overflow:hidden}
+  .card:has(.view-table){overflow:visible}
+  .view-table{display:none !important}
+  .view-cards{display:block}
+  .item-card{padding:.7rem .75rem;border-radius:10px}
+  .item-card-grid{grid-template-columns:1fr 1fr}
+  .item-card-actions .btn{width:100%;margin-left:0;text-align:center}
+  .item-card-actions:has(.qty-input){justify-content:space-between}
+  .item-card-actions .qty-input{flex:1;min-width:0;max-width:5.5rem}
+  .item-card-actions .unit-select{flex:1;min-width:0;max-width:6.5rem}
   .table-wrap{-webkit-overflow-scrolling:touch;max-width:100%;max-height:min(52vh,22rem)}
   .table-wrap--tall{max-height:min(65vh,30rem)}
   .modal .table-wrap{max-height:min(42vh,18rem)}
-  .table-wrap table{min-width:100%;width:max-content}
   table{font-size:.8rem}
   th,td{padding:.45rem .5rem;vertical-align:top}
   th{white-space:nowrap}
@@ -214,7 +246,7 @@ body.busy #busy{display:flex}
 <header class="hdr">
   <button id="btnBack" class="back-btn" style="display:none">← กลับ</button>
   <div class="hdr-main">
-    <h1 id="hdrTitle">โอนสินค้า · __SITE__</h1>
+    <h1 id="hdrTitle">โอนสินค้า · __SITE_LABEL__</h1>
     <div class="sub" id="hdrSub">__USER__</div>
   </div>
 </header>
@@ -222,6 +254,11 @@ body.busy #busy{display:flex}
 <script>
 const SITE = "__SITE__";
 const OTHER = "__OTHER__";
+const SITE_LABEL = "__SITE_LABEL__";
+const OTHER_LABEL = "__OTHER_LABEL__";
+const BRANCH_LABEL = {HQ:"สำนักงานใหญ่",SYP:"สาขา"};
+const SHIP_BILL = "ใบจัดสินค้า";
+const RECV_BILL = "ใบรับสินค้า";
 const SHIP_WRITE = __SHIP_WRITE__ === "true";
 const RECV_WRITE = __RECV_WRITE__ === "true";
 const USER = __USER_JSON__;
@@ -240,10 +277,10 @@ let suggestFilter = "";
 let toastTimer = null;
 
 const VIEWS = {
-  home: {title: "โอนสินค้า · " + SITE, sub: "เลือกสิ่งที่ต้องการทำ"},
-  request: {title: "ขอสินค้า", sub: "ขั้นตอนที่ " + requestStep + " จาก 3"},
-  prepare: {title: "จัดส่งสินค้า", sub: "รายการที่รอจัดออกจาก " + SITE},
-  receive: {title: "รับสินค้า", sub: "รายการที่รอรับเข้า " + SITE},
+  home: {title: "โอนสินค้า · " + SITE_LABEL, sub: "เลือกสิ่งที่ต้องการทำ"},
+  request: {title: "ขอสินค้าจาก " + OTHER_LABEL, sub: "ขั้นตอนที่ " + requestStep + " จาก 3"},
+  prepare: {title: "จัดส่งสินค้า", sub: "รายการที่รอจัดออกจาก " + SITE_LABEL},
+  receive: {title: "รับสินค้า", sub: "รายการที่รอรับเข้า " + SITE_LABEL},
   status: {title: "ตรวจสอบสถานะ", sub: "ติดตามคำขอโอนทั้งหมด"},
 };
 
@@ -295,7 +332,11 @@ function showToast(msg){
   toastTimer = setTimeout(()=>el.classList.remove("on"), 2600);
 }
 function uuid(){return crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+"-"+Math.random().toString(16).slice(2)}
-function dirLabel(fromB, toB){return (fromB||"?")+" → "+(toB||"?")}
+function branchLabel(b){
+  const u = (b||"").toUpperCase();
+  return BRANCH_LABEL[u] || b || "?";
+}
+function dirLabel(fromB, toB){return branchLabel(fromB)+" → "+branchLabel(toB);}
 function shipBillPrefix(fromBranch){
   return (fromBranch||"").toUpperCase()==="SYP" ? "3TF" : "TF";
 }
@@ -310,7 +351,8 @@ function receiveBillPrefix(fromBranch, toBranch){
   return "TF";
 }
 function parts9Host(branch){
-  return (branch||"").toUpperCase()==="SYP" ? "kss-pc (SYP)" : "KSS (HQ)";
+  const u = (branch||"").toUpperCase();
+  return u === "SYP" ? "kss-pc (สาขา)" : "KSS (สำนักงานใหญ่)";
 }
 function iclowStampApplies(fromB, toB){
   const fb = (fromB||"").toUpperCase();
@@ -326,12 +368,12 @@ function billTimelineHtml(fromB, toB){
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
   const submitStep = iclowStampApplies(fb, tb)
-    ? `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW รอสั่งที่ SYP (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>`
+    ? `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW รอสั่งที่สาขา (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>`
     : `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> เท่านั้น (<strong>ไม่แตะ ICLOW</strong> รอสั่ง — เก็บไว้สั่งซื้อจากเจ้าหนี้)</li>`;
   return infoToggleHtml("ใบ TF ถูกสร้างเมื่อไหร่?", `<ol class="bill-steps">
       ${submitStep}
-      <li><span class="bill-when">${fb} จัดส่ง</span> — สร้างใบ <strong>${shipP} SIMAS</strong> บน ${parts9Host(fb)} (ตัดสต๊อกออก)</li>
-      <li><span class="bill-when">${tb} รับเข้า</span> — สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อกเข้า)</li>
+      <li><span class="bill-when">${branchLabel(fb)} จัดส่ง</span> — สร้าง<strong>${shipP} ${SHIP_BILL}</strong> บน ${parts9Host(fb)} (ตัดสต๊อกออก)</li>
+      <li><span class="bill-when">${branchLabel(tb)} รับเข้า</span> — สร้าง<strong>${recvP} ${RECV_BILL}</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อกเข้า)</li>
     </ol>`);
 }
 function submitBillNoteHtml(fromB, toB){
@@ -340,12 +382,12 @@ function submitBillNoteHtml(fromB, toB){
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
   const iclowLi = iclowStampApplies(fb, tb)
-    ? `<li>แสตมป์ ICLOW รอสั่งที่ SYP ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>`
+    ? `<li>แสตมป์ ICLOW รอสั่งที่สาขา ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>`
     : `<li><strong>ไม่แตะ ICLOW</strong> รอสั่ง — เก็บรายการไว้สำหรับสั่งซื้อจากเจ้าหนี้</li>`;
   return infoToggleHtml("ตอนกดยืนยันส่งคำขอ จะเกิดอะไรขึ้น?", `<ul class="bill-steps">
       <li>สร้างคำขอโอน <code>TRF-…</code> (อ้างอิงในระบบ — <strong>ไม่ใช่เลขบิล PARTS9</strong>)</li>
       ${iclowLi}
-      <li class="bill-none">ยังไม่ออกใบ TF — ใบ ${shipP} สร้างตอน ${fb} จัดส่ง · ใบ ${recvP} สร้างตอน ${tb} รับเข้า</li>
+      <li class="bill-none">ยังไม่ออกใบ TF — ${SHIP_BILL} ${shipP} สร้างตอน ${branchLabel(fb)} จัดส่ง · ${RECV_BILL} ${recvP} สร้างตอน ${branchLabel(tb)} รับเข้า</li>
     </ul>`);
 }
 function prepareBillNoteHtml(fromB, toB){
@@ -354,8 +396,8 @@ function prepareBillNoteHtml(fromB, toB){
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
   return infoToggleHtml("เมื่อยืนยันจัดส่ง ระบบจะ:", `<ul class="bill-steps">
-      <li>สร้างใบ <strong>${shipP} SIMAS</strong> บน ${parts9Host(fb)} ทันที (ตัดสต๊อก ${fb})</li>
-      <li>ยังไม่มีใบรับ — ${tb} จะออก <strong>${recvP} PIMAS</strong> ตอนกดรับเข้า</li>
+      <li>สร้าง<strong>${shipP} ${SHIP_BILL}</strong> บน ${parts9Host(fb)} ทันที (ตัดสต๊อก ${branchLabel(fb)})</li>
+      <li>ยังไม่มีใบรับ — ${branchLabel(tb)} จะออก<strong>${recvP} ${RECV_BILL}</strong> ตอนกดรับเข้า</li>
     </ul>`);
 }
 function receiveBillNoteHtml(fromB, toB, shipBillno){
@@ -363,23 +405,22 @@ function receiveBillNoteHtml(fromB, toB, shipBillno){
   const tb = (toB||SITE).toUpperCase();
   const recvP = receiveBillPrefix(fb, tb);
   const shipP = shipBillPrefix(fb);
-  const shipRef = shipBillno ? `<code>${shipBillno}</code>` : `ใบ ${shipP} ที่ ${fb} จัดไป`;
+  const shipRef = shipBillno ? `<code>${shipBillno}</code>` : `${SHIP_BILL} ${shipP} ที่ ${branchLabel(fb)} จัดไป`;
   const iclowLi = iclowStampApplies(fb, tb)
-    ? `<li>อัปเดต ICLOW รอสั่งที่ SYP ว่ารับแล้ว</li>`
+    ? `<li>อัปเดต ICLOW รอสั่งที่สาขา ว่ารับแล้ว</li>`
     : "";
   return infoToggleHtml("เมื่อยืนยันรับเข้า ระบบจะ:", `<ul class="bill-steps">
-      <li>สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อก ${tb})</li>
+      <li>สร้าง<strong>${recvP} ${RECV_BILL}</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อก ${branchLabel(tb)})</li>
       <li>อ้างอิงใบจัด ${shipRef}</li>
       ${iclowLi}
     </ul>`);
 }
 function orderFlowText(){
-  if(orderDirection === "to_syp") return OTHER + " จัดส่ง → " + SITE + " รับเข้า";
-  return SITE === "HQ" ? (OTHER + " จัดส่ง → " + SITE + " รับเข้า") : (OTHER + " จัดส่ง → " + SITE + " รับเข้า");
+  return OTHER_LABEL + " จัดส่ง → " + SITE_LABEL + " รับเข้า";
 }
 function badge(status, fromB, toB, hasMismatch){
   const m={draft:"b-requested",requested:"b-requested",partial_prepared:"b-await",awaiting_receive:"b-await",partial_received:"b-await",complete:"b-done",cancelled:"b-requested"};
-  const fb = fromB||"HQ";
+  const fb = branchLabel(fromB||"HQ");
   const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดไม่ครบตามขอ",awaiting_receive:"รอรับ",partial_received:"รับไม่ครบตามขอ",complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
   const cls = hasMismatch ? "b-alert" : (m[status]||"b-requested");
   const label = hasMismatch ? "จัด≠รับ" : (t[status]||status||"-");
@@ -410,11 +451,15 @@ function qtyCell(qty, mismatch){
 function fmtDateTime(iso){
   return iso ? String(iso).slice(0,16).replace("T"," ") : "—";
 }
+function dualView(tableHtml, cardsHtml){
+  return `<div class="view-table">${tableHtml}</div><div class="view-cards">${cardsHtml}</div>`;
+}
+function itemCards(html){ return `<div class="item-cards">${html}</div>`; }
 function bindDetailRows(container){
-  container.querySelectorAll("tr.row-clickable").forEach(tr=>{
-    tr.onclick = e=>{
+  container.querySelectorAll(".row-clickable[data-detail]").forEach(row=>{
+    row.onclick = e=>{
       if(e.target.closest("button")) return;
-      openRequestDetail(tr.dataset.detail);
+      openRequestDetail(row.dataset.detail);
     };
   });
 }
@@ -512,14 +557,26 @@ async function openRequestDetail(transferId){
   }
   const canCancel = status==="requested";
   const isDraft = status==="draft";
+  const lineCards = lines.map(ln=>`<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
+    <div class="item-card-head"><code>${ln.bcode}</code>${lineStatusLabel(ln)}</div>
+    <div class="item-card-desc">${ln.descr||""}</div>
+    <div class="item-card-grid">
+      <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
+      <div class="item-field num"><span class="lbl">จัด</span><span class="val">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</span></div>
+      <div class="item-field num"><span class="lbl">รับ</span><span class="val">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</span></div>
+    </div>
+  </div>`).join("");
   const modal = showModal(`<h2>รายละเอียด · <code>${detail.short_id||transferId}</code></h2>
     <p class="dir">${dirLabel(fromB, toB)}</p>
     <p style="margin:.35rem 0">${badge(status, fromB, toB, detail.prep_recv_mismatch)} ${pipeline(status, detail.prep_recv_mismatch)}</p>
     ${mismatchBanner(detail)}
     <p class="meta">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)}</p>
-    <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th></tr></thead><tbody>
-      ${lineRows || '<tr><td colspan="6" class="empty">ไม่มีรายการ</td></tr>'}
-    </tbody></table></div>
+    ${dualView(
+      `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th></tr></thead><tbody>
+        ${lineRows || '<tr><td colspan="6" class="empty">ไม่มีรายการ</td></tr>'}
+      </tbody></table></div>`,
+      itemCards(lineCards || '<div class="empty">ไม่มีรายการ</div>')
+    )}
     ${shipHtml}
     <div class="row-actions">
       <button class="btn btn-ghost" data-close>ปิด</button>
@@ -556,10 +613,10 @@ function setRequestStep(n){ requestStep=n; render(); }
 
 function updateHeader(){
   const titles = {
-    home: ["โอนสินค้า · " + SITE, USER + " · เลือกสิ่งที่ต้องการทำ"],
-    request: ["ขอสินค้าจาก " + OTHER, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
-    prepare: ["จัดส่งไป " + OTHER, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันจัดส่ง"],
-    receive: ["รับสินค้าจาก " + OTHER, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
+    home: ["โอนสินค้า · " + SITE_LABEL, USER + " · เลือกสิ่งที่ต้องการทำ"],
+    request: ["ขอสินค้าจาก " + OTHER_LABEL, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
+    prepare: ["จัดส่งไป " + OTHER_LABEL, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันจัดส่ง"],
+    receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
     status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
   };
   const t = titles[view] || titles.home;
@@ -630,15 +687,15 @@ async function renderHome(el){
     ${billTimelineHtml(OTHER, SITE)}
     <div class="action-grid">
       <button class="action-card" data-go="request">
-        <p class="title">📥 ขอสินค้าจาก ${OTHER}</p>
-        <p class="desc">ฉันอยู่ที่ ${SITE} และต้องการให้ ${OTHER} ส่งสินค้ามา</p>
+        <p class="title">📥 ขอสินค้าจาก ${OTHER_LABEL}</p>
+        <p class="desc">ฉันอยู่ที่ ${SITE_LABEL} และต้องการให้ ${OTHER_LABEL} ส่งสินค้ามา</p>
       </button>
       <button class="action-card" data-go="prepare">
-        <p class="title">📤 จัดส่งไป ${OTHER}</p>
-        <p class="desc">มีคำขอรอจัด — ${SITE} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
+        <p class="title">📤 จัดส่งไป ${OTHER_LABEL}</p>
+        <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
       </button>
       <button class="action-card" data-go="receive">
-        <p class="title">📦 รับสินค้าจาก ${OTHER}</p>
+        <p class="title">📦 รับสินค้าจาก ${OTHER_LABEL}</p>
         <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
       </button>
       <button class="action-card" data-go="status">
@@ -655,11 +712,11 @@ async function renderRequest(el){
     else orderDirection = "to_hq";
     el.innerHTML = `${stepBar(1)}
       <div class="card">
-        <p style="margin:0 0 .5rem"><strong>คุณอยู่ที่ ${SITE}</strong></p>
-        <p style="margin:0 0 .75rem">ต้องการขอสินค้าจาก <strong>${OTHER}</strong> ให้ส่งมาที่ ${SITE}</p>
+        <p style="margin:0 0 .5rem"><strong>คุณอยู่ที่ ${SITE_LABEL}</strong></p>
+        <p style="margin:0 0 .75rem">ต้องการขอสินค้าจาก <strong>${OTHER_LABEL}</strong> ให้ส่งมาที่ ${SITE_LABEL}</p>
         <div class="flow-hint" style="margin-bottom:0">
           <strong>ขั้นตอนถัดไป:</strong><br>
-          1. เลือกรายการสินค้า → 2. ส่งคำขอ → 3. รอ ${OTHER} จัดส่ง → 4. กลับมากดรับสินค้าที่นี่
+          1. เลือกรายการสินค้า → 2. ส่งคำขอ → 3. รอ ${OTHER_LABEL} จัดส่ง → 4. กลับมากดรับสินค้าที่นี่
         </div>
         <div class="row-actions" style="margin-top:1rem">
           <button class="btn btn-ghost" onclick="goHome()">ยกเลิก</button>
@@ -682,7 +739,7 @@ async function renderRequest(el){
     }) : suggestItems;
 
     let html = stepBar(2) + `<div class="card">
-      <p style="margin:0 0 .75rem"><strong>ทิศทาง:</strong> ${OTHER} → ${SITE}</p>
+      <p style="margin:0 0 .75rem"><strong>ทิศทาง:</strong> ${OTHER_LABEL} → ${SITE_LABEL}</p>
 
       <div class="search-bar">
         <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
@@ -716,10 +773,7 @@ async function renderRequest(el){
         html += `<div class="row-actions"><button class="btn btn-ghost" id="btnSearchAdd">เพิ่ม <code>${q}</code></button></div>`;
       }
     } else {
-      html += `<div class="table-wrap table-wrap--tall"><table><thead><tr>
-        <th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ HQ</th><th class="num">คงเหลือ SYP</th><th class="num">แนะนำ</th><th>หน่วย</th><th class="num">จำนวน</th><th></th>
-      </tr></thead><tbody>`;
-      html += filtered.map((r)=>{
+      const suggestTableRows = filtered.map((r)=>{
         const idx = suggestItems.indexOf(r);
         const entry = defaultEntryQty(r);
         const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
@@ -732,7 +786,32 @@ async function renderRequest(el){
           <td class="num"><input class="qty-input" type="number" min="0.01" step="any" value="${entry.qty}" data-qty="${idx}"/></td>
           <td><button class="btn btn-ghost" data-add="${idx}">เพิ่ม</button></td></tr>`;
       }).join("");
-      html += `</tbody></table></div>`;
+      const suggestCardRows = filtered.map((r)=>{
+        const idx = suggestItems.indexOf(r);
+        const entry = defaultEntryQty(r);
+        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
+        const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
+        return `<div class="item-card">
+          <div class="item-card-head"><code>${r.bcode}</code><span class="meta">${src}</span></div>
+          <div class="item-card-desc">${r.descr||""}</div>
+          <div class="item-card-grid">
+            <div class="item-field num"><span class="lbl">คงเหลือ สำนักงานใหญ่</span><span class="val">${fmtStockDual(r.hq_qtyoh2,r)}</span></div>
+            <div class="item-field num"><span class="lbl">คงเหลือ สาขา</span><span class="val">${fmtStockDual(r.syp_qtyoh2,r)}</span></div>
+            <div class="item-field num"><span class="lbl">แนะนำ</span><span class="val">${fmtStockDual(r.suggest_qty,r)}</span></div>
+          </div>
+          <div class="item-card-actions">
+            <select class="unit-select" data-unit="${idx}">${unitOpts}</select>
+            <input class="qty-input" type="number" min="0.01" step="any" value="${entry.qty}" data-qty="${idx}"/>
+            <button class="btn btn-ghost" data-add="${idx}">เพิ่ม</button>
+          </div>
+        </div>`;
+      }).join("");
+      html += dualView(
+        `<div class="table-wrap table-wrap--tall"><table><thead><tr>
+          <th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ สำนักงานใหญ่</th><th class="num">คงเหลือ สาขา</th><th class="num">แนะนำ</th><th>หน่วย</th><th class="num">จำนวน</th><th></th>
+        </tr></thead><tbody>${suggestTableRows}</tbody></table></div>`,
+        itemCards(suggestCardRows)
+      );
       if(q) html += `<p class="meta" style="margin:.5rem 1rem 0">แสดง ${filtered.length} จาก ${suggestItems.length} รายการ</p>`;
     }
     html += `</div>`;
@@ -740,10 +819,17 @@ async function renderRequest(el){
     html += `<div class="card card-table"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
     if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ</div>`;
     else {
-      html += `<div class="table-wrap"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน</th><th></th></tr></thead><tbody>`;
-      html += cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td class="num">${fmtQty(n.qty)}</td>
+      const cartTableRows = cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td class="num">${fmtQty(n.qty)}</td>
         <td><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></td></tr>`).join("");
-      html += `</tbody></table></div>`;
+      const cartCardRows = cartItems.map(n=>`<div class="item-card">
+        <div class="item-card-head"><code>${n.bcode}</code><span class="num">${fmtQty(n.qty)}</span></div>
+        <div class="item-card-desc">${n.descr||""}</div>
+        <div class="item-card-actions"><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></div>
+      </div>`).join("");
+      html += dualView(
+        `<div class="table-wrap"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน</th><th></th></tr></thead><tbody>${cartTableRows}</tbody></table></div>`,
+        itemCards(cartCardRows)
+      );
     }
     html += `<div class="row-actions">
       <button class="btn btn-ghost" onclick="setRequestStep(1)">← ย้อนกลับ</button>
@@ -808,7 +894,7 @@ async function renderRequest(el){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong> · HQ ${fmtQty(p.hq_qtyoh2)} · SYP ${fmtQty(p.syp_qtyoh2)}`;
+        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong> · สำนักงานใหญ่ ${fmtQty(p.hq_qtyoh2)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
       }catch(e){
         manualPreviewEl.style.display = "block";
         manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
@@ -834,12 +920,18 @@ async function renderRequest(el){
     const cartItems = cart.items || [];
     el.innerHTML = `${stepBar(3)}
       <div class="card">
-        <p><strong>ทิศทาง:</strong> ${OTHER} จัดส่ง → ${SITE} รับเข้า</p>
-        <p class="meta">ตรวจสอบรายการก่อนส่งคำขอ — ${OTHER} จะเห็นในรายการรอจัด</p>
+        <p><strong>ทิศทาง:</strong> ${OTHER_LABEL} จัดส่ง → ${SITE_LABEL} รับเข้า</p>
+        <p class="meta">ตรวจสอบรายการก่อนส่งคำขอ — ${OTHER_LABEL} จะเห็นในรายการรอจัด</p>
         ${submitBillNoteHtml(OTHER, SITE)}
-        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
-          ${cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
-        </tbody></table></div>
+        ${dualView(
+          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
+            ${cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
+          </tbody></table></div>`,
+          itemCards(cartItems.map(n=>`<div class="item-card">
+            <div class="item-card-head"><code>${n.bcode}</code><span class="num">${fmtQty(n.qty)}</span></div>
+            <div class="item-card-desc">${n.descr||""}</div>
+          </div>`).join(""))
+        )}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setRequestStep(2)">← แก้ไขรายการ</button>
           ${editingDraftId ? `<button class="btn btn-ghost" id="btnSaveDraft">บันทึกร่าง</button>` : ""}
@@ -910,25 +1002,35 @@ async function renderReceive(el){
   const data = await api("/transfer/api/receive-lines");
   const queue = groupReceiveQueue(data.items||[]);
   if(!queue.length){
-    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">จะแสดงเมื่อ ${OTHER} จัดส่งและออกใบ TF แล้วเท่านั้น</span></div>
+    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">จะแสดงเมื่อ ${OTHER_LABEL} จัดส่งและออกใบ TF แล้วเท่านั้น</span></div>
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     return;
   }
 
   if(receiveStep === 1){
     el.innerHTML = `${receiveStepBar(1)}
-      <div class="flow-hint">เลือกคำขอที่ ${OTHER} จัดส่งแล้ว (มีใบ TF SIMAS) → กรอกจำนวนรับ → ยืนยันเพื่อออกใบ TF PIMAS</div>
+      <div class="flow-hint">เลือกคำขอที่ ${OTHER_LABEL} จัดส่งแล้ว (มี${SHIP_BILL} TF) → กรอกจำนวนรับ → ยืนยันเพื่อออก${RECV_BILL} TF</div>
       ${billTimelineHtml(OTHER, SITE)}
-      <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>ใบจัด</th><th class="num">รายการค้างรับ</th><th>วันที่</th><th></th></tr></thead><tbody>
-        ${queue.map((g,i)=>`<tr class="row-clickable" data-recv-idx="${i}">
-          <td><code>${g.short_id}</code></td>
-          <td class="dir">${dirLabel(g.from_branch,g.to_branch)}</td>
-          <td><code>${g.ship_billno||"-"}</code></td>
-          <td class="num">${g.lines.length}</td>
-          <td>—</td>
-          <td><button class="btn btn-primary" data-recv-open="${i}">เปิดรับสินค้า</button></td>
-        </tr>`).join("")}
-      </tbody></table></div>
+      <div class="card">${dualView(
+        `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>ใบจัด</th><th class="num">รายการค้างรับ</th><th>วันที่</th><th></th></tr></thead><tbody>
+          ${queue.map((g,i)=>`<tr class="row-clickable" data-recv-idx="${i}">
+            <td><code>${g.short_id}</code></td>
+            <td class="dir">${dirLabel(g.from_branch,g.to_branch)}</td>
+            <td><code>${g.ship_billno||"-"}</code></td>
+            <td class="num">${g.lines.length}</td>
+            <td>—</td>
+            <td><button class="btn btn-primary" data-recv-open="${i}">เปิดรับสินค้า</button></td>
+          </tr>`).join("")}
+        </tbody></table></div>`,
+        itemCards(queue.map((g,i)=>`<div class="item-card row-clickable" data-recv-idx="${i}">
+          <div class="item-card-head"><code>${g.short_id}</code><span class="dir">${dirLabel(g.from_branch,g.to_branch)}</span></div>
+          <div class="item-card-grid">
+            <div class="item-field"><span class="lbl">ใบจัด</span><span class="val"><code>${g.ship_billno||"-"}</code></span></div>
+            <div class="item-field num"><span class="lbl">ค้างรับ</span><span class="val">${g.lines.length} รายการ</span></div>
+          </div>
+          <div class="item-card-actions"><button class="btn btn-primary" data-recv-open="${i}">เปิดรับสินค้า</button></div>
+        </div>`).join(""))
+      )}
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     window._receiveGroups = queue;
     el.querySelectorAll("[data-recv-open]").forEach(b=>b.onclick=e=>{
@@ -936,10 +1038,10 @@ async function renderReceive(el){
       receiveShipment = window._receiveGroups[Number(b.dataset.recvOpen)];
       setReceiveStep(2);
     });
-    el.querySelectorAll("tr.row-clickable[data-recv-idx]").forEach(tr=>{
-      tr.onclick = e=>{
+    el.querySelectorAll(".row-clickable[data-recv-idx]").forEach(row=>{
+      row.onclick = e=>{
         if(e.target.closest("button")) return;
-        receiveShipment = window._receiveGroups[Number(tr.dataset.recvIdx)];
+        receiveShipment = window._receiveGroups[Number(row.dataset.recvIdx)];
         setReceiveStep(2);
       };
     });
@@ -966,12 +1068,30 @@ async function renderReceive(el){
         <td class="num"><input class="qty-input recv-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-shipment-line="${ln.shipment_line_id}"/></td></tr>`;
     }).join("");
+    const cardRows = openLines.map(ln=>{
+      const remain = Number(ln.qty_open||0);
+      return `<div class="item-card">
+        <div class="item-card-head"><code>${ln.bcode}</code></div>
+        <div class="item-card-desc">${ln.descr||""}</div>
+        <div class="item-card-grid">
+          <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_shipped)}</span></div>
+          <div class="item-field num"><span class="lbl">รับแล้ว</span><span class="val">${fmtQty(ln.qty_received)}</span></div>
+        </div>
+        <div class="item-card-actions">
+          <label class="meta" style="margin-right:auto">รับครั้งนี้</label>
+          <input class="qty-input recv-qty" type="number" min="0" max="${remain}" step="1" value="${remain}" data-shipment-line="${ln.shipment_line_id}"/>
+        </div>
+      </div>`;
+    }).join("");
     el.innerHTML = `${receiveStepBar(2)}
       <div class="card">
         <p><strong>${ship.short_id}</strong> · ${dirLabel(ship.from_branch, ship.to_branch)}</p>
         <p class="meta">ใบจัด <code>${ship.ship_billno||"-"}</code> — ระบุจำนวนที่รับแต่ละรายการ</p>
         ${receiveBillNoteHtml(ship.from_branch, ship.to_branch, ship.ship_billno)}
-        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
+        ${dualView(
+          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+          itemCards(cardRows)
+        )}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setReceiveStep(1)">← เลือกคำขออื่น</button>
           <button class="btn btn-primary" id="btnRecvNext2">ถัดไป → ตรวจสอบ</button>
@@ -996,12 +1116,24 @@ async function renderReceive(el){
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0).map(ln=>`
       <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.shipment_line_id])}</strong></td></tr>
     `).join("");
+    const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0).map(ln=>`<div class="item-card">
+      <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.shipment_line_id])}</strong></div>
+      <div class="item-card-desc">${ln.descr||""}</div>
+      <div class="item-card-grid">
+        <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_shipped)}</span></div>
+        <div class="item-field num"><span class="lbl">รับแล้ว</span><span class="val">${fmtQty(ln.qty_received)}</span></div>
+        <div class="item-field num"><span class="lbl">รับครั้งนี้</span><span class="val"><strong>${fmtQty(qtyMap[ln.shipment_line_id])}</strong></span></div>
+      </div>
+    </div>`).join("");
     el.innerHTML = `${receiveStepBar(3)}
       <div class="card">
         <p><strong>${ship.short_id}</strong> · ${dirLabel(ship.from_branch, ship.to_branch)}</p>
         <p class="meta">ใบจัด <code>${ship.ship_billno||"-"}</code></p>
         ${receiveBillNoteHtml(ship.from_branch, ship.to_branch, ship.ship_billno)}
-        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>
+        ${dualView(
+          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>`,
+          itemCards(confirmCards)
+        )}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setReceiveStep(2)">← แก้ไขจำนวน</button>
           <button class="btn btn-primary" id="btnConfirmReceive">ยืนยันรับเข้า (ออกใบ TF)</button>
@@ -1031,28 +1163,39 @@ async function renderPrepare(el){
 
   if(prepareStep === 1){
     el.innerHTML = `${prepareStepBar(1)}
-      <div class="flow-hint">เลือกคำขอ → กรอกจำนวนที่จัด → ยืนยันเพื่อออกใบ TF SIMAS</div>
+      <div class="flow-hint">เลือกคำขอ → กรอกจำนวนที่จัด → ยืนยันเพื่อออก${SHIP_BILL} TF</div>
       ${billTimelineHtml(SITE, OTHER)}
-      <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th class="num">รายการ</th><th></th></tr></thead><tbody>
-        ${items.map((r,i)=>`<tr class="row-clickable" data-prep-idx="${i}">
-          <td><code>${r.short_id}</code></td>
-          <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-          <td>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch)}</td>
-          <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
-          <td class="num">${r.line_count||0}</td>
-          <td><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></td>
-        </tr>`).join("")}
-      </tbody></table></div>
+      <div class="card">${dualView(
+        `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th class="num">รายการ</th><th></th></tr></thead><tbody>
+          ${items.map((r,i)=>`<tr class="row-clickable" data-prep-idx="${i}">
+            <td><code>${r.short_id}</code></td>
+            <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+            <td>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch)}</td>
+            <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
+            <td class="num">${r.line_count||0}</td>
+            <td><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></td>
+          </tr>`).join("")}
+        </tbody></table></div>`,
+        itemCards(items.map((r,i)=>`<div class="item-card row-clickable" data-prep-idx="${i}">
+          <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch)}</div>
+          <div class="item-card-grid">
+            <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
+            <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.requested_at||r.created_at||"").slice(0,10)}</span></div>
+            <div class="item-field num"><span class="lbl">รายการ</span><span class="val">${r.line_count||0}</span></div>
+          </div>
+          <div class="item-card-actions"><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></div>
+        </div>`).join(""))
+      )}
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     window._prepareList = items;
     el.querySelectorAll("[data-prep-open]").forEach(b=>b.onclick=e=>{
       e.stopPropagation();
       openPrepareRequest(window._prepareList[Number(b.dataset.prepOpen)]);
     });
-    el.querySelectorAll("tr.row-clickable[data-prep-idx]").forEach(tr=>{
-      tr.onclick = e=>{
+    el.querySelectorAll(".row-clickable[data-prep-idx]").forEach(row=>{
+      row.onclick = e=>{
         if(e.target.closest("button")) return;
-        openPrepareRequest(window._prepareList[Number(tr.dataset.prepIdx)]);
+        openPrepareRequest(window._prepareList[Number(row.dataset.prepIdx)]);
       };
     });
     return;
@@ -1073,6 +1216,7 @@ async function renderPrepare(el){
 
   if(prepareStep === 2){
     const shipBranch = (req.from_branch||SITE).toUpperCase();
+    const shipBranchLabel = branchLabel(shipBranch);
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
       const stock = branchQtyoh2(ln, shipBranch);
@@ -1080,12 +1224,32 @@ async function renderPrepare(el){
         <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-line="${ln.line_id}"/></td></tr>`;
     }).join("");
+    const cardRows = openLines.map(ln=>{
+      const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
+      const stock = branchQtyoh2(ln, shipBranch);
+      return `<div class="item-card">
+        <div class="item-card-head"><code>${ln.bcode}</code></div>
+        <div class="item-card-desc">${ln.descr||""}</div>
+        <div class="item-card-grid">
+          <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtStockDual(stock, ln)}</span></div>
+          <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
+          <div class="item-field num"><span class="lbl">จัดแล้ว</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
+        </div>
+        <div class="item-card-actions">
+          <label class="meta" style="margin-right:auto">จัดครั้งนี้</label>
+          <input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}" data-line="${ln.line_id}"/>
+        </div>
+      </div>`;
+    }).join("");
     el.innerHTML = `${prepareStepBar(2)}
       <div class="card">
         <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
-        <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้ · คงเหลือ ${shipBranch} อ่านจาก PARTS9 สด</p>
+        <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้ · คงเหลือ ${shipBranchLabel} อ่านจาก PARTS9 สด</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
-        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranch}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
+        ${dualView(
+          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+          itemCards(cardRows)
+        )}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(1)">← เลือกคำขออื่น</button>
           <button class="btn btn-primary" id="btnPrepNext2">ถัดไป → ตรวจสอบ</button>
@@ -1108,15 +1272,29 @@ async function renderPrepare(el){
   if(prepareStep === 3){
     const qtyMap = req._qtyDraft||{};
     const shipBranch = (req.from_branch||SITE).toUpperCase();
+    const shipBranchLabel = branchLabel(shipBranch);
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
       <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtStockDual(branchQtyoh2(ln, shipBranch), ln)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
     `).join("");
+    const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`<div class="item-card">
+      <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.line_id])}</strong></div>
+      <div class="item-card-desc">${ln.descr||""}</div>
+      <div class="item-card-grid">
+        <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtStockDual(branchQtyoh2(ln, shipBranch), ln)}</span></div>
+        <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
+        <div class="item-field num"><span class="lbl">จัดแล้ว</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
+        <div class="item-field num"><span class="lbl">จัดครั้งนี้</span><span class="val"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></span></div>
+      </div>
+    </div>`).join("");
     el.innerHTML = `${prepareStepBar(3)}
       <div class="card">
         <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
-        <p class="meta">ตรวจสอบจำนวนก่อนยืนยัน — ระบบจะออกใบ TF SIMAS ทันที</p>
+        <p class="meta">ตรวจสอบจำนวนก่อนยืนยัน — ระบบจะออก${SHIP_BILL} TF ทันที</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
-        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranch}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>
+        ${dualView(
+          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>`,
+          itemCards(confirmCards)
+        )}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(2)">← แก้ไขจำนวน</button>
           <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันจัดส่ง (ออกใบ TF)</button>
@@ -1162,30 +1340,43 @@ async function renderStatus(el){
       <button class="status-tab ${statusFilter==="done"?"on":""}" data-sf="done">เสร็จสิ้น</button>
     </div>`;
   if(drafts.length){
+    const draftTableRows = drafts.map(r=>`<tr class="row-clickable" data-detail="${r.transfer_id}">
+      <td><code>${r.short_id}</code></td>
+      <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+      <td class="num">${r.line_count||0}</td>
+      <td>${(r.created_at||"").slice(0,10)}</td>
+      <td class="row-actions" style="margin:0">
+        <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
+        <button class="btn btn-ghost" data-edit="${r.transfer_id}">แก้ไข</button>
+        <button class="btn btn-ghost" data-del-draft="${r.transfer_id}">ลบ</button>
+      </td>
+    </tr>`).join("");
+    const draftCardRows = drafts.map(r=>`<div class="item-card row-clickable" data-detail="${r.transfer_id}">
+      <div class="item-card-head"><code>${r.short_id}</code><span class="dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
+      <div class="item-card-grid">
+        <div class="item-field num"><span class="lbl">รายการ</span><span class="val">${r.line_count||0}</span></div>
+        <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.created_at||"").slice(0,10)}</span></div>
+      </div>
+      <div class="item-card-actions">
+        <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
+        <button class="btn btn-ghost" data-edit="${r.transfer_id}">แก้ไข</button>
+        <button class="btn btn-ghost" data-del-draft="${r.transfer_id}">ลบ</button>
+      </div>
+    </div>`).join("");
     el.innerHTML += `<div class="card"><strong>ร่าง (${drafts.length})</strong>
       <p class="meta">ยังไม่ส่งคำขอ — แก้ไขหรือลบได้</p>
-      <div class="table-wrap" style="margin-top:.5rem"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th class="num">รายการ</th><th>วันที่</th><th></th></tr></thead><tbody>
-        ${drafts.map(r=>`<tr class="row-clickable" data-detail="${r.transfer_id}">
-          <td><code>${r.short_id}</code></td>
-          <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-          <td class="num">${r.line_count||0}</td>
-          <td>${(r.created_at||"").slice(0,10)}</td>
-          <td class="row-actions" style="margin:0">
-            <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
-            <button class="btn btn-ghost" data-edit="${r.transfer_id}">แก้ไข</button>
-            <button class="btn btn-ghost" data-del-draft="${r.transfer_id}">ลบ</button>
-          </td>
-        </tr>`).join("")}
-      </tbody></table></div></div>`;
+      ${dualView(
+        `<div class="table-wrap" style="margin-top:.5rem"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th class="num">รายการ</th><th>วันที่</th><th></th></tr></thead><tbody>${draftTableRows}</tbody></table></div>`,
+        itemCards(draftCardRows)
+      )}</div>`;
   }
   if(!active.length && !drafts.length){
     el.innerHTML += `<div class="card"><div class="empty">ไม่มีรายการ</div></div>`;
   } else if(active.length){
-    el.innerHTML += `<div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th><th></th></tr></thead><tbody>
-      ${active.map(r=>{
-        const canCancel = r.status==="requested";
-        const mm = !!r.prep_recv_mismatch;
-        return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
+    const activeTableRows = active.map(r=>{
+      const canCancel = r.status==="requested";
+      const mm = !!r.prep_recv_mismatch;
+      return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
         <td>${badge(r.status,r.from_branch,r.to_branch,mm)}</td>
         <td>${pipeline(r.status,mm)}</td>
@@ -1195,8 +1386,27 @@ async function renderStatus(el){
           ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
         </td>
       </tr>`;
-      }).join("")}
-    </tbody></table></div></div>`;
+    }).join("");
+    const activeCardRows = active.map(r=>{
+      const canCancel = r.status==="requested";
+      const mm = !!r.prep_recv_mismatch;
+      return `<div class="item-card row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
+        <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,mm)}</div>
+        <div class="item-card-grid">
+          <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
+          <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.requested_at||r.created_at||"").slice(0,10)}</span></div>
+        </div>
+        ${pipeline(r.status,mm)}
+        <div class="item-card-actions">
+          <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
+          ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+    el.innerHTML += `<div class="card">${dualView(
+      `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th><th></th></tr></thead><tbody>${activeTableRows}</tbody></table></div>`,
+      itemCards(activeCardRows)
+    )}</div>`;
   }
   el.querySelectorAll("[data-sf]").forEach(b=>b.onclick=()=>{statusFilter=b.dataset.sf; renderStatus(el);});
   el.querySelectorAll("[data-detail-btn]").forEach(b=>b.onclick=e=>{e.stopPropagation(); openRequestDetail(b.dataset.detailBtn);});
