@@ -57,12 +57,13 @@ def test_suggest_transfer_skus_from_iclow_to_be_ordered():
     def fake_engine(site):
         return hq_engine if site == "hq" else syp_engine
 
-    with patch("src.transfer.parts9.list_iclow", return_value=iclow_rows) as mock_list:
+    with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered") as mock_fetch:
+        mock_fetch.return_value = iclow_rows["rows"]
         with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
             with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
                 items = suggest_transfer_skus(site="SYP", limit=50)
 
-    mock_list.assert_called_once_with(site="syp", status="to_be_ordered", limit=200, offset=0)
+    mock_fetch.assert_called_once_with("syp")
     assert len(items) == 2
     a = next(i for i in items if i["bcode"] == "A001")
     assert a["suggest_qty"] == 5.0
@@ -88,7 +89,7 @@ def test_suggest_transfer_skus_skips_do_not_restock():
             "OK01": _meta(1.0, ui1="ea", ui2="กล่อง", mtp2=12.0),
         }
 
-    with patch("src.transfer.parts9.list_iclow", return_value=iclow_rows):
+    with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows["rows"]):
         with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
             with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
                 items = suggest_transfer_skus(site="hq")
@@ -120,7 +121,7 @@ def test_suggest_transfer_skus_includes_icmas_low_stock_without_iclow():
             "02050663": _meta(1.0, descr="สะดือแหนบหน้า", ui1="หน่วย"),
         }
 
-    with patch("src.transfer.parts9.list_iclow", return_value=iclow_rows):
+    with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=[]):
         with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
             with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
                 with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
@@ -130,3 +131,61 @@ def test_suggest_transfer_skus_includes_icmas_low_stock_without_iclow():
     assert items[0]["bcode"] == "02050663"
     assert items[0]["descr"] == "สะดือแหนบหน้า"
     assert items[0]["source"] == "icmas"
+
+
+def test_suggest_preserves_iclow_order_not_alphabetical():
+    iclow_rows = [
+        {"bcode": "Z999", "descr": "Z last", "qty": 1, "ordered_qty": 1},
+        {"bcode": "A001", "descr": "A first", "qty": 2, "ordered_qty": 2},
+    ]
+
+    with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows):
+        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+            with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
+                with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
+                    items = suggest_transfer_skus(site="SYP", limit=50)
+
+    assert [i["bcode"] for i in items] == ["Z999", "A001"]
+
+
+def test_suggest_icmas_items_after_iclow_items():
+    iclow_rows = [{"bcode": "IC01", "descr": "iclow", "qty": 1, "ordered_qty": 1}]
+    icmas_low = {
+        "IC02": {
+            "bcode": "IC02",
+            "descr": "icmas only",
+            "suggest_qty": 1.0,
+            "qtyoh2": 0.0,
+            "qtymin": 1.0,
+            "ui1": "",
+            "ui2": "",
+            "mtp2": 1.0,
+            "source": "icmas",
+        }
+    }
+
+    with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows):
+        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+            with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
+                with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
+                    items = suggest_transfer_skus(site="SYP", limit=50)
+
+    assert [i["bcode"] for i in items] == ["IC01", "IC02"]
+    assert items[0]["source"] == "iclow"
+    assert items[1]["source"] == "icmas"
+
+
+def test_fetch_all_iclow_paginates():
+    from src.transfer.parts9 import _fetch_all_iclow_to_be_ordered
+
+    def fake_list(*, site, status, limit, offset):
+        if offset == 0:
+            return {"rows": [{"bcode": "A", "qty": 1}], "count": 2}
+        return {"rows": [{"bcode": "B", "qty": 1}], "count": 2}
+
+    with patch("src.transfer.parts9.list_iclow", side_effect=fake_list):
+        rows = _fetch_all_iclow_to_be_ordered("syp")
+
+    assert len(rows) == 2
+    assert rows[0]["bcode"] == "A"
+    assert rows[1]["bcode"] == "B"

@@ -64,6 +64,67 @@ def _fetch_icmas_meta(
     return out
 
 
+_ICLOW_PAGE_SIZE = 200
+_ICMAS_EXTRA_LIMIT = 50
+
+
+def _fetch_all_iclow_to_be_ordered(site_key: str) -> list[dict[str, Any]]:
+    """Paginate list_iclow so suggest covers the full รอสั่งซื้อ tab, not just the first page."""
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    total: int | None = None
+    while True:
+        data = list_iclow(
+            site=site_key,
+            status="to_be_ordered",
+            limit=_ICLOW_PAGE_SIZE,
+            offset=offset,
+        )
+        batch = list(data.get("rows") or [])
+        if total is None:
+            total = int(data.get("count") or len(batch))
+        rows.extend(batch)
+        if not batch or len(rows) >= total:
+            break
+        offset += _ICLOW_PAGE_SIZE
+    return rows
+
+
+def _enrich_suggest_item(
+    item: dict[str, Any],
+    *,
+    site_key: str,
+    hq_icmas: dict[str, dict[str, Any]],
+    syp_icmas: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    bcode = item["bcode"]
+    local_icmas = hq_icmas if site_key == "hq" else syp_icmas
+    local_meta = local_icmas.get(bcode)
+    hq_meta = hq_icmas.get(bcode)
+    syp_meta = syp_icmas.get(bcode)
+    if hq_meta:
+        item["hq_qtyoh2"] = hq_meta["qtyoh2"]
+    if syp_meta:
+        item["syp_qtyoh2"] = syp_meta["qtyoh2"]
+    for meta in (local_meta, hq_meta, syp_meta):
+        if not meta:
+            continue
+        if not item.get("descr") and meta.get("descr"):
+            item["descr"] = meta["descr"]
+        if not item.get("ui1") and meta.get("ui1"):
+            item["ui1"] = meta["ui1"]
+        if not item.get("ui2") and meta.get("ui2"):
+            item["ui2"] = meta["ui2"]
+        if float(meta.get("mtp2") or 1.0) > 1.0:
+            item["mtp2"] = float(meta["mtp2"])
+    if local_meta:
+        item["qtyoh2"] = local_meta["qtyoh2"]
+        item["qtymin"] = local_meta["qtymin"]
+    else:
+        item["qtyoh2"] = item.get(f"{site_key}_qtyoh2", 0.0)
+    return item
+
+
 def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, dict[str, Any]]:
     """Requester-site ICMAS rows at/below min — covers re-order after ICLOW already stamped."""
     sql = text(
@@ -115,21 +176,23 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
 
 
 def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]]:
-    """ICLOW รอสั่งซื้อ + requester ICMAS low-stock (re-order after prior transfer)."""
+    """ICLOW รอสั่งซื้อ (same order/qty as /po tab) + optional ICMAS low-stock extras."""
     site_key = (site or "hq").strip().lower()
     lim = max(1, min(int(limit or 200), 200))
-    scan = min(max(lim * 4, lim), 800)
-    data = list_iclow(site=site_key, status="to_be_ordered", limit=scan, offset=0)
+    iclow_rows = _fetch_all_iclow_to_be_ordered(site_key)
 
+    iclow_order: list[str] = []
     by_bcode: dict[str, dict[str, Any]] = {}
-    for row in data.get("rows") or []:
+    for row in iclow_rows:
         bcode = (row.get("bcode") or "").strip()
         if not bcode:
             continue
         qty = _parse_qty(row.get("qty") or row.get("ordered_qty"))
         if bcode in by_bcode:
             by_bcode[bcode]["suggest_qty"] += qty
+            by_bcode[bcode]["iclow_line_count"] = int(by_bcode[bcode].get("iclow_line_count") or 1) + 1
             continue
+        iclow_order.append(bcode)
         by_bcode[bcode] = {
             "bcode": bcode,
             "descr": (row.get("descr") or "").strip(),
@@ -138,17 +201,41 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
             "hq_qtyoh2": 0.0,
             "syp_qtyoh2": 0.0,
             "qtymin": 0.0,
-            "ui1": "",
+            "ui1": (row.get("ui") or "").strip(),
             "ui2": "",
             "mtp2": 1.0,
             "source": "iclow",
+            "iclow_line_count": 1,
         }
 
-    local_engine = get_site_engine(site_key)
-    for bcode, row in _suggest_from_icmas_low_stock(local_engine, limit=scan).items():
-        if bcode in by_bcode:
+    icmas_candidates = _suggest_from_icmas_low_stock(
+        get_site_engine(site_key), limit=_ICMAS_EXTRA_LIMIT
+    )
+    icmas_bcodes = [b for b in icmas_candidates if b not in by_bcode]
+
+    all_bcodes = list(dict.fromkeys([*iclow_order, *icmas_bcodes]))
+    hq_icmas = _fetch_icmas_meta(get_site_engine("hq"), all_bcodes)
+    syp_icmas = _fetch_icmas_meta(get_site_engine("syp"), all_bcodes)
+    local_icmas = hq_icmas if site_key == "hq" else syp_icmas
+
+    out: list[dict[str, Any]] = []
+    for bcode in iclow_order:
+        if len(out) >= lim:
+            break
+        local_meta = local_icmas.get(bcode)
+        if local_meta and local_meta.get("blocked"):
             continue
-        by_bcode[bcode] = {
+        item = dict(by_bcode[bcode])
+        out.append(_enrich_suggest_item(item, site_key=site_key, hq_icmas=hq_icmas, syp_icmas=syp_icmas))
+
+    for bcode in sorted(icmas_bcodes):
+        if len(out) >= lim + _ICMAS_EXTRA_LIMIT:
+            break
+        row = icmas_candidates[bcode]
+        local_meta = local_icmas.get(bcode)
+        if local_meta and local_meta.get("blocked"):
+            continue
+        item = {
             "bcode": bcode,
             "descr": row.get("descr") or "",
             "suggest_qty": row.get("suggest_qty") or 1.0,
@@ -160,44 +247,11 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
             "ui2": row.get("ui2") or "",
             "mtp2": row.get("mtp2") or 1.0,
             "source": "icmas",
+            "iclow_line_count": 0,
         }
+        out.append(_enrich_suggest_item(item, site_key=site_key, hq_icmas=hq_icmas, syp_icmas=syp_icmas))
 
-    bcodes = list(by_bcode)
-    hq_icmas = _fetch_icmas_meta(get_site_engine("hq"), bcodes)
-    syp_icmas = _fetch_icmas_meta(get_site_engine("syp"), bcodes)
-    local_icmas = hq_icmas if site_key == "hq" else syp_icmas
-
-    out: list[dict[str, Any]] = []
-    for bcode in sorted(by_bcode):
-        local_meta = local_icmas.get(bcode)
-        if local_meta and local_meta.get("blocked"):
-            continue
-        item = by_bcode[bcode]
-        hq_meta = hq_icmas.get(bcode)
-        syp_meta = syp_icmas.get(bcode)
-        if hq_meta:
-            item["hq_qtyoh2"] = hq_meta["qtyoh2"]
-        if syp_meta:
-            item["syp_qtyoh2"] = syp_meta["qtyoh2"]
-        for meta in (local_meta, hq_meta, syp_meta):
-            if not meta:
-                continue
-            if not item.get("descr") and meta.get("descr"):
-                item["descr"] = meta["descr"]
-            if not item.get("ui1") and meta.get("ui1"):
-                item["ui1"] = meta["ui1"]
-            if not item.get("ui2") and meta.get("ui2"):
-                item["ui2"] = meta["ui2"]
-            if float(meta.get("mtp2") or 1.0) > 1.0:
-                item["mtp2"] = float(meta["mtp2"])
-        if local_meta:
-            item["qtyoh2"] = local_meta["qtyoh2"]
-            item["qtymin"] = local_meta["qtymin"]
-        else:
-            item["qtyoh2"] = item.get(f"{site_key}_qtyoh2", 0.0)
-        out.append(item)
-
-    return out[:lim]
+    return out
 
 
 def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
