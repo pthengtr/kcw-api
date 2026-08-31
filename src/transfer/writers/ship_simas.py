@@ -76,6 +76,7 @@ def post_transfer_ship(
                 "jourmode": jourmode,
                 "billdate": billdate,
                 "jourtime": billtime,
+                "billtime": billtime,
                 "billtype": billtype,
                 "billno": billno,
                 "lines": len(lines),

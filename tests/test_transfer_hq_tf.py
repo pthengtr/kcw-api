@@ -65,3 +65,10 @@ def test_post_transfer_ship_basic_creation(mock_get_shipment, mock_engine, mock_
         )
     assert result["ship_billno"].startswith("TF")
     mock_engine.assert_called_once_with("HQ")
+    simas_params = [
+        call.args[1]
+        for call in mock_conn.execute.call_args_list
+        if "INSERT INTO dbo.SIMAS" in str(call.args[0])
+    ]
+    assert simas_params
+    assert simas_params[0]["billtime"] == simas_params[0]["jourtime"]
