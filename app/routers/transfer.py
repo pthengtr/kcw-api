@@ -12,17 +12,21 @@ from src.stock_check.auth import TokenError, mint_access_token, verify_access_to
 from src.transfer.config import get_transfer_settings
 from src.transfer.db import (
     TRANSFER_SCHEMA,
+    BumpError,
     add_shipment_lines,
     bump_line_prepared,
     bump_line_received,
     bump_shipment_line_received,
     cancel_request,
     create_draft,
+    create_receipt,
     create_shipment,
     delete_draft,
     delete_need,
     enrich_lines,
+    get_receipt_by_token,
     get_request,
+    get_shipment_by_token,
     get_transfer_supabase_client,
     list_lines,
     list_need,
@@ -32,6 +36,7 @@ from src.transfer.db import (
     list_shipments,
     refresh_request_status,
     set_request_lines,
+    shipment_has_lines,
     submit_request,
     upsert_need,
 )
@@ -428,6 +433,10 @@ def api_submit(transfer_id: str, request: Request):
         return JSONResponse({"error": check.reason}, status_code=400)
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
     from_branch = (header.get("from_branch") or "HQ").upper()
+    req = submit_request(client, transfer_id, actor=ident.display_name)
+    if not req:
+        return JSONResponse({"error": "ส่งคำขอไม่สำเร็จ"}, status_code=409)
+    stamped_ids: list[str] = []
     if should_stamp_iclow(
         enabled=settings.transfer_iclow_stamp_enabled,
         site=settings.site,
@@ -438,17 +447,20 @@ def api_submit(transfer_id: str, request: Request):
             for line in lines:
                 stamped = stamp_on_submit(bcode=line["bcode"], short_id=short_id)
                 if stamped and stamped.get("iclow_id") is not None:
+                    stamped_ids.append(str(stamped["iclow_id"]))
                     _table(client, "lines").update({"iclow_id": stamped["iclow_id"]}).eq(
                         "line_id", line["line_id"]
                     ).execute()
         except ICLOWStampError as exc:
+            for iclow_id in stamped_ids:
+                try:
+                    revert_on_cancel(iclow_id=iclow_id)
+                except ICLOWStampError:
+                    pass
             return JSONResponse(
                 {"error": f"stamp ICLOW ไม่สำเร็จ: {exc}"},
                 status_code=403 if exc.code == "iclow_permission_denied" else 500,
             )
-    req = submit_request(client, transfer_id, actor=ident.display_name)
-    if not req:
-        return JSONResponse({"error": "ส่งคำขอไม่สำเร็จ"}, status_code=409)
     return req
 
 
@@ -470,6 +482,18 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             {"error": "PARTS9 ship write ปิดอยู่ — เปิด TRANSFER_*_SHIP_WRITE_ENABLED"},
             status_code=409,
         )
+    client_token = body.client_token or str(uuid4())
+    existing_shipment = get_shipment_by_token(
+        client, transfer_id=transfer_id, client_token=client_token
+    )
+    if existing_shipment:
+        billno = existing_shipment.get("ship_billno") or existing_shipment.get("tf_billno")
+        if billno:
+            return {
+                "ship_billno": billno,
+                "tf_billno": billno,
+                "shipment_id": existing_shipment["shipment_id"],
+            }
     lines = enrich_lines(list_lines(client, transfer_id))
     header_status = header.get("status") or "requested"
     for line in body.lines:
@@ -495,7 +519,6 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             line["bcode"] = line_info.get("bcode")
         if not line.get("descr"):
             line["descr"] = line_info.get("descr")
-    client_token = body.client_token or str(uuid4())
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
     try:
         result = post_transfer_ship(
@@ -510,14 +533,24 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
         code = 403 if exc.code == "permission_denied" else 500
         return JSONResponse({"error": str(exc)}, status_code=code)
     billno = result.get("ship_billno") or result.get("tf_billno")
-    shipment = create_shipment(
-        client, transfer_id=transfer_id, tf_billno=billno, client_token=client_token
-    )
-    add_shipment_lines(client, shipment_id=shipment["shipment_id"], lines=body.lines)
-    for line in body.lines:
-        bump_line_prepared(client, line_id=line["line_id"], qty_ship=line["qty_ship"])
-    refresh_request_status(client, transfer_id)
-    return {**result, "shipment_id": shipment["shipment_id"]}
+    shipment_id = result.get("shipment_id")
+    try:
+        if not shipment_id:
+            shipment = create_shipment(
+                client, transfer_id=transfer_id, tf_billno=billno, client_token=client_token
+            )
+            shipment_id = shipment["shipment_id"]
+        if not shipment_has_lines(client, shipment_id):
+            add_shipment_lines(client, shipment_id=shipment_id, lines=body.lines)
+        for line in body.lines:
+            bump_line_prepared(client, line_id=line["line_id"], qty_ship=line["qty_ship"])
+        refresh_request_status(client, transfer_id)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            {"error": str(exc), "billno": billno, "reconcile": True},
+            status_code=500,
+        )
+    return {**result, "shipment_id": shipment_id}
 
 
 @router.post("/api/shipments/{shipment_id}/receive")
@@ -591,6 +624,15 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
         if not line.get("iclow_id"):
             line["iclow_id"] = line_info.get("iclow_id")
     client_token = body.client_token or str(uuid4())
+    existing_receipt = get_receipt_by_token(client, client_token)
+    if existing_receipt:
+        return {
+            "status": "received",
+            "receive_billno": existing_receipt["receive_billno"],
+            "ship_billno": ship_billno,
+            "client_token": client_token,
+            "warnings": [],
+        }
     try:
         result = post_transfer_receive(
             to_branch=to_branch,
@@ -603,43 +645,59 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
     except TransferReceiveError as exc:
         code = 403 if exc.code == "permission_denied" else 500
         return JSONResponse({"error": str(exc)}, status_code=code)
-    for line in body.lines:
-        line_id = line.get("line_id")
-        qty_recv = float(line.get("qty_receive") or 0)
-        if line_id:
-            bump_line_received(client, line_id=line_id, qty_receive=qty_recv)
-        shipment_line_id = line.get("shipment_line_id")
-        if shipment_line_id:
-            bump_shipment_line_received(
-                client, shipment_line_id=str(shipment_line_id), qty_receive=qty_recv
-            )
-        line_id = line.get("line_id")
-        line_info = transfer_lines.get(line_id, {}) if line_id else {}
-        new_recv = float(line_info.get("qty_received") or 0) + qty_recv
-        req_qty = float(line_info.get("qty_requested") or 0)
-        iclow_id = line.get("iclow_id")
-        if (
-            iclow_id
-            and new_recv >= req_qty
-            and should_stamp_iclow(
-                enabled=settings.transfer_iclow_stamp_enabled,
-                site=settings.site,
-                from_branch=(header.get("from_branch") or "HQ"),
-                to_branch=to_branch,
-            )
-        ):
-            ship_bill = shipment.get("ship_billno") or shipment.get("tf_billno")
-            try:
-                mark_received(iclow_id=str(iclow_id), tf_billno=ship_bill or "")
-            except ICLOWStampError:
-                pass
-    ship_lines_after = list_shipment_lines(client, shipment_id=shipment_id)
-    if shipment_lines_fully_received(ship_lines_after):
-        _table(client, "shipments").update({
-            "posted_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("shipment_id", shipment_id).execute()
-    refresh_request_status(client, shipment["transfer_id"])
-    return result
+    receive_billno = result.get("receive_billno")
+    warnings: list[str] = []
+    try:
+        create_receipt(
+            client,
+            shipment_id=shipment_id,
+            client_token=client_token,
+            receive_billno=receive_billno,
+        )
+        for line in body.lines:
+            line_id = line.get("line_id")
+            qty_recv = float(line.get("qty_receive") or 0)
+            if line_id:
+                bump_line_received(client, line_id=line_id, qty_receive=qty_recv)
+            shipment_line_id = line.get("shipment_line_id")
+            if shipment_line_id:
+                bump_shipment_line_received(
+                    client, shipment_line_id=str(shipment_line_id), qty_receive=qty_recv
+                )
+            line_id = line.get("line_id")
+            line_info = transfer_lines.get(line_id, {}) if line_id else {}
+            new_recv = float(line_info.get("qty_received") or 0) + qty_recv
+            req_qty = float(line_info.get("qty_requested") or 0)
+            iclow_id = line.get("iclow_id")
+            if (
+                iclow_id
+                and new_recv >= req_qty
+                and should_stamp_iclow(
+                    enabled=settings.transfer_iclow_stamp_enabled,
+                    site=settings.site,
+                    from_branch=(header.get("from_branch") or "HQ"),
+                    to_branch=to_branch,
+                )
+            ):
+                ship_bill = shipment.get("ship_billno") or shipment.get("tf_billno")
+                try:
+                    mark_received(iclow_id=str(iclow_id), tf_billno=ship_bill or "")
+                except ICLOWStampError as exc:
+                    warnings.append(str(exc))
+        ship_lines_after = list_shipment_lines(client, shipment_id=shipment_id)
+        if shipment_lines_fully_received(ship_lines_after):
+            _table(client, "shipments").update({
+                "posted_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("shipment_id", shipment_id).execute()
+        refresh_request_status(client, shipment["transfer_id"])
+    except BumpError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            {"error": str(exc), "receive_billno": receive_billno, "reconcile": True},
+            status_code=500,
+        )
+    return {**result, "warnings": warnings}
 
 
 @router.post("/api/requests/{transfer_id}/cancel")

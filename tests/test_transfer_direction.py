@@ -179,6 +179,15 @@ def test_post_transfer_ship_syp_3tf_prefix(mock_get_shipment, mock_engine, mock_
     assert simas_params["bookno"] == "9"
 
 
+def test_next_billno_uses_updlock_holdlock():
+    conn = MagicMock()
+    conn.execute.return_value.mappings.return_value.first.return_value = {"max_seq": None}
+    when = datetime(2026, 8, 31)
+    _next_billno_on_table(conn, "SIMAS", "TF", when)
+    sql = str(conn.execute.call_args.args[0])
+    assert "WITH (UPDLOCK, HOLDLOCK)" in sql
+
+
 def test_post_transfer_tf_compat_alias():
     with pytest.raises(TransferShipError):
         post_transfer_tf(

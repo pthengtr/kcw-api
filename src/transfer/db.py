@@ -14,6 +14,10 @@ from src.transfer.state import derive_line_status, derive_request_status, make_s
 TRANSFER_SCHEMA = "transfer"
 
 
+class BumpError(RuntimeError):
+    pass
+
+
 @lru_cache
 def get_transfer_supabase_client() -> Client:
     settings = get_transfer_settings()
@@ -274,6 +278,49 @@ def create_shipment(
     return _first_row(resp)
 
 
+def get_receipt_by_token(client: Client, client_token: str) -> dict[str, Any] | None:
+    """Get receive receipt by client token."""
+    resp = (
+        client.schema(TRANSFER_SCHEMA)
+        .from_("receipts")
+        .select("*")
+        .eq("client_token", client_token)
+        .limit(1)
+        .execute()
+    )
+    rows = _rows(resp)
+    return rows[0] if rows else None
+
+
+def create_receipt(
+    client: Client,
+    *,
+    shipment_id: str,
+    client_token: str,
+    receive_billno: str,
+) -> dict[str, Any]:
+    row = {
+        "receipt_id": str(uuid4()),
+        "shipment_id": shipment_id,
+        "client_token": client_token,
+        "receive_billno": receive_billno,
+    }
+    resp = client.schema(TRANSFER_SCHEMA).from_("receipts").insert(row).select("*").execute()
+    return _first_row(resp)
+
+
+def shipment_has_lines(client: Client, shipment_id: str) -> bool:
+    resp = (
+        client.schema(TRANSFER_SCHEMA)
+        .from_("shipment_lines")
+        .select("shipment_line_id")
+        .eq("shipment_id", shipment_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(_rows(resp))
+
+
 def get_shipment_by_token(client: Client, *, transfer_id: str, client_token: str) -> dict[str, Any] | None:
     """Get shipment by client token."""
     resp = (
@@ -329,38 +376,31 @@ def add_shipment_lines(client: Client, *, shipment_id: str, lines: list[dict[str
         client.schema(TRANSFER_SCHEMA).from_("shipment_lines").insert(rows).execute()
 
 
+def _rpc_bump(client: Client, fn: str, params: dict[str, Any]) -> None:
+    try:
+        resp = client.schema(TRANSFER_SCHEMA).rpc(fn, params).execute()
+    except Exception as exc:
+        raise BumpError(str(exc)) from exc
+    if not resp.data:
+        raise BumpError(f"{fn} failed")
+
+
 def bump_line_prepared(client: Client, *, line_id: str, qty_ship: float) -> None:
-    """Add to prepared quantity for a line."""
-    resp = (
-        _table(client, "lines")
-        .select("qty_prepared")
-        .eq("line_id", line_id)
-        .limit(1)
-        .execute()
+    """Atomically add to prepared quantity for a line."""
+    _rpc_bump(
+        client,
+        "bump_line_prepared",
+        {"p_line_id": line_id, "p_qty": float(qty_ship)},
     )
-    current = float((_first_row(resp) or {}).get("qty_prepared") or 0)
-    new_qty = current + float(qty_ship)
-    _table(client, "lines").update({
-        "qty_prepared": new_qty,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("line_id", line_id).execute()
 
 
 def bump_line_received(client: Client, *, line_id: str, qty_receive: float) -> None:
-    """Add to received quantity for a line."""
-    resp = (
-        _table(client, "lines")
-        .select("qty_received")
-        .eq("line_id", line_id)
-        .limit(1)
-        .execute()
+    """Atomically add to received quantity for a line."""
+    _rpc_bump(
+        client,
+        "bump_line_received",
+        {"p_line_id": line_id, "p_qty": float(qty_receive)},
     )
-    current = float((_first_row(resp) or {}).get("qty_received") or 0)
-    new_qty = current + float(qty_receive)
-    _table(client, "lines").update({
-        "qty_received": new_qty,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("line_id", line_id).execute()
 
 
 def delete_draft(client: Client, *, transfer_id: str) -> bool:
@@ -419,19 +459,12 @@ def list_receive_queue(client: Client, *, site: str) -> list[dict[str, Any]]:
 def bump_shipment_line_received(
     client: Client, *, shipment_line_id: str, qty_receive: float
 ) -> None:
-    resp = (
-        client.schema(TRANSFER_SCHEMA)
-        .from_("shipment_lines")
-        .select("qty_received")
-        .eq("shipment_line_id", shipment_line_id)
-        .limit(1)
-        .execute()
+    """Atomically add to received quantity on a shipment line."""
+    _rpc_bump(
+        client,
+        "bump_shipment_line_received",
+        {"p_shipment_line_id": shipment_line_id, "p_qty": float(qty_receive)},
     )
-    current = float((_first_row(resp) or {}).get("qty_received") or 0)
-    new_qty = current + float(qty_receive)
-    client.schema(TRANSFER_SCHEMA).from_("shipment_lines").update(
-        {"qty_received": new_qty}
-    ).eq("shipment_line_id", shipment_line_id).execute()
 
 
 def cancel_request(client: Client, *, transfer_id: str) -> dict[str, Any]:
