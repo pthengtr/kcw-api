@@ -645,6 +645,7 @@ async function renderRequest(el){
           </div>
           <button class="btn btn-primary" id="btnManualAdd" style="margin-bottom:1px">เพิ่ม</button>
         </div>
+        <p id="manualPreview" class="meta" style="margin:.5rem 0 0;display:none"></p>
       </div>
 
       <p class="meta" style="margin:0 0 .5rem">รายการแนะนำจาก ICLOW รอสั่ง — เลือกจำนวนแล้วกดเพิ่ม</p>`;
@@ -711,10 +712,45 @@ async function renderRequest(el){
       const b = el.querySelector("#manualBcode").value.trim();
       const q = Number(el.querySelector("#manualQty").value||0);
       if(!b||q<=0){alert("ระบุรหัสและจำนวน");return;}
-      await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr:""})});
+      let descr = "";
+      let hqQty = null;
+      try{
+        const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
+        descr = p.descr||"";
+        hqQty = p.hq_qtyoh2;
+      }catch(e){
+        if(!confirm((e.message||"ไม่พบรหัส")+" — เพิ่มต่อไหม?")) return;
+      }
+      await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr, hq_qtyoh2:hqQty})});
       showToast("เพิ่มแล้ว");
+      el.querySelector("#manualBcode").value = "";
+      const prev = el.querySelector("#manualPreview");
+      if(prev){ prev.style.display="none"; prev.textContent=""; }
       setRequestStep(2);
     };
+    const manualBcodeEl = el.querySelector("#manualBcode");
+    const manualPreviewEl = el.querySelector("#manualPreview");
+    let manualLookupTimer = null;
+    async function refreshManualPreview(){
+      const b = (manualBcodeEl?.value||"").trim();
+      if(!manualPreviewEl) return;
+      if(!b){ manualPreviewEl.style.display="none"; manualPreviewEl.textContent=""; return; }
+      try{
+        const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
+        manualPreviewEl.style.display = "block";
+        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong> · HQ ${fmtQty(p.hq_qtyoh2)} · SYP ${fmtQty(p.syp_qtyoh2)}`;
+      }catch(e){
+        manualPreviewEl.style.display = "block";
+        manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
+      }
+    }
+    if(manualBcodeEl){
+      manualBcodeEl.oninput = ()=>{
+        if(manualLookupTimer) clearTimeout(manualLookupTimer);
+        manualLookupTimer = setTimeout(refreshManualPreview, 350);
+      };
+      manualBcodeEl.onblur = refreshManualPreview;
+    }
     el.querySelectorAll("[data-del]").forEach(btn=>btn.onclick=async()=>{
       await api("/transfer/api/need-list/"+btn.dataset.del,{method:"DELETE"});
       setRequestStep(2);
