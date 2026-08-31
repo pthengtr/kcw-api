@@ -104,6 +104,13 @@ body.busy #busy{display:flex}
 .action-card .desc{font-size:.82rem;color:var(--muted);margin:0;line-height:1.45}
 .action-card .count{display:inline-block;margin-top:.55rem;font-size:.75rem;font-weight:600;color:var(--acc);background:#e8f0ff;padding:.2rem .55rem;border-radius:999px}
 .flow-hint{font-size:.82rem;color:var(--muted);background:#f8fafc;border:1px dashed var(--line);border-radius:12px;padding:.75rem .85rem;margin-bottom:.85rem;line-height:1.5}
+.info-toggle{margin:.75rem 0;border:1px solid #fde68a;border-radius:12px;background:#fffbeb;overflow:hidden}
+.info-toggle summary{cursor:pointer;padding:.6rem .85rem;font-size:.82rem;font-weight:600;color:#92400e;list-style:none;display:flex;align-items:center;gap:.35rem;user-select:none}
+.info-toggle summary::-webkit-details-marker{display:none}
+.info-toggle summary::before{content:"▸";font-size:.7rem;transition:transform .15s;flex-shrink:0}
+.info-toggle[open] summary::before{transform:rotate(90deg)}
+.info-toggle .info-body{padding:.65rem .85rem .75rem;border-top:1px solid #fde68a;font-size:.82rem;color:var(--text);line-height:1.55}
+.info-toggle .info-body strong{color:#92400e}
 .bill-explain{font-size:.82rem;color:var(--text);background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:.75rem .85rem;margin:.75rem 0;line-height:1.55}
 .bill-explain strong{color:#92400e}
 .bill-steps{margin:.45rem 0 0;padding-left:1.15rem}
@@ -220,46 +227,40 @@ function receiveBillPrefix(fromBranch, toBranch){
 function parts9Host(branch){
   return (branch||"").toUpperCase()==="SYP" ? "kss-pc (SYP)" : "KSS (HQ)";
 }
+function infoToggleHtml(title, bodyHtml){
+  return `<details class="info-toggle"><summary>${title}</summary><div class="info-body">${bodyHtml}</div></details>`;
+}
 function billTimelineHtml(fromB, toB){
   const fb = (fromB||"HQ").toUpperCase();
   const tb = (toB||"SYP").toUpperCase();
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
-  return `<div class="bill-explain">
-    <strong>ใบ TF ถูกสร้างเมื่อไหร่?</strong>
-    <ol class="bill-steps">
+  return infoToggleHtml("ใบ TF ถูกสร้างเมื่อไหร่?", `<ol class="bill-steps">
       <li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>
       <li><span class="bill-when">${fb} จัดส่ง</span> — สร้างใบ <strong>${shipP} SIMAS</strong> บน ${parts9Host(fb)} (ตัดสต๊อกออก)</li>
       <li><span class="bill-when">${tb} รับเข้า</span> — สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อกเข้า)</li>
-    </ol>
-  </div>`;
+    </ol>`);
 }
 function submitBillNoteHtml(fromB, toB){
   const fb = (fromB||OTHER).toUpperCase();
   const tb = (toB||SITE).toUpperCase();
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
-  return `<div class="bill-explain">
-    <strong>ตอนกดยืนยันส่งคำขอ จะเกิดอะไรขึ้น?</strong>
-    <ul class="bill-steps">
+  return infoToggleHtml("ตอนกดยืนยันส่งคำขอ จะเกิดอะไรขึ้น?", `<ul class="bill-steps">
       <li>สร้างคำขอโอน <code>TRF-…</code> (อ้างอิงในระบบ — <strong>ไม่ใช่เลขบิล PARTS9</strong>)</li>
       <li>แสตมป์ ICLOW ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>
       <li class="bill-none">ยังไม่ออกใบ TF — ใบ ${shipP} สร้างตอน ${fb} จัดส่ง · ใบ ${recvP} สร้างตอน ${tb} รับเข้า</li>
-    </ul>
-  </div>`;
+    </ul>`);
 }
 function prepareBillNoteHtml(fromB, toB){
   const fb = (fromB||SITE).toUpperCase();
   const tb = (toB||OTHER).toUpperCase();
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
-  return `<div class="bill-explain">
-    <strong>เมื่อยืนยันจัดส่ง ระบบจะ:</strong>
-    <ul class="bill-steps">
+  return infoToggleHtml("เมื่อยืนยันจัดส่ง ระบบจะ:", `<ul class="bill-steps">
       <li>สร้างใบ <strong>${shipP} SIMAS</strong> บน ${parts9Host(fb)} ทันที (ตัดสต๊อก ${fb})</li>
       <li>ยังไม่มีใบรับ — ${tb} จะออก <strong>${recvP} PIMAS</strong> ตอนกดรับเข้า</li>
-    </ul>
-  </div>`;
+    </ul>`);
 }
 function receiveBillNoteHtml(fromB, toB, shipBillno){
   const fb = (fromB||OTHER).toUpperCase();
@@ -267,14 +268,11 @@ function receiveBillNoteHtml(fromB, toB, shipBillno){
   const recvP = receiveBillPrefix(fb, tb);
   const shipP = shipBillPrefix(fb);
   const shipRef = shipBillno ? `<code>${shipBillno}</code>` : `ใบ ${shipP} ที่ ${fb} จัดไป`;
-  return `<div class="bill-explain">
-    <strong>เมื่อยืนยันรับเข้า ระบบจะ:</strong>
-    <ul class="bill-steps">
+  return infoToggleHtml("เมื่อยืนยันรับเข้า ระบบจะ:", `<ul class="bill-steps">
       <li>สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อก ${tb})</li>
       <li>อ้างอิงใบจัด ${shipRef}</li>
       <li>อัปเดต ICLOW ว่ารับแล้ว</li>
-    </ul>
-  </div>`;
+    </ul>`);
 }
 function orderFlowText(){
   if(orderDirection === "to_syp") return OTHER + " จัดส่ง → " + SITE + " รับเข้า";
