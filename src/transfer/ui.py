@@ -81,6 +81,14 @@ body.busy #busy{display:flex}
 .dir{font-size:.75rem;color:var(--muted)}
 .qty-input{width:5rem;padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
 .text-input{flex:1;min-width:0;padding:.5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
+.search-bar{display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem}
+.search-bar .text-input{flex:1}
+.tool-section{border:1px solid var(--line);border-radius:12px;padding:.75rem;background:#f8fafc;margin-bottom:.75rem}
+.tool-section .tool-title{font-size:.82rem;font-weight:600;margin:0 0 .5rem;color:var(--text)}
+.tool-row{display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap}
+.field{flex:1;min-width:7rem}
+.field label{display:block;font-size:.72rem;color:var(--muted);margin-bottom:.25rem}
+.field .qty-input,.field .text-input{width:100%}
 .unit-select{padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:.82rem;color:var(--text);background:#fff;color-scheme:light}
 .meta{font-size:.72rem;color:var(--muted);line-height:1.35}
 .toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:.55rem 1rem;border-radius:10px;font-size:.85rem;z-index:70;display:none;max-width:90vw;text-align:center}
@@ -133,6 +141,7 @@ let requestStep = 1;
 let orderDirection = SITE === "SYP" ? "to_syp" : "to_hq";
 let statusFilter = "active";
 let suggestItems = [];
+let suggestFilter = "";
 let toastTimer = null;
 
 const VIEWS = {
@@ -323,13 +332,47 @@ async function renderRequest(el){
     const [rows, cart] = await Promise.all([api("/transfer/api/suggest"), api("/transfer/api/need-list")]);
     suggestItems = rows.items || [];
     const cartItems = cart.items || [];
-    let html = stepBar(2) + `<div class="card"><p style="margin:0 0 .5rem"><strong>ทิศทาง:</strong> ${OTHER} → ${SITE}</p>
-      <p class="meta" style="margin:0 0 .75rem">เลือกจากรายการแนะนำ (ICLOW รอสั่ง) หรือพิมพ์รหัสสินค้าเอง</p>`;
-    if(suggestItems.length){
+    const q = (suggestFilter || "").trim().toLowerCase();
+    const filtered = q ? suggestItems.filter(r=>{
+      const b = (r.bcode||"").toLowerCase();
+      const d = (r.descr||"").toLowerCase();
+      return b.includes(q) || d.includes(q);
+    }) : suggestItems;
+
+    let html = stepBar(2) + `<div class="card">
+      <p style="margin:0 0 .75rem"><strong>ทิศทาง:</strong> ${OTHER} → ${SITE}</p>
+
+      <div class="search-bar">
+        <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
+      </div>
+
+      <div class="tool-section">
+        <p class="tool-title">เพิ่มรหัสเอง (ไม่อยู่ในรายการแนะนำ)</p>
+        <div class="tool-row">
+          <div class="field" style="flex:2">
+            <label for="manualBcode">รหัสสินค้า (BCODE)</label>
+            <input id="manualBcode" class="text-input" placeholder="เช่น 15010490"/>
+          </div>
+          <div class="field" style="max-width:6rem">
+            <label for="manualQty">จำนวน</label>
+            <input id="manualQty" type="number" min="1" value="1" class="qty-input"/>
+          </div>
+          <button class="btn btn-primary" id="btnManualAdd" style="margin-bottom:1px">เพิ่ม</button>
+        </div>
+      </div>
+
+      <p class="meta" style="margin:0 0 .5rem">รายการแนะนำจาก ICLOW รอสั่ง — เลือกจำนวนแล้วกดเพิ่ม</p>`;
+
+    if(!suggestItems.length){
+      html += `<div class="empty">ไม่พบรายการแนะนำ — ใช้เพิ่มรหัสเองด้านบน</div>`;
+    } else if(!filtered.length){
+      html += `<div class="empty">ไม่พบ "${suggestFilter}" ในรายการ — ลองค้นหาใหม่ หรือเพิ่มรหัสเอง</div>`;
+    } else {
       html += `<div class="table-wrap"><table><thead><tr>
         <th>รหัส</th><th>รายละเอียด</th><th>คงเหลือ HQ</th><th>คงเหลือ SYP</th><th>แนะนำ</th><th>หน่วย</th><th>จำนวน</th><th></th>
       </tr></thead><tbody>`;
-      html += suggestItems.map((r,idx)=>{
+      html += filtered.map((r)=>{
+        const idx = suggestItems.indexOf(r);
         const entry = defaultEntryQty(r);
         const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
         return `<tr><td><code>${r.bcode}</code></td><td>${r.descr||""}</td>
@@ -340,14 +383,9 @@ async function renderRequest(el){
           <td><button class="btn btn-ghost" data-add="${idx}">เพิ่ม</button></td></tr>`;
       }).join("");
       html += `</tbody></table></div>`;
-    } else {
-      html += `<div class="empty">ไม่พบรายการแนะนำ — พิมพ์รหัสด้านล่าง</div>`;
+      if(q) html += `<p class="meta" style="margin:.5rem 0 0">แสดง ${filtered.length} จาก ${suggestItems.length} รายการ</p>`;
     }
-    html += `<div class="row-actions" style="margin-top:.75rem">
-      <input id="manualBcode" class="text-input" placeholder="รหัสสินค้า"/>
-      <input id="manualQty" type="number" min="1" value="1" class="qty-input"/>
-      <button class="btn btn-ghost" id="btnManualAdd">เพิ่มรหัส</button>
-    </div></div>`;
+    html += `</div>`;
 
     html += `<div class="card"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
     if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ</div>`;
@@ -362,6 +400,12 @@ async function renderRequest(el){
       <button class="btn btn-primary" id="btnReqNext2" ${cartItems.length?"":"disabled"}>ถัดไป → ตรวจสอบ</button>
     </div></div>`;
     el.innerHTML = html;
+
+    const searchEl = el.querySelector("#suggestSearch");
+    if(searchEl){
+      searchEl.oninput = ()=>{ suggestFilter = searchEl.value; renderRequest(el); };
+      searchEl.onkeydown = e=>{ if(e.key==="Enter"){ e.preventDefault(); suggestFilter = searchEl.value; renderRequest(el); } };
+    }
 
     el.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=async()=>{
       const idx = Number(btn.dataset.add);
