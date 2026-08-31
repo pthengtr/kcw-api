@@ -23,8 +23,14 @@ class TransferWriteError(RuntimeError):
         self.code = code
 
 
+def transfer_bill_yymm(when: datetime) -> str:
+    """YYMM for TF/3TF bills — Buddhist era (2569 → 69), same as PARTS9 pay vouchers."""
+    yy = (when.year + 543) % 100
+    return f"{yy:02d}{when.month:02d}"
+
+
 def _next_billno_on_table(conn, table: str, prefix: str, when: datetime) -> str:
-    yymm = when.strftime("%y%m")
+    yymm = transfer_bill_yymm(when)
     stem = f"{prefix}{yymm}-"
     row = conn.execute(
         text(
