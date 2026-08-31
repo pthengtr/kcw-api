@@ -37,10 +37,27 @@ def test_transfer_bill_yymm_buddhist_era():
 
 def test_next_billno_uses_buddhist_yymm():
     conn = MagicMock()
-    conn.execute.return_value.mappings.return_value.first.return_value = None
+    conn.execute.return_value.mappings.return_value.first.return_value = {"max_seq": None}
     when = datetime(2026, 8, 31)
     billno = _next_billno_on_table(conn, "SIMAS", "TF", when)
-    assert billno == "TF6908-00001"
+    assert billno == "TF6908-0001"
+
+
+def test_next_billno_continues_existing_seq():
+    conn = MagicMock()
+    conn.execute.return_value.mappings.return_value.first.return_value = {"max_seq": 97}
+    when = datetime(2026, 8, 31)
+    billno = _next_billno_on_table(conn, "SIMAS", "TF", when)
+    assert billno == "TF6908-0098"
+
+
+def test_next_billno_numeric_max_beats_string_sort():
+    """0098 must win over 097 — string MAX(BILLNO) would pick 097 incorrectly."""
+    conn = MagicMock()
+    conn.execute.return_value.mappings.return_value.first.return_value = {"max_seq": 98}
+    when = datetime(2026, 8, 31)
+    billno = _next_billno_on_table(conn, "SIMAS", "TF", when)
+    assert billno == "TF6908-0099"
 
 
 def test_site_permissions():

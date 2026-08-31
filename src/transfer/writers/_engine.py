@@ -35,24 +35,27 @@ def _next_billno_on_table(conn, table: str, prefix: str, when: datetime) -> str:
     row = conn.execute(
         text(
             f"""
-            SELECT MAX(BILLNO) AS max_no
+            SELECT MAX(
+              TRY_CAST(
+                SUBSTRING(
+                  LTRIM(RTRIM(CONVERT(nvarchar(40), BILLNO))),
+                  LEN(:stem) + 1,
+                  40
+                ) AS int
+              )
+            ) AS max_seq
             FROM dbo.{table}
-            WHERE BILLNO LIKE :pat
+            WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BILLNO))) LIKE :pat
             """
         ),
-        {"pat": stem + "%"},
+        {"pat": stem + "%", "stem": stem},
     ).mappings().first()
-    max_no = (row or {}).get("max_no") or ""
-    seq = 1
-    if max_no and "-" in str(max_no):
-        tail = str(max_no).rsplit("-", 1)[-1]
-        try:
-            seq = int(tail) + 1
-        except ValueError:
-            seq = 1
-    candidate = f"{stem}{seq:05d}"
-    if len(candidate) > 15:
-        candidate = f"{stem}{seq:04d}"
+    max_seq = (row or {}).get("max_seq")
+    try:
+        seq = int(max_seq) + 1 if max_seq is not None else 1
+    except (TypeError, ValueError):
+        seq = 1
+    candidate = f"{stem}{seq:04d}"
     if len(candidate) > 15:
         raise TransferWriteError("generated BILLNO exceeds 15 chars", code="billno_overflow")
     return candidate
