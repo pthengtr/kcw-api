@@ -6,6 +6,8 @@ GRANT SELECT ON dbo.SIMAS TO [python_writer];
 GRANT INSERT ON dbo.SIMAS TO [python_writer];
 GRANT SELECT ON dbo.SIDET TO [python_writer];
 GRANT INSERT ON dbo.SIDET TO [python_writer];
+-- Remediation / line corrections (optional; ship writer normally INSERT-only)
+GRANT UPDATE ON dbo.SIDET TO [python_writer];
 
 -- Receive (stock in): PIMAS + PIDET at destination branch
 GRANT SELECT ON dbo.PIMAS TO [python_writer];

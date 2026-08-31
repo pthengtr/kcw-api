@@ -72,3 +72,10 @@ def test_post_transfer_ship_basic_creation(mock_get_shipment, mock_engine, mock_
     ]
     assert simas_params
     assert simas_params[0]["billtime"] == simas_params[0]["jourtime"]
+    sidet_params = [
+        call.args[1]
+        for call in mock_conn.execute.call_args_list
+        if "INSERT INTO dbo.SIDET" in str(call.args[0])
+    ]
+    assert sidet_params
+    assert sidet_params[0]["qty"] == 10
