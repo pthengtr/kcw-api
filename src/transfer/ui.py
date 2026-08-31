@@ -648,12 +648,15 @@ async function renderRequest(el){
         <p id="manualPreview" class="meta" style="margin:.5rem 0 0;display:none"></p>
       </div>
 
-      <p class="meta" style="margin:0 0 .5rem">รายการแนะนำจาก ICLOW รอสั่ง — เลือกจำนวนแล้วกดเพิ่ม</p>`;
+      <p class="meta" style="margin:0 0 .5rem">รายการแนะนำจาก ICLOW รอสั่ง + สต๊อกต่ำ (ICMAS) — เลือกจำนวนแล้วกดเพิ่ม</p>`;
 
     if(!suggestItems.length){
       html += `<div class="empty">ไม่พบรายการแนะนำ — ใช้เพิ่มรหัสเองด้านบน</div>`;
     } else if(!filtered.length){
-      html += `<div class="empty">ไม่พบ "${suggestFilter}" ในรายการ — ลองค้นหาใหม่ หรือเพิ่มรหัสเอง</div>`;
+      html += `<div class="empty">ไม่พบ "${suggestFilter}" ในรายการ — ลองเพิ่มรหัสเองด้านบน</div>`;
+      if(/^[0-9A-Za-z-]+$/.test(q)){
+        html += `<div class="row-actions"><button class="btn btn-ghost" id="btnSearchAdd">เพิ่ม <code>${q}</code></button></div>`;
+      }
     } else {
       html += `<div class="table-wrap"><table><thead><tr>
         <th>รหัส</th><th>รายละเอียด</th><th>คงเหลือ HQ</th><th>คงเหลือ SYP</th><th>แนะนำ</th><th>หน่วย</th><th>จำนวน</th><th></th>
@@ -712,22 +715,29 @@ async function renderRequest(el){
       const b = el.querySelector("#manualBcode").value.trim();
       const q = Number(el.querySelector("#manualQty").value||0);
       if(!b||q<=0){alert("ระบุรหัสและจำนวน");return;}
-      let descr = "";
-      let hqQty = null;
       try{
-        const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
-        descr = p.descr||"";
-        hqQty = p.hq_qtyoh2;
-      }catch(e){
-        if(!confirm((e.message||"ไม่พบรหัส")+" — เพิ่มต่อไหม?")) return;
-      }
-      await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr, hq_qtyoh2:hqQty})});
-      showToast("เพิ่มแล้ว");
-      el.querySelector("#manualBcode").value = "";
-      const prev = el.querySelector("#manualPreview");
-      if(prev){ prev.style.display="none"; prev.textContent=""; }
-      setRequestStep(2);
+        await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr:""})});
+        showToast("เพิ่มแล้ว");
+        el.querySelector("#manualBcode").value = "";
+        const prev = el.querySelector("#manualPreview");
+        if(prev){ prev.style.display="none"; prev.textContent=""; }
+        setRequestStep(2);
+      }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
     };
+    const btnSearchAdd = el.querySelector("#btnSearchAdd");
+    if(btnSearchAdd){
+      btnSearchAdd.onclick = async()=>{
+        const b = (suggestFilter||"").trim();
+        const q = 1;
+        if(!b) return;
+        try{
+          await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr:""})});
+          showToast("เพิ่มแล้ว");
+          suggestFilter = "";
+          setRequestStep(2);
+        }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
+      };
+    }
     const manualBcodeEl = el.querySelector("#manualBcode");
     const manualPreviewEl = el.querySelector("#manualPreview");
     let manualLookupTimer = null;

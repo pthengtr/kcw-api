@@ -97,3 +97,36 @@ def test_suggest_transfer_skus_skips_do_not_restock():
     assert items[0]["ui1"] == "ea"
     assert items[0]["ui2"] == "กล่อง"
     assert items[0]["mtp2"] == 12.0
+
+
+def test_suggest_transfer_skus_includes_icmas_low_stock_without_iclow():
+    iclow_rows = {"rows": [], "count": 0}
+    icmas_low = {
+        "02050663": {
+            "bcode": "02050663",
+            "descr": "สะดือแหนบหน้า",
+            "suggest_qty": 1.0,
+            "qtyoh2": 1.0,
+            "qtymin": 1.0,
+            "ui1": "หน่วย",
+            "ui2": "",
+            "mtp2": 1.0,
+            "source": "icmas",
+        }
+    }
+
+    def fake_icmas_meta(engine, bcodes, include_blocked=False):
+        return {
+            "02050663": _meta(1.0, descr="สะดือแหนบหน้า", ui1="หน่วย"),
+        }
+
+    with patch("src.transfer.parts9.list_iclow", return_value=iclow_rows):
+        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+            with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
+                with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                    items = suggest_transfer_skus(site="SYP", limit=50)
+
+    assert len(items) == 1
+    assert items[0]["bcode"] == "02050663"
+    assert items[0]["descr"] == "สะดือแหนบหน้า"
+    assert items[0]["source"] == "icmas"

@@ -64,8 +64,58 @@ def _fetch_icmas_meta(
     return out
 
 
+def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, dict[str, Any]]:
+    """Requester-site ICMAS rows at/below min — covers re-order after ICLOW already stamped."""
+    sql = text(
+        """
+        SELECT TOP (:lim)
+          LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS bcode,
+          LTRIM(RTRIM(COALESCE(DESCR, ''))) AS descr,
+          QTYOH2,
+          QTYMIN,
+          QTYGET,
+          LTRIM(RTRIM(COALESCE(UI1, ''))) AS ui1,
+          LTRIM(RTRIM(COALESCE(UI2, ''))) AS ui2,
+          MTP2
+        FROM dbo.ICMAS WITH (NOLOCK)
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED, '')))) <> 'Y'
+          AND QTYMIN IS NOT NULL
+          AND ISNUMERIC(REPLACE(CONVERT(varchar(50), QTYMIN), ',', '')) = 1
+          AND CONVERT(float, REPLACE(CONVERT(varchar(50), QTYMIN), ',', '')) >= 0
+          AND ISNUMERIC(REPLACE(CONVERT(varchar(50), QTYOH2), ',', '')) = 1
+          AND CONVERT(float, REPLACE(CONVERT(varchar(50), QTYOH2), ',', ''))
+              <= CONVERT(float, REPLACE(CONVERT(varchar(50), QTYMIN), ',', ''))
+        ORDER BY BCODE
+        """
+    )
+    out: dict[str, dict[str, Any]] = {}
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"lim": int(limit)}).mappings().all()
+    for row in rows:
+        bcode = (row["bcode"] or "").strip()
+        if not bcode:
+            continue
+        qtyoh2 = _parse_qty(row["QTYOH2"])
+        qtymin = _parse_qty(row["QTYMIN"])
+        qtyget = _parse_qty(row["QTYGET"])
+        suggest = qtyget if qtyget > 0 else max(qtymin - qtyoh2, 1.0)
+        mtp2 = _parse_qty(row["MTP2"]) or 1.0
+        out[bcode] = {
+            "bcode": bcode,
+            "descr": (row["descr"] or "").strip(),
+            "suggest_qty": suggest,
+            "qtyoh2": qtyoh2,
+            "qtymin": qtymin,
+            "ui1": (row["ui1"] or "").strip(),
+            "ui2": (row["ui2"] or "").strip(),
+            "mtp2": mtp2 if mtp2 > 0 else 1.0,
+            "source": "icmas",
+        }
+    return out
+
+
 def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]]:
-    """ICLOW รอสั่งซื้อ — same source as legacy /po ICLOW tab (to_be_ordered)."""
+    """ICLOW รอสั่งซื้อ + requester ICMAS low-stock (re-order after prior transfer)."""
     site_key = (site or "hq").strip().lower()
     lim = max(1, min(int(limit or 200), 200))
     scan = min(max(lim * 4, lim), 800)
@@ -91,6 +141,25 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
             "ui1": "",
             "ui2": "",
             "mtp2": 1.0,
+            "source": "iclow",
+        }
+
+    local_engine = get_site_engine(site_key)
+    for bcode, row in _suggest_from_icmas_low_stock(local_engine, limit=scan).items():
+        if bcode in by_bcode:
+            continue
+        by_bcode[bcode] = {
+            "bcode": bcode,
+            "descr": row.get("descr") or "",
+            "suggest_qty": row.get("suggest_qty") or 1.0,
+            "qtyoh2": row.get("qtyoh2") or 0.0,
+            "hq_qtyoh2": 0.0,
+            "syp_qtyoh2": 0.0,
+            "qtymin": row.get("qtymin") or 0.0,
+            "ui1": row.get("ui1") or "",
+            "ui2": row.get("ui2") or "",
+            "mtp2": row.get("mtp2") or 1.0,
+            "source": "icmas",
         }
 
     bcodes = list(by_bcode)
