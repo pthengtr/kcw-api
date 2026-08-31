@@ -234,7 +234,7 @@ def ondemand_upload(request: Request, image: UploadFile = File(...)):
             )
         results = []
         for code in decoded:
-            results.extend(service.lookup(code))
+            results.extend(service.lookup(code, session_id=user["id"]))
         by_b: dict[str, dict] = {}
         for row in results:
             by_b[row["bcode"]] = row

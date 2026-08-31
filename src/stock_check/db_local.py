@@ -454,15 +454,18 @@ class LocalStore:
             ).fetchone()
             return dict(row) if row else None
 
-    def get_active_lease_for_bcode(self, bcode: str) -> dict[str, Any] | None:
+    def get_active_lease_for_bcode(
+        self, bcode: str, *, now: float | None = None
+    ) -> dict[str, Any] | None:
+        ts = now if now is not None else time.time()
         with self.connect() as conn:
             row = conn.execute(
                 """
                 SELECT * FROM leases
-                WHERE bcode = ? AND status = 'leased'
+                WHERE bcode = ? AND status = 'leased' AND expires_at >= ?
                 LIMIT 1
                 """,
-                (bcode,),
+                (bcode, ts),
             ).fetchone()
             return dict(row) if row else None
 
