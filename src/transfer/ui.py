@@ -158,6 +158,8 @@ let statusFilter = "active";
 let editingDraftId = null;
 let receiveStep = 1;
 let receiveShipment = null;
+let prepareStep = 1;
+let prepareRequest = null;
 let suggestItems = [];
 let suggestFilter = "";
 let toastTimer = null;
@@ -434,16 +436,17 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; editingDraftId=null; render(); }
-function goView(v){ view=v; if(v==="request" && !editingDraftId) requestStep=1; if(v==="receive"){ receiveStep=1; receiveShipment=null; } render(); }
+function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; prepareStep=1; prepareRequest=null; editingDraftId=null; render(); }
+function goView(v){ view=v; if(v==="request" && !editingDraftId) requestStep=1; if(v==="receive"){ receiveStep=1; receiveShipment=null; } if(v==="prepare"){ prepareStep=1; prepareRequest=null; } render(); }
 function setReceiveStep(n){ receiveStep=n; render(); }
+function setPrepareStep(n){ prepareStep=n; render(); }
 function setRequestStep(n){ requestStep=n; render(); }
 
 function updateHeader(){
   const titles = {
     home: ["โอนสินค้า · " + SITE, USER + " · เลือกสิ่งที่ต้องการทำ"],
     request: ["ขอสินค้าจาก " + OTHER, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
-    prepare: ["จัดส่งไป " + OTHER, "รายการที่ " + SITE + " ต้องจัดออก"],
+    prepare: ["จัดส่งไป " + OTHER, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันจัดส่ง"],
     receive: ["รับสินค้าจาก " + OTHER, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
     status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
   };
@@ -463,6 +466,14 @@ function stepBar(current){
 }
 function receiveStepBar(current){
   const labels = ["1. เลือกคำขอ","2. ระบุจำนวน","3. ยืนยันรับ"];
+  return `<div class="steps">${labels.map((l,i)=>{
+    const n = i+1;
+    const cls = n===current ? "on" : n<current ? "done" : "";
+    return `<div class="step ${cls}">${l}<span class="step-label">${n===1?"เปิดคำขอ":n===2?"กรอกจำนวน":"ออกใบ TF"}</span></div>`;
+  }).join("")}</div>`;
+}
+function prepareStepBar(current){
+  const labels = ["1. เลือกคำขอ","2. ระบุจำนวน","3. ยืนยันจัด"];
   return `<div class="steps">${labels.map((l,i)=>{
     const n = i+1;
     const cls = n===current ? "on" : n<current ? "done" : "";
@@ -701,37 +712,17 @@ async function renderRequest(el){
   }
 }
 
-async function openPrepareDialog(transferId){
-  const detail = await api("/transfer/api/requests/"+transferId+"/lines");
-  const lines = (detail.items || detail.lines || []).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
-  if(!lines.length){alert("ไม่มีรายการที่ต้องจัด");return;}
-  const rows = lines.map(l=>{
-    const remain = Number(l.qty_requested||0)-Number(l.qty_prepared||0);
-    return `<tr><td><code>${l.bcode}</code></td><td>${l.descr||""}</td><td>${fmtQty(l.qty_requested)}</td><td>${fmtQty(l.qty_prepared)}</td>
-      <td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" data-bcode="${l.bcode}" data-line="${l.line_id}"/></td></tr>`;
-  }).join("");
-  const modal = showModal(`<h2>จัดสินค้า · ${detail.short_id||transferId}</h2>
-    <div class="dir">${dirLabel(detail.from_branch, detail.to_branch)}</div>
-    ${prepareBillNoteHtml(detail.from_branch, detail.to_branch)}
-    <p class="meta">ระบุจำนวนที่จัดในครั้งนี้ แล้วกดยืนยัน</p>
-    <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>ขอ</th><th>จัดแล้ว</th><th>จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoPrepare">ยืนยันจัดแล้ว</button></div>`);
-  modal.box.querySelector("#btnDoPrepare").onclick = async()=>{
-    const shipLines = [];
-    modal.box.querySelectorAll(".qty-input").forEach(inp=>{
-      const q = Number(inp.value||0);
-      if(q>0) shipLines.push({line_id:inp.dataset.line, bcode:inp.dataset.bcode, qty_ship:q});
-    });
-    if(!shipLines.length){alert("ระบุจำนวนที่จัด");return;}
-    if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
-    try{
-      const result = await api("/transfer/api/requests/"+transferId+"/prepare",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:shipLines})});
-      const bill = result.ship_billno || result.tf_billno || "";
-      modal.close();
-      showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");
-      render();
-    }catch(e){alert(e.message);}
-  };
+async function submitPrepare(request, qtyByLineId){
+  const shipLines = (request.lines||[]).map(ln=>{
+    const q = Number(qtyByLineId[ln.line_id]||0);
+    return {line_id: ln.line_id, bcode: ln.bcode, qty_ship: q};
+  }).filter(l=>l.qty_ship>0);
+  if(!shipLines.length) throw new Error("ระบุจำนวนที่จัด");
+  if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) throw new Error("ยกเลิก");
+  return api("/transfer/api/requests/"+request.transfer_id+"/prepare",{
+    method:"POST",
+    body:JSON.stringify({client_token:uuid(), lines:shipLines}),
+  });
 }
 
 async function submitReceive(shipment, qtyByLineId){
@@ -867,17 +858,122 @@ async function renderPrepare(el){
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     return;
   }
-  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่จัด → ระบบออกใบ TF SIMAS ให้อัตโนมัติ</div>
-    ${billTimelineHtml(SITE, OTHER)}
-    <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>
-      ${items.map(r=>`<tr>
-        <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-        <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
-        <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td><td>${r.line_count||0}</td>
-        <td><button class="btn btn-primary" data-prep="${r.transfer_id}">จัดสินค้า</button></td>
-      </tr>`).join("")}
-    </tbody></table></div></div>`;
-  el.querySelectorAll("[data-prep]").forEach(b=>b.onclick=()=>openPrepareDialog(b.dataset.prep));
+
+  if(prepareStep === 1){
+    el.innerHTML = `${prepareStepBar(1)}
+      <div class="flow-hint">เลือกคำขอ → กรอกจำนวนที่จัด → ยืนยันเพื่อออกใบ TF SIMAS</div>
+      ${billTimelineHtml(SITE, OTHER)}
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>
+        ${items.map((r,i)=>`<tr class="row-clickable" data-prep-idx="${i}">
+          <td><code>${r.short_id}</code></td>
+          <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+          <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
+          <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
+          <td>${r.line_count||0}</td>
+          <td><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></td>
+        </tr>`).join("")}
+      </tbody></table></div>
+      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+    window._prepareList = items;
+    el.querySelectorAll("[data-prep-open]").forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      openPrepareRequest(window._prepareList[Number(b.dataset.prepOpen)]);
+    });
+    el.querySelectorAll("tr.row-clickable[data-prep-idx]").forEach(tr=>{
+      tr.onclick = e=>{
+        if(e.target.closest("button")) return;
+        openPrepareRequest(window._prepareList[Number(tr.dataset.prepIdx)]);
+      };
+    });
+    return;
+  }
+
+  if(!prepareRequest){
+    prepareStep = 1;
+    return renderPrepare(el);
+  }
+
+  const req = prepareRequest;
+  const openLines = (req.lines||[]).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
+  if(!openLines.length){
+    prepareRequest = null;
+    prepareStep = 1;
+    return renderPrepare(el);
+  }
+
+  if(prepareStep === 2){
+    const rows = openLines.map(ln=>{
+      const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
+      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td>${fmtQty(ln.qty_requested)}</td><td>${fmtQty(ln.qty_prepared)}</td>
+        <td><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
+          data-line="${ln.line_id}"/></td></tr>`;
+    }).join("");
+    el.innerHTML = `${prepareStepBar(2)}
+      <div class="card">
+        <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
+        <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้</p>
+        ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
+        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>ขอ</th><th>จัดแล้ว</th><th>จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="row-actions">
+          <button class="btn btn-ghost" onclick="setPrepareStep(1)">← เลือกคำขออื่น</button>
+          <button class="btn btn-primary" id="btnPrepNext2">ถัดไป → ตรวจสอบ</button>
+        </div>
+      </div>`;
+    el.querySelector("#btnPrepNext2").onclick = ()=>{
+      const qtyMap = {};
+      let any = false;
+      el.querySelectorAll(".prep-qty").forEach(inp=>{
+        const q = Number(inp.value||0);
+        if(q>0){ qtyMap[inp.dataset.line]=q; any=true; }
+      });
+      if(!any){alert("ระบุจำนวนที่จัด");return;}
+      req._qtyDraft = qtyMap;
+      setPrepareStep(3);
+    };
+    return;
+  }
+
+  if(prepareStep === 3){
+    const qtyMap = req._qtyDraft||{};
+    const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
+      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td>${fmtQty(ln.qty_requested)}</td><td>${fmtQty(ln.qty_prepared)}</td><td><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
+    `).join("");
+    el.innerHTML = `${prepareStepBar(3)}
+      <div class="card">
+        <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
+        <p class="meta">ตรวจสอบจำนวนก่อนยืนยัน — ระบบจะออกใบ TF SIMAS ทันที</p>
+        ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
+        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>ขอ</th><th>จัดแล้ว</th><th>จัดครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>
+        <div class="row-actions">
+          <button class="btn btn-ghost" onclick="setPrepareStep(2)">← แก้ไขจำนวน</button>
+          <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันจัดส่ง (ออกใบ TF)</button>
+        </div>
+      </div>`;
+    el.querySelector("#btnConfirmPrepare").onclick = async()=>{
+      try{
+        const result = await submitPrepare(req, qtyMap);
+        const bill = result.ship_billno || result.tf_billno || "";
+        showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");
+        prepareRequest = null;
+        prepareStep = 1;
+        render();
+      }catch(e){ if(e.message!=="ยกเลิก") alert(e.message); }
+    };
+  }
+}
+
+async function openPrepareRequest(summary){
+  const detail = await api("/transfer/api/requests/"+summary.transfer_id+"/lines");
+  const lines = (detail.items || detail.lines || []).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
+  if(!lines.length){alert("ไม่มีรายการที่ต้องจัด");return;}
+  prepareRequest = {
+    transfer_id: summary.transfer_id,
+    short_id: detail.short_id || summary.short_id,
+    from_branch: detail.from_branch || summary.from_branch,
+    to_branch: detail.to_branch || summary.to_branch,
+    lines,
+  };
+  setPrepareStep(2);
 }
 
 async function renderStatus(el){
