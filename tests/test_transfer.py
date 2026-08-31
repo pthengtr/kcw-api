@@ -77,3 +77,5 @@ def test_transfer_page_renders():
     assert "ยังไม่ออกใบ TF" in html
     assert "receive-lines" in html
     assert "receiveStepBar" in html or "เลือกคำขอ" in html
+    assert "openRequestDetail" in html
+    assert "row-clickable" in html
