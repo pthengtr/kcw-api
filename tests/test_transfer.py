@@ -82,6 +82,12 @@ def test_transfer_page_renders():
     assert "@media (max-width:640px)" in html
     assert "openRequestDetail" in html
     assert "row-clickable" in html
+    assert "position:sticky" in html
+    assert "border-collapse:separate" in html
+    assert "table-wrap--tall" in html
+    assert "card-table" in html
+    assert "card:has(.table-wrap)" in html
+    assert "th.num,td.num" in html
 
 
 def test_transfer_hq_page_iclow_not_stamped_on_submit():
