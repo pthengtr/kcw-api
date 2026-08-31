@@ -41,6 +41,7 @@ from src.transfer.direction import (
     can_receive_at_site,
     can_submit_at_site,
     direction_label,
+    should_stamp_iclow,
 )
 from src.transfer.parts9 import suggest_transfer_skus
 from src.transfer.state import can_action
@@ -397,7 +398,13 @@ def api_submit(transfer_id: str, request: Request):
     if not check.allowed:
         return JSONResponse({"error": check.reason}, status_code=400)
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
-    if settings.transfer_iclow_stamp_enabled and to_branch == "SYP":
+    from_branch = (header.get("from_branch") or "HQ").upper()
+    if should_stamp_iclow(
+        enabled=settings.transfer_iclow_stamp_enabled,
+        site=settings.site,
+        from_branch=from_branch,
+        to_branch=to_branch,
+    ):
         try:
             for line in lines:
                 stamped = stamp_on_submit(bcode=line["bcode"], short_id=short_id)
@@ -578,7 +585,15 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
                 client, shipment_line_id=str(shipment_line_id), qty_receive=qty_recv
             )
         iclow_id = line.get("iclow_id")
-        if settings.transfer_iclow_stamp_enabled and iclow_id and to_branch == "SYP":
+        if (
+            iclow_id
+            and should_stamp_iclow(
+                enabled=settings.transfer_iclow_stamp_enabled,
+                site=settings.site,
+                from_branch=(header.get("from_branch") or "HQ"),
+                to_branch=to_branch,
+            )
+        ):
             ship_bill = shipment.get("ship_billno") or shipment.get("tf_billno")
             try:
                 mark_received(iclow_id=str(iclow_id), tf_billno=ship_bill or "")
@@ -607,7 +622,12 @@ def api_cancel(transfer_id: str, request: Request):
     if not check.allowed:
         return JSONResponse({"error": check.reason}, status_code=400)
     settings = _settings()
-    if settings.transfer_iclow_stamp_enabled and (header.get("to_branch") or "SYP").upper() == "SYP":
+    if should_stamp_iclow(
+        enabled=settings.transfer_iclow_stamp_enabled,
+        site=settings.site,
+        from_branch=(header.get("from_branch") or "HQ"),
+        to_branch=(header.get("to_branch") or "SYP"),
+    ):
         try:
             for line in lines:
                 iclow_id = line.get("iclow_id")

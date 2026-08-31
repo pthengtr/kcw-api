@@ -44,3 +44,23 @@ def can_receive_at_site(site: str, to_branch: str) -> bool:
 
 def direction_label(from_branch: str, to_branch: str) -> str:
     return f"{(from_branch or '').upper()} → {(to_branch or '').upper()}"
+
+
+def should_stamp_iclow(
+    *,
+    enabled: bool,
+    site: str,
+    from_branch: str,
+    to_branch: str,
+) -> bool:
+    """ICLOW stamp only for HQ→SYP on the SYP box (submit/receive/cancel).
+
+    SYP→HQ (submit at HQ) must not touch ICLOW — keep รอสั่งซื้อ for supplier PO.
+    """
+    if not enabled:
+        return False
+    if (site or "").upper() != "SYP":
+        return False
+    fb = (from_branch or "").upper()
+    tb = (to_branch or "").upper()
+    return fb == "HQ" and tb == "SYP"

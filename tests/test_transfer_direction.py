@@ -12,6 +12,7 @@ from src.transfer.direction import (
     can_submit_at_site,
     receive_billno_prefix,
     ship_billno_prefix,
+    should_stamp_iclow,
 )
 from src.transfer.writers._engine import _next_billno_on_table, transfer_bill_yymm, transfer_write_permission_hint
 from src.transfer.writers.ship_simas import TransferShipError, post_transfer_ship, post_transfer_tf
@@ -64,6 +65,21 @@ def test_transfer_write_permission_hint():
     exc = Exception("SELECT permission was denied on object 'PIMAS' (229)")
     hint = transfer_write_permission_hint(exc, branch="SYP", tables="PIMAS/PIDET")
     assert hint and "kss-pc" in hint and "grant_transfer_writer" in hint
+
+
+def test_should_stamp_iclow_hq_to_syp_on_syp_only():
+    assert should_stamp_iclow(
+        enabled=True, site="SYP", from_branch="HQ", to_branch="SYP"
+    )
+    assert not should_stamp_iclow(
+        enabled=True, site="HQ", from_branch="SYP", to_branch="HQ"
+    )
+    assert not should_stamp_iclow(
+        enabled=True, site="HQ", from_branch="HQ", to_branch="SYP"
+    )
+    assert not should_stamp_iclow(
+        enabled=False, site="SYP", from_branch="HQ", to_branch="SYP"
+    )
 
 
 def test_site_permissions():
