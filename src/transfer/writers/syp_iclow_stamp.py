@@ -6,8 +6,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from src.parts9_explorer.db import get_site_engine
 from src.transfer.config import get_transfer_settings
+from src.transfer.writers._engine import writer_engine_for_branch
 
 
 class ICLOWStampError(RuntimeError):
@@ -24,9 +24,7 @@ def _get_iclow_engine() -> Engine:
     if not settings.is_syp:
         raise ICLOWStampError("ICLOW stamping is SYP-only", code="not_syp_site")
     
-    # Use the configured database name and server 
-    engine = get_site_engine("syp")
-    return engine
+    return writer_engine_for_branch("syp")
 
 
 def stamp_on_submit(*, bcode: str, short_id: str) -> dict[str, Any] | None:

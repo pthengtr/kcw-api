@@ -104,6 +104,12 @@ body.busy #busy{display:flex}
 .action-card .desc{font-size:.82rem;color:var(--muted);margin:0;line-height:1.45}
 .action-card .count{display:inline-block;margin-top:.55rem;font-size:.75rem;font-weight:600;color:var(--acc);background:#e8f0ff;padding:.2rem .55rem;border-radius:999px}
 .flow-hint{font-size:.82rem;color:var(--muted);background:#f8fafc;border:1px dashed var(--line);border-radius:12px;padding:.75rem .85rem;margin-bottom:.85rem;line-height:1.5}
+.bill-explain{font-size:.82rem;color:var(--text);background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:.75rem .85rem;margin:.75rem 0;line-height:1.55}
+.bill-explain strong{color:#92400e}
+.bill-steps{margin:.45rem 0 0;padding-left:1.15rem}
+.bill-steps li{margin:.35rem 0}
+.bill-when{font-weight:600}
+.bill-none{color:var(--warn);font-weight:500}
 .steps{display:flex;gap:.35rem;margin-bottom:1rem;flex-wrap:wrap}
 .step{flex:1;min-width:5.5rem;text-align:center;padding:.45rem .35rem;border-radius:10px;font-size:.72rem;background:#fff;border:1px solid var(--line);color:var(--muted)}
 .step.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
@@ -201,6 +207,72 @@ function showToast(msg){
 }
 function uuid(){return crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+"-"+Math.random().toString(16).slice(2)}
 function dirLabel(fromB, toB){return (fromB||"?")+" → "+(toB||"?")}
+function shipBillPrefix(fromBranch){
+  return (fromBranch||"").toUpperCase()==="SYP" ? "3TF" : "TF";
+}
+function receiveBillPrefix(fromBranch, toBranch){
+  if((fromBranch||"").toUpperCase()==="SYP" && (toBranch||"").toUpperCase()==="HQ") return "3TF";
+  return "TF";
+}
+function parts9Host(branch){
+  return (branch||"").toUpperCase()==="SYP" ? "kss-pc (SYP)" : "KSS (HQ)";
+}
+function billTimelineHtml(fromB, toB){
+  const fb = (fromB||"HQ").toUpperCase();
+  const tb = (toB||"SYP").toUpperCase();
+  const shipP = shipBillPrefix(fb);
+  const recvP = receiveBillPrefix(fb, tb);
+  return `<div class="bill-explain">
+    <strong>ใบ TF ถูกสร้างเมื่อไหร่?</strong>
+    <ol class="bill-steps">
+      <li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>
+      <li><span class="bill-when">${fb} จัดส่ง</span> — สร้างใบ <strong>${shipP} SIMAS</strong> บน ${parts9Host(fb)} (ตัดสต๊อกออก)</li>
+      <li><span class="bill-when">${tb} รับเข้า</span> — สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อกเข้า)</li>
+    </ol>
+  </div>`;
+}
+function submitBillNoteHtml(fromB, toB){
+  const fb = (fromB||OTHER).toUpperCase();
+  const tb = (toB||SITE).toUpperCase();
+  const shipP = shipBillPrefix(fb);
+  const recvP = receiveBillPrefix(fb, tb);
+  return `<div class="bill-explain">
+    <strong>ตอนกดยืนยันส่งคำขอ จะเกิดอะไรขึ้น?</strong>
+    <ul class="bill-steps">
+      <li>สร้างคำขอโอน <code>TRF-…</code> (อ้างอิงในระบบ — <strong>ไม่ใช่เลขบิล PARTS9</strong>)</li>
+      <li>แสตมป์ ICLOW ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>
+      <li class="bill-none">ยังไม่ออกใบ TF — ใบ ${shipP} สร้างตอน ${fb} จัดส่ง · ใบ ${recvP} สร้างตอน ${tb} รับเข้า</li>
+    </ul>
+  </div>`;
+}
+function prepareBillNoteHtml(fromB, toB){
+  const fb = (fromB||SITE).toUpperCase();
+  const tb = (toB||OTHER).toUpperCase();
+  const shipP = shipBillPrefix(fb);
+  const recvP = receiveBillPrefix(fb, tb);
+  return `<div class="bill-explain">
+    <strong>เมื่อยืนยันจัดส่ง ระบบจะ:</strong>
+    <ul class="bill-steps">
+      <li>สร้างใบ <strong>${shipP} SIMAS</strong> บน ${parts9Host(fb)} ทันที (ตัดสต๊อก ${fb})</li>
+      <li>ยังไม่มีใบรับ — ${tb} จะออก <strong>${recvP} PIMAS</strong> ตอนกดรับเข้า</li>
+    </ul>
+  </div>`;
+}
+function receiveBillNoteHtml(fromB, toB, shipBillno){
+  const fb = (fromB||OTHER).toUpperCase();
+  const tb = (toB||SITE).toUpperCase();
+  const recvP = receiveBillPrefix(fb, tb);
+  const shipP = shipBillPrefix(fb);
+  const shipRef = shipBillno ? `<code>${shipBillno}</code>` : `ใบ ${shipP} ที่ ${fb} จัดไป`;
+  return `<div class="bill-explain">
+    <strong>เมื่อยืนยันรับเข้า ระบบจะ:</strong>
+    <ul class="bill-steps">
+      <li>สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อก ${tb})</li>
+      <li>อ้างอิงใบจัด ${shipRef}</li>
+      <li>อัปเดต ICLOW ว่ารับแล้ว</li>
+    </ul>
+  </div>`;
+}
 function orderFlowText(){
   if(orderDirection === "to_syp") return OTHER + " จัดส่ง → " + SITE + " รับเข้า";
   return SITE === "HQ" ? (OTHER + " จัดส่ง → " + SITE + " รับเข้า") : (OTHER + " จัดส่ง → " + SITE + " รับเข้า");
@@ -286,6 +358,7 @@ async function renderHome(el){
   el.innerHTML = `
     <div class="flow-hint"><strong>ขั้นตอนโอนสินค้า</strong><br>
     1) สาขาที่<strong>ต้องการสินค้า</strong> กดขอโอน → 2) สาขาที่<strong>มีสินค้า</strong> กดจัดส่ง → 3) สาขาที่ขอ กดรับเข้า</div>
+    ${billTimelineHtml(OTHER, SITE)}
     <div class="action-grid">
       <button class="action-card" data-go="request">
         <p class="title">📥 ขอสินค้าจาก ${OTHER}</p>
@@ -444,6 +517,7 @@ async function renderRequest(el){
       <div class="card">
         <p><strong>ทิศทาง:</strong> ${OTHER} จัดส่ง → ${SITE} รับเข้า</p>
         <p class="meta">ตรวจสอบรายการก่อนส่งคำขอ — ${OTHER} จะเห็นในรายการรอจัด</p>
+        ${submitBillNoteHtml(OTHER, SITE)}
         <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
           ${cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td>${fmtQty(n.qty)}</td></tr>`).join("")}
         </tbody></table></div>
@@ -479,7 +553,8 @@ async function openPrepareDialog(transferId){
   }).join("");
   const modal = showModal(`<h2>จัดสินค้า · ${detail.short_id||transferId}</h2>
     <div class="dir">${dirLabel(detail.from_branch, detail.to_branch)}</div>
-    <p class="meta">ระบุจำนวนที่จัดในครั้งนี้ (ออกใบ TF) แล้วกดยืนยัน</p>
+    ${prepareBillNoteHtml(detail.from_branch, detail.to_branch)}
+    <p class="meta">ระบุจำนวนที่จัดในครั้งนี้ แล้วกดยืนยัน</p>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>ขอ</th><th>จัดแล้ว</th><th>จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoPrepare">ยืนยันจัดแล้ว</button></div>`);
   modal.box.querySelector("#btnDoPrepare").onclick = async()=>{
@@ -491,8 +566,11 @@ async function openPrepareDialog(transferId){
     if(!shipLines.length){alert("ระบุจำนวนที่จัด");return;}
     if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
     try{
-      await api("/transfer/api/requests/"+transferId+"/prepare",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:shipLines})});
-      modal.close(); showToast("จัดสินค้าแล้ว"); render();
+      const result = await api("/transfer/api/requests/"+transferId+"/prepare",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:shipLines})});
+      const bill = result.ship_billno || result.tf_billno || "";
+      modal.close();
+      showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");
+      render();
     }catch(e){alert(e.message);}
   };
 }
@@ -509,8 +587,10 @@ async function openReceiveDialog(transferId){
     return `<tr><td><code>${sl.bcode}</code></td><td>${fmtQty(sl.qty_shipped)}</td><td>${fmtQty(sl.qty_received||0)}</td>
       <td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" data-bcode="${sl.bcode}" data-line="${sl.line_id||""}"/></td></tr>`;
   }).join("");
+  const shipBill = ship.ship_billno || ship.tf_billno || "";
   const modal = showModal(`<h2>รับสินค้า · ${detail.short_id||transferId}</h2>
-    <div class="dir">${dirLabel(detail.from_branch, detail.to_branch)} · ใบจัด ${ship.ship_billno||ship.tf_billno||"-"}</div>
+    <div class="dir">${dirLabel(detail.from_branch, detail.to_branch)} · ใบจัด ${shipBill||"-"}</div>
+    ${receiveBillNoteHtml(detail.from_branch, detail.to_branch, shipBill)}
     <p class="meta">ระบุจำนวนที่รับในครั้งนี้ แล้วกดยืนยัน</p>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>จัด</th><th>รับแล้ว</th><th>รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoReceive">ยืนยันรับแล้ว</button></div>`);
@@ -523,8 +603,11 @@ async function openReceiveDialog(transferId){
     if(!recvLines.length){alert("ระบุจำนวนที่รับ");return;}
     if(!RECV_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
     try{
-      await api("/transfer/api/shipments/"+ship.shipment_id+"/receive",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:recvLines})});
-      modal.close(); showToast("รับสินค้าแล้ว"); render();
+      const result = await api("/transfer/api/shipments/"+ship.shipment_id+"/receive",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:recvLines})});
+      const bill = result.receive_billno || "";
+      modal.close();
+      showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
+      render();
     }catch(e){alert(e.message);}
   };
 }
@@ -537,7 +620,8 @@ async function renderPrepare(el){
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     return;
   }
-  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่จัด → ระบบออกใบ TF ให้อัตโนมัติ</div>
+  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่จัด → ระบบออกใบ TF SIMAS ให้อัตโนมัติ</div>
+    ${billTimelineHtml(SITE, OTHER)}
     <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>
       ${items.map(r=>`<tr>
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
@@ -557,7 +641,8 @@ async function renderReceive(el){
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     return;
   }
-  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่รับ → ระบบรับเข้าสต็อกให้อัตโนมัติ</div>
+  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่รับ → ระบบออกใบ TF PIMAS ให้อัตโนมัติ</div>
+    ${billTimelineHtml(OTHER, SITE)}
     <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>
       ${items.map(r=>`<tr>
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>

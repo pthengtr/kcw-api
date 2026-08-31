@@ -12,7 +12,7 @@ from src.transfer.writers.syp_iclow_stamp import (
 @pytest.fixture
 def mock_engine():
     """Mock SQLAlchemy engine for testing."""
-    with patch("src.transfer.writers.syp_iclow_stamp.get_site_engine") as mock:
+    with patch("src.transfer.writers.syp_iclow_stamp.writer_engine_for_branch") as mock:
         engine = MagicMock()
         mock.return_value = engine
         yield engine
