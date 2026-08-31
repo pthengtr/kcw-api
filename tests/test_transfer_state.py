@@ -4,6 +4,7 @@ from src.transfer.state import (
     derive_request_status,
     qty_open_prepare,
     qty_open_receive,
+    request_has_open_prepare,
 )
 
 
@@ -63,6 +64,18 @@ def test_over_receive_denied():
         },
     )
     assert not r.allowed
+
+
+def test_request_has_open_prepare():
+    assert request_has_open_prepare(
+        [{"qty_requested": 10, "qty_prepared": 6, "qty_received": 0}]
+    )
+    assert not request_has_open_prepare(
+        [{"qty_requested": 10, "qty_prepared": 10, "qty_received": 0}]
+    )
+    assert not request_has_open_prepare(
+        [{"qty_requested": 10, "qty_prepared": 10, "qty_received": 10}]
+    )
 
 
 def test_request_status_awaiting_receive():
