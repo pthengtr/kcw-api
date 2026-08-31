@@ -299,6 +299,12 @@ function dirLabel(fromB, toB){return (fromB||"?")+" → "+(toB||"?")}
 function shipBillPrefix(fromBranch){
   return (fromBranch||"").toUpperCase()==="SYP" ? "3TF" : "TF";
 }
+function branchQtyoh2(row, branch){
+  const b = (branch||"").toUpperCase();
+  if(b === "HQ") return row.hq_qtyoh2;
+  if(b === "SYP") return row.syp_qtyoh2;
+  return row.from_qtyoh2 ?? row.to_qtyoh2;
+}
 function receiveBillPrefix(fromBranch, toBranch){
   if((fromBranch||"").toUpperCase()==="SYP" && (toBranch||"").toUpperCase()==="HQ") return "3TF";
   return "TF";
@@ -1066,18 +1072,20 @@ async function renderPrepare(el){
   }
 
   if(prepareStep === 2){
+    const shipBranch = (req.from_branch||SITE).toUpperCase();
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
-      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
+      const stock = branchQtyoh2(ln, shipBranch);
+      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtStockDual(stock, ln)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
         <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-line="${ln.line_id}"/></td></tr>`;
     }).join("");
     el.innerHTML = `${prepareStepBar(2)}
       <div class="card">
         <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
-        <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้</p>
+        <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้ · คงเหลือ ${shipBranch} อ่านจาก PARTS9 สด</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
-        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranch}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(1)">← เลือกคำขออื่น</button>
           <button class="btn btn-primary" id="btnPrepNext2">ถัดไป → ตรวจสอบ</button>
@@ -1099,15 +1107,16 @@ async function renderPrepare(el){
 
   if(prepareStep === 3){
     const qtyMap = req._qtyDraft||{};
+    const shipBranch = (req.from_branch||SITE).toUpperCase();
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
+      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtStockDual(branchQtyoh2(ln, shipBranch), ln)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
     `).join("");
     el.innerHTML = `${prepareStepBar(3)}
       <div class="card">
         <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
         <p class="meta">ตรวจสอบจำนวนก่อนยืนยัน — ระบบจะออกใบ TF SIMAS ทันที</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
-        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>
+        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranch}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(2)">← แก้ไขจำนวน</button>
           <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันจัดส่ง (ออกใบ TF)</button>

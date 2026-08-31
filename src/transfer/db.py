@@ -10,6 +10,7 @@ from src.transfer.config import get_transfer_settings
 from datetime import datetime, timezone
 
 from src.transfer.state import derive_line_status, derive_request_status, make_short_id, prep_recv_mismatch, qty_open_prepare, qty_short_vs_order, request_has_open_prepare, summarize_request_progress
+from src.transfer.parts9 import enrich_transfer_lines
 
 TRANSFER_SCHEMA = "transfer"
 
@@ -424,7 +425,14 @@ def list_receive_queue(client: Client, *, site: str) -> list[dict[str, Any]]:
         shipments = list_shipments(client, transfer_id=transfer_id)
         if not shipments:
             continue
-        lines_by_id = {ln["line_id"]: ln for ln in enrich_lines(list_lines(client, transfer_id))}
+        lines_by_id = {
+            ln["line_id"]: ln
+            for ln in enrich_transfer_lines(
+                enrich_lines(list_lines(client, transfer_id)),
+                from_branch=req.get("from_branch"),
+                to_branch=req.get("to_branch"),
+            )
+        }
         for ship in shipments:
             ship_billno = ship.get("ship_billno") or ship.get("tf_billno") or ""
             for sl in list_shipment_lines(client, shipment_id=ship["shipment_id"]):
@@ -451,6 +459,12 @@ def list_receive_queue(client: Client, *, site: str) -> list[dict[str, Any]]:
                         "qty_open": qty_open,
                         "ship_billno": ship_billno,
                         "iclow_id": tr_line.get("iclow_id"),
+                        "hq_qtyoh2": tr_line.get("hq_qtyoh2"),
+                        "syp_qtyoh2": tr_line.get("syp_qtyoh2"),
+                        "to_qtyoh2": tr_line.get("to_qtyoh2"),
+                        "ui1": tr_line.get("ui1"),
+                        "ui2": tr_line.get("ui2"),
+                        "mtp2": tr_line.get("mtp2"),
                     }
                 )
     return out

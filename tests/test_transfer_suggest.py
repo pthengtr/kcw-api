@@ -40,7 +40,7 @@ def test_suggest_transfer_skus_from_iclow_to_be_ordered():
         "count": 3,
     }
 
-    def fake_icmas_meta(engine, bcodes):
+    def fake_icmas_meta(engine, bcodes, include_blocked=False):
         if engine is hq_engine:
             return {
                 "A001": _meta(10.0, descr="Widget A HQ"),
@@ -83,7 +83,7 @@ def test_suggest_transfer_skus_skips_do_not_restock():
         "count": 2,
     }
 
-    def fake_icmas_meta(engine, bcodes):
+    def fake_icmas_meta(engine, bcodes, include_blocked=False):
         return {
             "NR01": _meta(0.0, blocked=True),
             "OK01": _meta(1.0, ui1="ea", ui2="กล่อง", mtp2=12.0),
@@ -189,3 +189,28 @@ def test_fetch_all_iclow_paginates():
     assert len(rows) == 2
     assert rows[0]["bcode"] == "A"
     assert rows[1]["bcode"] == "B"
+
+
+def test_suggest_shows_blocked_hq_stock_for_display():
+    iclow_rows = [{"bcode": "NR01", "descr": "No restock", "qty": 1, "ordered_qty": 1}]
+
+    def fake_icmas_meta(engine, bcodes, include_blocked=False):
+        if engine is hq_engine:
+            return {"NR01": _meta(7.0, blocked=True)}
+        return {"NR01": _meta(2.0)}
+
+    hq_engine = MagicMock(name="hq")
+    syp_engine = MagicMock(name="syp")
+
+    def fake_engine(site):
+        return hq_engine if site == "hq" else syp_engine
+
+    with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows):
+        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
+                    items = suggest_transfer_skus(site="SYP", limit=50)
+
+    assert len(items) == 1
+    assert items[0]["hq_qtyoh2"] == 7.0
+    assert items[0]["syp_qtyoh2"] == 2.0

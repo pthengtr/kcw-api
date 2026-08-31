@@ -344,7 +344,11 @@ def api_request_lines(transfer_id: str, request: Request):
     header = get_request(client, transfer_id)
     if not header:
         return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
-    lines = enrich_transfer_lines(enrich_lines(list_lines(client, transfer_id)))
+    lines = enrich_transfer_lines(
+        enrich_lines(list_lines(client, transfer_id)),
+        from_branch=header.get("from_branch"),
+        to_branch=header.get("to_branch"),
+    )
     shipments = list_shipments(client, transfer_id=transfer_id)
     for ship in shipments:
         ship["lines"] = list_shipment_lines(client, shipment_id=ship["shipment_id"])
