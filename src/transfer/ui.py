@@ -33,10 +33,12 @@ def page(
     site_u = (site or "HQ").upper()
     ship_on = syp_ship_enabled if site_u == "SYP" else hq_ship_enabled
     recv_on = syp_receive_enabled if site_u == "SYP" else hq_receive_enabled
+    other = "HQ" if site_u == "SYP" else "SYP"
     return (
         _HTML.replace("__USER_JSON__", json.dumps(who, ensure_ascii=False))
         .replace("__USER__", html_lib.escape(who))
         .replace("__SITE__", site_u)
+        .replace("__OTHER__", other)
         .replace('__SHIP_WRITE__ === "true"', "true" if ship_on else "false")
         .replace('__RECV_WRITE__ === "true"', "true" if recv_on else "false")
         .replace("__INITIALS__", html_lib.escape(initials(who)))
@@ -48,20 +50,19 @@ _HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<meta name="color-scheme" content="light dark"/>
+<meta name="color-scheme" content="light"/>
 <meta name="theme-color" content="#f3f5f9" id="themeColor"/>
 <title>โอนสินค้า · __SITE__</title>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root{--acc:#2f6bff;--ok:#15803d;--warn:#c2410c;--down:#dc2626;--card:#fff;--line:#e5e9f2;--text:#111827;--muted:#6b7280;--shadow:0 1px 2px rgba(16,24,40,.06),0 4px 12px rgba(16,24,40,.04)}
 *{box-sizing:border-box}body{margin:0;font-family:Prompt,sans-serif;background:#f3f5f9;color:var(--text)}
-.hdr{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);padding:.85rem 1rem;box-shadow:var(--shadow)}
-.hdr h1{margin:0;font-size:1.15rem}.hdr .sub{font-size:.8rem;color:var(--muted)}
-.tabs{display:flex;gap:.35rem;overflow:auto;padding:.65rem 1rem;background:#fff;border-bottom:1px solid var(--line)}
-.tab{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:999px;padding:.45rem .85rem;font-size:.82rem;white-space:nowrap;cursor:pointer;font-family:inherit}
-.tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-.panel{display:none;padding:1rem;max-width:1120px;margin:0 auto}
-.panel.on{display:block}
+button{font:inherit;color:var(--text);-webkit-appearance:none;appearance:none}
+.hdr{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);padding:.75rem 1rem;box-shadow:var(--shadow);display:flex;align-items:center;gap:.65rem}
+.hdr-main{flex:1;min-width:0}
+.hdr h1{margin:0;font-size:1.05rem;color:var(--text)}.hdr .sub{font-size:.78rem;color:var(--muted)}
+.back-btn{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;padding:.4rem .7rem;font:inherit;cursor:pointer;white-space:nowrap}
+main{padding:1rem;max-width:720px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem;box-shadow:var(--shadow);margin-bottom:.85rem}
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}
 table{width:100%;border-collapse:collapse;font-size:.88rem}
@@ -69,253 +70,500 @@ th,td{padding:.55rem .65rem;border-bottom:1px solid var(--line);text-align:left}
 th{background:#f8fafc;position:sticky;top:0}
 .badge{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.72rem;font-weight:600}
 .b-requested{background:#e8f0ff;color:#1d4ed8}.b-await{background:#ffedd5;color:#c2410c}.b-done{background:#dcfce7;color:#15803d}
-.btn{border:0;border-radius:10px;padding:.55rem 1rem;font-family:inherit;font-weight:600;cursor:pointer}
-.btn-primary{background:var(--acc);color:#fff}.btn-ghost{background:#fff;border:1px solid var(--line)}
+.btn{border:0;border-radius:10px;padding:.55rem 1rem;font-family:inherit;font-weight:600;cursor:pointer;color:var(--text)}
+.btn-primary{background:var(--acc);color:#fff}.btn-ghost{background:#fff;border:1px solid var(--line);color:var(--text)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-block{width:100%;text-align:left}
 .row-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
 .empty{color:var(--muted);text-align:center;padding:2rem 1rem}
 #busy{position:fixed;inset:0;background:rgba(255,255,255,.75);display:none;align-items:center;justify-content:center;z-index:50;font-weight:600}
 body.busy #busy{display:flex}
 .dir{font-size:.75rem;color:var(--muted)}
-.qty-input{width:5rem;padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit}
+.qty-input{width:5rem;padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
+.text-input{flex:1;min-width:0;padding:.5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
+.unit-select{padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:.82rem;color:var(--text);background:#fff;color-scheme:light}
+.meta{font-size:.72rem;color:var(--muted);line-height:1.35}
+.toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:.55rem 1rem;border-radius:10px;font-size:.85rem;z-index:70;display:none;max-width:90vw;text-align:center}
+.toast.on{display:block}
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:60;padding:1rem}
 .modal-backdrop.on{display:flex}
 .modal{background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:1rem;box-shadow:var(--shadow)}
 .modal h2{margin:0 0 .75rem;font-size:1rem}
-@media(max-width:640px){.t-full{display:none}.t-short{display:inline}}
-@media(min-width:641px){.t-short{display:none}}
+.action-grid{display:grid;gap:.75rem}
+.action-card{border:1px solid var(--line);border-radius:14px;padding:1rem;background:#fff;color:var(--text);cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s;width:100%}
+.action-card:hover,.action-card:focus{border-color:var(--acc);box-shadow:var(--shadow);outline:none}
+.action-card .title{font-size:1rem;font-weight:700;margin:0 0 .25rem;color:var(--text)}
+.action-card .desc{font-size:.82rem;color:var(--muted);margin:0;line-height:1.45}
+.action-card .count{display:inline-block;margin-top:.55rem;font-size:.75rem;font-weight:600;color:var(--acc);background:#e8f0ff;padding:.2rem .55rem;border-radius:999px}
+.flow-hint{font-size:.82rem;color:var(--muted);background:#f8fafc;border:1px dashed var(--line);border-radius:12px;padding:.75rem .85rem;margin-bottom:.85rem;line-height:1.5}
+.steps{display:flex;gap:.35rem;margin-bottom:1rem;flex-wrap:wrap}
+.step{flex:1;min-width:5.5rem;text-align:center;padding:.45rem .35rem;border-radius:10px;font-size:.72rem;background:#fff;border:1px solid var(--line);color:var(--muted)}
+.step.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.step.done{background:#dcfce7;color:var(--ok);border-color:#bbf7d0}
+.step-label{display:block;font-size:.68rem;opacity:.9;margin-top:.15rem}
+.status-tabs{display:flex;gap:.35rem;margin-bottom:.75rem;flex-wrap:wrap}
+.status-tab{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:999px;padding:.4rem .75rem;font-size:.8rem;cursor:pointer;font-family:inherit}
+.status-tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.pipeline{display:flex;gap:.25rem;align-items:center;font-size:.68rem;color:var(--muted);margin-top:.35rem}
+.pipe-dot{width:.45rem;height:.45rem;border-radius:50%;background:#d1d5db}
+.pipe-dot.on{background:var(--acc)}.pipe-dot.done{background:var(--ok)}
 </style>
 </head>
 <body>
 <div id="busy">กำลังดำเนินการ…</div>
+<div id="toast" class="toast"></div>
 <div id="modalBackdrop" class="modal-backdrop"><div class="modal" id="modalBox"></div></div>
 <header class="hdr">
-  <h1>โอนสินค้า · __SITE__</h1>
-  <div class="sub">__USER__ · ขอโอน → จัดออก → รับเข้า (HQ ↔ SYP)</div>
+  <button id="btnBack" class="back-btn" style="display:none">← กลับ</button>
+  <div class="hdr-main">
+    <h1 id="hdrTitle">โอนสินค้า · __SITE__</h1>
+    <div class="sub" id="hdrSub">__USER__</div>
+  </div>
 </header>
-<nav class="tabs" id="tabs"></nav>
-<main>
-  <section class="panel on" id="panelMain"><div class="card"><div id="content" class="empty">กำลังโหลด…</div></div></section>
-</main>
+<main><div id="content" class="empty">กำลังโหลด…</div></main>
 <script>
 const SITE = "__SITE__";
+const OTHER = "__OTHER__";
 const SHIP_WRITE = __SHIP_WRITE__ === "true";
 const RECV_WRITE = __RECV_WRITE__ === "true";
 const USER = __USER_JSON__;
-const TABS = [
-  {id:"suggest", label:"แนะนำโอน", short:"แนะนำ"},
-  {id:"draft", label:"ขอโอน", short:"ขอโอน"},
-  {id:"prepare", label:"รอจัด (ออก)", short:"รอจัด"},
-  {id:"receive", label:"รอรับ (เข้า)", short:"รอรับ"},
-  {id:"history", label:"ประวัติ", short:"ประวัติ"},
-];
-let activeTab = "suggest";
-let draftLines = [];
-let draftDirection = "to_syp";
+
+let view = "home";
+let requestStep = 1;
+let orderDirection = SITE === "SYP" ? "to_syp" : "to_hq";
+let statusFilter = "active";
+let suggestItems = [];
+let toastTimer = null;
+
+const VIEWS = {
+  home: {title: "โอนสินค้า · " + SITE, sub: "เลือกสิ่งที่ต้องการทำ"},
+  request: {title: "ขอสินค้า", sub: "ขั้นตอนที่ " + requestStep + " จาก 3"},
+  prepare: {title: "จัดส่งสินค้า", sub: "รายการที่รอจัดออกจาก " + SITE},
+  receive: {title: "รับสินค้า", sub: "รายการที่รอรับเข้า " + SITE},
+  status: {title: "ตรวจสอบสถานะ", sub: "ติดตามคำขอโอนทั้งหมด"},
+};
 
 function $(id){return document.getElementById(id)}
-function fmtQty(n){return Number(n||0).toLocaleString("th-TH",{maximumFractionDigits:2})}
+function fmtQty(n){
+  const x = Number(n);
+  if(n === null || n === undefined || n === "" || Number.isNaN(x)) return "—";
+  if(Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
+  return x.toLocaleString("th-TH",{maximumFractionDigits:2});
+}
+function fmtQtyUi(qty, ui){
+  const q = fmtQty(qty);
+  const u = (ui || "").trim();
+  if(q === "—") return q;
+  return u ? (q + " " + u) : q;
+}
+function unitChoices(row){
+  const mtp2 = Number(row.mtp2) || 1;
+  const ui1 = (row.ui1 || "ชิ้น").trim() || "ชิ้น";
+  const ui2 = (row.ui2 || "").trim();
+  const out = [{id:"small", label:ui1, factor:1}];
+  if(mtp2 > 1 && ui2) out.push({id:"large", label:ui2, factor:mtp2});
+  return out;
+}
+function fmtStockDual(smallQty, row){
+  const mtp2 = Number(row.mtp2) || 1;
+  const ui1 = (row.ui1 || "").trim();
+  const ui2 = (row.ui2 || "").trim();
+  const main = fmtQtyUi(smallQty, ui1);
+  if(mtp2 > 1 && ui2) return main + `<div class="meta">${fmtQty(smallQty / mtp2)} ${ui2}</div>`;
+  return main;
+}
+function qtyToSmall(qty, unitId, row){
+  const choices = unitChoices(row);
+  const picked = choices.find(c=>c.id===unitId) || choices[0];
+  return Number(qty||0) * picked.factor;
+}
+function defaultEntryQty(row){
+  const choices = unitChoices(row);
+  const small = Number(row.suggest_qty||0);
+  if(choices.length > 1 && small >= (Number(row.mtp2)||1)) return {unit:"large", qty: small / (Number(row.mtp2)||1)};
+  return {unit:"small", qty: small || 1};
+}
+function showToast(msg){
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("on");
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove("on"), 2600);
+}
 function uuid(){return crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+"-"+Math.random().toString(16).slice(2)}
 function dirLabel(fromB, toB){return (fromB||"?")+" → "+(toB||"?")}
+function orderFlowText(){
+  if(orderDirection === "to_syp") return OTHER + " จัดส่ง → " + SITE + " รับเข้า";
+  return SITE === "HQ" ? (OTHER + " จัดส่ง → " + SITE + " รับเข้า") : (OTHER + " จัดส่ง → " + SITE + " รับเข้า");
+}
 function badge(status, fromB, toB){
   const m={draft:"b-requested",requested:"b-requested",partial_prepared:"b-await",awaiting_receive:"b-await",partial_received:"b-await",complete:"b-done",cancelled:"b-requested"};
   const fb = fromB||"HQ";
   const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดบางส่วน",awaiting_receive:"รอรับ",partial_received:"รับบางส่วน",complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
   return `<span class="badge ${m[status]||"b-requested"}">${t[status]||status||"-"}</span>`;
 }
+function pipeline(status){
+  const steps = ["requested","prepared","received","done"];
+  const idx = status==="complete" ? 3 : status==="awaiting_receive"||status==="partial_received" ? 2 : status==="partial_prepared" ? 1 : 0;
+  const labels = ["ขอแล้ว","จัดแล้ว","รับแล้ว","เสร็จ"];
+  return `<div class="pipeline">${labels.map((l,i)=>`<span class="pipe-dot ${i<idx?"done":i===idx?"on":""}"></span><span>${l}</span>`).join("")}</div>`;
+}
 function setBusy(on){document.body.classList.toggle("busy",!!on)}
-function showModal(html, onClose){
+function showModal(html){
   const box = $("modalBox");
   box.innerHTML = html;
   $("modalBackdrop").classList.add("on");
   const close = ()=>{$("modalBackdrop").classList.remove("on"); box.innerHTML="";};
   $("modalBackdrop").onclick = e=>{if(e.target===$("modalBackdrop")) close();};
   box.querySelectorAll("[data-close]").forEach(b=>b.onclick=close);
-  if(onClose) box._onClose = onClose;
   return {close, box};
 }
 async function api(path, opts){
   setBusy(true);
   try{
-    const r = await fetch(path, Object.assign({headers:{"Content-Type":"application/json"}}, opts||{}));
+    const r = await fetch(path, Object.assign({credentials:"same-origin",headers:{"Content-Type":"application/json"}}, opts||{}));
     const j = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error||j.detail||("HTTP "+r.status));
     return j;
   } finally { setBusy(false); }
 }
-function renderTabs(){
-  $("tabs").innerHTML = TABS.map(t=>`<button class="tab ${t.id===activeTab?"on":""}" data-tab="${t.id}"><span class="t-full">${t.label}</span><span class="t-short">${t.short}</span></button>`).join("");
-  $("tabs").querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{activeTab=btn.dataset.tab; renderTabs(); loadPanel();});
+async function submitTransferLines(lines, direction){
+  const d = await api("/transfer/api/requests/draft",{method:"POST",body:JSON.stringify({direction})});
+  await api("/transfer/api/requests/"+d.transfer_id+"/lines",{
+    method:"PUT",
+    body:JSON.stringify({lines:lines.map(l=>({bcode:l.bcode,qty:l.qty,descr:l.descr||""}))}),
+  });
+  return api("/transfer/api/requests/"+d.transfer_id+"/submit",{method:"POST",body:"{}"});
+}
+function goHome(){ view="home"; requestStep=1; render(); }
+function goView(v){ view=v; if(v==="request") requestStep=1; render(); }
+function setRequestStep(n){ requestStep=n; render(); }
+
+function updateHeader(){
+  const titles = {
+    home: ["โอนสินค้า · " + SITE, USER + " · เลือกสิ่งที่ต้องการทำ"],
+    request: ["ขอสินค้าจาก " + OTHER, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
+    prepare: ["จัดส่งไป " + OTHER, "รายการที่ " + SITE + " ต้องจัดออก"],
+    receive: ["รับสินค้าจาก " + OTHER, "รายการที่รอรับเข้า " + SITE],
+    status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
+  };
+  const t = titles[view] || titles.home;
+  $("hdrTitle").textContent = t[0];
+  $("hdrSub").textContent = t[1];
+  $("btnBack").style.display = view === "home" ? "none" : "";
+}
+
+function stepBar(current){
+  const labels = ["1. เลือกทิศทาง","2. เลือกสินค้า","3. ยืนยันส่ง"];
+  return `<div class="steps">${labels.map((l,i)=>{
+    const n = i+1;
+    const cls = n===current ? "on" : n<current ? "done" : "";
+    return `<div class="step ${cls}">${l}<span class="step-label">${n===1?"ขอจากสาขาไหน":n===2?"เพิ่มรายการ": "ตรวจสอบ"}</span></div>`;
+  }).join("")}</div>`;
+}
+
+async function fetchCounts(){
+  try{
+    const [prep, recv] = await Promise.all([
+      api("/transfer/api/requests?role=prepare"),
+      api("/transfer/api/requests?role=receive"),
+    ]);
+    return {prepare:(prep.items||[]).length, receive:(recv.items||[]).length};
+  }catch(e){ return {prepare:0, receive:0}; }
+}
+
+async function renderHome(el){
+  const counts = await fetchCounts();
+  el.innerHTML = `
+    <div class="flow-hint"><strong>ขั้นตอนโอนสินค้า</strong><br>
+    1) สาขาที่<strong>ต้องการสินค้า</strong> กดขอโอน → 2) สาขาที่<strong>มีสินค้า</strong> กดจัดส่ง → 3) สาขาที่ขอ กดรับเข้า</div>
+    <div class="action-grid">
+      <button class="action-card" data-go="request">
+        <p class="title">📥 ขอสินค้าจาก ${OTHER}</p>
+        <p class="desc">ฉันอยู่ที่ ${SITE} และต้องการให้ ${OTHER} ส่งสินค้ามา</p>
+      </button>
+      <button class="action-card" data-go="prepare">
+        <p class="title">📤 จัดส่งไป ${OTHER}</p>
+        <p class="desc">มีคำขอรอจัด — ${SITE} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
+      </button>
+      <button class="action-card" data-go="receive">
+        <p class="title">📦 รับสินค้าจาก ${OTHER}</p>
+        <p class="desc">สินค้าถูกจัดส่งมาแล้ว — รอรับเข้าที่ ${SITE}${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
+      </button>
+      <button class="action-card" data-go="status">
+        <p class="title">📋 ตรวจสอบสถานะ</p>
+        <p class="desc">ดูคำขอที่ส่งแล้ว กำลังจัด รอรับ หรือเสร็จสิ้น</p>
+      </button>
+    </div>`;
+  el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>goView(b.dataset.go));
+}
+
+async function renderRequest(el){
+  if(requestStep === 1){
+    if(SITE === "SYP") orderDirection = "to_syp";
+    else orderDirection = "to_hq";
+    el.innerHTML = `${stepBar(1)}
+      <div class="card">
+        <p style="margin:0 0 .5rem"><strong>คุณอยู่ที่ ${SITE}</strong></p>
+        <p style="margin:0 0 .75rem">ต้องการขอสินค้าจาก <strong>${OTHER}</strong> ให้ส่งมาที่ ${SITE}</p>
+        <div class="flow-hint" style="margin-bottom:0">
+          <strong>ขั้นตอนถัดไป:</strong><br>
+          1. เลือกรายการสินค้า → 2. ส่งคำขอ → 3. รอ ${OTHER} จัดส่ง → 4. กลับมากดรับสินค้าที่นี่
+        </div>
+        <div class="row-actions" style="margin-top:1rem">
+          <button class="btn btn-ghost" onclick="goHome()">ยกเลิก</button>
+          <button class="btn btn-primary" id="btnReqNext1">ถัดไป → เลือกสินค้า</button>
+        </div>
+      </div>`;
+    el.querySelector("#btnReqNext1").onclick = ()=>setRequestStep(2);
+    return;
+  }
+
+  if(requestStep === 2){
+    const [rows, cart] = await Promise.all([api("/transfer/api/suggest"), api("/transfer/api/need-list")]);
+    suggestItems = rows.items || [];
+    const cartItems = cart.items || [];
+    let html = stepBar(2) + `<div class="card"><p style="margin:0 0 .5rem"><strong>ทิศทาง:</strong> ${OTHER} → ${SITE}</p>
+      <p class="meta" style="margin:0 0 .75rem">เลือกจากรายการแนะนำ (ICLOW รอสั่ง) หรือพิมพ์รหัสสินค้าเอง</p>`;
+    if(suggestItems.length){
+      html += `<div class="table-wrap"><table><thead><tr>
+        <th>รหัส</th><th>รายละเอียด</th><th>คงเหลือ HQ</th><th>คงเหลือ SYP</th><th>แนะนำ</th><th>หน่วย</th><th>จำนวน</th><th></th>
+      </tr></thead><tbody>`;
+      html += suggestItems.map((r,idx)=>{
+        const entry = defaultEntryQty(r);
+        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
+        return `<tr><td><code>${r.bcode}</code></td><td>${r.descr||""}</td>
+          <td>${fmtStockDual(r.hq_qtyoh2,r)}</td><td>${fmtStockDual(r.syp_qtyoh2,r)}</td>
+          <td>${fmtStockDual(r.suggest_qty,r)}</td>
+          <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
+          <td><input class="qty-input" type="number" min="0.01" step="any" value="${entry.qty}" data-qty="${idx}"/></td>
+          <td><button class="btn btn-ghost" data-add="${idx}">เพิ่ม</button></td></tr>`;
+      }).join("");
+      html += `</tbody></table></div>`;
+    } else {
+      html += `<div class="empty">ไม่พบรายการแนะนำ — พิมพ์รหัสด้านล่าง</div>`;
+    }
+    html += `<div class="row-actions" style="margin-top:.75rem">
+      <input id="manualBcode" class="text-input" placeholder="รหัสสินค้า"/>
+      <input id="manualQty" type="number" min="1" value="1" class="qty-input"/>
+      <button class="btn btn-ghost" id="btnManualAdd">เพิ่มรหัส</button>
+    </div></div>`;
+
+    html += `<div class="card"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
+    if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ</div>`;
+    else {
+      html += `<div class="table-wrap" style="margin-top:.5rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>จำนวน</th><th></th></tr></thead><tbody>`;
+      html += cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td>${fmtQty(n.qty)}</td>
+        <td><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></td></tr>`).join("");
+      html += `</tbody></table></div>`;
+    }
+    html += `<div class="row-actions">
+      <button class="btn btn-ghost" onclick="setRequestStep(1)">← ย้อนกลับ</button>
+      <button class="btn btn-primary" id="btnReqNext2" ${cartItems.length?"":"disabled"}>ถัดไป → ตรวจสอบ</button>
+    </div></div>`;
+    el.innerHTML = html;
+
+    el.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=async()=>{
+      const idx = Number(btn.dataset.add);
+      const row = suggestItems[idx];
+      if(!row) return;
+      const unitId = el.querySelector(`[data-unit="${idx}"]`).value;
+      const qty = Number(el.querySelector(`[data-qty="${idx}"]`).value||0);
+      const qtySmall = qtyToSmall(qty, unitId, row);
+      if(qtySmall <= 0){alert("ระบุจำนวน");return;}
+      await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({
+        bcode:row.bcode, qty:qtySmall, suggest_qty:row.suggest_qty, descr:row.descr||"", hq_qtyoh2:row.hq_qtyoh2,
+      })});
+      showToast("เพิ่มแล้ว");
+      setRequestStep(2);
+    });
+    el.querySelector("#btnManualAdd").onclick = async()=>{
+      const b = el.querySelector("#manualBcode").value.trim();
+      const q = Number(el.querySelector("#manualQty").value||0);
+      if(!b||q<=0){alert("ระบุรหัสและจำนวน");return;}
+      await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr:""})});
+      showToast("เพิ่มแล้ว");
+      setRequestStep(2);
+    };
+    el.querySelectorAll("[data-del]").forEach(btn=>btn.onclick=async()=>{
+      await api("/transfer/api/need-list/"+btn.dataset.del,{method:"DELETE"});
+      setRequestStep(2);
+    });
+    el.querySelector("#btnReqNext2").onclick = ()=>setRequestStep(3);
+    return;
+  }
+
+  if(requestStep === 3){
+    const cart = await api("/transfer/api/need-list");
+    const cartItems = cart.items || [];
+    el.innerHTML = `${stepBar(3)}
+      <div class="card">
+        <p><strong>ทิศทาง:</strong> ${OTHER} จัดส่ง → ${SITE} รับเข้า</p>
+        <p class="meta">ตรวจสอบรายการก่อนส่งคำขอ — ${OTHER} จะเห็นในรายการรอจัด</p>
+        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
+          ${cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td>${fmtQty(n.qty)}</td></tr>`).join("")}
+        </tbody></table></div>
+        <div class="row-actions">
+          <button class="btn btn-ghost" onclick="setRequestStep(2)">← แก้ไขรายการ</button>
+          <button class="btn btn-primary" id="btnConfirmSubmit">ยืนยันส่งคำขอ</button>
+        </div>
+      </div>`;
+    el.querySelector("#btnConfirmSubmit").onclick = async()=>{
+      if(!cartItems.length) return;
+      try{
+        const submitted = await submitTransferLines(
+          cartItems.map(n=>({bcode:n.bcode, qty:n.qty, descr:n.descr||""})),
+          orderDirection,
+        );
+        for(const n of cartItems) await api("/transfer/api/need-list/"+n.need_id,{method:"DELETE"});
+        showToast("ส่งคำขอแล้ว: "+(submitted.short_id||submitted.transfer_id));
+        goView("status");
+        statusFilter = "active";
+      }catch(e){alert(e.message);}
+    };
+  }
 }
 
 async function openPrepareDialog(transferId){
   const detail = await api("/transfer/api/requests/"+transferId+"/lines");
-  const lines = detail.lines||[];
-  const pending = lines.filter(l=>{
-    const req = Number(l.qty_requested||0);
-    const prep = Number(l.qty_prepared||0);
-    return req > prep;
-  });
-  if(!pending.length){alert("ไม่มีรายการที่ต้องจัด");return;}
-  const rows = pending.map(l=>{
+  const lines = (detail.items || detail.lines || []).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
+  if(!lines.length){alert("ไม่มีรายการที่ต้องจัด");return;}
+  const rows = lines.map(l=>{
     const remain = Number(l.qty_requested||0)-Number(l.qty_prepared||0);
-    return `<tr data-line="${l.line_id}"><td><code>${l.bcode}</code></td><td>${l.descr||""}</td><td>${fmtQty(l.qty_requested)}</td><td>${fmtQty(l.qty_prepared)}</td><td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" data-bcode="${l.bcode}" data-line="${l.line_id}"/></td></tr>`;
+    return `<tr><td><code>${l.bcode}</code></td><td>${l.descr||""}</td><td>${fmtQty(l.qty_requested)}</td><td>${fmtQty(l.qty_prepared)}</td>
+      <td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" data-bcode="${l.bcode}" data-line="${l.line_id}"/></td></tr>`;
   }).join("");
   const modal = showModal(`<h2>จัดสินค้า · ${detail.short_id||transferId}</h2>
     <div class="dir">${dirLabel(detail.from_branch, detail.to_branch)}</div>
+    <p class="meta">ระบุจำนวนที่จัดในครั้งนี้ (ออกใบ TF) แล้วกดยืนยัน</p>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>ขอ</th><th>จัดแล้ว</th><th>จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoPrepare">ยืนยันจัดแล้ว</button></div>`);
   modal.box.querySelector("#btnDoPrepare").onclick = async()=>{
     const shipLines = [];
     modal.box.querySelectorAll(".qty-input").forEach(inp=>{
       const q = Number(inp.value||0);
-      if(q>0) shipLines.push({line_id: inp.dataset.line, bcode: inp.dataset.bcode, qty_ship: q});
+      if(q>0) shipLines.push({line_id:inp.dataset.line, bcode:inp.dataset.bcode, qty_ship:q});
     });
     if(!shipLines.length){alert("ระบุจำนวนที่จัด");return;}
-    if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่ จะบันทึกใน Supabase เท่านั้น")) return;
+    if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
     try{
-      await api("/transfer/api/prepare",{method:"POST",body:JSON.stringify({transfer_id:transferId,client_token:uuid(),lines:shipLines})});
-      modal.close();
-      loadPanel();
+      await api("/transfer/api/requests/"+transferId+"/prepare",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:shipLines})});
+      modal.close(); showToast("จัดสินค้าแล้ว"); render();
     }catch(e){alert(e.message);}
   };
 }
 
 async function openReceiveDialog(transferId){
   const detail = await api("/transfer/api/requests/"+transferId+"/lines");
-  const shipments = detail.shipments||[];
-  const openShip = shipments.filter(s=>!s.posted_at);
-  if(!openShip.length){alert("ไม่มี shipment ที่รอรับ");return;}
-  const ship = openShip[0];
-  const shipLines = (ship.lines||[]).filter(sl=>{
-    const shipped = Number(sl.qty_shipped||0);
-    const recv = Number(sl.qty_received||0);
-    return shipped > recv;
-  });
+  const shipments = (detail.shipments||[]).filter(s=>!s.posted_at);
+  if(!shipments.length){alert("ไม่มี shipment ที่รอรับ");return;}
+  const ship = shipments[0];
+  const shipLines = (ship.lines||[]).filter(sl=>Number(sl.qty_shipped||0)>Number(sl.qty_received||0));
   if(!shipLines.length){alert("รับครบแล้ว");return;}
   const rows = shipLines.map(sl=>{
     const remain = Number(sl.qty_shipped||0)-Number(sl.qty_received||0);
-    return `<tr><td><code>${sl.bcode}</code></td><td>${fmtQty(sl.qty_shipped)}</td><td>${fmtQty(sl.qty_received||0)}</td><td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" data-bcode="${sl.bcode}"/></td></tr>`;
+    return `<tr><td><code>${sl.bcode}</code></td><td>${fmtQty(sl.qty_shipped)}</td><td>${fmtQty(sl.qty_received||0)}</td>
+      <td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" data-bcode="${sl.bcode}" data-line="${sl.line_id||""}"/></td></tr>`;
   }).join("");
   const modal = showModal(`<h2>รับสินค้า · ${detail.short_id||transferId}</h2>
     <div class="dir">${dirLabel(detail.from_branch, detail.to_branch)} · ใบจัด ${ship.ship_billno||ship.tf_billno||"-"}</div>
+    <p class="meta">ระบุจำนวนที่รับในครั้งนี้ แล้วกดยืนยัน</p>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>จัด</th><th>รับแล้ว</th><th>รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoReceive">ยืนยันรับแล้ว</button></div>`);
   modal.box.querySelector("#btnDoReceive").onclick = async()=>{
     const recvLines = [];
     modal.box.querySelectorAll(".qty-input").forEach(inp=>{
       const q = Number(inp.value||0);
-      if(q>0) recvLines.push({bcode: inp.dataset.bcode, qty_receive: q});
+      if(q>0) recvLines.push({bcode:inp.dataset.bcode, qty_receive:q, line_id:inp.dataset.line||undefined});
     });
     if(!recvLines.length){alert("ระบุจำนวนที่รับ");return;}
-    if(!RECV_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่ จะบันทึกใน Supabase เท่านั้น")) return;
+    if(!RECV_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
     try{
-      await api("/transfer/api/receive",{method:"POST",body:JSON.stringify({transfer_id:transferId,shipment_id:ship.shipment_id,client_token:uuid(),lines:recvLines})});
-      modal.close();
-      loadPanel();
+      await api("/transfer/api/shipments/"+ship.shipment_id+"/receive",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:recvLines})});
+      modal.close(); showToast("รับสินค้าแล้ว"); render();
     }catch(e){alert(e.message);}
   };
 }
 
-async function renderDraftPanel(el){
-  el.innerHTML = `<div class="card">
-    <div style="margin-bottom:.75rem"><strong>ทิศทาง</strong>
-      <div class="row-actions" style="margin-top:.5rem">
-        <button class="btn ${draftDirection==="to_syp"?"btn-primary":"btn-ghost"}" data-dir="to_syp">ขอจาก HQ → SYP</button>
-        <button class="btn ${draftDirection==="to_hq"?"btn-primary":"btn-ghost"}" data-dir="to_hq">ขอจาก SYP → HQ</button>
-      </div>
-    </div>
-    <div class="row-actions">
-      <input id="draftBcode" placeholder="รหัสสินค้า" style="flex:1;padding:.5rem;border:1px solid var(--line);border-radius:8px"/>
-      <input id="draftQty" type="number" min="1" value="1" class="qty-input"/>
-      <button class="btn btn-ghost" id="btnAddLine">เพิ่มบรรทัด</button>
-    </div>
-    <div id="draftTable" style="margin-top:.75rem"></div>
-    <div class="row-actions"><button class="btn btn-primary" id="btnSubmitDraft">ส่งคำขอ</button></div>
-  </div>`;
-  el.querySelectorAll("[data-dir]").forEach(b=>b.onclick=()=>{draftDirection=b.dataset.dir; renderDraftPanel(el);});
-  function renderLines(){
-    const tbl = el.querySelector("#draftTable");
-    if(!draftLines.length){tbl.innerHTML='<div class="empty">ยังไม่มีรายการ</div>';return;}
-    tbl.innerHTML = `<div class="table-wrap"><table><thead><tr><th>รหัส</th><th>จำนวน</th><th></th></tr></thead><tbody>`+
-      draftLines.map((l,i)=>`<tr><td><code>${l.bcode}</code></td><td>${fmtQty(l.qty)}</td><td><button class="btn btn-ghost" data-rm="${i}">ลบ</button></td></tr>`).join("")+
-      `</tbody></table></div>`;
-    tbl.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{draftLines.splice(Number(b.dataset.rm),1); renderLines();});
+async function renderPrepare(el){
+  const data = await api("/transfer/api/requests?role=prepare");
+  const items = data.items||[];
+  if(!items.length){
+    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอจัด<br><span class="meta">เมื่อสาขาอื่นส่งคำขอมา จะแสดงที่นี่</span></div>
+      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+    return;
   }
-  renderLines();
-  el.querySelector("#btnAddLine").onclick = ()=>{
-    const b = el.querySelector("#draftBcode").value.trim();
-    const q = Number(el.querySelector("#draftQty").value||0);
-    if(!b||q<=0){alert("ระบุรหัสและจำนวน");return;}
-    draftLines.push({bcode:b, qty:q});
-    el.querySelector("#draftBcode").value="";
-    renderLines();
-  };
-  el.querySelector("#btnSubmitDraft").onclick = async()=>{
-    if(!draftLines.length){alert("เพิ่มรายการก่อน");return;}
-    try{
-      const d = await api("/transfer/api/requests/draft",{method:"POST",body:JSON.stringify({direction:draftDirection,lines:draftLines})});
-      await api("/transfer/api/submit",{method:"POST",body:JSON.stringify({transfer_id:d.transfer_id})});
-      draftLines = [];
-      alert("ส่งคำขอแล้ว: "+(d.short_id||d.transfer_id));
-      activeTab = "prepare";
-      renderTabs();
-      loadPanel();
-    }catch(e){alert(e.message);}
-  };
+  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่จัด → ระบบออกใบ TF ให้อัตโนมัติ</div>
+    <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>
+      ${items.map(r=>`<tr>
+        <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+        <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
+        <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td><td>${r.line_count||0}</td>
+        <td><button class="btn btn-primary" data-prep="${r.transfer_id}">จัดสินค้า</button></td>
+      </tr>`).join("")}
+    </tbody></table></div></div>`;
+  el.querySelectorAll("[data-prep]").forEach(b=>b.onclick=()=>openPrepareDialog(b.dataset.prep));
 }
 
-async function loadPanel(){
+async function renderReceive(el){
+  const data = await api("/transfer/api/requests?role=receive");
+  const items = data.items||[];
+  if(!items.length){
+    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">เมื่อสาขาอื่นจัดส่งมาแล้ว จะแสดงที่นี่</span></div>
+      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่รับ → ระบบรับเข้าสต็อกให้อัตโนมัติ</div>
+    <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>
+      ${items.map(r=>`<tr>
+        <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+        <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
+        <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td><td>${r.line_count||0}</td>
+        <td><button class="btn btn-primary" data-recv="${r.transfer_id}">รับสินค้า</button></td>
+      </tr>`).join("")}
+    </tbody></table></div></div>`;
+  el.querySelectorAll("[data-recv]").forEach(b=>b.onclick=()=>openReceiveDialog(b.dataset.recv));
+}
+
+async function renderStatus(el){
+  const isDone = statusFilter === "done";
+  const data = await api("/transfer/api/requests" + (isDone ? "?status=complete" : ""));
+  let items = data.items||[];
+  if(!isDone) items = items.filter(r=>r.status!=="complete"&&r.status!=="cancelled");
+  el.innerHTML = `
+    <div class="status-tabs">
+      <button class="status-tab ${statusFilter==="active"?"on":""}" data-sf="active">กำลังดำเนินการ</button>
+      <button class="status-tab ${statusFilter==="done"?"on":""}" data-sf="done">เสร็จสิ้น</button>
+    </div>`;
+  if(!items.length){
+    el.innerHTML += `<div class="card"><div class="empty">ไม่มีรายการ</div></div>`;
+  } else {
+    el.innerHTML += `<div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th></tr></thead><tbody>
+      ${items.map(r=>`<tr>
+        <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+        <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
+        <td>${pipeline(r.status)}</td>
+        <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
+      </tr>`).join("")}
+    </tbody></table></div></div>`;
+  }
+  el.querySelectorAll("[data-sf]").forEach(b=>b.onclick=()=>{statusFilter=b.dataset.sf; renderStatus(el);});
+}
+
+async function render(){
+  updateHeader();
   const el = $("content");
   try{
-    if(activeTab==="suggest"){
-      const rows = await api("/transfer/api/suggest");
-      if(!rows.items||!rows.items.length){el.innerHTML='<div class="empty">ไม่พบสินค้าแนะนำโอน</div>';return;}
-      el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>คงเหลือ</th><th>แนะนำ</th><th></th></tr></thead><tbody>`+
-        rows.items.map(r=>`<tr><td><code>${r.bcode}</code></td><td>${r.descr||""}</td><td>${fmtQty(r.qtyoh2)}</td><td>${fmtQty(r.suggest_qty)}</td><td><button class="btn btn-ghost" data-add="${r.bcode}" data-qty="${r.suggest_qty}">เพิ่ม</button></td></tr>`).join("")+
-        `</tbody></table></div>`;
-      el.querySelectorAll("[data-add]").forEach(b=>b.onclick=async()=>{
-        await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b.dataset.add,qty:Number(b.dataset.qty),descr:""})});
-        alert("เพิ่มในรายการต้องการแล้ว");
-      });
-      return;
-    }
-    if(activeTab==="draft"){ await renderDraftPanel(el); return; }
-
-  const roleMap = {prepare:"prepare", receive:"receive", history:"history"};
-  if(activeTab==="prepare" || activeTab==="receive"){
-    const data = await api("/transfer/api/requests?role="+activeTab);
-    const items = data.items||[];
-    if(!items.length){el.innerHTML='<div class="empty">ไม่มีรายการ</div>';return;}
-    const action = activeTab==="prepare" ? "prepare" : "receive";
-    const label = activeTab==="prepare" ? "จัดแล้ว" : "รับแล้ว";
-    el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>`+
-      items.map(r=>`<tr>
-        <td><code>${r.short_id}</code></td>
-        <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-        <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
-        <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
-        <td>${r.line_count||0} รายการ</td>
-        <td><button class="btn btn-primary" data-action="${action}" data-id="${r.transfer_id}">${label}</button></td>
-      </tr>`).join("")+
-      `</tbody></table></div>`;
-    el.querySelectorAll("[data-action='prepare']").forEach(b=>b.onclick=()=>openPrepareDialog(b.dataset.id));
-    el.querySelectorAll("[data-action='receive']").forEach(b=>b.onclick=()=>openReceiveDialog(b.dataset.id));
-    return;
-  }
-
-  if(activeTab==="history"){
-    const data = await api("/transfer/api/requests?status=complete");
-    const items = data.items||[];
-    if(!items.length){el.innerHTML='<div class="empty">ไม่มีรายการ</div>';return;}
-    el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th></tr></thead><tbody>`+
-      items.map(r=>`<tr><td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td><td>${badge(r.status,r.from_branch,r.to_branch)}</td><td>${(r.requested_at||r.created_at||"").slice(0,10)}</td><td>${r.line_count||0} รายการ</td></tr>`).join("")+
-      `</tbody></table></div>`;
-    return;
-  }
-  }catch(e){el.innerHTML='<div class="empty">'+String(e.message||e)+'</div>';}
+    if(view==="home") await renderHome(el);
+    else if(view==="request") await renderRequest(el);
+    else if(view==="prepare") await renderPrepare(el);
+    else if(view==="receive") await renderReceive(el);
+    else if(view==="status") await renderStatus(el);
+  }catch(e){el.innerHTML='<div class="card empty">'+String(e.message||e)+'</div>';}
 }
-renderTabs();
-loadPanel();
+
+$("btnBack").onclick = goHome;
+render();
 </script>
 </body>
 </html>"""

@@ -25,6 +25,7 @@ from src.transfer.db import (
     list_lines,
     list_need,
     list_requests,
+    list_shipment_lines,
     list_shipments,
     refresh_request_status,
     set_request_lines,
@@ -300,7 +301,15 @@ def api_request_lines(transfer_id: str, request: Request):
         return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
     lines = enrich_lines(list_lines(client, transfer_id))
     shipments = list_shipments(client, transfer_id=transfer_id)
-    return {"header": header, "items": lines, "shipments": shipments}
+    for ship in shipments:
+        ship["lines"] = list_shipment_lines(client, shipment_id=ship["shipment_id"])
+    return {
+        "header": header,
+        "items": lines,
+        "lines": lines,
+        "shipments": shipments,
+        **header,
+    }
 
 
 @router.post("/api/requests/draft")

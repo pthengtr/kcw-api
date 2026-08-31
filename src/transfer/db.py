@@ -275,7 +275,18 @@ def list_shipments(client: Client, *, transfer_id: str) -> list[dict[str, Any]]:
         .eq("transfer_id", transfer_id)
         .execute()
     )
-    
+
+    return _rows(resp)
+
+
+def list_shipment_lines(client: Client, *, shipment_id: str) -> list[dict[str, Any]]:
+    resp = (
+        client.schema(TRANSFER_SCHEMA)
+        .from_("shipment_lines")
+        .select("*")
+        .eq("shipment_id", shipment_id)
+        .execute()
+    )
     return _rows(resp)
 
 

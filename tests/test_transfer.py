@@ -68,5 +68,7 @@ def test_transfer_page_renders():
         syp_receive_enabled=False,
     )
     assert "โอนสินค้า · SYP" in html
-    assert "แนะนำโอน" in html
-    assert "รอจัด (ออก)" in html
+    assert "ขอสินค้าจาก" in html
+    assert "จัดส่งไป" in html
+    assert "ตรวจสอบสถานะ" in html
+    assert "ขั้นตอนโอนสินค้า" in html

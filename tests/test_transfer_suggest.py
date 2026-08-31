@@ -3,6 +3,18 @@ from unittest.mock import MagicMock, patch
 from src.transfer.parts9 import suggest_transfer_skus
 
 
+def _meta(qtyoh2, *, blocked=False, ui1="ชิ้น", ui2="", mtp2=1.0, descr=""):
+    return {
+        "qtyoh2": qtyoh2,
+        "qtymin": -1.0 if blocked else 4.0,
+        "blocked": blocked,
+        "descr": descr,
+        "ui1": ui1,
+        "ui2": ui2,
+        "mtp2": mtp2,
+    }
+
+
 def test_suggest_transfer_skus_from_iclow_to_be_ordered():
     iclow_rows = {
         "rows": [
@@ -29,20 +41,34 @@ def test_suggest_transfer_skus_from_iclow_to_be_ordered():
     }
 
     def fake_icmas_meta(engine, bcodes):
+        if engine is hq_engine:
+            return {
+                "A001": _meta(10.0, descr="Widget A HQ"),
+                "B002": _meta(3.0, descr="Widget B HQ"),
+            }
         return {
-            "A001": {"qtyoh2": 1.0, "qtymin": 4.0, "blocked": False},
-            "B002": {"qtyoh2": 0.0, "qtymin": 2.0, "blocked": False},
+            "A001": _meta(1.0, descr="Widget A SYP"),
+            "B002": _meta(0.0, descr="Widget B SYP"),
         }
 
+    hq_engine = MagicMock(name="hq")
+    syp_engine = MagicMock(name="syp")
+
+    def fake_engine(site):
+        return hq_engine if site == "hq" else syp_engine
+
     with patch("src.transfer.parts9.list_iclow", return_value=iclow_rows) as mock_list:
-        with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
-            items = suggest_transfer_skus(site="SYP", limit=50)
+        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                items = suggest_transfer_skus(site="SYP", limit=50)
 
     mock_list.assert_called_once_with(site="syp", status="to_be_ordered", limit=200, offset=0)
     assert len(items) == 2
     a = next(i for i in items if i["bcode"] == "A001")
     assert a["suggest_qty"] == 5.0
     assert a["qtyoh2"] == 1.0
+    assert a["hq_qtyoh2"] == 10.0
+    assert a["syp_qtyoh2"] == 1.0
     b = next(i for i in items if i["bcode"] == "B002")
     assert b["suggest_qty"] == 5.0
 
@@ -58,12 +84,16 @@ def test_suggest_transfer_skus_skips_do_not_restock():
 
     def fake_icmas_meta(engine, bcodes):
         return {
-            "NR01": {"qtyoh2": 0.0, "qtymin": -1.0, "blocked": True},
-            "OK01": {"qtyoh2": 1.0, "qtymin": 3.0, "blocked": False},
+            "NR01": _meta(0.0, blocked=True),
+            "OK01": _meta(1.0, ui1="ea", ui2="กล่อง", mtp2=12.0),
         }
 
     with patch("src.transfer.parts9.list_iclow", return_value=iclow_rows):
-        with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
-            items = suggest_transfer_skus(site="hq")
+        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                items = suggest_transfer_skus(site="hq")
 
     assert [i["bcode"] for i in items] == ["OK01"]
+    assert items[0]["ui1"] == "ea"
+    assert items[0]["ui2"] == "กล่อง"
+    assert items[0]["mtp2"] == 12.0
