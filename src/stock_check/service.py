@@ -223,6 +223,7 @@ class StockCheckService:
         return card
 
     def lookup(self, query: str, *, session_id: str | None = None) -> list[dict[str, Any]]:
+        self.expire()
         products = lookup_products(query)
         audits = self.store.get_local_audits([p.bcode for p in products])
         out = []

@@ -442,6 +442,31 @@ def test_submission_flags_on_product_detail(tmp_path: Path, monkeypatch):
     assert card_b["submit_blocked"] is True
 
 
+def test_lookup_clears_expired_lease_flags(tmp_path: Path, monkeypatch):
+    from src.stock_check.service import StockCheckService
+
+    base = 1000.0
+    store = LocalStore(tmp_path / "lookup_expired.sqlite3")
+    sid_a = store.create_session(line_user_id="U1", display_name="A", is_approver=False, now=base)
+    sid_b = store.create_session(line_user_id="U2", display_name="B", is_approver=False, now=base)
+    store.claim_leases(session_id=sid_a, bcodes=["P1"], lease_ttl=10, now=base)
+    product = _sample_product()
+    monkeypatch.setattr(
+        "src.stock_check.service.lookup_products",
+        lambda q: [product],
+    )
+    expired = base + 11
+    monkeypatch.setattr("src.stock_check.service.time.time", lambda: expired)
+    monkeypatch.setattr("src.stock_check.db_local.time.time", lambda: expired)
+
+    svc = StockCheckService(store=store)
+    results = svc.lookup("P1", session_id=sid_b)
+    assert len(results) == 1
+    assert results[0]["leased_elsewhere"] is False
+    assert results[0]["submit_blocked"] is False
+    assert store.active_leased_bcodes() == set()
+
+
 def _pending_draft(**overrides):
     base = {
         "bcode": "P1",
