@@ -76,11 +76,16 @@ def stamp_on_submit(*, bcode: str, short_id: str) -> dict[str, Any] | None:
             return {"iclow_id": iclow_id, "bcode": bcode}
             
     except Exception as exc:
-        # Re-raise our custom error if it's already an ICLOWStampError
         if isinstance(exc, ICLOWStampError):
             raise
-        # Otherwise wrap it in an ICLOWStampError
-        raise ICLOWStampError(str(exc), code="iclow_update_failed") from exc
+        msg = str(exc)
+        if "UPDATE permission was denied" in msg and "ICLOW" in msg:
+            raise ICLOWStampError(
+                "python_writer ยังไม่มีสิทธิ์ UPDATE dbo.ICLOW บน kss-pc — "
+                "รัน scripts/sql/grant_transfer_writer.sql (ส่วน ICLOW) ด้วย SQL admin",
+                code="iclow_permission_denied",
+            ) from exc
+        raise ICLOWStampError(msg, code="iclow_update_failed") from exc
 
 
 def revert_on_cancel(*, iclow_id: str) -> None:

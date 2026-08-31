@@ -79,13 +79,17 @@ class ActionResult:
     reason: str = ""
 
 
+def _line_qty_requested(line: dict[str, Any]) -> float:
+    return float(line.get("qty_requested") or line.get("qty") or 0)
+
+
 def can_action(action: str, ctx: dict[str, Any]) -> ActionResult:
     """Return whether an action is allowed. ctx keys vary by action."""
     if action == "submit_transfer":
         lines = ctx.get("lines") or []
         if not lines:
             return ActionResult(False, "ต้องมีอย่างน้อย 1 รายการ")
-        if any(float(ln.get("qty_requested") or 0) <= 0 for ln in lines):
+        if any(_line_qty_requested(ln) <= 0 for ln in lines):
             return ActionResult(False, "จำนวนต้องมากกว่า 0")
         bcodes = [str(ln.get("bcode") or "").strip() for ln in lines]
         if len(bcodes) != len(set(bcodes)):
