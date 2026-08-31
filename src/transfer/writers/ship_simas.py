@@ -134,7 +134,8 @@ def post_transfer_ship(
                         "mcode": (product or {}).get("MCODE") or None,
                         "detail": descr,
                         "location1": (str((product or {}).get("LOCATION1") or "")[:10] or None),
-                        "qty": -qty_ship,
+                        # TF ship leg: SIMAS BILLTYPE 1, always positive line QTY (not SA +/- sign).
+                        "qty": qty_ship,
                         "ui": str((product or {}).get("UI1") or "unit")[:10],
                         "mtp": 1.0,
                     },
