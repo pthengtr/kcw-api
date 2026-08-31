@@ -273,6 +273,11 @@ function receiveBillPrefix(fromBranch, toBranch){
 function parts9Host(branch){
   return (branch||"").toUpperCase()==="SYP" ? "kss-pc (SYP)" : "KSS (HQ)";
 }
+function iclowStampApplies(fromB, toB){
+  const fb = (fromB||"").toUpperCase();
+  const tb = (toB||"").toUpperCase();
+  return fb === "HQ" && tb === "SYP";
+}
 function infoToggleHtml(title, bodyHtml){
   return `<details class="info-toggle"><summary>${title}</summary><div class="info-body">${bodyHtml}</div></details>`;
 }
@@ -281,8 +286,11 @@ function billTimelineHtml(fromB, toB){
   const tb = (toB||"SYP").toUpperCase();
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
+  const submitStep = iclowStampApplies(fb, tb)
+    ? `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW รอสั่งที่ SYP (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>`
+    : `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> เท่านั้น (<strong>ไม่แตะ ICLOW</strong> รอสั่ง — เก็บไว้สั่งซื้อจากเจ้าหนี้)</li>`;
   return infoToggleHtml("ใบ TF ถูกสร้างเมื่อไหร่?", `<ol class="bill-steps">
-      <li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>
+      ${submitStep}
       <li><span class="bill-when">${fb} จัดส่ง</span> — สร้างใบ <strong>${shipP} SIMAS</strong> บน ${parts9Host(fb)} (ตัดสต๊อกออก)</li>
       <li><span class="bill-when">${tb} รับเข้า</span> — สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อกเข้า)</li>
     </ol>`);
@@ -292,9 +300,12 @@ function submitBillNoteHtml(fromB, toB){
   const tb = (toB||SITE).toUpperCase();
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
+  const iclowLi = iclowStampApplies(fb, tb)
+    ? `<li>แสตมป์ ICLOW รอสั่งที่ SYP ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>`
+    : `<li><strong>ไม่แตะ ICLOW</strong> รอสั่ง — เก็บรายการไว้สำหรับสั่งซื้อจากเจ้าหนี้</li>`;
   return infoToggleHtml("ตอนกดยืนยันส่งคำขอ จะเกิดอะไรขึ้น?", `<ul class="bill-steps">
       <li>สร้างคำขอโอน <code>TRF-…</code> (อ้างอิงในระบบ — <strong>ไม่ใช่เลขบิล PARTS9</strong>)</li>
-      <li>แสตมป์ ICLOW ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>
+      ${iclowLi}
       <li class="bill-none">ยังไม่ออกใบ TF — ใบ ${shipP} สร้างตอน ${fb} จัดส่ง · ใบ ${recvP} สร้างตอน ${tb} รับเข้า</li>
     </ul>`);
 }
@@ -314,10 +325,13 @@ function receiveBillNoteHtml(fromB, toB, shipBillno){
   const recvP = receiveBillPrefix(fb, tb);
   const shipP = shipBillPrefix(fb);
   const shipRef = shipBillno ? `<code>${shipBillno}</code>` : `ใบ ${shipP} ที่ ${fb} จัดไป`;
+  const iclowLi = iclowStampApplies(fb, tb)
+    ? `<li>อัปเดต ICLOW รอสั่งที่ SYP ว่ารับแล้ว</li>`
+    : "";
   return infoToggleHtml("เมื่อยืนยันรับเข้า ระบบจะ:", `<ul class="bill-steps">
       <li>สร้างใบ <strong>${recvP} PIMAS</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อก ${tb})</li>
       <li>อ้างอิงใบจัด ${shipRef}</li>
-      <li>อัปเดต ICLOW ว่ารับแล้ว</li>
+      ${iclowLi}
     </ul>`);
 }
 function orderFlowText(){

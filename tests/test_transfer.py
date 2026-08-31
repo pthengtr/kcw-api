@@ -82,3 +82,9 @@ def test_transfer_page_renders():
     assert "@media (max-width:640px)" in html
     assert "openRequestDetail" in html
     assert "row-clickable" in html
+
+
+def test_transfer_hq_page_iclow_not_stamped_on_submit():
+    html = page(user_name="ทดสอบ", site="HQ")
+    assert "ไม่แตะ ICLOW" in html
+    assert "เก็บไว้สั่งซื้อจากเจ้าหนี้" in html
