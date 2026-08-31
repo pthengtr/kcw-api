@@ -122,6 +122,8 @@ body.busy #busy{display:flex}
 .step.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 .step.done{background:#dcfce7;color:var(--ok);border-color:#bbf7d0}
 .step-label{display:block;font-size:.68rem;opacity:.9;margin-top:.15rem}
+.row-clickable{cursor:pointer}
+.row-clickable:hover td{background:#f8fafc}
 .status-tabs{display:flex;gap:.35rem;margin-bottom:.75rem;flex-wrap:wrap}
 .status-tab{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:999px;padding:.4rem .75rem;font-size:.8rem;cursor:pointer;font-family:inherit}
 .status-tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
@@ -290,6 +292,21 @@ function pipeline(status){
   const labels = ["ขอแล้ว","จัดแล้ว","รับแล้ว","เสร็จ"];
   return `<div class="pipeline">${labels.map((l,i)=>`<span class="pipe-dot ${i<idx?"done":i===idx?"on":""}"></span><span>${l}</span>`).join("")}</div>`;
 }
+function lineStatusLabel(status){
+  const t={open:"รอจัด",partial_prepared:"จัดบางส่วน",prepared:"จัดแล้ว รอรับ",partial_received:"รับบางส่วน",complete:"เสร็จ",cancelled:"ยกเลิก"};
+  return t[status]||status||"-";
+}
+function fmtDateTime(iso){
+  return iso ? String(iso).slice(0,16).replace("T"," ") : "—";
+}
+function bindDetailRows(container){
+  container.querySelectorAll("tr.row-clickable").forEach(tr=>{
+    tr.onclick = e=>{
+      if(e.target.closest("button")) return;
+      openRequestDetail(tr.dataset.detail);
+    };
+  });
+}
 function setBusy(on){document.body.classList.toggle("busy",!!on)}
 function showModal(html){
   const box = $("modalBox");
@@ -348,6 +365,57 @@ async function cancelRequest(transferId){
   await api("/transfer/api/requests/"+transferId+"/cancel",{method:"POST",body:"{}"});
   showToast("ยกเลิกคำขอแล้ว");
   render();
+}
+async function openRequestDetail(transferId){
+  const detail = await api("/transfer/api/requests/"+transferId+"/lines");
+  const lines = detail.items || detail.lines || [];
+  const shipments = detail.shipments || [];
+  const status = detail.status || (detail.header && detail.header.status) || "";
+  const fromB = detail.from_branch;
+  const toB = detail.to_branch;
+  const lineRows = lines.map(ln=>`<tr>
+    <td><code>${ln.bcode}</code></td>
+    <td>${ln.descr||""}</td>
+    <td>${fmtQty(ln.qty_requested)}</td>
+    <td>${fmtQty(ln.qty_prepared)}</td>
+    <td>${fmtQty(ln.qty_received)}</td>
+    <td>${lineStatusLabel(ln.line_status)}</td>
+  </tr>`).join("");
+  let shipHtml = "";
+  if(shipments.length){
+    shipHtml = shipments.map((ship,i)=>{
+      const shipBill = ship.ship_billno || ship.tf_billno || "—";
+      const recvBill = ship.receive_billno || "";
+      const slines = (ship.lines||[]).map(sl=>{
+        const open = Math.max(Number(sl.qty_shipped||0)-Number(sl.qty_received||0),0);
+        return `<tr><td><code>${sl.bcode||""}</code></td><td>${fmtQty(sl.qty_shipped)}</td><td>${fmtQty(sl.qty_received)}</td><td>${fmtQty(open)}</td></tr>`;
+      }).join("");
+      return `<div style="margin-top:.65rem">
+        <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · <code>${shipBill}</code>${recvBill ? ` · ใบรับ <code>${recvBill}</code>` : ""}</p>
+        ${slines ? `<div class="table-wrap" style="margin-top:.35rem"><table><thead><tr><th>รหัส</th><th>จัด</th><th>รับแล้ว</th><th>ค้างรับ</th></tr></thead><tbody>${slines}</tbody></table></div>` : ""}
+      </div>`;
+    }).join("");
+    shipHtml = `<div class="tool-section" style="margin-top:.75rem"><p class="tool-title">ใบ TF / การจัดส่ง</p>${shipHtml}</div>`;
+  }
+  const canCancel = status==="requested";
+  const isDraft = status==="draft";
+  const modal = showModal(`<h2>รายละเอียด · <code>${detail.short_id||transferId}</code></h2>
+    <p class="dir">${dirLabel(fromB, toB)}</p>
+    <p style="margin:.35rem 0">${badge(status, fromB, toB)} ${pipeline(status)}</p>
+    <p class="meta">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)}</p>
+    <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>ขอ</th><th>จัด</th><th>รับ</th><th>สถานะ</th></tr></thead><tbody>
+      ${lineRows || '<tr><td colspan="6" class="empty">ไม่มีรายการ</td></tr>'}
+    </tbody></table></div>
+    ${shipHtml}
+    <div class="row-actions">
+      <button class="btn btn-ghost" data-close>ปิด</button>
+      ${canCancel ? `<button class="btn btn-ghost" id="btnDetailCancel">ยกเลิกคำขอ</button>` : ""}
+      ${isDraft ? `<button class="btn btn-primary" id="btnDetailEdit">แก้ไขร่าง</button>` : ""}
+    </div>`);
+  const cancelBtn = modal.box.querySelector("#btnDetailCancel");
+  if(cancelBtn) cancelBtn.onclick = async()=>{ modal.close(); await cancelRequest(transferId); };
+  const editBtn = modal.box.querySelector("#btnDetailEdit");
+  if(editBtn) editBtn.onclick = ()=>{ modal.close(); editDraft(transferId); };
 }
 async function editDraft(transferId){
   const detail = await api("/transfer/api/requests/"+transferId+"/lines");
@@ -828,12 +896,13 @@ async function renderStatus(el){
     el.innerHTML += `<div class="card"><strong>ร่าง (${drafts.length})</strong>
       <p class="meta">ยังไม่ส่งคำขอ — แก้ไขหรือลบได้</p>
       <div class="table-wrap" style="margin-top:.5rem"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>รายการ</th><th>วันที่</th><th></th></tr></thead><tbody>
-        ${drafts.map(r=>`<tr>
+        ${drafts.map(r=>`<tr class="row-clickable" data-detail="${r.transfer_id}">
           <td><code>${r.short_id}</code></td>
           <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
           <td>${r.line_count||0}</td>
           <td>${(r.created_at||"").slice(0,10)}</td>
           <td class="row-actions" style="margin:0">
+            <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
             <button class="btn btn-ghost" data-edit="${r.transfer_id}">แก้ไข</button>
             <button class="btn btn-ghost" data-del-draft="${r.transfer_id}">ลบ</button>
           </td>
@@ -846,17 +915,22 @@ async function renderStatus(el){
     el.innerHTML += `<div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th><th></th></tr></thead><tbody>
       ${active.map(r=>{
         const canCancel = r.status==="requested";
-        return `<tr>
+        return `<tr class="row-clickable" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
         <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
         <td>${pipeline(r.status)}</td>
         <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
-        <td>${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}</td>
+        <td class="row-actions" style="margin:0">
+          <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
+          ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
+        </td>
       </tr>`;
       }).join("")}
     </tbody></table></div></div>`;
   }
   el.querySelectorAll("[data-sf]").forEach(b=>b.onclick=()=>{statusFilter=b.dataset.sf; renderStatus(el);});
+  el.querySelectorAll("[data-detail-btn]").forEach(b=>b.onclick=e=>{e.stopPropagation(); openRequestDetail(b.dataset.detailBtn);});
+  bindDetailRows(el);
   el.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editDraft(b.dataset.edit));
   el.querySelectorAll("[data-del-draft]").forEach(b=>b.onclick=()=>deleteDraft(b.dataset.delDraft));
   el.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=()=>cancelRequest(b.dataset.cancel));
