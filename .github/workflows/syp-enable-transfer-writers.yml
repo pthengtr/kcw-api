@@ -1,0 +1,40 @@
+name: SYP enable transfer writers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  enable:
+    runs-on: [self-hosted, linux, syp]
+    steps:
+      - name: Enable all TRANSFER writer flags on SYP
+        run: |
+          set -euo pipefail
+          ENV="$HOME/projects/kcw-api/.env"
+          test -f "$ENV"
+
+          enable_var() {
+            local key="$1"
+            if grep -q "^${key}=" "$ENV"; then
+              sed -i "s/^${key}=.*/${key}=true/" "$ENV"
+            else
+              echo "${key}=true" >> "$ENV"
+            fi
+          }
+
+          for key in \
+            TRANSFER_ENABLED \
+            TRANSFER_HQ_SHIP_WRITE_ENABLED \
+            TRANSFER_SYP_SHIP_WRITE_ENABLED \
+            TRANSFER_HQ_RECEIVE_WRITE_ENABLED \
+            TRANSFER_SYP_RECEIVE_WRITE_ENABLED \
+            TRANSFER_HQ_WRITE_ENABLED \
+            TRANSFER_SYP_RECEIVE_ENABLED \
+            TRANSFER_ICLOW_STAMP_ENABLED; do
+            enable_var "$key"
+          done
+
+          grep -E '^TRANSFER_' "$ENV"
+          systemctl --user restart kcw-transfer.service
+          sleep 2
+          curl -sf http://127.0.0.1:8792/health
