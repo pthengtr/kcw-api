@@ -8,7 +8,6 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from src.parts9_explorer.db import get_site_engine
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 from src.transfer.config import get_transfer_settings
 from src.transfer.db import (
@@ -223,10 +222,8 @@ def api_suggest(request: Request):
     if err:
         return err
     settings = _settings()
-    site_key = "syp" if settings.is_syp else "hq"
     try:
-        engine = get_site_engine(site_key)
-        items = suggest_transfer_skus(engine)
+        items = suggest_transfer_skus(site=settings.site)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=503)
     return {"items": items}
