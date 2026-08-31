@@ -68,6 +68,12 @@ class TransferSettings(BaseSettings):
 
     pos_mssql_username: str = Field(default="", validation_alias="POS_MSSQL_USERNAME")
     pos_mssql_password: str = Field(default="", validation_alias="POS_MSSQL_PASSWORD")
+    pos_mssql_writer_username: str = Field(
+        default="", validation_alias="POS_MSSQL_WRITER_USERNAME"
+    )
+    pos_mssql_writer_password: str = Field(
+        default="", validation_alias="POS_MSSQL_WRITER_PASSWORD"
+    )
     pos_mssql_server: str = Field(default="KSS", validation_alias="POS_MSSQL_SERVER")
     pos_mssql_database: str = Field(default="PARTS9", validation_alias="POS_MSSQL_DATABASE")
     parts9_syp_server: str = Field(default="kss-pc", validation_alias="PARTS9_SYP_SERVER")
