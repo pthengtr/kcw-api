@@ -9,7 +9,7 @@ from supabase import Client, create_client
 from src.transfer.config import get_transfer_settings
 from datetime import datetime, timezone
 
-from src.transfer.state import derive_line_status, derive_request_status, make_short_id
+from src.transfer.state import derive_line_status, derive_request_status, make_short_id, request_has_open_prepare
 
 TRANSFER_SCHEMA = "transfer"
 
@@ -73,7 +73,17 @@ def list_requests(
     site_u = site.upper()
     role_l = role.lower()
     if role_l == "prepare":
-        return [r for r in items if (r.get("from_branch") or "HQ").upper() == site_u]
+        out: list[dict[str, Any]] = []
+        for r in items:
+            if (r.get("from_branch") or "HQ").upper() != site_u:
+                continue
+            st = (r.get("status") or "").lower()
+            if st in ("draft", "cancelled", "complete"):
+                continue
+            lines = list_lines(client, r["transfer_id"])
+            if request_has_open_prepare(lines):
+                out.append(r)
+        return out
     if role_l == "receive":
         return [
             r

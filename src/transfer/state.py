@@ -12,6 +12,14 @@ def qty_open_receive(qty_prepared: float, qty_received: float) -> float:
     return max(float(qty_prepared or 0) - float(qty_received or 0), 0.0)
 
 
+def request_has_open_prepare(lines: list[dict[str, Any]]) -> bool:
+    """True when at least one active line still needs prepare qty."""
+    active = [ln for ln in lines if not ln.get("cancelled_at")]
+    return any(
+        qty_open_prepare(ln.get("qty_requested", 0), ln.get("qty_prepared", 0)) > 0 for ln in active
+    )
+
+
 def derive_line_status(
     *,
     qty_requested: float,
