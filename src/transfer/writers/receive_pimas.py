@@ -37,9 +37,6 @@ def post_transfer_receive(
         if float(line.get("qty_receive", 0)) <= 0:
             raise TransferReceiveError("Invalid quantity to receive", code="invalid_quantity")
 
-    if shipment.get("posted_at"):
-        return {"status": "already_processed", "receive_billno": shipment.get("receive_billno")}
-
     ship_billno = shipment.get("ship_billno") or shipment.get("tf_billno")
     if not ship_billno:
         raise TransferReceiveError("No ship bill on shipment", code="missing_ship_bill")

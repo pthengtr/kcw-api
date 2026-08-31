@@ -12,6 +12,28 @@ def qty_open_receive(qty_prepared: float, qty_received: float) -> float:
     return max(float(qty_prepared or 0) - float(qty_received or 0), 0.0)
 
 
+def qty_short_vs_order(qty_requested: float, qty_actual: float) -> float:
+    return max(float(qty_requested or 0) - float(qty_actual or 0), 0.0)
+
+
+def prep_recv_mismatch(qty_prepared: float, qty_received: float) -> bool:
+    """True when something was prepared but received qty does not match yet."""
+    prep = float(qty_prepared or 0)
+    recv = float(qty_received or 0)
+    return prep > 0 and prep != recv
+
+
+def shipment_lines_fully_received(shipment_lines: list[dict[str, Any]]) -> bool:
+    if not shipment_lines:
+        return False
+    for sl in shipment_lines:
+        shipped = float(sl.get("qty_shipped") or 0)
+        received = float(sl.get("qty_received") or 0)
+        if shipped > 0 and received < shipped:
+            return False
+    return True
+
+
 def request_has_open_prepare(lines: list[dict[str, Any]]) -> bool:
     """True when at least one active line still needs prepare qty."""
     active = [ln for ln in lines if not ln.get("cancelled_at")]
@@ -32,15 +54,40 @@ def derive_line_status(
     req = float(qty_requested or 0)
     prep = float(qty_prepared or 0)
     recv = float(qty_received or 0)
-    if prep <= 0:
-        return "open"
     if recv >= req:
         return "complete"
     if recv > 0:
         return "partial_received"
     if prep >= req:
         return "prepared"
-    return "partial_prepared"
+    if prep > 0:
+        return "partial_prepared"
+    return "open"
+
+
+def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Order-centric progress + prep/receive mismatch flags for UI alerts."""
+    active = [ln for ln in lines if not ln.get("cancelled_at")]
+    mismatch_lines: list[str] = []
+    short_prepare = 0.0
+    short_receive = 0.0
+    for ln in active:
+        req = float(ln.get("qty_requested") or 0)
+        prep = float(ln.get("qty_prepared") or 0)
+        recv = float(ln.get("qty_received") or 0)
+        short_prepare += qty_short_vs_order(req, prep)
+        short_receive += qty_short_vs_order(req, recv)
+        if prep_recv_mismatch(prep, recv):
+            bcode = str(ln.get("bcode") or "").strip()
+            if bcode:
+                mismatch_lines.append(bcode)
+    return {
+        "prep_recv_mismatch": bool(mismatch_lines),
+        "prep_recv_mismatch_count": len(mismatch_lines),
+        "prep_recv_mismatch_bcodes": mismatch_lines,
+        "qty_short_order_prepare": short_prepare,
+        "qty_short_order_receive": short_receive,
+    }
 
 
 def derive_request_status(
@@ -62,21 +109,25 @@ def derive_request_status(
         return "complete"
 
     any_recv = any(float(ln.get("qty_received") or 0) > 0 for ln in active)
-    any_prep = any(float(ln.get("qty_prepared") or 0) > 0 for ln in active)
-    any_open_prep = any(
-        qty_open_prepare(ln.get("qty_requested", 0), ln.get("qty_prepared", 0)) > 0 for ln in active
+    any_short_order_prep = any(
+        qty_short_vs_order(ln.get("qty_requested", 0), ln.get("qty_prepared", 0)) > 0 for ln in active
+    )
+    any_short_order_recv = any(
+        qty_short_vs_order(ln.get("qty_requested", 0), ln.get("qty_received", 0)) > 0 for ln in active
     )
     any_open_recv = any(
         qty_open_receive(ln.get("qty_prepared", 0), ln.get("qty_received", 0)) > 0 for ln in active
     )
 
-    if any_recv and not all(ln.get("line_status") == "complete" for ln in active):
+    # Partial received = ordered qty not fully received yet (receive started).
+    if any_short_order_recv and any_recv:
         return "partial_received"
     if has_shipments and any_open_recv:
         return "awaiting_receive"
-    if any_prep and any_open_prep:
+    # Partial prepared = ordered qty not fully prepared yet.
+    if any_short_order_prep:
         return "partial_prepared"
-    if any_prep:
+    if has_shipments:
         return "awaiting_receive"
     return "requested"
 
@@ -128,7 +179,7 @@ def can_action(action: str, ctx: dict[str, Any]) -> ActionResult:
 
     if action in ("hq_prepare", "prepare_ship"):
         header_status = ctx.get("status") or "requested"
-        if header_status not in ("requested", "partial_prepared", "awaiting_receive"):
+        if header_status not in ("requested", "partial_prepared", "awaiting_receive", "partial_received"):
             return ActionResult(False, "สถานะคำขอไม่พร้อมจัด")
         qty_ship = float(ctx.get("qty_ship") or 0)
         if qty_ship <= 0:
