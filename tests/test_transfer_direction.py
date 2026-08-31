@@ -13,7 +13,9 @@ from src.transfer.direction import (
     receive_billno_prefix,
     ship_billno_prefix,
 )
+from src.transfer.writers._engine import _next_billno_on_table, transfer_bill_yymm
 from src.transfer.writers.ship_simas import TransferShipError, post_transfer_ship, post_transfer_tf
+from datetime import datetime
 
 
 def test_branches_for_direction():
@@ -26,6 +28,19 @@ def test_billno_prefixes():
     assert ship_billno_prefix(from_branch="SYP") == "3TF"
     assert receive_billno_prefix(from_branch="HQ", to_branch="SYP") == "TF"
     assert receive_billno_prefix(from_branch="SYP", to_branch="HQ") == "3TF"
+
+
+def test_transfer_bill_yymm_buddhist_era():
+    assert transfer_bill_yymm(datetime(2026, 8, 31)) == "6908"
+    assert transfer_bill_yymm(datetime(2025, 1, 15)) == "6801"
+
+
+def test_next_billno_uses_buddhist_yymm():
+    conn = MagicMock()
+    conn.execute.return_value.mappings.return_value.first.return_value = None
+    when = datetime(2026, 8, 31)
+    billno = _next_billno_on_table(conn, "SIMAS", "TF", when)
+    assert billno == "TF6908-00001"
 
 
 def test_site_permissions():
