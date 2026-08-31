@@ -79,5 +79,6 @@ def test_transfer_page_renders():
     assert "receiveStepBar" in html or "เลือกคำขอ" in html
     assert "prepareStepBar" in html
     assert "openPrepareRequest" in html
+    assert "@media (max-width:640px)" in html
     assert "openRequestDetail" in html
     assert "row-clickable" in html
