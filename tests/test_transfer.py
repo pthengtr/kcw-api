@@ -74,3 +74,4 @@ def test_transfer_page_renders():
     assert "ขั้นตอนโอนสินค้า" in html
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
     assert "ยังไม่ออกใบ TF" in html
+    assert "receive-lines" in html

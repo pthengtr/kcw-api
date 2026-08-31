@@ -15,15 +15,18 @@ from src.transfer.db import (
     add_shipment_lines,
     bump_line_prepared,
     bump_line_received,
+    bump_shipment_line_received,
     cancel_request,
     create_draft,
     create_shipment,
+    delete_draft,
     delete_need,
     enrich_lines,
     get_request,
     get_transfer_supabase_client,
     list_lines,
     list_need,
+    list_receive_queue,
     list_requests,
     list_shipment_lines,
     list_shipments,
@@ -266,6 +269,16 @@ def api_need_delete(need_id: str, request: Request):
     return {"ok": True}
 
 
+@router.get("/api/receive-lines")
+def api_receive_lines(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    items = list_receive_queue(get_transfer_supabase_client(), site=settings.site)
+    return {"items": items}
+
+
 @router.get("/api/requests")
 def api_requests(
     request: Request,
@@ -335,11 +348,35 @@ def api_set_lines(transfer_id: str, body: DraftLines, request: Request):
     _, err = _require_api(request)
     if err:
         return err
+    client = get_transfer_supabase_client()
+    header = get_request(client, transfer_id)
+    if not header:
+        return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
+    check = can_action("edit_draft", {"status": header.get("status")})
+    if not check.allowed:
+        return JSONResponse({"error": check.reason}, status_code=400)
     check = can_action("submit_transfer", {"lines": body.lines})
     if not check.allowed and body.lines:
         return JSONResponse({"error": check.reason}, status_code=400)
-    lines = set_request_lines(get_transfer_supabase_client(), transfer_id, body.lines)
+    lines = set_request_lines(client, transfer_id, body.lines)
     return {"items": enrich_lines(lines)}
+
+
+@router.delete("/api/requests/{transfer_id}")
+def api_delete_draft(transfer_id: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    client = get_transfer_supabase_client()
+    header = get_request(client, transfer_id)
+    if not header:
+        return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
+    check = can_action("delete_draft", {"status": header.get("status")})
+    if not check.allowed:
+        return JSONResponse({"error": check.reason}, status_code=400)
+    if not delete_draft(client, transfer_id=transfer_id):
+        return JSONResponse({"error": "ลบร่างไม่สำเร็จ"}, status_code=409)
+    return {"ok": True}
 
 
 @router.post("/api/requests/{transfer_id}/submit")
@@ -476,6 +513,46 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
             {"error": "PARTS9 receive write ปิดอยู่ — เปิด TRANSFER_*_RECEIVE_WRITE_ENABLED"},
             status_code=409,
         )
+    ship_billno = shipment.get("ship_billno") or shipment.get("tf_billno") or ""
+    if not ship_billno:
+        return JSONResponse({"error": "ยังไม่มีใบ TF — รอสาขาต้นทางจัดส่งก่อน"}, status_code=400)
+    transfer_lines = {ln["line_id"]: ln for ln in enrich_lines(list_lines(client, shipment["transfer_id"]))}
+    ship_lines = {
+        sl["shipment_line_id"]: sl
+        for sl in list_shipment_lines(client, shipment_id=shipment_id)
+    }
+    for line in body.lines:
+        qty_recv = float(line.get("qty_receive") or 0)
+        shipment_line_id = line.get("shipment_line_id")
+        sl = ship_lines.get(shipment_line_id) if shipment_line_id else None
+        if not sl:
+            for candidate in ship_lines.values():
+                if candidate.get("line_id") == line.get("line_id") or candidate.get("bcode") == line.get("bcode"):
+                    sl = candidate
+                    shipment_line_id = candidate.get("shipment_line_id")
+                    break
+        if not sl:
+            return JSONResponse({"error": "ไม่พบรายการในใบจัด"}, status_code=400)
+        line_id = line.get("line_id") or sl.get("line_id")
+        line_info = transfer_lines.get(line_id, {})
+        check = can_action(
+            "syp_receive",
+            {
+                "tf_billno": ship_billno,
+                "qty_receive": qty_recv,
+                "qty_on_shipment": float(sl.get("qty_shipped") or 0) - float(sl.get("qty_received") or 0),
+                "qty_received": float(line_info.get("qty_received") or 0),
+                "qty_prepared": float(line_info.get("qty_prepared") or 0),
+            },
+        )
+        if not check.allowed:
+            return JSONResponse({"error": check.reason}, status_code=400)
+        if not line.get("bcode"):
+            line["bcode"] = sl.get("bcode")
+        line["shipment_line_id"] = shipment_line_id
+        line["line_id"] = line_id
+        if not line.get("iclow_id"):
+            line["iclow_id"] = line_info.get("iclow_id")
     client_token = body.client_token or str(uuid4())
     try:
         result = post_transfer_receive(
@@ -490,8 +567,14 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
     for line in body.lines:
         line_id = line.get("line_id")
+        qty_recv = float(line.get("qty_receive") or 0)
         if line_id:
-            bump_line_received(client, line_id=line_id, qty_receive=line["qty_receive"])
+            bump_line_received(client, line_id=line_id, qty_receive=qty_recv)
+        shipment_line_id = line.get("shipment_line_id")
+        if shipment_line_id:
+            bump_shipment_line_received(
+                client, shipment_line_id=str(shipment_line_id), qty_receive=qty_recv
+            )
         iclow_id = line.get("iclow_id")
         if settings.transfer_iclow_stamp_enabled and iclow_id and to_branch == "SYP":
             ship_bill = shipment.get("ship_billno") or shipment.get("tf_billno")

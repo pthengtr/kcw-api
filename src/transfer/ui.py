@@ -146,6 +146,7 @@ let view = "home";
 let requestStep = 1;
 let orderDirection = SITE === "SYP" ? "to_syp" : "to_hq";
 let statusFilter = "active";
+let editingDraftId = null;
 let suggestItems = [];
 let suggestFilter = "";
 let toastTimer = null;
@@ -309,15 +310,64 @@ async function api(path, opts){
   } finally { setBusy(false); }
 }
 async function submitTransferLines(lines, direction){
-  const d = await api("/transfer/api/requests/draft",{method:"POST",body:JSON.stringify({direction})});
-  await api("/transfer/api/requests/"+d.transfer_id+"/lines",{
+  let transferId = editingDraftId;
+  if(!transferId){
+    const d = await api("/transfer/api/requests/draft",{method:"POST",body:JSON.stringify({direction})});
+    transferId = d.transfer_id;
+  }
+  await api("/transfer/api/requests/"+transferId+"/lines",{
     method:"PUT",
     body:JSON.stringify({lines:lines.map(l=>({bcode:l.bcode,qty:l.qty,descr:l.descr||""}))}),
   });
-  return api("/transfer/api/requests/"+d.transfer_id+"/submit",{method:"POST",body:"{}"});
+  const submitted = await api("/transfer/api/requests/"+transferId+"/submit",{method:"POST",body:"{}"});
+  editingDraftId = null;
+  return submitted;
 }
-function goHome(){ view="home"; requestStep=1; render(); }
-function goView(v){ view=v; if(v==="request") requestStep=1; render(); }
+async function saveDraftLines(lines){
+  let transferId = editingDraftId;
+  if(!transferId){
+    const d = await api("/transfer/api/requests/draft",{method:"POST",body:JSON.stringify({direction:orderDirection})});
+    transferId = d.transfer_id;
+    editingDraftId = transferId;
+  }
+  await api("/transfer/api/requests/"+transferId+"/lines",{
+    method:"PUT",
+    body:JSON.stringify({lines:lines.map(l=>({bcode:l.bcode,qty:l.qty,descr:l.descr||""}))}),
+  });
+  return transferId;
+}
+async function deleteDraft(transferId){
+  if(!confirm("ลบร่างนี้?")) return;
+  await api("/transfer/api/requests/"+transferId,{method:"DELETE"});
+  if(editingDraftId === transferId) editingDraftId = null;
+  showToast("ลบร่างแล้ว");
+  render();
+}
+async function cancelRequest(transferId){
+  if(!confirm("ยกเลิกคำขอนี้?")) return;
+  await api("/transfer/api/requests/"+transferId+"/cancel",{method:"POST",body:"{}"});
+  showToast("ยกเลิกคำขอแล้ว");
+  render();
+}
+async function editDraft(transferId){
+  const detail = await api("/transfer/api/requests/"+transferId+"/lines");
+  editingDraftId = transferId;
+  orderDirection = (detail.to_branch||"SYP").toUpperCase() === SITE ? "to_syp" : "to_hq";
+  const lines = detail.items || detail.lines || [];
+  for(const n of await (await api("/transfer/api/need-list")).items || []){
+    await api("/transfer/api/need-list/"+n.need_id,{method:"DELETE"});
+  }
+  for(const ln of lines){
+    await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({
+      bcode:ln.bcode, qty:ln.qty_requested, descr:ln.descr||"", suggest_qty:ln.qty_requested,
+    })});
+  }
+  view = "request";
+  requestStep = 2;
+  render();
+}
+function goHome(){ view="home"; requestStep=1; editingDraftId=null; render(); }
+function goView(v){ view=v; if(v==="request" && !editingDraftId) requestStep=1; render(); }
 function setRequestStep(n){ requestStep=n; render(); }
 
 function updateHeader(){
@@ -347,7 +397,7 @@ async function fetchCounts(){
   try{
     const [prep, recv] = await Promise.all([
       api("/transfer/api/requests?role=prepare"),
-      api("/transfer/api/requests?role=receive"),
+      api("/transfer/api/receive-lines"),
     ]);
     return {prepare:(prep.items||[]).length, receive:(recv.items||[]).length};
   }catch(e){ return {prepare:0, receive:0}; }
@@ -370,7 +420,7 @@ async function renderHome(el){
       </button>
       <button class="action-card" data-go="receive">
         <p class="title">📦 รับสินค้าจาก ${OTHER}</p>
-        <p class="desc">สินค้าถูกจัดส่งมาแล้ว — รอรับเข้าที่ ${SITE}${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
+        <p class="desc">สินค้าถูกจัดส่งมาแล้ว — รอรับเข้าที่ ${SITE} (รายการละบรรทัด)${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
       </button>
       <button class="action-card" data-go="status">
         <p class="title">📋 ตรวจสอบสถานะ</p>
@@ -523,6 +573,7 @@ async function renderRequest(el){
         </tbody></table></div>
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setRequestStep(2)">← แก้ไขรายการ</button>
+          ${editingDraftId ? `<button class="btn btn-ghost" id="btnSaveDraft">บันทึกร่าง</button>` : ""}
           <button class="btn btn-primary" id="btnConfirmSubmit">ยืนยันส่งคำขอ</button>
         </div>
       </div>`;
@@ -539,6 +590,18 @@ async function renderRequest(el){
         statusFilter = "active";
       }catch(e){alert(e.message);}
     };
+    const saveBtn = el.querySelector("#btnSaveDraft");
+    if(saveBtn){
+      saveBtn.onclick = async()=>{
+        if(!cartItems.length) return;
+        try{
+          const id = await saveDraftLines(cartItems.map(n=>({bcode:n.bcode, qty:n.qty, descr:n.descr||""})));
+          showToast("บันทึกร่างแล้ว: "+id.slice(0,8));
+          goView("status");
+          statusFilter = "active";
+        }catch(e){alert(e.message);}
+      };
+    }
   }
 }
 
@@ -570,6 +633,43 @@ async function openPrepareDialog(transferId){
       const bill = result.ship_billno || result.tf_billno || "";
       modal.close();
       showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");
+      render();
+    }catch(e){alert(e.message);}
+  };
+}
+
+async function openReceiveLineDialog(row){
+  const remain = Number(row.qty_open||0);
+  if(remain <= 0){alert("รับครบแล้ว");return;}
+  const modal = showModal(`<h2>รับสินค้า · ${row.short_id||""}</h2>
+    <div class="dir">${dirLabel(row.from_branch, row.to_branch)} · ใบจัด <code>${row.ship_billno||"-"}</code></div>
+    ${receiveBillNoteHtml(row.from_branch, row.to_branch, row.ship_billno)}
+    <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>จัด</th><th>รับแล้ว</th><th>รับครั้งนี้</th></tr></thead><tbody>
+      <tr><td><code>${row.bcode}</code></td><td>${row.descr||""}</td><td>${fmtQty(row.qty_shipped)}</td><td>${fmtQty(row.qty_received)}</td>
+      <td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" id="recvQty"/></td></tr>
+    </tbody></table></div>
+    <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoReceive">ยืนยันรับแล้ว</button></div>`);
+  modal.box.querySelector("#btnDoReceive").onclick = async()=>{
+    const q = Number(modal.box.querySelector("#recvQty").value||0);
+    if(q<=0){alert("ระบุจำนวนที่รับ");return;}
+    if(!RECV_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
+    try{
+      const result = await api("/transfer/api/shipments/"+row.shipment_id+"/receive",{
+        method:"POST",
+        body:JSON.stringify({
+          client_token:uuid(),
+          lines:[{
+            shipment_line_id:row.shipment_line_id,
+            line_id:row.line_id,
+            bcode:row.bcode,
+            qty_receive:q,
+            iclow_id:row.iclow_id||undefined,
+          }],
+        }),
+      });
+      const bill = result.receive_billno || "";
+      modal.close();
+      showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
       render();
     }catch(e){alert(e.message);}
   };
@@ -634,24 +734,30 @@ async function renderPrepare(el){
 }
 
 async function renderReceive(el){
-  const data = await api("/transfer/api/requests?role=receive");
+  const data = await api("/transfer/api/receive-lines");
   const items = data.items||[];
+  window._receiveQueue = items;
   if(!items.length){
-    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">เมื่อสาขาอื่นจัดส่งมาแล้ว จะแสดงที่นี่</span></div>
+    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">จะแสดงเมื่อ ${OTHER} จัดส่งและออกใบ TF แล้วเท่านั้น</span></div>
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     return;
   }
-  el.innerHTML = `<div class="flow-hint">เลือกคำขอ → ระบุจำนวนที่รับ → ระบบออกใบ TF PIMAS ให้อัตโนมัติ</div>
+  el.innerHTML = `<div class="flow-hint">รายการรอรับแยกตามสินค้า — รับได้เมื่อ ${OTHER} จัดส่งและออกใบ TF แล้ว</div>
     ${billTimelineHtml(OTHER, SITE)}
-    <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th>รายการ</th><th></th></tr></thead><tbody>
-      ${items.map(r=>`<tr>
-        <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-        <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
-        <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td><td>${r.line_count||0}</td>
-        <td><button class="btn btn-primary" data-recv="${r.transfer_id}">รับสินค้า</button></td>
+    <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>ใบจัด</th><th>รหัส</th><th>รายละเอียด</th><th>จัด</th><th>รับแล้ว</th><th>ค้างรับ</th><th></th></tr></thead><tbody>
+      ${items.map((r,i)=>`<tr>
+        <td><code>${r.short_id}</code></td>
+        <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+        <td><code>${r.ship_billno||"-"}</code></td>
+        <td><code>${r.bcode}</code></td>
+        <td>${r.descr||""}</td>
+        <td>${fmtQty(r.qty_shipped)}</td>
+        <td>${fmtQty(r.qty_received)}</td>
+        <td>${fmtQty(r.qty_open)}</td>
+        <td><button class="btn btn-primary" data-recv-idx="${i}">รับ</button></td>
       </tr>`).join("")}
     </tbody></table></div></div>`;
-  el.querySelectorAll("[data-recv]").forEach(b=>b.onclick=()=>openReceiveDialog(b.dataset.recv));
+  el.querySelectorAll("[data-recv-idx]").forEach(b=>b.onclick=()=>openReceiveLineDialog(window._receiveQueue[Number(b.dataset.recvIdx)]));
 }
 
 async function renderStatus(el){
@@ -659,24 +765,49 @@ async function renderStatus(el){
   const data = await api("/transfer/api/requests" + (isDone ? "?status=complete" : ""));
   let items = data.items||[];
   if(!isDone) items = items.filter(r=>r.status!=="complete"&&r.status!=="cancelled");
+  const drafts = isDone ? [] : items.filter(r=>r.status==="draft");
+  const active = isDone ? items : items.filter(r=>r.status!=="draft");
   el.innerHTML = `
     <div class="status-tabs">
       <button class="status-tab ${statusFilter==="active"?"on":""}" data-sf="active">กำลังดำเนินการ</button>
       <button class="status-tab ${statusFilter==="done"?"on":""}" data-sf="done">เสร็จสิ้น</button>
     </div>`;
-  if(!items.length){
+  if(drafts.length){
+    el.innerHTML += `<div class="card"><strong>ร่าง (${drafts.length})</strong>
+      <p class="meta">ยังไม่ส่งคำขอ — แก้ไขหรือลบได้</p>
+      <div class="table-wrap" style="margin-top:.5rem"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>รายการ</th><th>วันที่</th><th></th></tr></thead><tbody>
+        ${drafts.map(r=>`<tr>
+          <td><code>${r.short_id}</code></td>
+          <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+          <td>${r.line_count||0}</td>
+          <td>${(r.created_at||"").slice(0,10)}</td>
+          <td class="row-actions" style="margin:0">
+            <button class="btn btn-ghost" data-edit="${r.transfer_id}">แก้ไข</button>
+            <button class="btn btn-ghost" data-del-draft="${r.transfer_id}">ลบ</button>
+          </td>
+        </tr>`).join("")}
+      </tbody></table></div></div>`;
+  }
+  if(!active.length && !drafts.length){
     el.innerHTML += `<div class="card"><div class="empty">ไม่มีรายการ</div></div>`;
-  } else {
-    el.innerHTML += `<div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th></tr></thead><tbody>
-      ${items.map(r=>`<tr>
+  } else if(active.length){
+    el.innerHTML += `<div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th><th></th></tr></thead><tbody>
+      ${active.map(r=>{
+        const canCancel = r.status==="requested";
+        return `<tr>
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
         <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
         <td>${pipeline(r.status)}</td>
         <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
-      </tr>`).join("")}
+        <td>${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}</td>
+      </tr>`;
+      }).join("")}
     </tbody></table></div></div>`;
   }
   el.querySelectorAll("[data-sf]").forEach(b=>b.onclick=()=>{statusFilter=b.dataset.sf; renderStatus(el);});
+  el.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editDraft(b.dataset.edit));
+  el.querySelectorAll("[data-del-draft]").forEach(b=>b.onclick=()=>deleteDraft(b.dataset.delDraft));
+  el.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=()=>cancelRequest(b.dataset.cancel));
 }
 
 async function render(){
