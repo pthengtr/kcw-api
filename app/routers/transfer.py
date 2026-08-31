@@ -43,7 +43,7 @@ from src.transfer.direction import (
     direction_label,
     should_stamp_iclow,
 )
-from src.transfer.parts9 import suggest_transfer_skus
+from src.transfer.parts9 import enrich_transfer_lines, lookup_transfer_product, suggest_transfer_skus
 from src.transfer.state import can_action
 from src.transfer.ui import APP, SESSION_COOKIE, page
 from src.pay_notes.net import is_tailscale_cg_nat
@@ -234,12 +234,30 @@ def api_suggest(request: Request):
     return {"items": items}
 
 
+@router.get("/api/product")
+def api_product(bcode: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    code = (bcode or "").strip()
+    if not code:
+        return JSONResponse({"error": "ระบุรหัสสินค้า"}, status_code=400)
+    try:
+        product = lookup_transfer_product(bcode=code)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    if not product:
+        return JSONResponse({"error": f"ไม่พบรหัส {code} ใน ICMAS"}, status_code=404)
+    return product
+
+
 @router.get("/api/need-list")
 def api_need_list(request: Request):
     _, err = _require_api(request)
     if err:
         return err
-    return {"items": list_need(get_transfer_supabase_client())}
+    items = enrich_transfer_lines(list_need(get_transfer_supabase_client()))
+    return {"items": items}
 
 
 @router.post("/api/need-list")
@@ -247,17 +265,24 @@ def api_need_create(body: NeedCreate, request: Request):
     ident, err = _require_api(request)
     if err:
         return err
-    row = upsert_need(
-        get_transfer_supabase_client(),
-        {
-            "bcode": body.bcode.strip(),
-            "qty": body.qty,
-            "descr": body.descr.strip() or None,
-            "suggest_qty": body.suggest_qty or body.qty,
-            "hq_qtyoh2": body.hq_qtyoh2,
-            "added_by": ident.display_name,
-        },
-    )
+    payload = {
+        "bcode": body.bcode.strip(),
+        "qty": body.qty,
+        "descr": body.descr.strip() or None,
+        "suggest_qty": body.suggest_qty or body.qty,
+        "hq_qtyoh2": body.hq_qtyoh2,
+        "added_by": ident.display_name,
+    }
+    if not payload["descr"]:
+        try:
+            product = lookup_transfer_product(bcode=payload["bcode"])
+        except Exception:
+            product = None
+        if product:
+            payload["descr"] = product.get("descr") or None
+            if payload["hq_qtyoh2"] is None:
+                payload["hq_qtyoh2"] = product.get("hq_qtyoh2")
+    row = upsert_need(get_transfer_supabase_client(), payload)
     return row
 
 
@@ -313,7 +338,7 @@ def api_request_lines(transfer_id: str, request: Request):
     header = get_request(client, transfer_id)
     if not header:
         return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
-    lines = enrich_lines(list_lines(client, transfer_id))
+    lines = enrich_transfer_lines(enrich_lines(list_lines(client, transfer_id)))
     shipments = list_shipments(client, transfer_id=transfer_id)
     for ship in shipments:
         ship["lines"] = list_shipment_lines(client, shipment_id=ship["shipment_id"])
