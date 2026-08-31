@@ -214,8 +214,9 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
     icmas_bcodes = [b for b in icmas_candidates if b not in by_bcode]
 
     all_bcodes = list(dict.fromkeys([*iclow_order, *icmas_bcodes]))
-    hq_icmas = _fetch_icmas_meta(get_site_engine("hq"), all_bcodes)
-    syp_icmas = _fetch_icmas_meta(get_site_engine("syp"), all_bcodes)
+    # Stock columns must show live QTYOH2 even for do-not-restock (QTYMIN<0) SKUs.
+    hq_icmas = _fetch_icmas_meta(get_site_engine("hq"), all_bcodes, include_blocked=True)
+    syp_icmas = _fetch_icmas_meta(get_site_engine("syp"), all_bcodes, include_blocked=True)
     local_icmas = hq_icmas if site_key == "hq" else syp_icmas
 
     out: list[dict[str, Any]] = []
@@ -291,26 +292,49 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
     }
 
 
-def enrich_transfer_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fill missing descr / stock hints from ICMAS for transfer line dicts."""
-    missing = [
-        (ln.get("bcode") or "").strip()
-        for ln in lines
-        if (ln.get("bcode") or "").strip() and not (ln.get("descr") or "").strip()
-    ]
-    if not missing:
-        return lines
-    codes = sorted(set(missing))
+def enrich_transfer_lines(
+    lines: list[dict[str, Any]],
+    *,
+    from_branch: str | None = None,
+    to_branch: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fill descr and live ICMAS stock (QTYOH2) from PARTS9 for transfer line dicts."""
+    codes = sorted({(ln.get("bcode") or "").strip() for ln in lines if (ln.get("bcode") or "").strip()})
+    if not codes:
+        return [dict(ln) for ln in lines]
     hq_icmas = _fetch_icmas_meta(get_site_engine("hq"), codes, include_blocked=True)
     syp_icmas = _fetch_icmas_meta(get_site_engine("syp"), codes, include_blocked=True)
+    from_u = (from_branch or "").strip().upper()
+    to_u = (to_branch or "").strip().upper()
     out: list[dict[str, Any]] = []
     for ln in lines:
         row = dict(ln)
         bcode = (row.get("bcode") or "").strip()
-        if bcode and not (row.get("descr") or "").strip():
-            for meta in (syp_icmas.get(bcode), hq_icmas.get(bcode)):
-                if meta and meta.get("descr"):
-                    row["descr"] = meta["descr"]
-                    break
+        if not bcode:
+            out.append(row)
+            continue
+        hq_meta = hq_icmas.get(bcode) or {}
+        syp_meta = syp_icmas.get(bcode) or {}
+        row["hq_qtyoh2"] = float(hq_meta.get("qtyoh2") or 0)
+        row["syp_qtyoh2"] = float(syp_meta.get("qtyoh2") or 0)
+        if from_u == "HQ":
+            row["from_qtyoh2"] = row["hq_qtyoh2"]
+        elif from_u == "SYP":
+            row["from_qtyoh2"] = row["syp_qtyoh2"]
+        if to_u == "HQ":
+            row["to_qtyoh2"] = row["hq_qtyoh2"]
+        elif to_u == "SYP":
+            row["to_qtyoh2"] = row["syp_qtyoh2"]
+        for meta in (hq_meta, syp_meta):
+            if not meta:
+                continue
+            if not row.get("descr") and meta.get("descr"):
+                row["descr"] = meta["descr"]
+            if not row.get("ui1") and meta.get("ui1"):
+                row["ui1"] = meta["ui1"]
+            if not row.get("ui2") and meta.get("ui2"):
+                row["ui2"] = meta["ui2"]
+            if float(meta.get("mtp2") or 1.0) > 1.0:
+                row["mtp2"] = float(meta["mtp2"])
         out.append(row)
     return out
