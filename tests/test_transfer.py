@@ -73,6 +73,7 @@ def test_transfer_page_renders():
     assert "ตรวจสอบสถานะ" in html
     assert "ขั้นตอนโอนสินค้า" in html
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
+    assert "info-toggle" in html
     assert "ยังไม่ออกใบ TF" in html
     assert "receive-lines" in html
     assert "receiveStepBar" in html or "เลือกคำขอ" in html
