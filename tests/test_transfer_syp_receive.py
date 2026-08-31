@@ -32,10 +32,11 @@ def test_post_transfer_receive_invalid_qty():
         )
 
 
+@patch("src.transfer.writers.receive_pimas.get_receipt_by_token", return_value=None)
 @patch("src.transfer.writers.receive_pimas.writer_engine_for_branch")
-def test_post_transfer_receive_writes_pimas_not_simas(mock_engine):
+def test_post_transfer_receive_writes_pimas_not_simas(mock_engine, mock_receipt):
     mock_conn = MagicMock()
-    mock_conn.execute.return_value.mappings.return_value.first.return_value = {
+    icmas_row = {
         "BCODE": "A1",
         "QTYOH2": 5,
         "PCODE": "P",
@@ -43,11 +44,17 @@ def test_post_transfer_receive_writes_pimas_not_simas(mock_engine):
         "UI1": "ea",
         "LOCATION1": "L1",
     }
+    mock_conn.execute.return_value.mappings.return_value.first.return_value = icmas_row
+
+    @contextmanager
+    def fake_connect():
+        yield mock_conn
 
     @contextmanager
     def fake_begin():
         yield mock_conn
 
+    mock_engine.return_value.connect = fake_connect
     mock_engine.return_value.begin = fake_begin
     with patch("src.transfer.writers.receive_pimas.next_pimas_billno", return_value="TF6808-099"):
         result = post_transfer_receive(
@@ -62,5 +69,48 @@ def test_post_transfer_receive_writes_pimas_not_simas(mock_engine):
     sql_calls = [str(c.args[0]) for c in mock_conn.execute.call_args_list]
     assert any("PIMAS" in s for s in sql_calls)
     assert not any("SIMAS" in s for s in sql_calls)
-    pimas_params = mock_conn.execute.call_args_list[0].args[1]
+    pimas_params = next(c.args[1] for c in mock_conn.execute.call_args_list if "PIMAS" in str(c.args[0]))
     assert pimas_params["bookno"] == "9"
+    assert pimas_params["lines"] == 1
+
+
+@patch("src.transfer.writers.receive_pimas.get_receipt_by_token")
+def test_post_transfer_receive_idempotent_when_receipt_exists(mock_get_receipt):
+    mock_get_receipt.return_value = {
+        "receipt_id": "r1",
+        "receive_billno": "TF6808-100",
+        "client_token": "tok",
+    }
+    result = post_transfer_receive(
+        to_branch="SYP",
+        from_branch="HQ",
+        shipment={"shipment_id": "s1", "ship_billno": "TF6808-001"},
+        lines_to_receive=[{"bcode": "A1", "qty_receive": 3}],
+        operator="op",
+        client_token="tok",
+    )
+    assert result["receive_billno"] == "TF6808-100"
+    assert result["status"] == "received"
+
+
+@patch("src.transfer.writers.receive_pimas.get_receipt_by_token", return_value=None)
+@patch("src.transfer.writers.receive_pimas.writer_engine_for_branch")
+def test_post_transfer_receive_missing_icmas(mock_engine, mock_receipt):
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.mappings.return_value.first.return_value = None
+
+    @contextmanager
+    def fake_connect():
+        yield mock_conn
+
+    mock_engine.return_value.connect = fake_connect
+    with pytest.raises(TransferReceiveError) as exc_info:
+        post_transfer_receive(
+            to_branch="SYP",
+            from_branch="HQ",
+            shipment={"shipment_id": "s1", "ship_billno": "TF6808-001"},
+            lines_to_receive=[{"bcode": "MISSING", "qty_receive": 1}],
+            operator="op",
+            client_token="tok",
+        )
+    assert exc_info.value.code == "missing_icmas"

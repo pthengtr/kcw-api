@@ -72,7 +72,7 @@ def _next_billno_on_table(conn, table: str, prefix: str, when: datetime) -> str:
                 ) AS int
               )
             ) AS max_seq
-            FROM dbo.{table}
+            FROM dbo.{table} WITH (UPDLOCK, HOLDLOCK)
             WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BILLNO))) LIKE :pat
             """
         ),

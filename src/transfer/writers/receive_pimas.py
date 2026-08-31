@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, ProgrammingError
 
+from src.transfer.db import get_receipt_by_token, get_transfer_supabase_client
 from src.transfer.writers._engine import (
     TransferWriteError,
     TRANSFER_BOOKNO,
@@ -41,7 +42,28 @@ def post_transfer_receive(
     if not ship_billno:
         raise TransferReceiveError("No ship bill on shipment", code="missing_ship_bill")
 
+    client = get_transfer_supabase_client()
+    existing = get_receipt_by_token(client, client_token)
+    if existing:
+        return {
+            "status": "received",
+            "receive_billno": existing["receive_billno"],
+            "ship_billno": ship_billno,
+            "client_token": client_token,
+        }
+
     engine = writer_engine_for_branch(to_branch)
+    bcodes = [str(line.get("bcode") or "").strip() for line in lines_to_receive]
+    with engine.connect() as conn:
+        for bcode in bcodes:
+            if not bcode:
+                raise TransferReceiveError("Missing bcode on line", code="missing_icmas")
+            if not _fetch_icmas_row(conn, bcode):
+                raise TransferReceiveError(
+                    f"BCODE {bcode} not in ICMAS",
+                    code="missing_icmas",
+                )
+
     now = datetime.now()
     billdate = now.replace(hour=0, minute=0, second=0, microsecond=0)
     billtime = f"{now.hour:02d}{now.minute:02d}"
@@ -53,37 +75,6 @@ def post_transfer_receive(
         with engine.begin() as conn:
             billno = next_pimas_billno(
                 from_branch=from_branch, to_branch=to_branch, when=now
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO dbo.PIMAS (
-                      JOURMODE, JOURTYPE, JOURDATE, JOURTIME, DEPTNO, BOOKNO,
-                      BILLTYPE, BILLDATE, BILLTIME, BILLNO, LINES, TAXIC,
-                      DISCOUNT, DEDUCT, BEFORETAX, VAT, TAX, AFTERTAX, EXEMPT, SVCCHG,
-                      PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
-                      SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
-                    ) VALUES (
-                      :jourmode, 'PJ', :billdate, :jourtime, '1', :bookno,
-                      :billtype, :billdate, :billtime, :billno, :lines, 'N',
-                      0, 0, 0, 0, 0, 0, 0, 0,
-                      'N', 'N', 0, 0, 0,
-                      :sale, :remarks, 'N', 'N', 'N', 'N'
-                    )
-                    """
-                ),
-                {
-                    "jourmode": jourmode,
-                    "bookno": TRANSFER_BOOKNO,
-                    "billdate": billdate,
-                    "jourtime": billtime,
-                    "billtime": billtime,
-                    "billtype": billtype,
-                    "billno": billno,
-                    "lines": len(lines_to_receive),
-                    "sale": operator[:15],
-                    "remarks": remarks,
-                },
             )
 
             pidet_insert = text(
@@ -110,13 +101,60 @@ def post_transfer_receive(
                 """
             )
 
-            for i, line in enumerate(lines_to_receive, start=1):
+            detail_rows: list[dict[str, Any]] = []
+            for line in lines_to_receive:
                 bcode = str(line.get("bcode") or "").strip()
                 qty_recv = float(line.get("qty_receive") or 0)
                 descr = (line.get("descr") or "")[:60]
                 product = _fetch_icmas_row(conn, bcode)
                 if not product:
-                    continue
+                    raise TransferReceiveError(
+                        f"BCODE {bcode} not in ICMAS",
+                        code="missing_icmas",
+                    )
+                detail_rows.append(
+                    {
+                        "bcode": bcode,
+                        "qty_recv": qty_recv,
+                        "descr": descr,
+                        "product": product,
+                    }
+                )
+
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO dbo.PIMAS (
+                      JOURMODE, JOURTYPE, JOURDATE, JOURTIME, DEPTNO, BOOKNO,
+                      BILLTYPE, BILLDATE, BILLTIME, BILLNO, LINES, TAXIC,
+                      DISCOUNT, DEDUCT, BEFORETAX, VAT, TAX, AFTERTAX, EXEMPT, SVCCHG,
+                      PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
+                      SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
+                    ) VALUES (
+                      :jourmode, 'PJ', :billdate, :jourtime, '1', :bookno,
+                      :billtype, :billdate, :billtime, :billno, :lines, 'N',
+                      0, 0, 0, 0, 0, 0, 0, 0,
+                      'N', 'N', 0, 0, 0,
+                      :sale, :remarks, 'N', 'N', 'N', 'N'
+                    )
+                    """
+                ),
+                {
+                    "jourmode": jourmode,
+                    "bookno": TRANSFER_BOOKNO,
+                    "billdate": billdate,
+                    "jourtime": billtime,
+                    "billtime": billtime,
+                    "billtype": billtype,
+                    "billno": billno,
+                    "lines": len(detail_rows),
+                    "sale": operator[:15],
+                    "remarks": remarks,
+                },
+            )
+
+            for i, det in enumerate(detail_rows, start=1):
+                product = det["product"]
                 conn.execute(
                     pidet_insert,
                     {
@@ -125,18 +163,18 @@ def post_transfer_receive(
                         "billtype": billtype,
                         "billno": billno,
                         "line": i * 10,
-                        "bcode": bcode,
+                        "bcode": det["bcode"],
                         "pcode": product.get("PCODE") or None,
                         "mcode": product.get("MCODE") or None,
-                        "detail": descr,
+                        "detail": det["descr"],
                         "location1": str(product.get("LOCATION1") or "")[:10] or None,
-                        "qty": qty_recv,
+                        "qty": det["qty_recv"],
                         "ui": str(product.get("UI1") or "unit")[:10],
                         "mtp": 1.0,
                     },
                 )
-                new_qty = float(product.get("QTYOH2") or 0) + qty_recv
-                conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
+                new_qty = float(product.get("QTYOH2") or 0) + det["qty_recv"]
+                conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": det["bcode"]})
     except (ProgrammingError, DBAPIError) as exc:
         hint = transfer_write_permission_hint(exc, branch=to_branch, tables="PIMAS/PIDET/ICMAS")
         if hint:
