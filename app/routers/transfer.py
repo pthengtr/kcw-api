@@ -44,7 +44,7 @@ from src.transfer.direction import (
     should_stamp_iclow,
 )
 from src.transfer.parts9 import enrich_transfer_lines, lookup_transfer_product, suggest_transfer_skus
-from src.transfer.state import can_action
+from src.transfer.state import can_action, shipment_lines_fully_received, summarize_request_progress
 from src.transfer.ui import APP, SESSION_COOKIE, page
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.transfer.writers.syp_iclow_stamp import (
@@ -319,9 +319,10 @@ def api_requests(
     items = list_requests(client, status=status, role=role, site=settings.site)
     out = []
     for req in items:
-        lines = list_lines(client, req["transfer_id"])
+        lines = enrich_lines(list_lines(client, req["transfer_id"]))
         row = dict(req)
         row["line_count"] = len(lines)
+        row.update(summarize_request_progress(lines))
         fb = row.get("from_branch") or "HQ"
         tb = row.get("to_branch") or "SYP"
         row["direction_label"] = direction_label(fb, tb)
@@ -342,11 +343,14 @@ def api_request_lines(transfer_id: str, request: Request):
     shipments = list_shipments(client, transfer_id=transfer_id)
     for ship in shipments:
         ship["lines"] = list_shipment_lines(client, shipment_id=ship["shipment_id"])
+        ship["fully_received"] = shipment_lines_fully_received(ship["lines"])
+    progress = summarize_request_progress(lines)
     return {
         "header": header,
         "items": lines,
         "lines": lines,
         "shipments": shipments,
+        **progress,
         **header,
     }
 
@@ -609,9 +613,14 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
             bump_shipment_line_received(
                 client, shipment_line_id=str(shipment_line_id), qty_receive=qty_recv
             )
+        line_id = line.get("line_id")
+        line_info = transfer_lines.get(line_id, {}) if line_id else {}
+        new_recv = float(line_info.get("qty_received") or 0) + qty_recv
+        req_qty = float(line_info.get("qty_requested") or 0)
         iclow_id = line.get("iclow_id")
         if (
             iclow_id
+            and new_recv >= req_qty
             and should_stamp_iclow(
                 enabled=settings.transfer_iclow_stamp_enabled,
                 site=settings.site,
@@ -624,9 +633,11 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
                 mark_received(iclow_id=str(iclow_id), tf_billno=ship_bill or "")
             except ICLOWStampError:
                 pass
-    _table(client, "shipments").update({
-        "posted_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("shipment_id", shipment_id).execute()
+    ship_lines_after = list_shipment_lines(client, shipment_id=shipment_id)
+    if shipment_lines_fully_received(ship_lines_after):
+        _table(client, "shipments").update({
+            "posted_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("shipment_id", shipment_id).execute()
     refresh_request_status(client, shipment["transfer_id"])
     return result
 

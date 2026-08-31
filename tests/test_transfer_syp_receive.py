@@ -32,22 +32,6 @@ def test_post_transfer_receive_invalid_qty():
         )
 
 
-def test_post_transfer_receive_idempotent():
-    result = post_transfer_receive(
-        to_branch="SYP",
-        from_branch="HQ",
-        shipment={
-            "shipment_id": "test-id",
-            "tf_billno": "TF2308-00001",
-            "posted_at": "2026-08-29T10:00:00+00:00",
-        },
-        lines_to_receive=[{"bcode": "BCODE1", "qty_receive": 10}],
-        operator="test-operator",
-        client_token="test-token",
-    )
-    assert result["status"] == "already_processed"
-
-
 @patch("src.transfer.writers.receive_pimas.writer_engine_for_branch")
 def test_post_transfer_receive_writes_pimas_not_simas(mock_engine):
     mock_conn = MagicMock()

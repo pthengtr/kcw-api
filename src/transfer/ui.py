@@ -69,7 +69,11 @@ table{width:100%;border-collapse:collapse;font-size:.88rem}
 th,td{padding:.55rem .65rem;border-bottom:1px solid var(--line);text-align:left}
 th{background:#f8fafc;position:sticky;top:0}
 .badge{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.72rem;font-weight:600}
-.b-requested{background:#e8f0ff;color:#1d4ed8}.b-await{background:#ffedd5;color:#c2410c}.b-done{background:#dcfce7;color:#15803d}
+.b-requested{background:#e8f0ff;color:#1d4ed8}.b-await{background:#ffedd5;color:#c2410c}.b-done{background:#dcfce7;color:#15803d}.b-alert{background:#fee2e2;color:#b91c1c}
+.flag-mismatch{color:#b91c1c;font-weight:700}
+.qty-mismatch{color:#b91c1c;font-weight:600}
+.alert-banner{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:.5rem .75rem;margin:.5rem 0;font-size:.85rem}
+tr.row-mismatch td{background:#fff7f7}
 .btn{border:0;border-radius:10px;padding:.55rem 1rem;font-family:inherit;font-weight:600;cursor:pointer;color:var(--text)}
 .btn-primary{background:var(--acc);color:#fff}.btn-ghost{background:#fff;border:1px solid var(--line);color:var(--text)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
@@ -338,21 +342,35 @@ function orderFlowText(){
   if(orderDirection === "to_syp") return OTHER + " จัดส่ง → " + SITE + " รับเข้า";
   return SITE === "HQ" ? (OTHER + " จัดส่ง → " + SITE + " รับเข้า") : (OTHER + " จัดส่ง → " + SITE + " รับเข้า");
 }
-function badge(status, fromB, toB){
+function badge(status, fromB, toB, hasMismatch){
   const m={draft:"b-requested",requested:"b-requested",partial_prepared:"b-await",awaiting_receive:"b-await",partial_received:"b-await",complete:"b-done",cancelled:"b-requested"};
   const fb = fromB||"HQ";
-  const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดบางส่วน",awaiting_receive:"รอรับ",partial_received:"รับบางส่วน",complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
-  return `<span class="badge ${m[status]||"b-requested"}">${t[status]||status||"-"}</span>`;
+  const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดไม่ครบตามขอ",awaiting_receive:"รอรับ",partial_received:"รับไม่ครบตามขอ",complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
+  const cls = hasMismatch ? "b-alert" : (m[status]||"b-requested");
+  const label = hasMismatch ? "จัด≠รับ" : (t[status]||status||"-");
+  return `<span class="badge ${cls}" title="${hasMismatch ? "จำนวนจัดกับรับไม่ตรงกัน" : ""}">${label}</span>`;
 }
-function pipeline(status){
-  const steps = ["requested","prepared","received","done"];
+function pipeline(status, hasMismatch){
   const idx = status==="complete" ? 3 : status==="awaiting_receive"||status==="partial_received" ? 2 : status==="partial_prepared" ? 1 : 0;
   const labels = ["ขอแล้ว","จัดแล้ว","รับแล้ว","เสร็จ"];
-  return `<div class="pipeline">${labels.map((l,i)=>`<span class="pipe-dot ${i<idx?"done":i===idx?"on":""}"></span><span>${l}</span>`).join("")}</div>`;
+  const warn = hasMismatch ? `<span class="flag-mismatch" title="จัด≠รับ"> ⚠</span>` : "";
+  return `<div class="pipeline">${labels.map((l,i)=>`<span class="pipe-dot ${i<idx?"done":i===idx?"on":""}"></span><span>${l}</span>`).join("")}${warn}</div>`;
 }
-function lineStatusLabel(status){
-  const t={open:"รอจัด",partial_prepared:"จัดบางส่วน",prepared:"จัดแล้ว รอรับ",partial_received:"รับบางส่วน",complete:"เสร็จ",cancelled:"ยกเลิก"};
-  return t[status]||status||"-";
+function lineStatusLabel(ln){
+  const status = ln.line_status || ln.status || "";
+  const t={open:"รอจัด",partial_prepared:"จัดไม่ครบตามขอ",prepared:"จัดครบ รอรับ",partial_received:"รับไม่ครบตามขอ",complete:"เสร็จ",cancelled:"ยกเลิก"};
+  const base = t[status]||status||"-";
+  if(ln.prep_recv_mismatch) return `<span class="flag-mismatch" title="จัด ${fmtQty(ln.qty_prepared)} ≠ รับ ${fmtQty(ln.qty_received)}">⚠ ${base}</span>`;
+  return base;
+}
+function mismatchBanner(progress){
+  if(!progress || !progress.prep_recv_mismatch) return "";
+  const n = progress.prep_recv_mismatch_count || 0;
+  return `<div class="alert-banner"><strong>⚠ จัดกับรับไม่ตรงกัน</strong> — ${n} รายการ (จัดแล้วแต่ยังรับไม่ครบ หรือรับไม่เท่าที่จัด)</div>`;
+}
+function qtyCell(qty, mismatch){
+  const q = fmtQty(qty);
+  return mismatch ? `<span class="qty-mismatch">${q}</span>` : q;
 }
 function fmtDateTime(iso){
   return iso ? String(iso).slice(0,16).replace("T"," ") : "—";
@@ -431,13 +449,14 @@ async function openRequestDetail(transferId){
   const status = detail.status || (detail.header && detail.header.status) || "";
   const fromB = detail.from_branch;
   const toB = detail.to_branch;
-  const lineRows = lines.map(ln=>`<tr>
+  const progress = {prep_recv_mismatch: detail.prep_recv_mismatch, prep_recv_mismatch_count: detail.prep_recv_mismatch_count};
+  const lineRows = lines.map(ln=>`<tr class="${ln.prep_recv_mismatch?"row-mismatch":""}">
     <td><code>${ln.bcode}</code></td>
     <td>${ln.descr||""}</td>
     <td>${fmtQty(ln.qty_requested)}</td>
-    <td>${fmtQty(ln.qty_prepared)}</td>
-    <td>${fmtQty(ln.qty_received)}</td>
-    <td>${lineStatusLabel(ln.line_status)}</td>
+    <td>${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</td>
+    <td>${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</td>
+    <td>${lineStatusLabel(ln)}</td>
   </tr>`).join("");
   let shipHtml = "";
   if(shipments.length){
@@ -446,7 +465,8 @@ async function openRequestDetail(transferId){
       const recvBill = ship.receive_billno || "";
       const slines = (ship.lines||[]).map(sl=>{
         const open = Math.max(Number(sl.qty_shipped||0)-Number(sl.qty_received||0),0);
-        return `<tr><td><code>${sl.bcode||""}</code></td><td>${fmtQty(sl.qty_shipped)}</td><td>${fmtQty(sl.qty_received)}</td><td>${fmtQty(open)}</td></tr>`;
+        const mm = open > 0 && Number(sl.qty_received||0) > 0;
+        return `<tr><td><code>${sl.bcode||""}</code></td><td>${fmtQty(sl.qty_shipped)}</td><td>${qtyCell(sl.qty_received, mm)}</td><td>${mm ? `<span class="flag-mismatch">${fmtQty(open)}</span>` : fmtQty(open)}</td></tr>`;
       }).join("");
       return `<div style="margin-top:.65rem">
         <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · <code>${shipBill}</code>${recvBill ? ` · ใบรับ <code>${recvBill}</code>` : ""}</p>
@@ -459,7 +479,8 @@ async function openRequestDetail(transferId){
   const isDraft = status==="draft";
   const modal = showModal(`<h2>รายละเอียด · <code>${detail.short_id||transferId}</code></h2>
     <p class="dir">${dirLabel(fromB, toB)}</p>
-    <p style="margin:.35rem 0">${badge(status, fromB, toB)} ${pipeline(status)}</p>
+    <p style="margin:.35rem 0">${badge(status, fromB, toB, detail.prep_recv_mismatch)} ${pipeline(status, detail.prep_recv_mismatch)}</p>
+    ${mismatchBanner(detail)}
     <p class="meta">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)}</p>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>ขอ</th><th>จัด</th><th>รับ</th><th>สถานะ</th></tr></thead><tbody>
       ${lineRows || '<tr><td colspan="6" class="empty">ไม่มีรายการ</td></tr>'}
@@ -977,7 +998,7 @@ async function renderPrepare(el){
         ${items.map((r,i)=>`<tr class="row-clickable" data-prep-idx="${i}">
           <td><code>${r.short_id}</code></td>
           <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-          <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
+          <td>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch)}</td>
           <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
           <td>${r.line_count||0}</td>
           <td><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></td>
@@ -1121,10 +1142,11 @@ async function renderStatus(el){
     el.innerHTML += `<div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th><th></th></tr></thead><tbody>
       ${active.map(r=>{
         const canCancel = r.status==="requested";
-        return `<tr class="row-clickable" data-detail="${r.transfer_id}">
+        const mm = !!r.prep_recv_mismatch;
+        return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-        <td>${badge(r.status,r.from_branch,r.to_branch)}</td>
-        <td>${pipeline(r.status)}</td>
+        <td>${badge(r.status,r.from_branch,r.to_branch,mm)}</td>
+        <td>${pipeline(r.status,mm)}</td>
         <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
         <td class="row-actions" style="margin:0">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>

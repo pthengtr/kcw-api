@@ -9,7 +9,7 @@ from supabase import Client, create_client
 from src.transfer.config import get_transfer_settings
 from datetime import datetime, timezone
 
-from src.transfer.state import derive_line_status, derive_request_status, make_short_id, request_has_open_prepare
+from src.transfer.state import derive_line_status, derive_request_status, make_short_id, prep_recv_mismatch, qty_open_prepare, qty_short_vs_order, request_has_open_prepare, summarize_request_progress
 
 TRANSFER_SCHEMA = "transfer"
 
@@ -220,6 +220,15 @@ def enrich_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         row["qty_open_receive"] = max(
             float(row.get("qty_prepared") or 0) - float(row.get("qty_received") or 0), 0
+        )
+        row["qty_short_order_prepare"] = qty_short_vs_order(
+            row.get("qty_requested", 0), row.get("qty_prepared", 0)
+        )
+        row["qty_short_order_receive"] = qty_short_vs_order(
+            row.get("qty_requested", 0), row.get("qty_received", 0)
+        )
+        row["prep_recv_mismatch"] = prep_recv_mismatch(
+            row.get("qty_prepared", 0), row.get("qty_received", 0)
         )
         out.append(row)
     return out
