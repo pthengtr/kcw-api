@@ -147,6 +147,8 @@ let requestStep = 1;
 let orderDirection = SITE === "SYP" ? "to_syp" : "to_hq";
 let statusFilter = "active";
 let editingDraftId = null;
+let receiveStep = 1;
+let receiveShipment = null;
 let suggestItems = [];
 let suggestFilter = "";
 let toastTimer = null;
@@ -366,8 +368,9 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; editingDraftId=null; render(); }
-function goView(v){ view=v; if(v==="request" && !editingDraftId) requestStep=1; render(); }
+function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; editingDraftId=null; render(); }
+function goView(v){ view=v; if(v==="request" && !editingDraftId) requestStep=1; if(v==="receive"){ receiveStep=1; receiveShipment=null; } render(); }
+function setReceiveStep(n){ receiveStep=n; render(); }
 function setRequestStep(n){ requestStep=n; render(); }
 
 function updateHeader(){
@@ -375,7 +378,7 @@ function updateHeader(){
     home: ["โอนสินค้า · " + SITE, USER + " · เลือกสิ่งที่ต้องการทำ"],
     request: ["ขอสินค้าจาก " + OTHER, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
     prepare: ["จัดส่งไป " + OTHER, "รายการที่ " + SITE + " ต้องจัดออก"],
-    receive: ["รับสินค้าจาก " + OTHER, "รายการที่รอรับเข้า " + SITE],
+    receive: ["รับสินค้าจาก " + OTHER, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
     status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
   };
   const t = titles[view] || titles.home;
@@ -391,6 +394,33 @@ function stepBar(current){
     const cls = n===current ? "on" : n<current ? "done" : "";
     return `<div class="step ${cls}">${l}<span class="step-label">${n===1?"ขอจากสาขาไหน":n===2?"เพิ่มรายการ": "ตรวจสอบ"}</span></div>`;
   }).join("")}</div>`;
+}
+function receiveStepBar(current){
+  const labels = ["1. เลือกคำขอ","2. ระบุจำนวน","3. ยืนยันรับ"];
+  return `<div class="steps">${labels.map((l,i)=>{
+    const n = i+1;
+    const cls = n===current ? "on" : n<current ? "done" : "";
+    return `<div class="step ${cls}">${l}<span class="step-label">${n===1?"เปิดคำขอ":n===2?"กรอกจำนวน":"ออกใบ TF"}</span></div>`;
+  }).join("")}</div>`;
+}
+function groupReceiveQueue(items){
+  const map = new Map();
+  for(const row of items){
+    const key = row.shipment_id;
+    if(!map.has(key)){
+      map.set(key, {
+        transfer_id: row.transfer_id,
+        shipment_id: row.shipment_id,
+        short_id: row.short_id,
+        from_branch: row.from_branch,
+        to_branch: row.to_branch,
+        ship_billno: row.ship_billno,
+        lines: [],
+      });
+    }
+    map.get(key).lines.push(row);
+  }
+  return [...map.values()];
 }
 
 async function fetchCounts(){
@@ -420,7 +450,7 @@ async function renderHome(el){
       </button>
       <button class="action-card" data-go="receive">
         <p class="title">📦 รับสินค้าจาก ${OTHER}</p>
-        <p class="desc">สินค้าถูกจัดส่งมาแล้ว — รอรับเข้าที่ ${SITE} (รายการละบรรทัด)${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
+        <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
       </button>
       <button class="action-card" data-go="status">
         <p class="title">📋 ตรวจสอบสถานะ</p>
@@ -638,78 +668,129 @@ async function openPrepareDialog(transferId){
   };
 }
 
-async function openReceiveLineDialog(row){
-  const remain = Number(row.qty_open||0);
-  if(remain <= 0){alert("รับครบแล้ว");return;}
-  const modal = showModal(`<h2>รับสินค้า · ${row.short_id||""}</h2>
-    <div class="dir">${dirLabel(row.from_branch, row.to_branch)} · ใบจัด <code>${row.ship_billno||"-"}</code></div>
-    ${receiveBillNoteHtml(row.from_branch, row.to_branch, row.ship_billno)}
-    <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>จัด</th><th>รับแล้ว</th><th>รับครั้งนี้</th></tr></thead><tbody>
-      <tr><td><code>${row.bcode}</code></td><td>${row.descr||""}</td><td>${fmtQty(row.qty_shipped)}</td><td>${fmtQty(row.qty_received)}</td>
-      <td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" id="recvQty"/></td></tr>
-    </tbody></table></div>
-    <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoReceive">ยืนยันรับแล้ว</button></div>`);
-  modal.box.querySelector("#btnDoReceive").onclick = async()=>{
-    const q = Number(modal.box.querySelector("#recvQty").value||0);
-    if(q<=0){alert("ระบุจำนวนที่รับ");return;}
-    if(!RECV_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
-    try{
-      const result = await api("/transfer/api/shipments/"+row.shipment_id+"/receive",{
-        method:"POST",
-        body:JSON.stringify({
-          client_token:uuid(),
-          lines:[{
-            shipment_line_id:row.shipment_line_id,
-            line_id:row.line_id,
-            bcode:row.bcode,
-            qty_receive:q,
-            iclow_id:row.iclow_id||undefined,
-          }],
-        }),
-      });
-      const bill = result.receive_billno || "";
-      modal.close();
-      showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
-      render();
-    }catch(e){alert(e.message);}
-  };
+async function submitReceive(shipment, qtyByLineId){
+  const recvLines = shipment.lines.map(ln=>{
+    const q = Number(qtyByLineId[ln.shipment_line_id]||0);
+    return {
+      shipment_line_id: ln.shipment_line_id,
+      line_id: ln.line_id,
+      bcode: ln.bcode,
+      qty_receive: q,
+      iclow_id: ln.iclow_id||undefined,
+    };
+  }).filter(l=>l.qty_receive>0);
+  if(!recvLines.length) throw new Error("ระบุจำนวนที่รับ");
+  if(!RECV_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) throw new Error("ยกเลิก");
+  return api("/transfer/api/shipments/"+shipment.shipment_id+"/receive",{
+    method:"POST",
+    body:JSON.stringify({client_token:uuid(), lines:recvLines}),
+  });
 }
 
-async function openReceiveDialog(transferId){
-  const detail = await api("/transfer/api/requests/"+transferId+"/lines");
-  const shipments = (detail.shipments||[]).filter(s=>!s.posted_at);
-  if(!shipments.length){alert("ไม่มี shipment ที่รอรับ");return;}
-  const ship = shipments[0];
-  const shipLines = (ship.lines||[]).filter(sl=>Number(sl.qty_shipped||0)>Number(sl.qty_received||0));
-  if(!shipLines.length){alert("รับครบแล้ว");return;}
-  const rows = shipLines.map(sl=>{
-    const remain = Number(sl.qty_shipped||0)-Number(sl.qty_received||0);
-    return `<tr><td><code>${sl.bcode}</code></td><td>${fmtQty(sl.qty_shipped)}</td><td>${fmtQty(sl.qty_received||0)}</td>
-      <td><input class="qty-input" type="number" min="0" max="${remain}" step="1" value="${remain}" data-bcode="${sl.bcode}" data-line="${sl.line_id||""}"/></td></tr>`;
-  }).join("");
-  const shipBill = ship.ship_billno || ship.tf_billno || "";
-  const modal = showModal(`<h2>รับสินค้า · ${detail.short_id||transferId}</h2>
-    <div class="dir">${dirLabel(detail.from_branch, detail.to_branch)} · ใบจัด ${shipBill||"-"}</div>
-    ${receiveBillNoteHtml(detail.from_branch, detail.to_branch, shipBill)}
-    <p class="meta">ระบุจำนวนที่รับในครั้งนี้ แล้วกดยืนยัน</p>
-    <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>จัด</th><th>รับแล้ว</th><th>รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="row-actions"><button class="btn btn-ghost" data-close>ยกเลิก</button><button class="btn btn-primary" id="btnDoReceive">ยืนยันรับแล้ว</button></div>`);
-  modal.box.querySelector("#btnDoReceive").onclick = async()=>{
-    const recvLines = [];
-    modal.box.querySelectorAll(".qty-input").forEach(inp=>{
-      const q = Number(inp.value||0);
-      if(q>0) recvLines.push({bcode:inp.dataset.bcode, qty_receive:q, line_id:inp.dataset.line||undefined});
+async function renderReceive(el){
+  const data = await api("/transfer/api/receive-lines");
+  const queue = groupReceiveQueue(data.items||[]);
+  if(!queue.length){
+    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">จะแสดงเมื่อ ${OTHER} จัดส่งและออกใบ TF แล้วเท่านั้น</span></div>
+      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+    return;
+  }
+
+  if(receiveStep === 1){
+    el.innerHTML = `${receiveStepBar(1)}
+      <div class="flow-hint">เลือกคำขอที่ ${OTHER} จัดส่งแล้ว (มีใบ TF SIMAS) → กรอกจำนวนรับ → ยืนยันเพื่อออกใบ TF PIMAS</div>
+      ${billTimelineHtml(OTHER, SITE)}
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>ใบจัด</th><th>รายการค้างรับ</th><th>วันที่</th><th></th></tr></thead><tbody>
+        ${queue.map((g,i)=>`<tr>
+          <td><code>${g.short_id}</code></td>
+          <td class="dir">${dirLabel(g.from_branch,g.to_branch)}</td>
+          <td><code>${g.ship_billno||"-"}</code></td>
+          <td>${g.lines.length} รายการ</td>
+          <td>—</td>
+          <td><button class="btn btn-primary" data-recv-group="${i}">เปิดรับสินค้า</button></td>
+        </tr>`).join("")}
+      </tbody></table></div>
+      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+    window._receiveGroups = queue;
+    el.querySelectorAll("[data-recv-group]").forEach(b=>b.onclick=()=>{
+      receiveShipment = window._receiveGroups[Number(b.dataset.recvGroup)];
+      setReceiveStep(2);
     });
-    if(!recvLines.length){alert("ระบุจำนวนที่รับ");return;}
-    if(!RECV_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) return;
-    try{
-      const result = await api("/transfer/api/shipments/"+ship.shipment_id+"/receive",{method:"POST",body:JSON.stringify({client_token:uuid(),lines:recvLines})});
-      const bill = result.receive_billno || "";
-      modal.close();
-      showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
-      render();
-    }catch(e){alert(e.message);}
-  };
+    return;
+  }
+
+  if(!receiveShipment){
+    receiveStep = 1;
+    return renderReceive(el);
+  }
+
+  const ship = receiveShipment;
+  const openLines = (ship.lines||[]).filter(l=>Number(l.qty_open||0)>0);
+  if(!openLines.length){
+    receiveShipment = null;
+    receiveStep = 1;
+    return renderReceive(el);
+  }
+
+  if(receiveStep === 2){
+    const rows = openLines.map(ln=>{
+      const remain = Number(ln.qty_open||0);
+      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td>${fmtQty(ln.qty_shipped)}</td><td>${fmtQty(ln.qty_received)}</td>
+        <td><input class="qty-input recv-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
+          data-shipment-line="${ln.shipment_line_id}"/></td></tr>`;
+    }).join("");
+    el.innerHTML = `${receiveStepBar(2)}
+      <div class="card">
+        <p><strong>${ship.short_id}</strong> · ${dirLabel(ship.from_branch, ship.to_branch)}</p>
+        <p class="meta">ใบจัด <code>${ship.ship_billno||"-"}</code> — ระบุจำนวนที่รับแต่ละรายการ</p>
+        ${receiveBillNoteHtml(ship.from_branch, ship.to_branch, ship.ship_billno)}
+        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>จัด</th><th>รับแล้ว</th><th>รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="row-actions">
+          <button class="btn btn-ghost" onclick="setReceiveStep(1)">← เลือกคำขออื่น</button>
+          <button class="btn btn-primary" id="btnRecvNext2">ถัดไป → ตรวจสอบ</button>
+        </div>
+      </div>`;
+    el.querySelector("#btnRecvNext2").onclick = ()=>{
+      const qtyMap = {};
+      let any = false;
+      el.querySelectorAll(".recv-qty").forEach(inp=>{
+        const q = Number(inp.value||0);
+        if(q>0){ qtyMap[inp.dataset.shipmentLine]=q; any=true; }
+      });
+      if(!any){alert("ระบุจำนวนที่รับ");return;}
+      ship._qtyDraft = qtyMap;
+      setReceiveStep(3);
+    };
+    return;
+  }
+
+  if(receiveStep === 3){
+    const qtyMap = ship._qtyDraft||{};
+    const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0).map(ln=>`
+      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td>${fmtQty(ln.qty_shipped)}</td><td>${fmtQty(ln.qty_received)}</td><td><strong>${fmtQty(qtyMap[ln.shipment_line_id])}</strong></td></tr>
+    `).join("");
+    el.innerHTML = `${receiveStepBar(3)}
+      <div class="card">
+        <p><strong>${ship.short_id}</strong> · ${dirLabel(ship.from_branch, ship.to_branch)}</p>
+        <p class="meta">ใบจัด <code>${ship.ship_billno||"-"}</code></p>
+        ${receiveBillNoteHtml(ship.from_branch, ship.to_branch, ship.ship_billno)}
+        <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th>จัด</th><th>รับแล้ว</th><th>รับครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>
+        <div class="row-actions">
+          <button class="btn btn-ghost" onclick="setReceiveStep(2)">← แก้ไขจำนวน</button>
+          <button class="btn btn-primary" id="btnConfirmReceive">ยืนยันรับเข้า (ออกใบ TF)</button>
+        </div>
+      </div>`;
+    el.querySelector("#btnConfirmReceive").onclick = async()=>{
+      try{
+        const result = await submitReceive(ship, qtyMap);
+        const bill = result.receive_billno || "";
+        showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
+        receiveShipment = null;
+        receiveStep = 1;
+        render();
+      }catch(e){ if(e.message!=="ยกเลิก") alert(e.message); }
+    };
+  }
 }
 
 async function renderPrepare(el){
@@ -731,33 +812,6 @@ async function renderPrepare(el){
       </tr>`).join("")}
     </tbody></table></div></div>`;
   el.querySelectorAll("[data-prep]").forEach(b=>b.onclick=()=>openPrepareDialog(b.dataset.prep));
-}
-
-async function renderReceive(el){
-  const data = await api("/transfer/api/receive-lines");
-  const items = data.items||[];
-  window._receiveQueue = items;
-  if(!items.length){
-    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">จะแสดงเมื่อ ${OTHER} จัดส่งและออกใบ TF แล้วเท่านั้น</span></div>
-      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
-    return;
-  }
-  el.innerHTML = `<div class="flow-hint">รายการรอรับแยกตามสินค้า — รับได้เมื่อ ${OTHER} จัดส่งและออกใบ TF แล้ว</div>
-    ${billTimelineHtml(OTHER, SITE)}
-    <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>ใบจัด</th><th>รหัส</th><th>รายละเอียด</th><th>จัด</th><th>รับแล้ว</th><th>ค้างรับ</th><th></th></tr></thead><tbody>
-      ${items.map((r,i)=>`<tr>
-        <td><code>${r.short_id}</code></td>
-        <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-        <td><code>${r.ship_billno||"-"}</code></td>
-        <td><code>${r.bcode}</code></td>
-        <td>${r.descr||""}</td>
-        <td>${fmtQty(r.qty_shipped)}</td>
-        <td>${fmtQty(r.qty_received)}</td>
-        <td>${fmtQty(r.qty_open)}</td>
-        <td><button class="btn btn-primary" data-recv-idx="${i}">รับ</button></td>
-      </tr>`).join("")}
-    </tbody></table></div></div>`;
-  el.querySelectorAll("[data-recv-idx]").forEach(b=>b.onclick=()=>openReceiveLineDialog(window._receiveQueue[Number(b.dataset.recvIdx)]));
 }
 
 async function renderStatus(el){
