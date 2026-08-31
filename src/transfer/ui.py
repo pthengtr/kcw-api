@@ -800,20 +800,28 @@ async function renderReceive(el){
       <div class="flow-hint">เลือกคำขอที่ ${OTHER} จัดส่งแล้ว (มีใบ TF SIMAS) → กรอกจำนวนรับ → ยืนยันเพื่อออกใบ TF PIMAS</div>
       ${billTimelineHtml(OTHER, SITE)}
       <div class="card"><div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>ใบจัด</th><th>รายการค้างรับ</th><th>วันที่</th><th></th></tr></thead><tbody>
-        ${queue.map((g,i)=>`<tr>
+        ${queue.map((g,i)=>`<tr class="row-clickable" data-recv-idx="${i}">
           <td><code>${g.short_id}</code></td>
           <td class="dir">${dirLabel(g.from_branch,g.to_branch)}</td>
           <td><code>${g.ship_billno||"-"}</code></td>
           <td>${g.lines.length} รายการ</td>
           <td>—</td>
-          <td><button class="btn btn-primary" data-recv-group="${i}">เปิดรับสินค้า</button></td>
+          <td><button class="btn btn-primary" data-recv-open="${i}">เปิดรับสินค้า</button></td>
         </tr>`).join("")}
       </tbody></table></div>
       <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
     window._receiveGroups = queue;
-    el.querySelectorAll("[data-recv-group]").forEach(b=>b.onclick=()=>{
-      receiveShipment = window._receiveGroups[Number(b.dataset.recvGroup)];
+    el.querySelectorAll("[data-recv-open]").forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      receiveShipment = window._receiveGroups[Number(b.dataset.recvOpen)];
       setReceiveStep(2);
+    });
+    el.querySelectorAll("tr.row-clickable[data-recv-idx]").forEach(tr=>{
+      tr.onclick = e=>{
+        if(e.target.closest("button")) return;
+        receiveShipment = window._receiveGroups[Number(tr.dataset.recvIdx)];
+        setReceiveStep(2);
+      };
     });
     return;
   }
