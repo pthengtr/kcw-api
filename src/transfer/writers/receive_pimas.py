@@ -8,6 +8,7 @@ from sqlalchemy.exc import DBAPIError, ProgrammingError
 
 from src.transfer.writers._engine import (
     TransferWriteError,
+    TRANSFER_BOOKNO,
     next_pimas_billno,
     transfer_write_permission_hint,
     writer_engine_for_branch,
@@ -66,7 +67,7 @@ def post_transfer_receive(
                       PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
                       SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
                     ) VALUES (
-                      :jourmode, 'PJ', :billdate, :jourtime, '1', '1',
+                      :jourmode, 'PJ', :billdate, :jourtime, '1', :bookno,
                       :billtype, :billdate, :billtime, :billno, :lines, 'N',
                       0, 0, 0, 0, 0, 0, 0, 0,
                       'N', 'N', 0, 0, 0,
@@ -76,6 +77,7 @@ def post_transfer_receive(
                 ),
                 {
                     "jourmode": jourmode,
+                    "bookno": TRANSFER_BOOKNO,
                     "billdate": billdate,
                     "jourtime": billtime,
                     "billtime": billtime,

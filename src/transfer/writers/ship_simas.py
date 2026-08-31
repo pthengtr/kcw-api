@@ -10,6 +10,7 @@ from src.transfer.db import get_shipment_by_token, get_transfer_supabase_client
 from src.transfer.direction import ship_billno_prefix
 from src.transfer.writers._engine import (
     TransferWriteError,
+    TRANSFER_BOOKNO,
     next_simas_billno,
     transfer_write_permission_hint,
     writer_engine_for_branch,
@@ -67,7 +68,7 @@ def post_transfer_ship(
                       PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
                       SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
                     ) VALUES (
-                      :jourmode, 'SJ', :billdate, :jourtime, '1', '1',
+                      :jourmode, 'SJ', :billdate, :jourtime, '1', :bookno,
                       :billtype, :billdate, :billtime, :billno, :lines, 'N',
                       0, 0, 0, 0, 0, 0, 0, 0,
                       'Y', 'Y', 0, 0, 0,
@@ -77,6 +78,7 @@ def post_transfer_ship(
                 ),
                 {
                     "jourmode": jourmode,
+                    "bookno": TRANSFER_BOOKNO,
                     "billdate": billdate,
                     "jourtime": billtime,
                     "billtime": billtime,

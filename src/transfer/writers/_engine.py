@@ -23,6 +23,10 @@ class TransferWriteError(RuntimeError):
         self.code = code
 
 
+# PARTS9 book for HQ↔SYP stock transfer bills (SIMAS ship + PIMAS receive).
+TRANSFER_BOOKNO = "9"
+
+
 def transfer_bill_yymm(when: datetime) -> str:
     """YYMM for TF/3TF bills — Buddhist era (2569 → 69), same as PARTS9 pay vouchers."""
     yy = (when.year + 543) % 100
