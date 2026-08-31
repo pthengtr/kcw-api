@@ -147,6 +147,8 @@ def test_post_transfer_ship_hq_tf_prefix(mock_get_shipment, mock_engine, mock_cl
         )
     assert result["ship_billno"] == "TF6808-001"
     mock_engine.assert_called_once_with("HQ")
+    simas_params = mock_conn.execute.call_args_list[0].args[1]
+    assert simas_params["bookno"] == "9"
 
 
 @patch("src.transfer.writers.ship_simas.get_transfer_supabase_client")
@@ -173,6 +175,8 @@ def test_post_transfer_ship_syp_3tf_prefix(mock_get_shipment, mock_engine, mock_
         )
     assert result["ship_billno"].startswith("3TF")
     mock_engine.assert_called_once_with("SYP")
+    simas_params = mock_conn.execute.call_args_list[0].args[1]
+    assert simas_params["bookno"] == "9"
 
 
 def test_post_transfer_tf_compat_alias():

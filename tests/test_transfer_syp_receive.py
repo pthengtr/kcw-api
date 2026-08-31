@@ -78,3 +78,5 @@ def test_post_transfer_receive_writes_pimas_not_simas(mock_engine):
     sql_calls = [str(c.args[0]) for c in mock_conn.execute.call_args_list]
     assert any("PIMAS" in s for s in sql_calls)
     assert not any("SIMAS" in s for s in sql_calls)
+    pimas_params = mock_conn.execute.call_args_list[0].args[1]
+    assert pimas_params["bookno"] == "9"
