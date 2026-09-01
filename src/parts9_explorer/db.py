@@ -13,12 +13,29 @@ _engines: dict[str, Engine] = {}
 _engines_lock = threading.Lock()
 
 
+def _hq_server(settings) -> str:
+    return (settings.parts9_hq_server or settings.pos_mssql_server or "KSS").strip() or "KSS"
+
+
+def _hq_database(settings) -> str:
+    return (settings.parts9_hq_database or settings.pos_mssql_database or "PARTS9").strip() or "PARTS9"
+
+
 def site_sql_host(site: str) -> str:
     settings = get_explorer_settings()
     key = (site or "hq").strip().lower()
     if key == "syp":
         return (settings.parts9_syp_server or "kss-pc").split(",")[0].strip() or "kss-pc"
-    return (settings.pos_mssql_server or "KSS").split(",")[0].strip() or "KSS"
+    return _hq_server(settings).split(",")[0].strip() or "KSS"
+
+
+def site_sql_hosts_collide() -> bool:
+    """True when HQ and SYP engine config resolve to the same first host name."""
+    hq = site_sql_host("hq").strip().lower()
+    syp = site_sql_host("syp").strip().lower()
+    if not hq or not syp:
+        return False
+    return hq == syp
 
 
 def format_sql_error(exc: BaseException, *, site: str) -> str:
@@ -69,7 +86,7 @@ def get_site_engine(site: str) -> Engine:
     if key == "syp":
         url = _odbc_url(settings.parts9_syp_server, settings.parts9_syp_database)
     else:
-        url = _odbc_url(settings.pos_mssql_server, settings.pos_mssql_database)
+        url = _odbc_url(_hq_server(settings), _hq_database(settings))
     engine = create_engine(
         url,
         pool_pre_ping=True,

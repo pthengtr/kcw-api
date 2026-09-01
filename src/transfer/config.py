@@ -16,6 +16,9 @@ class TransferSettings(BaseSettings):
     transfer_tailscale_base_url: str = Field(
         default="", validation_alias="TRANSFER_TAILSCALE_BASE_URL"
     )
+    # Peer kcw-transfer base (no trailing slash) for remote-site ICMAS when SQL is unreachable.
+    # SYP → HQ stock: http://hq-ubuntu-server:8792 (Tailscale). HQ usually keeps direct kss-pc SQL.
+    transfer_peer_base_url: str = Field(default="", validation_alias="TRANSFER_PEER_BASE_URL")
     transfer_token_secret: str = Field(default="", validation_alias="TRANSFER_TOKEN_SECRET")
     transfer_hq_write_enabled: bool = Field(
         default=False, validation_alias="TRANSFER_HQ_WRITE_ENABLED"
@@ -76,6 +79,8 @@ class TransferSettings(BaseSettings):
     )
     pos_mssql_server: str = Field(default="KSS", validation_alias="POS_MSSQL_SERVER")
     pos_mssql_database: str = Field(default="PARTS9", validation_alias="POS_MSSQL_DATABASE")
+    parts9_hq_server: str = Field(default="", validation_alias="PARTS9_HQ_SERVER")
+    parts9_hq_database: str = Field(default="", validation_alias="PARTS9_HQ_DATABASE")
     parts9_syp_server: str = Field(default="kss-pc", validation_alias="PARTS9_SYP_SERVER")
     parts9_syp_database: str = Field(default="PARTS9", validation_alias="PARTS9_SYP_DATABASE")
     pos_mssql_driver: str = Field(
@@ -97,6 +102,16 @@ class TransferSettings(BaseSettings):
     @property
     def is_hq(self) -> bool:
         return self.site == "HQ"
+
+    @property
+    def peer_base_url(self) -> str:
+        explicit = (self.transfer_peer_base_url or "").strip().rstrip("/")
+        if explicit:
+            return explicit
+        # Tailscale MagicDNS defaults — both boxes already expose :8792 on the tailnet.
+        if self.is_syp:
+            return "http://hq-ubuntu-server:8792"
+        return "http://syp-ubuntu-server:8792"
 
 
 @lru_cache

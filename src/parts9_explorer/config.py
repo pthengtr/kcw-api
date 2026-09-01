@@ -22,6 +22,11 @@ class Parts9ExplorerSettings(BaseSettings):
     pos_mssql_username: str = Field(default="python_reader", validation_alias="POS_MSSQL_USERNAME")
     pos_mssql_password: str = Field(default="", validation_alias="POS_MSSQL_PASSWORD")
     pos_mssql_driver: str = Field(default="ODBC Driver 18 for SQL Server", validation_alias="POS_MSSQL_DRIVER")
+    # Optional dedicated HQ PARTS9 host (analytic-compatible). Empty → POS_MSSQL_*.
+    # SYP boxes must set this to a reachable HQ host OR rely on transfer peer stock —
+    # do not leave POS_MSSQL pointing at kss-pc and expect get_site_engine("hq") to be HQ.
+    parts9_hq_server: str = Field(default="", validation_alias="PARTS9_HQ_SERVER")
+    parts9_hq_database: str = Field(default="", validation_alias="PARTS9_HQ_DATABASE")
     parts9_syp_server: str = Field(default="kss-pc", validation_alias="PARTS9_SYP_SERVER")
     parts9_syp_database: str = Field(default="PARTS9", validation_alias="PARTS9_SYP_DATABASE")
 

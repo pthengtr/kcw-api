@@ -59,9 +59,11 @@ def test_suggest_transfer_skus_from_iclow_to_be_ordered():
 
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered") as mock_fetch:
         mock_fetch.return_value = iclow_rows["rows"]
-        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
-            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
-                items = suggest_transfer_skus(site="SYP", limit=50)
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+                with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                    with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
+                        items = suggest_transfer_skus(site="SYP", limit=50)
 
     mock_fetch.assert_called_once_with("syp")
     assert len(items) == 2
@@ -90,9 +92,11 @@ def test_suggest_transfer_skus_skips_do_not_restock():
         }
 
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows["rows"]):
-        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
-            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
-                items = suggest_transfer_skus(site="hq")
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+                with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                    with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
+                        items = suggest_transfer_skus(site="hq")
 
     assert [i["bcode"] for i in items] == ["OK01"]
     assert items[0]["ui1"] == "ea"
@@ -122,10 +126,11 @@ def test_suggest_transfer_skus_includes_icmas_low_stock_without_iclow():
         }
 
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=[]):
-        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
-            with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
-                with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
-                    items = suggest_transfer_skus(site="SYP", limit=50)
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+                with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
+                    with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                        items = suggest_transfer_skus(site="SYP", limit=50)
 
     assert len(items) == 1
     assert items[0]["bcode"] == "02050663"
@@ -140,10 +145,11 @@ def test_suggest_preserves_iclow_order_not_alphabetical():
     ]
 
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows):
-        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
-            with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
-                with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
-                    items = suggest_transfer_skus(site="SYP", limit=50)
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+                with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
+                    with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
+                        items = suggest_transfer_skus(site="SYP", limit=50)
 
     assert [i["bcode"] for i in items] == ["Z999", "A001"]
 
@@ -165,10 +171,11 @@ def test_suggest_icmas_items_after_iclow_items():
     }
 
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows):
-        with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
-            with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
-                with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
-                    items = suggest_transfer_skus(site="SYP", limit=50)
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+                with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
+                    with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
+                        items = suggest_transfer_skus(site="SYP", limit=50)
 
     assert [i["bcode"] for i in items] == ["IC01", "IC02"]
     assert items[0]["source"] == "iclow"
@@ -206,10 +213,11 @@ def test_suggest_shows_blocked_hq_stock_for_display():
         return hq_engine if site == "hq" else syp_engine
 
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows):
-        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
-            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
-                with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
-                    items = suggest_transfer_skus(site="SYP", limit=50)
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+                with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                    with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
+                        items = suggest_transfer_skus(site="SYP", limit=50)
 
     assert len(items) == 1
     assert items[0]["hq_qtyoh2"] == 7.0

@@ -48,7 +48,12 @@ from src.transfer.direction import (
     direction_label,
     should_stamp_iclow,
 )
-from src.transfer.parts9 import enrich_transfer_lines, lookup_transfer_product, suggest_transfer_skus
+from src.transfer.parts9 import (
+    enrich_transfer_lines,
+    fetch_local_icmas_meta,
+    lookup_transfer_product,
+    suggest_transfer_skus,
+)
 from src.transfer.state import can_action, shipment_lines_fully_received, summarize_request_progress
 from src.transfer.ui import APP, SESSION_COOKIE, page
 from src.pay_notes.net import is_tailscale_cg_nat
@@ -254,6 +259,25 @@ def api_product(bcode: str, request: Request):
     if not product:
         return JSONResponse({"error": f"ไม่พบรหัส {code} ใน ICMAS"}, status_code=404)
     return product
+
+
+@router.get("/api/local-icmas")
+def api_local_icmas(request: Request, bcodes: str = "", include_blocked: str = "1"):
+    """Peer endpoint: ICMAS QTYOH2 for this TRANSFER_SITE only (no dual HQ+SYP fetch)."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    codes = [c.strip() for c in (bcodes or "").split(",") if c.strip()]
+    if not codes:
+        return {"site": _settings().site, "items": {}}
+    if len(codes) > 200:
+        return JSONResponse({"error": "bcodes limit 200"}, status_code=400)
+    blocked = (include_blocked or "1").strip() not in {"0", "false", "False", "no"}
+    try:
+        items = fetch_local_icmas_meta(codes, include_blocked=blocked)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    return {"site": _settings().site, "items": items}
 
 
 @router.get("/api/need-list")

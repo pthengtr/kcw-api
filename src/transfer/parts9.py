@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import json
+import logging
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from src.ops.iclow import list_iclow
-from src.parts9_explorer.db import get_site_engine
+from src.parts9_explorer.db import get_site_engine, site_sql_hosts_collide
+from src.stock_check.auth import mint_access_token
+from src.transfer.config import get_transfer_settings
+from src.transfer.ui import APP, SESSION_COOKIE
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_qty(val) -> float:
@@ -16,6 +26,25 @@ def _parse_qty(val) -> float:
         return float(str(val).replace(",", ""))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _peer_request_headers() -> dict[str, str]:
+    """Cookie token so peer works even when hostname resolves to LAN/loopback (not Tailscale CGNAT)."""
+    settings = get_transfer_settings()
+    headers = {"Accept": "application/json"}
+    secret = (settings.token_secret or "").strip()
+    if not secret:
+        return headers
+    token = mint_access_token(
+        secret=secret,
+        line_user_id="transfer-peer",
+        display_name="transfer-peer",
+        branch=settings.site,
+        ttl_seconds=300,
+        app=APP,
+    )
+    headers["Cookie"] = f"{SESSION_COOKIE}={token}"
+    return headers
 
 
 def _fetch_icmas_meta(
@@ -62,6 +91,97 @@ def _fetch_icmas_meta(
                 "mtp2": mtp2 if mtp2 > 0 else 1.0,
             }
     return out
+
+
+def fetch_local_icmas_meta(
+    bcodes: list[str], *, include_blocked: bool = True
+) -> dict[str, dict[str, Any]]:
+    """ICMAS from this box's TRANSFER_SITE PARTS9 only (peer endpoint / local half of dual stock)."""
+    site_key = get_transfer_settings().site.lower()
+    if site_key not in ("hq", "syp"):
+        site_key = "hq"
+    return _fetch_icmas_meta(
+        get_site_engine(site_key), bcodes, include_blocked=include_blocked
+    )
+
+
+def _should_use_peer_for_site(site_key: str) -> bool:
+    """Use peer when HQ/SYP SQL hosts collide — direct SQL would return the wrong branch's stock."""
+    key = (site_key or "").strip().lower()
+    local = get_transfer_settings().site.lower()
+    if key == local:
+        return False
+    return site_sql_hosts_collide()
+
+
+def _fetch_icmas_via_peer(
+    bcodes: list[str], *, include_blocked: bool = True
+) -> dict[str, dict[str, Any]]:
+    codes = sorted({c for c in bcodes if c})
+    if not codes:
+        return {}
+    base = get_transfer_settings().peer_base_url
+    qs = urllib.parse.urlencode(
+        {
+            "bcodes": ",".join(codes),
+            "include_blocked": "1" if include_blocked else "0",
+        }
+    )
+    url = f"{base}/transfer/api/local-icmas?{qs}"
+    req = urllib.request.Request(url, headers=_peer_request_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("transfer peer ICMAS fetch failed (%s): %s", url, exc)
+        return {}
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for bcode, meta in items.items():
+        code = (bcode or "").strip()
+        if not code or not isinstance(meta, dict):
+            continue
+        out[code] = {
+            "qtyoh2": _parse_qty(meta.get("qtyoh2")),
+            "qtymin": _parse_qty(meta.get("qtymin")),
+            "blocked": bool(meta.get("blocked")),
+            "descr": (meta.get("descr") or "").strip(),
+            "ui1": (meta.get("ui1") or "").strip(),
+            "ui2": (meta.get("ui2") or "").strip(),
+            "mtp2": float(meta.get("mtp2") or 1.0) or 1.0,
+        }
+    return out
+
+
+def _fetch_site_icmas(
+    site_key: str, bcodes: list[str], *, include_blocked: bool = True
+) -> dict[str, dict[str, Any]]:
+    """Fetch ICMAS for one site — direct SQL, or peer HTTP when hosts collide / SQL down."""
+    key = (site_key or "hq").strip().lower()
+    if key not in ("hq", "syp"):
+        key = "hq"
+    if _should_use_peer_for_site(key):
+        return _fetch_icmas_via_peer(bcodes, include_blocked=include_blocked)
+    try:
+        return _fetch_icmas_meta(
+            get_site_engine(key), bcodes, include_blocked=include_blocked
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "direct ICMAS fetch failed for %s (%s); trying peer", key, exc
+        )
+        return _fetch_icmas_via_peer(bcodes, include_blocked=include_blocked)
+
+
+def _fetch_dual_icmas(
+    bcodes: list[str], *, include_blocked: bool = True
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    return (
+        _fetch_site_icmas("hq", bcodes, include_blocked=include_blocked),
+        _fetch_site_icmas("syp", bcodes, include_blocked=include_blocked),
+    )
 
 
 _ICLOW_PAGE_SIZE = 200
@@ -215,8 +335,7 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
 
     all_bcodes = list(dict.fromkeys([*iclow_order, *icmas_bcodes]))
     # Stock columns must show live QTYOH2 even for do-not-restock (QTYMIN<0) SKUs.
-    hq_icmas = _fetch_icmas_meta(get_site_engine("hq"), all_bcodes, include_blocked=True)
-    syp_icmas = _fetch_icmas_meta(get_site_engine("syp"), all_bcodes, include_blocked=True)
+    hq_icmas, syp_icmas = _fetch_dual_icmas(all_bcodes, include_blocked=True)
     local_icmas = hq_icmas if site_key == "hq" else syp_icmas
 
     out: list[dict[str, Any]] = []
@@ -260,8 +379,9 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
     code = (bcode or "").strip()
     if not code:
         return None
-    hq_meta = _fetch_icmas_meta(get_site_engine("hq"), [code], include_blocked=True).get(code)
-    syp_meta = _fetch_icmas_meta(get_site_engine("syp"), [code], include_blocked=True).get(code)
+    hq_icmas, syp_icmas = _fetch_dual_icmas([code], include_blocked=True)
+    hq_meta = hq_icmas.get(code)
+    syp_meta = syp_icmas.get(code)
     if not hq_meta and not syp_meta:
         return None
     descr = ""
@@ -302,8 +422,7 @@ def enrich_transfer_lines(
     codes = sorted({(ln.get("bcode") or "").strip() for ln in lines if (ln.get("bcode") or "").strip()})
     if not codes:
         return [dict(ln) for ln in lines]
-    hq_icmas = _fetch_icmas_meta(get_site_engine("hq"), codes, include_blocked=True)
-    syp_icmas = _fetch_icmas_meta(get_site_engine("syp"), codes, include_blocked=True)
+    hq_icmas, syp_icmas = _fetch_dual_icmas(codes, include_blocked=True)
     from_u = (from_branch or "").strip().upper()
     to_u = (to_branch or "").strip().upper()
     out: list[dict[str, Any]] = []
