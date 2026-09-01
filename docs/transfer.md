@@ -36,6 +36,9 @@ TRANSFER_LISTEN_PORT=8792
 STOCK_CHECK_TOKEN_SECRET=...
 SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
+# Dual stock: SYP cannot reach HQ KSS (LAN-only). Peer over Tailscale when POS_MSSQL
+# and PARTS9_SYP both point at kss-pc (default MagicDNS: hq-ubuntu-server / syp-ubuntu-server).
+# TRANSFER_PEER_BASE_URL=http://hq-ubuntu-server:8792   # on SYP
 ```
 
 Writers (off until validated on live PARTS9):
@@ -49,6 +52,10 @@ TRANSFER_ICLOW_STAMP_ENABLED=false
 ```
 
 Legacy aliases (one release): `TRANSFER_HQ_WRITE_ENABLED` → HQ ship; `TRANSFER_SYP_RECEIVE_ENABLED` → SYP receive.
+
+## Dual stock (คงเหลือ HQ / สาขา)
+
+Live `ICMAS.QTYOH2` from each branch. On **HQ**, both SQL hosts are reachable (`POS_MSSQL_*` → KSS, `PARTS9_SYP_*` → kss-pc). On **SYP**, `POS_MSSQL_*` is also kss-pc — so `get_site_engine("hq")` would wrongly return shop stock. Transfer detects that host collision and loads HQ stock via peer `GET /transfer/api/local-icmas` on the other box (Tailscale CGNAT auth).
 
 ## Writer Database Credentials
 
@@ -73,7 +80,9 @@ curl -s http://127.0.0.1:8792/health
 - `POST /transfer/api/prepare` — only at `from_branch`
 - `POST /transfer/api/receive` — only at `to_branch`
 - `GET /transfer/api/requests?role=prepare|receive|mine`
-- `GET /transfer/api/suggest` — local ICMAS on both HQ and SYP
+- `GET /transfer/api/suggest` — pick list + live HQ/SYP `QTYOH2`
+- `GET /transfer/api/product?bcode=` — one SKU dual stock
+- `GET /transfer/api/local-icmas?bcodes=a,b` — this site’s ICMAS only (peer)
 
 ## Schema
 
