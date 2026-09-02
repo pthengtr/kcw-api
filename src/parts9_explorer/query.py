@@ -173,19 +173,65 @@ def format_size_line(
     return body if compact else f"ขนาด: {body}"
 
 
-def _strip_size_patterns(text: str) -> str:
+def _extract_code1_token(text: str) -> str | None:
+    """First CODE1 letter/thai alias in a code+size query."""
+    for tok in [t for t in re.split(r"\s+", (text or "").strip()) if t]:
+        low = tok.lower()
+        if low in ("ขนาด", "size"):
+            continue
+        if tok in CODE1_FROM_THAI:
+            return CODE1_FROM_THAI[tok]
+        if _CODE1_TOKEN.match(tok) and tok.upper() in CODE1_LABELS:
+            return tok.upper()
+    return None
+
+
+def _strip_size_patterns(text: str, code1: str | None = None) -> str:
     t = re.sub(
         r"(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)(?:\s*[x×*]\s*(\d+(?:\.\d+)?))?",
         " ",
         text or "",
         flags=re.I,
     )
-    return re.sub(
-        r"(?:size[123]|ใน|นอก|หนา|สูง|ยาว)\s*[:=]?\s*\d+(?:\.\d+)?",
-        " ",
-        t,
-        flags=re.I,
-    ).strip()
+    labels: list[str] = []
+    if code1:
+        labels.extend(l for l in SIZE_LABELS.get(code1.upper(), ()) if l)
+    labels.extend(["size1", "size2", "size3", "ใน", "นอก", "หนา", "สูง", "ยาว"])
+    seen: set[str] = set()
+    for label in labels:
+        key = label.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        t = re.sub(
+            rf"(?:{re.escape(label)})\s*[:=]?\s*\d+(?:\.\d+)?",
+            " ",
+            t,
+            flags=re.I,
+        )
+    return t.strip()
+
+
+def _parse_code_size_slots(text: str, code1: str | None) -> tuple[str | None, str | None, str | None]:
+    """Parse SIZE1–3 using ICMAS labels for the resolved CODE1 (e.g. G: ปลอก/ยาว)."""
+    letter = (code1 or "").strip().upper()
+    labels = SIZE_LABELS.get(letter)
+    if not labels:
+        return None, None, None
+    out: list[str | None] = [None, None, None]
+    matched = False
+    for idx, label in enumerate(labels):
+        if not label or idx > 2:
+            continue
+        m = re.search(
+            rf"(?:{re.escape(label)})\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            text or "",
+            re.I,
+        )
+        if m:
+            out[idx] = m.group(1)
+            matched = True
+    return (out[0], out[1], out[2]) if matched else (None, None, None)
 
 
 def _parse_size_slots(text: str) -> tuple[str | None, str | None, str | None]:
@@ -216,20 +262,22 @@ def parse_code_size_query(raw: str) -> ParsedQuery:
     q = (raw or "").strip()
     if not q:
         return ParsedQuery(raw="", kind="product", search_mode="code_size")
-    size1, size2, size3 = _parse_size_slots(q)
-    q_tokens = _strip_size_patterns(q)
+    code1 = _extract_code1_token(q)
+    size1, size2, size3 = _parse_code_size_slots(q, code1)
+    if not (size1 or size2 or size3):
+        size1, size2, size3 = _parse_size_slots(q)
+    q_tokens = _strip_size_patterns(q, code1)
     tokens = [t for t in re.split(r"\s+", q_tokens) if t]
-    code1 = None
     text_terms: list[str] = []
     for tok in tokens:
         low = tok.lower()
         if low in ("ขนาด", "size"):
             continue
         if tok in CODE1_FROM_THAI:
-            code1 = CODE1_FROM_THAI[tok]
+            code1 = code1 or CODE1_FROM_THAI[tok]
             continue
         if _CODE1_TOKEN.match(tok) and tok.upper() in CODE1_LABELS:
-            code1 = tok.upper()
+            code1 = code1 or tok.upper()
             continue
         if re.fullmatch(r"-?\d+(?:\.\d+)?", tok):
             continue
