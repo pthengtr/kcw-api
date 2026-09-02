@@ -28,6 +28,13 @@ def test_parse_code_size_query():
     assert bearing.size3 == "17"
     assert code_size_query_valid(bearing)
 
+    cvjoint = parse_code_size_query("G ปลอก 1 ยาว 24")
+    assert cvjoint.code1 == "G"
+    assert cvjoint.size1 == "1"
+    assert cvjoint.size2 == "24"
+    assert cvjoint.size3 is None
+    assert code_size_query_valid(cvjoint)
+
     prefixed = parse_query("รหัสขนาด C 31 46 7")
     assert prefixed.search_mode == "code_size"
     assert prefixed.code1 == "C"
