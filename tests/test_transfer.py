@@ -76,7 +76,9 @@ def test_transfer_page_renders():
     assert "ของเข้า" in html
     assert "ของออก" in html
     assert "ไม่สต็อก = L -1" in html
+    assert "ยังแสดงยอดคงเหลือจริง" in html
     assert "hq_no_stock" in html or "fmtHqStock" in html
+    assert 'ไม่สต็อก</span><br>${qtyHtml}' in html or "ไม่สต็อก</span><br>" in html
     assert "ตรวจสอบสถานะ" in html
     assert "ขั้นตอนโอนสินค้า" in html
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
