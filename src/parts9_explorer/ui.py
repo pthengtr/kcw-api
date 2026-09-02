@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from src.bot.branch_link_buttons import BRANCH_LABEL
-from src.parts9_explorer.query import CODE1_LABELS, SIZE_LABELS
+from src.parts9_explorer.query import CATEGORY_LABELS, CODE1_LABELS, SIZE_LABELS
 
 APP = "parts9-explorer"
 SESSION_COOKIE = "kcw_parts9_explorer"
@@ -62,18 +62,20 @@ h1 { font-size:1.02rem; margin:0; letter-spacing:.02em; }
 .row { display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; }
 .search-form { display:grid; gap:.5rem; align-items:end; grid-template-columns:1fr; }
 .search-main { min-width:0; width:100%; display:flex; flex-direction:column; gap:.35rem; }
+.search-main #categoryField { display:none; }
+.search-main.mode-product #categoryField { display:flex; }
 .search-main #codeSizePanel { display:none; }
 .search-main.mode-code-size #q { display:none; }
 .search-main.mode-code-size #codeSizePanel { display:flex; }
 .search-actions { display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; }
 #site { min-width:5.5rem; }
 #searchBtn { flex:1; min-width:6.5rem; }
-input[type=search], .field-inp, #code1, #site, #searchBtn {
+input[type=search], .field-inp, #code1, #category, #site, #searchBtn {
   font: inherit; font-size:var(--field-font); line-height:1.25;
   min-height:var(--field-h); padding:var(--field-pad-y) var(--field-pad-x);
   border-radius:var(--field-radius); border:1px solid var(--line); background:var(--inset); color:var(--text);
 }
-input[type=search], .field-inp, #code1, #site { width:100%; }
+input[type=search], .field-inp, #code1, #category, #site { width:100%; }
 button, select { font: inherit; font-size:.92rem; padding:.6rem .75rem; border-radius:.55rem; border:1px solid var(--line); background:var(--chip); color:var(--text); }
 #searchBtn { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:650; font-size:var(--field-font); }
 input[type=search] { -webkit-appearance:none; appearance:none; }
@@ -174,7 +176,13 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
   <div class="search-panel" id="searchPanel">
   <form class="search-form" id="f" onsubmit="go(event); return false;">
     <div class="search-main">
-      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / I K ซีล / PO เลขบิล" autofocus />
+      <label class="field" id="categoryField" for="category">
+        <span class="field-lbl">หมวดสินค้า</span>
+        <select id="category" aria-label="หมวดสินค้า">
+          <option value="">— ทุกหมวด —</option>
+        </select>
+      </label>
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ นมฮPT / I K ซีล / PO เลขบิล" autofocus />
       <div id="codeSizePanel" class="code-size-panel" aria-hidden="true">
         <div class="code-size-fields">
           <label class="field code-field" for="code1">
@@ -237,8 +245,8 @@ const MODES = [
   {id:"iclow", label:"ICLOW ค้างรับ"},
 ];
 const PLACE = {
-  all: "รหัส / เบอร์แท้ PCODE / เบอร์โรงงาน MCODE / I K ซีล 31 46 / PO เลขบิล",
-  product: "รหัสสินค้า / เบอร์แท้ / เบอร์โรงงาน / I K C ซีล 31 46 / ยี่ห้อ",
+  all: "รหัส / เบอร์แท้ PCODE / เบอร์โรงงาน MCODE / ชื่อย่อ นมฮPT ลป / I K ซีล 31 46 / PO เลขบิล",
+  product: "รหัสสินค้า / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ ACODE / I K C ซีล 31 46 / ยี่ห้อ",
   code_size: "ประเภท + ขนาด — C หรือ ซีล 31×46×7 · I นอก 72 หนา 17",
   si: "เลขบิลขาย เช่น 8K69-0013225",
   pi: "เลขบิลซื้อ / เลขโน้ต / เลขใบสำคัญจ่าย",
@@ -269,6 +277,7 @@ const COL_TH = {
 const MONEY_KEYS = new Set(["PRICE","AMOUNT","CHKAMT","AFTERTAX","BILLAMT","NETAMT","CASHAMT","PAYAMT"]);
 const CODE1_LABELS = __CODE1_LABELS_JSON__;
 const SIZE_LABELS = __SIZE_LABELS_JSON__;
+const CATEGORY_LABELS = __CATEGORY_LABELS_JSON__;
 let KIND = "all";
 let ITEMS = [];
 let DOCS = [];
@@ -300,6 +309,7 @@ function fmtPrices(p) {
 function codeBits(p) {
   const bits = [];
   if (p.code1) bits.push((p.code1_label ? p.code1+" "+p.code1_label : p.code1));
+  if (p.acode) bits.push("ชื่อย่อ "+p.acode);
   if (p.pcode) bits.push("แท้ "+p.pcode);
   if (p.mcode) bits.push("โรงงาน "+p.mcode);
   return bits.length ? "<div class='meta'>"+esc(bits.join(" · "))+"</div>" : "";
@@ -315,8 +325,13 @@ function searchSummaryText() {
   const mode = (MODES.find((m) => m.id === KIND) || {}).label || KIND;
   const q = currentQuery();
   const site = $("site") ? $("site").options[$("site").selectedIndex].text : "";
-  if (!q) return mode + (site ? " · " + site : "");
-  return mode + " · " + q + (site ? " · " + site : "");
+  const cat = $("category");
+  const catLabel = cat && cat.value ? (CATEGORY_LABELS[cat.value] || cat.value) : "";
+  const parts = [mode];
+  if (catLabel) parts.push(catLabel);
+  if (q) parts.push(q);
+  if (site) parts.push(site);
+  return parts.join(" · ");
 }
 function updateSearchSummary() {
   const el = $("searchSummary");
@@ -346,6 +361,17 @@ function expandSearchPanel() {
   setSearchPanelOpen(true);
 }
 function isCodeSizeMode() { return KIND === "code_size"; }
+function isProductMode() { return KIND === "all" || KIND === "product" || KIND === "code_size"; }
+function initCategorySelect() {
+  const sel = $("category");
+  if (!sel) return;
+  Object.keys(CATEGORY_LABELS).sort().forEach((code) => {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = code + " — " + CATEGORY_LABELS[code];
+    sel.appendChild(opt);
+  });
+}
 function initCode1Select() {
   const sel = $("code1");
   if (!sel) return;
@@ -374,6 +400,7 @@ function toggleSearchChrome() {
   const panel = $("codeSizePanel");
   const q = $("q");
   if (!main || !panel || !q) return;
+  main.classList.toggle("mode-product", isProductMode());
   if (isCodeSizeMode()) {
     main.classList.add("mode-code-size");
     panel.setAttribute("aria-hidden", "false");
@@ -475,7 +502,10 @@ async function go(ev) {
   $("list").innerHTML = "<div class='empty'>กำลังค้น…</div>";
   $("detail").innerHTML = "";
   try {
-    const r = await fetch("/parts9/api/search?site="+encodeURIComponent(site)+"&include_skip="+skip+"&kind="+encodeURIComponent(KIND)+"&q="+encodeURIComponent(q));
+    let url = "/parts9/api/search?site="+encodeURIComponent(site)+"&include_skip="+skip+"&kind="+encodeURIComponent(KIND)+"&q="+encodeURIComponent(q);
+    const cat = $("category");
+    if (cat && cat.value && isProductMode()) url += "&category="+encodeURIComponent(cat.value);
+    const r = await fetch(url);
     const data = await r.json();
     if (!r.ok) {
       $("list").innerHTML = "<div class='empty'>"+esc(data.detail || ("HTTP "+r.status))+"</div>";
@@ -659,6 +689,7 @@ function showP(i) {
   const photos = (p.photos||[]).map(u => "<img src='"+u+"' onerror='imgErr(this)'/>").join("");
   $("detail").innerHTML = "<h2 style='margin:.2rem 0'>"+esc(p.bcode)+"</h2><div>"+esc(p.descr)+"</div>"
     +"<div class='meta'>เบอร์แท้ "+esc(p.pcode||"—")+" · เบอร์โรงงาน "+esc(p.mcode||"—")
+    +(p.acode ? " · ชื่อย่อ "+esc(p.acode) : "")
     +" · "+esc(p.brand)+" "+esc(p.model)+"</div>"
     +"<div class='meta'>"+esc(p.category)+" · "+esc(p.code1 ? (p.code1+" "+(p.code1_label||"")) : (p.code1_label||""))+(sizes ? " · "+esc(sizes) : "")+"</div>"
     +"<div class='meta'>ที่เก็บ "+esc(p.location1)+" "+esc(p.location2)+" · "+esc(p.ui1)+"/"+esc(p.ui2)+"</div>"
@@ -707,6 +738,10 @@ $("site").addEventListener("change", () => {
 $("q").addEventListener("input", scheduleGo);
 $("q").addEventListener("search", () => go());
 $("skip").addEventListener("change", () => { if (currentQuery()) go(); });
+$("category").addEventListener("change", () => {
+  updateSearchSummary();
+  if (currentQuery()) go();
+});
 $("code1").addEventListener("change", () => {
   renderSizeFields($("code1").value);
   if (codeSizeValid()) scheduleGo();
@@ -743,6 +778,7 @@ function applyTheme(t) {
 }
 $("themeBtn").addEventListener("click", () => applyTheme(currentTheme() === "light" ? "dark" : "light"));
 applyTheme(currentTheme());
+initCategorySelect();
 initCode1Select();
 toggleSearchChrome();
 drawModes();
@@ -768,6 +804,7 @@ def page(*, user_name: str, site: str, probes: dict) -> str:
     return (
         _HTML.replace("__CODE1_LABELS_JSON__", json.dumps(CODE1_LABELS, ensure_ascii=False))
         .replace("__SIZE_LABELS_JSON__", json.dumps(SIZE_LABELS, ensure_ascii=False))
+        .replace("__CATEGORY_LABELS_JSON__", json.dumps(CATEGORY_LABELS, ensure_ascii=False))
         .replace("__USER__", user_name or "")
         .replace("__HQ_LABEL__", BRANCH_LABEL["HQ"])
         .replace("__SYP_LABEL__", BRANCH_LABEL["SYP"])

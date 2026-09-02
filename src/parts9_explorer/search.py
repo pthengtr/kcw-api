@@ -8,6 +8,7 @@ from sqlalchemy import text
 from src.parts9_explorer.config import get_explorer_settings
 from src.parts9_explorer.db import format_sql_error, get_site_engine
 from src.parts9_explorer.query import (
+    CATEGORY_LABELS,
     DOC_KIND_LABELS,
     category_label,
     code1_label,
@@ -35,6 +36,7 @@ PRODUCT_COLS = """
   LTRIM(RTRIM(COALESCE(MCODE,''))) AS MCODE,
   LTRIM(RTRIM(COALESCE(BRAND,''))) AS BRAND,
   LTRIM(RTRIM(COALESCE(MODEL,''))) AS MODEL,
+  LTRIM(RTRIM(COALESCE(ACODE,''))) AS ACODE,
   UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) AS CODE1,
   LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE1), ''))) AS SIZE1,
   LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE2), ''))) AS SIZE2,
@@ -107,6 +109,7 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
         "mcode": str(row.get("MCODE") or "").strip(),
         "brand": str(row.get("BRAND") or "").strip(),
         "model": str(row.get("MODEL") or "").strip(),
+        "acode": str(row.get("ACODE") or "").strip(),
         "code1": code1,
         "code1_label": code1_label(code1),
         "category": category_label(bcode),
@@ -138,6 +141,7 @@ def _term_match_sql(key: str, *, include_size_slot: int | None = None) -> str:
         f"MCODE LIKE :{key}",
         f"BRAND LIKE :{key}",
         f"MODEL LIKE :{key}",
+        f"ACODE LIKE :{key}",
         f"BCODE LIKE :{key}",
         f"UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) LIKE :{key}",
     ]
@@ -162,6 +166,7 @@ def search_products(
     include_skip: bool = False,
     limit: int = 50,
     mode: str | None = None,
+    category: str | None = None,
 ):
     code_size = (mode or "").strip().lower() == "code_size"
     parsed = parse_code_size_query(raw) if code_size else parse_query(raw)
@@ -190,6 +195,10 @@ def search_products(
     if parsed.code1:
         where.append("UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) = :code1")
         params["code1"] = parsed.code1
+    cat = (category or "").strip()
+    if cat in CATEGORY_LABELS:
+        where.append("LEFT(LTRIM(RTRIM(BCODE)), 2) = :category")
+        params["category"] = cat
     if code_size:
         for slot, val, key in (
             (1, parsed.size1, "sz1"),
