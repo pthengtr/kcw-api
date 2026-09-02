@@ -312,6 +312,10 @@ function codeBits(p) {
   if (p.acode) bits.push("ชื่อย่อ "+p.acode);
   if (p.pcode) bits.push("แท้ "+p.pcode);
   if (p.mcode) bits.push("โรงงาน "+p.mcode);
+  if (p.brand || p.model) {
+    const bm = [p.brand, p.model].filter(Boolean).join(" ");
+    if (bm) bits.push(bm);
+  }
   return bits.length ? "<div class='meta'>"+esc(bits.join(" · "))+"</div>" : "";
 }
 function sizeBits(p) {
