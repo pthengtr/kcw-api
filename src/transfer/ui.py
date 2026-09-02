@@ -133,12 +133,16 @@ body.busy #busy{display:flex}
 .modal-backdrop.on{display:flex}
 .modal{background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:1rem;box-shadow:var(--shadow)}
 .modal h2{margin:0 0 .75rem;font-size:1rem}
-.action-grid{display:grid;gap:.75rem}
+.action-grid{display:grid;gap:.85rem}
+.action-group{display:grid;gap:.55rem}
+.action-group-label{margin:0;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .action-card{border:1px solid var(--line);border-radius:14px;padding:1rem;background:#fff;color:var(--text);cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s;width:100%}
 .action-card:hover,.action-card:focus{border-color:var(--acc);box-shadow:var(--shadow);outline:none}
 .action-card .title{font-size:1rem;font-weight:700;margin:0 0 .25rem;color:var(--text)}
 .action-card .desc{font-size:.82rem;color:var(--muted);margin:0;line-height:1.45}
 .action-card .count{display:inline-block;margin-top:.55rem;font-size:.75rem;font-weight:600;color:var(--acc);background:#e8f0ff;padding:.2rem .55rem;border-radius:999px}
+.no-stock{color:var(--muted);font-weight:600;font-size:.85rem}
+.stock-legend{font-size:.72rem;color:var(--muted);margin:.65rem 0 0;line-height:1.45}
 .flow-hint{font-size:.82rem;color:var(--muted);background:#f8fafc;border:1px dashed var(--line);border-radius:12px;padding:.75rem .85rem;margin-bottom:.85rem;line-height:1.5}
 .info-toggle{margin:.75rem 0;border:1px solid #fde68a;border-radius:12px;background:#fffbeb;overflow:hidden}
 .info-toggle summary{cursor:pointer;padding:.6rem .85rem;font-size:.82rem;font-weight:600;color:#92400e;list-style:none;display:flex;align-items:center;gap:.35rem;user-select:none}
@@ -279,7 +283,7 @@ let toastTimer = null;
 const VIEWS = {
   home: {title: "โอนสินค้า · " + SITE_LABEL, sub: "เลือกสิ่งที่ต้องการทำ"},
   request: {title: "ขอสินค้าจาก " + OTHER_LABEL, sub: "ขั้นตอนที่ " + requestStep + " จาก 3"},
-  prepare: {title: "จัดส่งสินค้า", sub: "รายการที่รอจัดออกจาก " + SITE_LABEL},
+  prepare: {title: "ส่งสินค้า", sub: "รายการที่รอจัดออกจาก " + SITE_LABEL},
   receive: {title: "รับสินค้า", sub: "รายการที่รอรับเข้า " + SITE_LABEL},
   status: {title: "ตรวจสอบสถานะ", sub: "ติดตามคำขอโอนทั้งหมด"},
 };
@@ -312,6 +316,30 @@ function fmtStockDual(smallQty, row){
   const main = fmtQtyUi(smallQty, ui1);
   if(mtp2 > 1 && ui2) return main + `<div class="meta">${fmtQty(smallQty / mtp2)} ${ui2}</div>`;
   return main;
+}
+/** HQ QTYMIN < 0 (L-1) = สนญ.ไม่เก็บสต็อก */
+function isHqNoStock(row){
+  if(!row) return false;
+  if(row.hq_no_stock === true || row.hq_no_stock === 1 || row.hq_no_stock === "1") return true;
+  const q = Number(row.hq_qtymin);
+  return !Number.isNaN(q) && q < 0;
+}
+function fmtHqStock(row){
+  if(isHqNoStock(row)) return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span>`;
+  return fmtStockDual(row && row.hq_qtyoh2, row || {});
+}
+function fmtBranchStock(row, branch){
+  if((branch||"").toUpperCase() === "HQ" && isHqNoStock(row)){
+    return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span>`;
+  }
+  return fmtStockDual(branchQtyoh2(row, branch), row || {});
+}
+function hqNoStockNoteHtml(){
+  return `<p class="stock-legend">ไม่สต็อก = L -1 (สนญ.ไม่เก็บสต็อก จัดซื้อพิจารณาสั่งเมื่อมีความต้องการ)</p>`;
+}
+function fmtHqStockPlain(row){
+  if(isHqNoStock(row)) return "ไม่สต็อก";
+  return fmtQty(row && row.hq_qtyoh2);
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);
@@ -615,7 +643,7 @@ function updateHeader(){
   const titles = {
     home: ["โอนสินค้า · " + SITE_LABEL, USER + " · เลือกสิ่งที่ต้องการทำ"],
     request: ["ขอสินค้าจาก " + OTHER_LABEL, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
-    prepare: ["จัดส่งไป " + OTHER_LABEL, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันจัดส่ง"],
+    prepare: ["ส่งสินค้าไป " + OTHER_LABEL, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันส่งสินค้า"],
     receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
     status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
   };
@@ -683,21 +711,27 @@ async function renderHome(el){
   const counts = await fetchCounts();
   el.innerHTML = `
     <div class="flow-hint"><strong>ขั้นตอนโอนสินค้า</strong><br>
-    1) สาขาที่<strong>ต้องการสินค้า</strong> กดขอโอน → 2) สาขาที่<strong>มีสินค้า</strong> กดจัดส่ง → 3) สาขาที่ขอ กดรับเข้า</div>
+    1) สาขาที่<strong>ต้องการสินค้า</strong> กดขอโอน → 2) สาขาที่<strong>มีสินค้า</strong> กดส่งสินค้า → 3) สาขาที่ขอ กดรับเข้า</div>
     ${billTimelineHtml(OTHER, SITE)}
     <div class="action-grid">
-      <button class="action-card" data-go="request">
-        <p class="title">📥 ขอสินค้าจาก ${OTHER_LABEL}</p>
-        <p class="desc">ฉันอยู่ที่ ${SITE_LABEL} และต้องการให้ ${OTHER_LABEL} ส่งสินค้ามา</p>
-      </button>
-      <button class="action-card" data-go="prepare">
-        <p class="title">📤 จัดส่งไป ${OTHER_LABEL}</p>
-        <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
-      </button>
-      <button class="action-card" data-go="receive">
-        <p class="title">📦 รับสินค้าจาก ${OTHER_LABEL}</p>
-        <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
-      </button>
+      <div class="action-group">
+        <p class="action-group-label">ของเข้า</p>
+        <button class="action-card" data-go="request">
+          <p class="title">📥 ขอสินค้าจาก ${OTHER_LABEL}</p>
+          <p class="desc">ฉันอยู่ที่ ${SITE_LABEL} และต้องการให้ ${OTHER_LABEL} ส่งสินค้ามา</p>
+        </button>
+        <button class="action-card" data-go="receive">
+          <p class="title">📦 รับสินค้าจาก ${OTHER_LABEL}</p>
+          <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
+        </button>
+      </div>
+      <div class="action-group">
+        <p class="action-group-label">ของออก</p>
+        <button class="action-card" data-go="prepare">
+          <p class="title">📤 ส่งสินค้าไป ${OTHER_LABEL}</p>
+          <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
+        </button>
+      </div>
       <button class="action-card" data-go="status">
         <p class="title">📋 ตรวจสอบสถานะ</p>
         <p class="desc">ดูคำขอที่ส่งแล้ว กำลังจัด รอรับ หรือเสร็จสิ้น</p>
@@ -780,7 +814,7 @@ async function renderRequest(el){
         const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
         const srcTitle = src==="รอสั่ง" && Number(r.iclow_line_count||0)>1 ? ` title="รวม ${r.iclow_line_count} แถว ICLOW"` : "";
         return `<tr><td><code>${r.bcode}</code></td><td class="meta"${srcTitle}>${src}</td><td>${r.descr||""}</td>
-          <td class="num">${fmtStockDual(r.hq_qtyoh2,r)}</td><td class="num">${fmtStockDual(r.syp_qtyoh2,r)}</td>
+          <td class="num">${fmtHqStock(r)}</td><td class="num">${fmtStockDual(r.syp_qtyoh2,r)}</td>
           <td class="num">${fmtStockDual(r.suggest_qty,r)}</td>
           <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
           <td class="num"><input class="qty-input" type="number" min="0.01" step="any" value="${entry.qty}" data-qty="${idx}"/></td>
@@ -795,7 +829,7 @@ async function renderRequest(el){
           <div class="item-card-head"><code>${r.bcode}</code><span class="meta">${src}</span></div>
           <div class="item-card-desc">${r.descr||""}</div>
           <div class="item-card-grid">
-            <div class="item-field num"><span class="lbl">คงเหลือ สำนักงานใหญ่</span><span class="val">${fmtStockDual(r.hq_qtyoh2,r)}</span></div>
+            <div class="item-field num"><span class="lbl">คงเหลือ สำนักงานใหญ่</span><span class="val">${fmtHqStock(r)}</span></div>
             <div class="item-field num"><span class="lbl">คงเหลือ สาขา</span><span class="val">${fmtStockDual(r.syp_qtyoh2,r)}</span></div>
             <div class="item-field num"><span class="lbl">แนะนำ</span><span class="val">${fmtStockDual(r.suggest_qty,r)}</span></div>
           </div>
@@ -812,6 +846,7 @@ async function renderRequest(el){
         </tr></thead><tbody>${suggestTableRows}</tbody></table></div>`,
         itemCards(suggestCardRows)
       );
+      html += hqNoStockNoteHtml();
       if(q) html += `<p class="meta" style="margin:.5rem 1rem 0">แสดง ${filtered.length} จาก ${suggestItems.length} รายการ</p>`;
     }
     html += `</div>`;
@@ -894,7 +929,7 @@ async function renderRequest(el){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong> · สำนักงานใหญ่ ${fmtQty(p.hq_qtyoh2)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
+        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong> · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
       }catch(e){
         manualPreviewEl.style.display = "block";
         manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
@@ -1219,19 +1254,17 @@ async function renderPrepare(el){
     const shipBranchLabel = branchLabel(shipBranch);
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
-      const stock = branchQtyoh2(ln, shipBranch);
-      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtStockDual(stock, ln)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
+      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
         <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-line="${ln.line_id}"/></td></tr>`;
     }).join("");
     const cardRows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
-      const stock = branchQtyoh2(ln, shipBranch);
       return `<div class="item-card">
         <div class="item-card-head"><code>${ln.bcode}</code></div>
         <div class="item-card-desc">${ln.descr||""}</div>
         <div class="item-card-grid">
-          <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtStockDual(stock, ln)}</span></div>
+          <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>
           <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
           <div class="item-field num"><span class="lbl">จัดแล้ว</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
         </div>
@@ -1250,6 +1283,7 @@ async function renderPrepare(el){
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>`,
           itemCards(cardRows)
         )}
+        ${shipBranch === "HQ" ? hqNoStockNoteHtml() : ""}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(1)">← เลือกคำขออื่น</button>
           <button class="btn btn-primary" id="btnPrepNext2">ถัดไป → ตรวจสอบ</button>
@@ -1274,13 +1308,13 @@ async function renderPrepare(el){
     const shipBranch = (req.from_branch||SITE).toUpperCase();
     const shipBranchLabel = branchLabel(shipBranch);
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtStockDual(branchQtyoh2(ln, shipBranch), ln)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
+      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
     `).join("");
     const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`<div class="item-card">
       <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.line_id])}</strong></div>
       <div class="item-card-desc">${ln.descr||""}</div>
       <div class="item-card-grid">
-        <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtStockDual(branchQtyoh2(ln, shipBranch), ln)}</span></div>
+        <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>
         <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
         <div class="item-field num"><span class="lbl">จัดแล้ว</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
         <div class="item-field num"><span class="lbl">จัดครั้งนี้</span><span class="val"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></span></div>
@@ -1295,9 +1329,10 @@ async function renderPrepare(el){
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>`,
           itemCards(confirmCards)
         )}
+        ${shipBranch === "HQ" ? hqNoStockNoteHtml() : ""}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(2)">← แก้ไขจำนวน</button>
-          <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันจัดส่ง (ออกใบ TF)</button>
+          <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันส่งสินค้า (ออกใบ TF)</button>
         </div>
       </div>`;
     el.querySelector("#btnConfirmPrepare").onclick = async()=>{

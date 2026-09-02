@@ -224,6 +224,11 @@ def _enrich_suggest_item(
     syp_meta = syp_icmas.get(bcode)
     if hq_meta:
         item["hq_qtyoh2"] = hq_meta["qtyoh2"]
+        item["hq_qtymin"] = hq_meta["qtymin"]
+        item["hq_no_stock"] = bool(hq_meta.get("blocked"))
+    else:
+        item["hq_qtymin"] = None
+        item["hq_no_stock"] = False
     if syp_meta:
         item["syp_qtyoh2"] = syp_meta["qtyoh2"]
     for meta in (local_meta, hq_meta, syp_meta):
@@ -405,6 +410,8 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
         "descr": descr,
         "hq_qtyoh2": float((hq_meta or {}).get("qtyoh2") or 0),
         "syp_qtyoh2": float((syp_meta or {}).get("qtyoh2") or 0),
+        "hq_qtymin": float((hq_meta or {}).get("qtymin") or 0) if hq_meta else None,
+        "hq_no_stock": bool((hq_meta or {}).get("blocked")),
         "ui1": ui1,
         "ui2": ui2,
         "mtp2": mtp2,
@@ -436,6 +443,8 @@ def enrich_transfer_lines(
         syp_meta = syp_icmas.get(bcode) or {}
         row["hq_qtyoh2"] = float(hq_meta.get("qtyoh2") or 0)
         row["syp_qtyoh2"] = float(syp_meta.get("qtyoh2") or 0)
+        row["hq_qtymin"] = float(hq_meta["qtymin"]) if hq_meta and "qtymin" in hq_meta else None
+        row["hq_no_stock"] = bool(hq_meta.get("blocked"))
         if from_u == "HQ":
             row["from_qtyoh2"] = row["hq_qtyoh2"]
         elif from_u == "SYP":
