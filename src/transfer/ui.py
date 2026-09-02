@@ -325,21 +325,26 @@ function isHqNoStock(row){
   return !Number.isNaN(q) && q < 0;
 }
 function fmtHqStock(row){
-  if(isHqNoStock(row)) return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span>`;
-  return fmtStockDual(row && row.hq_qtyoh2, row || {});
+  const qtyHtml = fmtStockDual(row && row.hq_qtyoh2, row || {});
+  if(isHqNoStock(row)){
+    return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span><br>${qtyHtml}`;
+  }
+  return qtyHtml;
 }
 function fmtBranchStock(row, branch){
+  const qtyHtml = fmtStockDual(branchQtyoh2(row, branch), row || {});
   if((branch||"").toUpperCase() === "HQ" && isHqNoStock(row)){
-    return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span>`;
+    return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span><br>${qtyHtml}`;
   }
-  return fmtStockDual(branchQtyoh2(row, branch), row || {});
+  return qtyHtml;
 }
 function hqNoStockNoteHtml(){
-  return `<p class="stock-legend">ไม่สต็อก = L -1 (สนญ.ไม่เก็บสต็อก จัดซื้อพิจารณาสั่งเมื่อมีความต้องการ)</p>`;
+  return `<p class="stock-legend">ไม่สต็อก = L -1 (สนญ.ไม่เก็บสต็อก) — ยังแสดงยอดคงเหลือจริง</p>`;
 }
 function fmtHqStockPlain(row){
-  if(isHqNoStock(row)) return "ไม่สต็อก";
-  return fmtQty(row && row.hq_qtyoh2);
+  const qty = fmtQty(row && row.hq_qtyoh2);
+  if(isHqNoStock(row)) return "ไม่สต็อก · " + qty;
+  return qty;
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);
