@@ -19,8 +19,12 @@ SIZE_LABELS = {
     "E": ("ใน", "นอก", "หนา"), "F": ("ใน", "นอก", "สูง"), "G": ("ปลอก", "ยาว", None),
     "I": ("ใน", "นอก", "หนา"), "K": ("ยาว(นิ้ว)", "ฟัน", "ขนาดรูเฟือง"),
     "L": ("หัวสาย 1", "หัวสาย 2", "ยาว"), "O": ("ใน", "หนา", None), "P": ("ใน", "นอก", "สูง"),
-    "Q": ("เตเปอร์", "แกนโต", None), "R": ("ใน", "นอก", "หนา"),
+    "Q": ("เตเปอร์", "แกนโต", None),  # ICMAS §7: Q SIZE slots still TBD in kcw-docs
+    "R": ("ใน", "นอก", "หนา"),  # ICMAS §7: R SIZE slots still TBD; HQ data uses ใน/นอก/หนา pattern
 }
+# ICMAS SIZE1–3 are varchar; L uses hose-end codes (NN12) and lengths (13").
+_SIZE_VALUE = r"[^\s]+"
+_NUMERIC_TOKEN = re.compile(r"-?\d+(?:\.\d+)?")
 CATEGORY_LABELS = {
     "01": "TX จิ๊ป แลนด์", "02": "I/S JCM บรรทุก 10 ล้อ", "03": "I/S D-MAX กระบะ",
     "04": "I/S ELF 4-6 ล้อ", "05": "NISSAN กระบะ เก๋ง", "06": "NISSAN UD บรรทุก",
@@ -204,7 +208,7 @@ def _strip_size_patterns(text: str, code1: str | None = None) -> str:
             continue
         seen.add(key)
         t = re.sub(
-            rf"(?:{re.escape(label)})\s*[:=]?\s*\d+(?:\.\d+)?",
+            rf"(?:{re.escape(label)})\s*[:=]?\s*({_SIZE_VALUE})",
             " ",
             t,
             flags=re.I,
@@ -220,11 +224,14 @@ def _parse_code_size_slots(text: str, code1: str | None) -> tuple[str | None, st
         return None, None, None
     out: list[str | None] = [None, None, None]
     matched = False
-    for idx, label in enumerate(labels):
-        if not label or idx > 2:
-            continue
+    ordered = sorted(
+        [(idx, label) for idx, label in enumerate(labels) if label and idx <= 2],
+        key=lambda item: len(item[1]),
+        reverse=True,
+    )
+    for idx, label in ordered:
         m = re.search(
-            rf"(?:{re.escape(label)})\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            rf"(?:{re.escape(label)})\s*[:=]?\s*({_SIZE_VALUE})",
             text or "",
             re.I,
         )
@@ -257,6 +264,17 @@ def _parse_size_slots(text: str) -> tuple[str | None, str | None, str | None]:
     return s1, s2, s3
 
 
+def _assign_numeric_size_slots(text: str) -> tuple[str | None, str | None, str | None]:
+    nums = [t for t in re.split(r"\s+", text or "") if _NUMERIC_TOKEN.fullmatch(t)]
+    if len(nums) >= 3:
+        return nums[0], nums[1], nums[2]
+    if len(nums) == 2:
+        return nums[0], nums[1], None
+    if len(nums) == 1:
+        return nums[0], None, None
+    return None, None, None
+
+
 def parse_code_size_query(raw: str) -> ParsedQuery:
     """CODE1 + exact SIZE1/2/3 — ICMAS dictionary §7."""
     q = (raw or "").strip()
@@ -283,13 +301,7 @@ def parse_code_size_query(raw: str) -> ParsedQuery:
             continue
         text_terms.append(tok)
     if not (size1 or size2 or size3):
-        nums = [t for t in re.split(r"\s+", q) if re.fullmatch(r"-?\d+(?:\.\d+)?", t)]
-        if len(nums) >= 3:
-            size1, size2, size3 = nums[0], nums[1], nums[2]
-        elif len(nums) == 2:
-            size1, size2 = nums[0], nums[1]
-        elif len(nums) == 1:
-            size1 = nums[0]
+        size1, size2, size3 = _assign_numeric_size_slots(q)
     sizes = [s for s in (size1, size2, size3) if s]
     return ParsedQuery(
         raw=q,

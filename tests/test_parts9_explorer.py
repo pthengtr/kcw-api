@@ -35,6 +35,19 @@ def test_parse_code_size_query():
     assert cvjoint.size3 is None
     assert code_size_query_valid(cvjoint)
 
+    hose = parse_code_size_query("L หัวสาย 1 NN12 หัวสาย 2 NS17 ยาว 24")
+    assert hose.code1 == "L"
+    assert hose.size1 == "NN12"
+    assert hose.size2 == "NS17"
+    assert hose.size3 == "24"
+    assert code_size_query_valid(hose)
+
+    oring = parse_code_size_query("O ใน 35 หนา 3")
+    assert oring.code1 == "O"
+    assert oring.size1 == "35"
+    assert oring.size2 == "3"
+    assert oring.size3 is None
+
     prefixed = parse_query("รหัสขนาด C 31 46 7")
     assert prefixed.search_mode == "code_size"
     assert prefixed.code1 == "C"
@@ -78,6 +91,59 @@ def test_format_size_line_by_code1():
     assert format_size_line("C", "", "", "") == ""
     assert "ขนาด:" in format_size_line("C", "31", "46", "7")
     assert size_labels("Q") == ("เตเปอร์", "แกนโต", None)
+
+
+def test_size_labels_match_icmas_dictionary():
+    """SIZE_LABELS A–P must match kcw-docs ICMAS dictionary §7."""
+    from src.parts9_explorer.query import CODE1_LABELS, SIZE_LABELS
+
+    dictionary = {
+        "A": ("สูง", "กว้าง", None),
+        "C": ("ใน", "นอก", "หนา"),
+        "D": ("ใน", "นอก", "หนา"),
+        "E": ("ใน", "นอก", "หนา"),
+        "F": ("ใน", "นอก", "สูง"),
+        "G": ("ปลอก", "ยาว", None),
+        "I": ("ใน", "นอก", "หนา"),
+        "K": ("ยาว(นิ้ว)", "ฟัน", "ขนาดรูเฟือง"),
+        "L": ("หัวสาย 1", "หัวสาย 2", "ยาว"),
+        "O": ("ใน", "หนา", None),
+        "P": ("ใน", "นอก", "สูง"),
+    }
+    for code, expected in dictionary.items():
+        assert code in CODE1_LABELS
+        assert SIZE_LABELS[code] == expected
+
+
+def test_code_size_ui_queries_for_all_dictionary_codes():
+    from src.parts9_explorer.query import SIZE_LABELS, code_size_query_valid, parse_code_size_query
+
+    samples = {
+        "A": ("10", "20", None),
+        "C": ("31", "46", "7"),
+        "D": ("20", "30", "5"),
+        "E": ("15", "25", "3"),
+        "F": ("100", "200", "50"),
+        "G": ("1", "24", None),
+        "I": ("20", "47", "14"),
+        "K": ("10", "22", "100"),
+        "L": ("NN12", "NS17", '24"'),
+        "O": ("35", "3", None),
+        "P": ("50", "60", "80"),
+    }
+    for code, (v1, v2, v3) in samples.items():
+        labels = SIZE_LABELS[code]
+        parts = [code]
+        for idx, lbl in enumerate(labels):
+            val = (v1, v2, v3)[idx]
+            if lbl and val is not None:
+                parts.extend([lbl, str(val)])
+        parsed = parse_code_size_query(" ".join(parts))
+        assert parsed.code1 == code
+        assert parsed.size1 == v1
+        assert parsed.size2 == v2
+        assert parsed.size3 == v3
+        assert code_size_query_valid(parsed)
 
 
 def test_explorer_commands():
