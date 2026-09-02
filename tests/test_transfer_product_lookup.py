@@ -48,6 +48,96 @@ def test_lookup_transfer_product_merges_hq_and_syp():
     assert product["descr"] == "สะดือแหนบหน้า"
     assert product["hq_qtyoh2"] == 3.0
     assert product["syp_qtyoh2"] == 1.0
+    assert product["hq_no_stock"] is False
+    assert product["hq_qtymin"] == 2.0
+
+
+def test_lookup_transfer_product_hq_l1_no_stock():
+    def fake_meta(engine, bcodes, include_blocked=False):
+        if engine is hq_engine:
+            return {
+                "L1SKU": {
+                    "qtyoh2": 0.0,
+                    "qtymin": -1.0,
+                    "blocked": True,
+                    "descr": "ไม่เก็บสต็อก",
+                    "ui1": "ชิ้น",
+                    "ui2": "",
+                    "mtp2": 1.0,
+                }
+            }
+        return {
+            "L1SKU": {
+                "qtyoh2": 2.0,
+                "qtymin": 1.0,
+                "blocked": False,
+                "descr": "ไม่เก็บสต็อก",
+                "ui1": "ชิ้น",
+                "ui2": "",
+                "mtp2": 1.0,
+            }
+        }
+
+    hq_engine = object()
+    syp_engine = object()
+
+    def fake_engine(site):
+        return hq_engine if site == "hq" else syp_engine
+
+    with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_meta):
+                product = lookup_transfer_product(bcode="L1SKU")
+
+    assert product is not None
+    assert product["hq_no_stock"] is True
+    assert product["hq_qtymin"] == -1.0
+    assert product["syp_qtyoh2"] == 2.0
+
+
+def test_enrich_transfer_lines_marks_hq_no_stock():
+    lines = [{"bcode": "L1SKU", "qty": 1, "descr": ""}]
+
+    def fake_meta(engine, bcodes, include_blocked=False):
+        if engine is hq_engine:
+            return {
+                "L1SKU": {
+                    "qtyoh2": 0.0,
+                    "qtymin": -1.0,
+                    "blocked": True,
+                    "descr": "L-1 item",
+                    "ui1": "ชิ้น",
+                    "ui2": "",
+                    "mtp2": 1.0,
+                }
+            }
+        return {
+            "L1SKU": {
+                "qtyoh2": 5.0,
+                "qtymin": 2.0,
+                "blocked": False,
+                "descr": "L-1 item",
+                "ui1": "ชิ้น",
+                "ui2": "",
+                "mtp2": 1.0,
+            }
+        }
+
+    hq_engine = object()
+    syp_engine = object()
+
+    def fake_engine(site):
+        return hq_engine if site == "hq" else syp_engine
+
+    with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_meta):
+                out = enrich_transfer_lines(lines, from_branch="HQ", to_branch="SYP")
+
+    assert out[0]["hq_no_stock"] is True
+    assert out[0]["hq_qtymin"] == -1.0
+    assert out[0]["hq_qtyoh2"] == 0.0
+    assert out[0]["syp_qtyoh2"] == 5.0
 
 
 def test_lookup_uses_peer_when_sql_hosts_collide():
@@ -174,3 +264,5 @@ def test_enrich_transfer_lines_fills_missing_descr_and_live_stock():
     assert out[0]["syp_qtyoh2"] == 1.0
     assert out[0]["from_qtyoh2"] == 3.0
     assert out[0]["to_qtyoh2"] == 1.0
+    assert out[0]["hq_no_stock"] is False
+    assert out[0]["hq_qtymin"] == 1.0

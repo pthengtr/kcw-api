@@ -72,7 +72,11 @@ def test_transfer_page_renders():
     assert "ใบจัดสินค้า" in html
     assert "ใบรับสินค้า" in html
     assert "ขอสินค้าจาก" in html
-    assert "จัดส่งไป" in html
+    assert "ส่งสินค้าไป" in html
+    assert "ของเข้า" in html
+    assert "ของออก" in html
+    assert "ไม่สต็อก = L -1" in html
+    assert "hq_no_stock" in html or "fmtHqStock" in html
     assert "ตรวจสอบสถานะ" in html
     assert "ขั้นตอนโอนสินค้า" in html
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
