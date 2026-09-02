@@ -183,10 +183,132 @@ def test_product_search_matches_pcode_mcode_and_code1():
     sql = _term_match_sql("t0")
     assert "PCODE LIKE :t0" in sql
     assert "MCODE LIKE :t0" in sql
+    assert "ACODE LIKE :t0" in sql
     assert "CODE1" in sql
     sized = _term_match_sql("sz1", include_size_slot=1)
     assert "SIZE1" in sized
     assert "PCODE LIKE :sz1" in sized
+
+
+def test_product_search_includes_acode_column():
+    from src.parts9_explorer.search import PRODUCT_COLS
+
+    assert "ACODE" in PRODUCT_COLS
+
+
+def test_serialize_product_includes_acode():
+    from src.parts9_explorer.search import _serialize_product
+
+    row = {
+        "BCODE": "15001234",
+        "DESCR": "ลูกปืน",
+        "PCODE": "",
+        "MCODE": "",
+        "BRAND": "",
+        "MODEL": "",
+        "ACODE": "ลป",
+        "CODE1": "I",
+        "SIZE1": "20",
+        "SIZE2": "47",
+        "SIZE3": "14",
+        "UI1": "ลูก",
+        "UI2": "",
+        "MTP2": None,
+        "QTYOH2": 5,
+        "QTYMIN": 0,
+        "LOCATION1": "",
+        "LOCATION2": "",
+        "CANCELED": "N",
+    }
+    out = _serialize_product(row, site="hq")
+    assert out["acode"] == "ลป"
+
+
+def test_search_products_applies_category_filter(monkeypatch):
+    from sqlalchemy import text
+
+    from src.parts9_explorer.search import search_products
+
+    captured: dict = {}
+
+    class FakeResult:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return []
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params):
+            captured["sql"] = str(sql)
+            captured["params"] = dict(params)
+            return FakeResult()
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConn()
+
+    monkeypatch.setattr(
+        "src.parts9_explorer.search.get_site_engine",
+        lambda site: FakeEngine(),
+    )
+    search_products("6207", site="hq", category="15")
+    assert "LEFT(LTRIM(RTRIM(BCODE)), 2) = :category" in captured["sql"]
+    assert captured["params"]["category"] == "15"
+
+
+def test_search_products_ignores_invalid_category(monkeypatch):
+    from src.parts9_explorer.search import search_products
+
+    captured: dict = {}
+
+    class FakeResult:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return []
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params):
+            captured["sql"] = str(sql)
+            captured["params"] = dict(params)
+            return FakeResult()
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConn()
+
+    monkeypatch.setattr(
+        "src.parts9_explorer.search.get_site_engine",
+        lambda site: FakeEngine(),
+    )
+    search_products("6207", site="hq", category="99")
+    assert "category" not in captured["params"]
+
+
+def test_explorer_page_has_category_select():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
+    assert 'id="category"' in html
+    assert 'id="categoryField"' in html
+    assert "initCategorySelect" in html
+    assert "mode-product" in html
+    assert "isProductMode" in html
+    assert '"15": "ลูกปืน"' in html
+    assert "ชื่อย่อ" in html
+    assert "นมฮPT" in html
 
 
 def test_explorer_page_mentions_oem_and_code1():
