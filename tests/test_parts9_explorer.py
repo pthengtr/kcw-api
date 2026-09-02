@@ -390,6 +390,7 @@ def test_explorer_page_mentions_oem_and_code1():
     assert "เบอร์โรงงาน" in html
     assert "PCODE" in html
     assert "MCODE" in html
+    assert "p.model" in html
     assert "function sizeBits" in html
 
 
