@@ -102,6 +102,25 @@ def patch_reminder(
     return _first_row(resp)
 
 
+def delete_reminder(client: Client, acctno: str, noteno: str) -> bool:
+    """Remove pay_note.reminder for a canceled unpaid note. Returns True if a row was deleted."""
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return False
+    before = get_reminder(client, acct, note)
+    if not before:
+        return False
+    (
+        _table(client, "reminder")
+        .delete()
+        .eq("acctno", acct)
+        .eq("noteno", note)
+        .execute()
+    )
+    return True
+
+
 def rename_reminder(
     client: Client,
     acctno: str,

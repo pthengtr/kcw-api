@@ -160,7 +160,15 @@ main { max-width:1120px; margin:0 auto; padding:var(--space-page-y) var(--space-
 .btn.soft { background:var(--acc-soft); border-color:transparent; color:var(--acc); }
 .btn.sm { min-height:2.05rem; padding:.3rem .7rem; font-size:.82rem; border-radius:.5rem; }
 .btn.outline { color:var(--acc); border-color:#bfdbfe; background:var(--card); }
+.btn.danger {
+  color:var(--down); border-color:#fecaca; background:var(--card);
+}
+.btn.danger:hover { background:var(--down-bg); }
 .btn.block { width:100%; }
+.edit-actions {
+  display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.85rem;
+}
+.edit-actions .btn { flex:1 1 10rem; }
 .kpis { display:grid; gap:.65rem; grid-template-columns:repeat(4, 1fr); margin:.85rem 0; }
 .kpi {
   display:flex; gap:.7rem; align-items:flex-start; text-align:left;
@@ -923,7 +931,10 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <input id="editBillImages" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
       <div class="thumbs" id="editBillThumbs"></div>
-      <button type="button" class="btn primary block" id="btnSaveEdit" style="margin-top:.85rem">บันทึกการแก้ไข</button>
+      <div class="edit-actions">
+        <button type="button" class="btn primary" id="btnSaveEdit">บันทึกการแก้ไข</button>
+        <button type="button" class="btn danger" id="btnCancelNote">ยกเลิกใบวางบิล</button>
+      </div>
       <div id="editMsg"></div>
     </div>
   </section>
@@ -1237,6 +1248,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </div>
   <div class="dlg-foot">
     <button type="button" class="btn ghost" id="btnCloseDetail2">ปิด</button>
+    <button type="button" class="btn danger hidden" id="detCancelNoteBtn">ยกเลิกใบวางบิล</button>
     <button type="button" class="btn outline" id="btnPrintDetail">พิมพ์</button>
     <button type="button" class="btn primary hidden" id="detPayBtn">บันทึกการจ่าย</button>
   </div>
@@ -1617,6 +1629,7 @@ function renderPending() {
       <td class="td-actions" data-label=""><div class="row-actions">
         <button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
         <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
+        ${WRITE_ENABLED ? `<button type="button" class="btn sm danger" data-cancel="${esc(keyOf(r))}">ยกเลิก</button>` : ''}
         <button type="button" class="btn sm primary"
           data-pay-acct="${esc(r.acctno)}" data-pay-note="${esc(r.noteno)}"
           data-pay-amt="${Number(r.BILLAMT||0)}" data-pay-disc="${Number((r.reminder||{}).discount_amount||0)}"
@@ -1637,6 +1650,8 @@ $('btnRefreshPending').onclick = loadPending;
 $('pendingBody').addEventListener('click', (e) => {
   const edit = e.target.closest('[data-edit]');
   if (edit) { openEditNote(edit.dataset.edit, 'pending'); return; }
+  const cancel = e.target.closest('[data-cancel]');
+  if (cancel) { cancelNoteByKey(cancel.dataset.cancel, 'pending'); return; }
   const pay = e.target.closest('[data-pay-acct]');
   if (pay) {
     openPay(pay.dataset.payAcct, pay.dataset.payNote, pay.dataset.payAmt, pay.dataset.payDisc, pay.dataset.payBank || '');
@@ -1796,6 +1811,7 @@ function renderByAp() {
   $('byApBody').innerHTML = pg.rows.map(r => {
     const actions = r.is_editable
       ? `<button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
+         ${WRITE_ENABLED ? `<button type="button" class="btn sm danger" data-cancel="${esc(keyOf(r))}">ยกเลิก</button>` : ''}
          <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`
       : `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`;
     return `<tr>
@@ -1815,6 +1831,8 @@ $('byApBillMonth')?.addEventListener('change', () => { byApPage = 1; renderByAp(
 $('byApBody').addEventListener('click', (e) => {
   const edit = e.target.closest('[data-edit]');
   if (edit) { openEditNote(edit.dataset.edit, 'byap'); return; }
+  const cancel = e.target.closest('[data-cancel]');
+  if (cancel) { cancelNoteByKey(cancel.dataset.cancel, 'byap'); return; }
   const open = e.target.closest('[data-open]');
   if (open) openDetailByKey(open.dataset.open);
 });
@@ -2182,6 +2200,7 @@ async function openDetailByKey(key, opts) {
   $('detDueSave').classList.add('hidden');
   $('detDueCancel').classList.add('hidden');
   $('detPayBtn').classList.toggle('hidden', !(opts.canPay && canEditDue && WRITE_ENABLED));
+  $('detCancelNoteBtn')?.classList.toggle('hidden', !(canEditDue && WRITE_ENABLED));
   $('detProofWrap').classList.toggle('hidden', !row.voucno);
   const isAwaitProof = row.stage === 'await_proof' || (!!row.voucno && !row.has_proof);
   const isDoneVoucher = row.stage === 'voucher' || !!row.has_proof;
@@ -2235,6 +2254,12 @@ $('detPayBtn').onclick = () => {
     `${bank.bank_name || ''} ${bank.bank_account_name || ''} # ${bank.bank_account_number || ''}`
   );
 };
+$('detCancelNoteBtn')?.addEventListener('click', () => {
+  if (!detailRow) return;
+  cancelNoteByKey(keyOf(detailRow), detailRow.stage === 'pending' ? 'pending' : 'byap', {
+    closeDetail: true,
+  });
+});
 function appendUploadThumb(container, file, j) {
   if (j.url && !/\.pdf$/i.test(file.name)) {
     container.innerHTML += `<img src="${esc(j.url)}" alt=""/>`;
@@ -2978,6 +3003,7 @@ async function openEditNote(key, returnTab) {
   setEditDiscMode(editDiscMode);
   $('editMsg').innerHTML = '';
   $('editBillThumbs').innerHTML = '';
+  if ($('btnCancelNote')) $('btnCancelNote').classList.toggle('hidden', !WRITE_ENABLED);
   const banks = await api('/banks?acctno=' + encodeURIComponent(row.acctno));
   $('editBankSelect').innerHTML = banks.map(b =>
     `<option value="${esc(b.bank_id)}">${esc(b.bank_name)} · ${esc(b.bank_account_number)}</option>`
@@ -3086,6 +3112,43 @@ $('btnSaveEdit').onclick = async () => {
     setTimeout(() => showTab(editReturnTab), 500);
   } catch (e) { $('editMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 };
+
+async function cancelNoteByKey(key, returnTab, opts) {
+  opts = opts || {};
+  if (!WRITE_ENABLED) { alert('KSS write ปิดอยู่'); return; }
+  const row = findRow(key) || pendingRows.find(r => keyOf(r) === key) || (editTarget && keyOf(editTarget) === key ? editTarget : null);
+  if (!row) { alert('ไม่พบใบวางบิล'); return; }
+  if (row.is_editable === false || (row.voucno || '').trim()) {
+    alert('ยกเลิกได้เฉพาะใบวางบิลที่ยังไม่บันทึกการจ่าย');
+    return;
+  }
+  const label = notenoReuseMeta(row).display || row.noteno;
+  const ok = confirm(
+    `ยกเลิกใบวางบิล ${label} ของ ${row.acctno}?\n\nบิลที่ผูกไว้จะกลับมาเลือกได้ใหม่ · ใบวางบิลจะถูกทำเครื่องหมายยกเลิกใน KSS (ไม่ลบแถว)`
+  );
+  if (!ok) return;
+  try {
+    await api(`/notes${noteQs(row.acctno, row.noteno)}`, { method: 'DELETE' });
+    if (opts.closeDetail) {
+      try { $('dlgDetail').close(); } catch (_) {}
+      detailRow = null;
+    }
+    if (editTarget && keyOf(editTarget) === keyOf(row)) {
+      editTarget = null;
+      showEditPanel(false);
+    }
+    await Promise.all([loadPending(), loadAwaitProof(), loadVouchers()]);
+    if (byApVendor?.acctno === row.acctno) await loadByAp();
+    if (returnTab) showTab(returnTab === 'byap' ? 'byap' : 'pending');
+    else showTab('pending');
+  } catch (e) {
+    alert(e.message || 'ยกเลิกไม่สำเร็จ');
+  }
+}
+$('btnCancelNote')?.addEventListener('click', () => {
+  if (!editTarget) return;
+  cancelNoteByKey(keyOf(editTarget), editReturnTab || 'pending');
+});
 
 wireDatePickers(document);
 setDiscMode('amount');

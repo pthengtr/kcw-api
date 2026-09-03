@@ -15,6 +15,7 @@ from src.pay_notes.ai_vision import (
 )
 from src.pay_notes.config import get_pay_notes_settings
 from src.pay_notes.db import (
+    delete_reminder,
     get_pay_notes_supabase_client,
     get_reminder,
     get_vendor_bank,
@@ -713,6 +714,77 @@ def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate
 
     updated = patch_reminder(client, acct, note, patch)
     return {**kss, "reminder": updated, **_workflow_meta()}
+
+
+@router.delete("/api/notes")
+def api_cancel_note(request: Request, acctno: str = "", noteno: str = ""):
+    """Soft-cancel an unpaid (unvouchered) note: CANCELED='Y' + free bills + drop reminder."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return JSONResponse({"error": "acctno and noteno required"}, status_code=400)
+
+    client = get_pay_notes_supabase_client()
+    rem = get_reminder(client, acct, note)
+    header = get_note_header(settings.site, acct, note)
+
+    if header:
+        if (header.get("voucno") or "").strip() or str(header.get("VOUCED") or "N").strip().upper() == "Y":
+            return JSONResponse(
+                {"error": "cannot cancel vouchered note", "code": "already_vouchered"},
+                status_code=409,
+            )
+    elif not rem:
+        return JSONResponse({"error": "note not found"}, status_code=404)
+
+    kss_result: dict[str, Any] = {"canceled": False, "reason": "not_in_kss"}
+    if header:
+        try:
+            kss_result = cancel_unvouchered_pay_note(
+                settings=settings, acctno=acct, noteno=note
+            )
+        except PayNoteWriteError as exc:
+            status = 409 if exc.code in ("already_vouchered", "not_editable") else 400
+            if exc.code == "write_disabled":
+                status = 403
+            return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+    reminder_deleted = False
+    try:
+        reminder_deleted = delete_reminder(client, acct, note)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "error": f"KSS canceled but reminder delete failed: {exc}",
+                "code": "reminder_delete_failed",
+                "acctno": acct,
+                "noteno": note,
+                "kss": kss_result,
+            },
+            status_code=500,
+        )
+
+    images_removed: list[str] = []
+    try:
+        images = list_folder(client, bill_image_prefix(acct, note))
+        paths = [str(x.get("path") or "") for x in images if x.get("path")]
+        if paths:
+            images_removed = remove_paths(client, paths)
+    except Exception:
+        images_removed = []
+
+    return {
+        "acctno": acct,
+        "noteno": note,
+        "canceled": bool(kss_result.get("canceled")) or not header,
+        "kss": kss_result,
+        "reminder_deleted": reminder_deleted,
+        "images_removed": len(images_removed),
+    }
 
 
 def _note_totals(header: dict[str, Any], reminder: dict[str, Any] | None) -> dict[str, Any]:
