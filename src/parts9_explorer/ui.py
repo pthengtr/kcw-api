@@ -507,10 +507,12 @@ function drawModes() {
 let _t = null;
 function scheduleGo() {
   clearTimeout(_t);
-  _t = setTimeout(() => go(), 380);
+  // Live typing must not auto-hide the mobile search panel.
+  _t = setTimeout(() => go(null, { collapse: false }), 380);
 }
-async function go(ev) {
-  if (ev) ev.preventDefault();
+async function go(ev, opts) {
+  if (ev && typeof ev.preventDefault === "function") ev.preventDefault();
+  const collapse = !!(opts && opts.collapse) || !!(ev && ev.type === "submit");
   const q = currentQuery();
   const site = $("site").value;
   const skip = $("skip").checked ? "1" : "0";
@@ -527,7 +529,7 @@ async function go(ev) {
       $("list").innerHTML = "<div class='empty'>"+esc(data.detail || ("HTTP "+r.status))+"</div>";
       return false;
     }
-    render(data);
+    render(data, { collapse });
   } catch (e) {
     $("list").innerHTML = "<div class='empty'>ค้นไม่สำเร็จ "+esc(e && e.message ? e.message : e)+"</div>";
   }
@@ -537,7 +539,7 @@ function stBadge(st) {
   const k = st || "";
   return "<span class='badge "+esc(k)+"'>"+esc(STATUS_TH[k] || k)+"</span>";
 }
-function render(data) {
+function render(data, opts) {
   const products = data.products || [];
   DOCS = data.documents || (data.document ? [data.document] : []);
   ITEMS = products;
@@ -578,7 +580,8 @@ function render(data) {
   else if (products[0]) showP(0);
   else if (DOCS.length) showDoc(0);
   updateSearchSummary();
-  if (products.length || DOCS.length || SUMMARY) collapseSearchPanelIfMobile();
+  // Only collapse on explicit search submit / Enter — not live typing debounce.
+  if (opts && opts.collapse && (products.length || DOCS.length || SUMMARY)) collapseSearchPanelIfMobile();
 }
 function kvTable(obj) {
   const skip = new Set(["ID"]);
@@ -767,7 +770,7 @@ $("site").addEventListener("change", () => {
   if (currentQuery() || KIND==="iclow") go();
 });
 $("q").addEventListener("input", scheduleGo);
-$("q").addEventListener("search", () => go());
+$("q").addEventListener("search", (e) => go(e, { collapse: true }));
 $("skip").addEventListener("change", () => { if (currentQuery()) go(); });
 $("category").addEventListener("change", () => {
   updateSearchSummary();
@@ -787,7 +790,7 @@ document.querySelectorAll("#sizeFields .size-inp").forEach((inp) => {
     if (codeSizeValid()) scheduleGo();
   });
   inp.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" && codeSizeValid()) go(ev);
+    if (ev.key === "Enter" && codeSizeValid()) go(ev, { collapse: true });
   });
 });
 const THEME_KEY = "kcw.parts9.theme";

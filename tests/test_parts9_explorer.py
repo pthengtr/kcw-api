@@ -79,6 +79,9 @@ def test_explorer_page_has_code_size_panel():
     assert 'id="searchPanel"' in html
     assert 'id="searchToggle"' in html
     assert "collapseSearchPanelIfMobile" in html
+    assert "Live typing must not auto-hide the mobile search panel." in html
+    assert "go(null, { collapse: false })" in html
+    assert "opts && opts.collapse" in html
     assert '"C": ["ใน", "นอก", "หนา"]' in html
     assert '"C": "ซีล"' in html
     assert "กรอกบางช่องก็ค้นได้" in html
