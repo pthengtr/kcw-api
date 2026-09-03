@@ -65,12 +65,17 @@ PRODUCT_SORT_KEYS = frozenset(
     }
 )
 
-_PRICE_SORT_EXPR = (
-    "TRY_CONVERT(float, REPLACE(CONVERT(varchar(50), PRICE1), ',', ''))"
-)
-_QTY_SORT_EXPR = (
-    "TRY_CONVERT(float, REPLACE(CONVERT(varchar(50), QTYOH2), ',', ''))"
-)
+def _numeric_sort_expr(col: str, *, missing: str = "NULL") -> str:
+    """Older SQL Server–safe float cast (no TRY_CONVERT)."""
+    cleaned = f"REPLACE(CONVERT(varchar(50), {col}), ',', '')"
+    return (
+        f"CASE WHEN ISNUMERIC({cleaned}) = 1 "
+        f"THEN CONVERT(float, {cleaned}) ELSE {missing} END"
+    )
+
+
+_PRICE_SORT_EXPR = _numeric_sort_expr("PRICE1", missing="NULL")
+_QTY_SORT_EXPR = _numeric_sort_expr("QTYOH2", missing="0")
 
 
 def _product_order_sql(sort: str | None) -> tuple[str, bool]:
