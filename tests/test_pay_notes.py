@@ -76,6 +76,10 @@ def test_page_has_voucher_and_proof_tabs():
     assert "data-print=" in html
     assert "openDetailByKey" in html
     assert "AD" in html
+    assert "อัปเดตรูป" in html
+    assert "deleteProofImage" in html
+    assert "ต้องมีอย่างน้อย 1 รูป" in html
+    assert "/api/images/payment" in html
 
 
 def test_workflow_meta():
@@ -411,6 +415,80 @@ def test_verify_payment_api_mock():
     body = res.json()
     assert body["match"] is False
     assert body["expected_amount"] == 900.0
+
+
+def test_delete_payment_image_rejects_last_image():
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock()
+    only = [
+        {
+            "name": "slip.jpg",
+            "path": "public/pay_note/payment/KCPN6908-001/slip.jpg",
+            "url": "http://x/slip.jpg",
+        }
+    ]
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", return_value=only),
+        patch("app.routers.pay_notes.remove_paths") as rem,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete(
+            "/pay-notes/api/images/payment",
+            params={
+                "voucno": "KCPN6908-001",
+                "path": "public/pay_note/payment/KCPN6908-001/slip.jpg",
+            },
+        )
+    assert res.status_code == 400
+    assert res.json()["code"] == "last_image"
+    rem.assert_not_called()
+
+
+def test_delete_payment_image_allows_when_more_remain():
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock()
+    two = [
+        {
+            "name": "a.jpg",
+            "path": "public/pay_note/payment/KCPN6908-001/a.jpg",
+            "url": "http://x/a.jpg",
+        },
+        {
+            "name": "b.jpg",
+            "path": "public/pay_note/payment/KCPN6908-001/b.jpg",
+            "url": "http://x/b.jpg",
+        },
+    ]
+    remaining = [two[1]]
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", side_effect=[two, remaining]),
+        patch("app.routers.pay_notes.remove_paths", return_value=["public/pay_note/payment/KCPN6908-001/a.jpg"]) as rem,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete(
+            "/pay-notes/api/images/payment",
+            params={
+                "voucno": "KCPN6908-001",
+                "path": "public/pay_note/payment/KCPN6908-001/a.jpg",
+            },
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["deleted"].endswith("/a.jpg")
+    assert body["has_proof"] is True
+    rem.assert_called_once()
 
 
 def test_list_note_bills_with_lines_unvouchered_only(monkeypatch):

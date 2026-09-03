@@ -47,6 +47,7 @@ from src.pay_notes.storage import (
     payment_image_prefix,
     public_url,
     relocate_bill_images,
+    remove_paths,
     upload_bytes,
 )
 from src.pay_notes.ui import APP, SESSION_COOKIE, page
@@ -926,6 +927,35 @@ async def api_upload_payment_image(
     client = get_pay_notes_supabase_client()
     upload_bytes(client, path, data, content_type=file.content_type or "image/jpeg")
     return {"path": path, "url": public_url(path)}
+
+
+@router.delete("/api/images/payment")
+def api_delete_payment_image(request: Request, voucno: str = "", path: str = ""):
+    """Remove one payment proof image. Refuses if it would leave the voucher with no image."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    vo = (voucno or "").strip()
+    rel = (path or "").strip().lstrip("/")
+    if not vo:
+        return JSONResponse({"error": "voucno required"}, status_code=400)
+    if not rel:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    prefix = payment_image_prefix(vo).strip("/")
+    if not (rel == prefix or rel.startswith(prefix + "/")):
+        return JSONResponse({"error": "path not under this voucher"}, status_code=400)
+    client = get_pay_notes_supabase_client()
+    existing = list_folder(client, prefix)
+    if not any((item.get("path") or "").lstrip("/") == rel for item in existing):
+        return JSONResponse({"error": "image not found"}, status_code=404)
+    if len(existing) <= 1:
+        return JSONResponse(
+            {"error": "cannot remove last payment image", "code": "last_image"},
+            status_code=400,
+        )
+    remove_paths(client, [rel])
+    remaining = list_folder(client, prefix)
+    return {"deleted": rel, "remaining": remaining, "has_proof": bool(remaining)}
 
 
 @router.get("/api/images/payment")

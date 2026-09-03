@@ -13,7 +13,7 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 | 1. สร้าง | Create note (vendor, bills, discount, images) | yes (new) | `PVMAS` INSERT + `PIMAS` stamp; `pay_note.reminder` |
 | 2. รอชำระ | Pending payment board; edit note; record payment | **yes** (bills, discount, due, bank, remark) | unvouchered `PVMAS` + reminder |
 | 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `PVMAS`; `payment/{VOUCNO}/` images |
-| 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view bill + proof images | no | vouchered `PVMAS` with proof |
+| 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view / **update** bill + proof images | proof images only (must keep ≥1) | vouchered `PVMAS` with proof |
 | 5. ค้นหาตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
 
 After proof upload on tab 3, the row moves to tab 4 automatically (if AI payment verify passes, or AI is off). If AI detects a slip amount mismatch, the operator must tick **ยืนยันว่ายอดสลิปถูกต้อง (AI อ่านผิด)** before completing.
@@ -41,6 +41,8 @@ Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key i
 - `PATCH /api/notes?acctno=&noteno=` — edit pending note (bills, discount, reminder fields)
 - `GET /api/bills?acctno=&noteno=` — bills for edit UI (attached + pickable)
 - `GET /api/vouchered?proof=awaiting|done|all` — vouchered board (removed: `/api/awaiting-proof`, `/api/paid`)
+- `POST /api/images/payment` — upload/replace payment proof for a `voucno` (also allowed on completed vouchers)
+- `DELETE /api/images/payment?voucno=&path=` — remove one proof image; **400** if it would leave zero images (`code: last_image`)
 
 Write rules: [kcw-docs PVMAS/RVMAS dictionary §9](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md). Voucher `VOUCNO`: `JOURMODE=1` (VAT / vendor `7*`) → `P{YYMM}-###`; `JOURMODE=2` → `KCPN{YYMM}-###` (Buddhist YY).
 
