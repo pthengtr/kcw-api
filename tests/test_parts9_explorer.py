@@ -289,12 +289,55 @@ def test_serialize_product_includes_acode():
         "MTP2": None,
         "QTYOH2": 5,
         "QTYMIN": 0,
-        "LOCATION1": "",
-        "LOCATION2": "",
+        "LOCATION1": "13P-4-13",
+        "LOCATION2": "B",
         "CANCELED": "N",
     }
     out = _serialize_product(row, site="hq")
     assert out["acode"] == "ลป"
+    assert out["location1"] == "13P-4-13"
+    assert out["location2"] == "B"
+    assert out["location"] == "13P-4-13 / B"
+    assert out["location_hq"] == "13P-4-13 / B"
+    assert out["location_syp"] == ""
+
+
+def test_enrich_with_peer_location_fills_other_site(monkeypatch):
+    from src.parts9_explorer import search as search_mod
+
+    products = [
+        {
+            "bcode": "01010023",
+            "location": "13P-4-13",
+            "qtyoh2": 6.0,
+        }
+    ]
+    monkeypatch.setattr(
+        search_mod,
+        "_fetch_peer_locations",
+        lambda bcodes, *, peer: {
+            "01010023": {
+                "location1": "T0-4-4",
+                "location2": "",
+                "location": "T0-4-4",
+                "qtyoh2": 3.0,
+            }
+        },
+    )
+    out = search_mod._enrich_with_peer_location(products, site="hq")
+    assert out[0]["location_hq"] == "13P-4-13"
+    assert out[0]["location_syp"] == "T0-4-4"
+    assert out[0]["qtyoh2_hq"] == 6.0
+    assert out[0]["qtyoh2_syp"] == 3.0
+
+
+def test_explorer_page_shows_location_bits():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True}, "syp": {}})
+    assert "function locBits(p)" in html
+    assert "locBits(p)" in html
+    assert "ที่เก็บ สนญ" in html
+    assert "location_hq" in html
+    assert "location_syp" in html
 
 
 def test_search_products_applies_category_filter(monkeypatch):
