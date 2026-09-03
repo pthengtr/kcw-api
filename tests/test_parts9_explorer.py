@@ -382,6 +382,64 @@ def test_search_products_applies_category_filter(monkeypatch):
     assert captured["params"]["category"] == "15"
 
 
+def test_search_products_sort_by_price_and_bcode(monkeypatch):
+    from src.parts9_explorer.search import search_products
+
+    captured: dict = {}
+
+    class FakeResult:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return []
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params):
+            captured["sql"] = str(sql)
+            captured["params"] = dict(params)
+            return FakeResult()
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConn()
+
+    monkeypatch.setattr(
+        "src.parts9_explorer.search.get_site_engine",
+        lambda site: FakeEngine(),
+    )
+    search_products("6207", site="hq", sort="price")
+    assert "PRICE1" in captured["sql"]
+    assert "ASC" in captured["sql"]
+    assert "exact" not in captured["params"]
+
+    search_products("6207", site="hq", sort="bcode_desc")
+    assert "ORDER BY BCODE DESC" in captured["sql"]
+
+    search_products("6207", site="hq", sort="relevance")
+    assert ":exact" in captured["sql"]
+    assert captured["params"]["exact"] == "6207"
+
+
+def test_product_order_sql_keys():
+    from src.parts9_explorer.search import PRODUCT_SORT_KEYS, _product_order_sql
+
+    assert "price" in PRODUCT_SORT_KEYS
+    assert "bcode" in PRODUCT_SORT_KEYS
+    sql, needs = _product_order_sql("price_desc")
+    assert "DESC" in sql
+    assert needs is False
+    sql, needs = _product_order_sql("bogus")
+    assert needs is True
+    assert ":exact" in sql
+
+
 def test_search_products_ignores_invalid_category(monkeypatch):
     from src.parts9_explorer.search import search_products
 
@@ -428,6 +486,18 @@ def test_explorer_page_has_category_select():
     assert '"15": "ลูกปืน"' in html
     assert "ชื่อย่อ" in html
     assert "นมฮPT" in html
+
+
+def test_explorer_page_has_sort_select():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
+    assert 'id="sort"' in html
+    assert 'id="sortField"' in html
+    assert 'id="productFilters"' in html
+    assert 'value="price"' in html
+    assert 'value="bcode"' in html
+    assert "เรียงตาม" in html
+    assert "SORT_LABELS" in html
+    assert "&sort=" in html
 
 
 def test_explorer_page_mentions_oem_and_code1():
