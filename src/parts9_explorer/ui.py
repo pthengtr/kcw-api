@@ -322,6 +322,18 @@ function sizeBits(p) {
   const line = p.size_display || "";
   return line ? "<div class='meta'>"+esc(line)+"</div>" : "";
 }
+function locBits(p) {
+  const hq = (p.location_hq || "").trim();
+  const syp = (p.location_syp || "").trim();
+  const cur = (p.location || "").trim();
+  if (hq || syp) {
+    const bits = [];
+    if (hq) bits.push("สนญ "+hq);
+    if (syp) bits.push("สาขา "+syp);
+    return "<div class='meta'>ที่เก็บ "+esc(bits.join(" · "))+"</div>";
+  }
+  return cur ? "<div class='meta'>ที่เก็บ "+esc(cur)+"</div>" : "";
+}
 function imgErr(el) { el.style.display="none"; }
 const SEARCH_PANEL_KEY = "kcw.parts9.searchPanel";
 function isMobileLayout() { return window.matchMedia("(max-width:879px)").matches; }
@@ -558,7 +570,7 @@ function render(data) {
     const src = (p.photos && p.photos[0]) || "";
     html += "<button class='card' id='c"+i+"' onclick='showP("+i+")'><img class='thumb' src='"+src+"' onerror='imgErr(this)'/><div><strong>"+esc(p.bcode)+"</strong>"
       +(p.do_not_restock?" <span class='badge'>ไม่สั่งซ้ำ</span>":"")
-      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")+"</div>"+codeBits(p)+sizeBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+p.qtyoh2+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
+      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")+"</div>"+codeBits(p)+sizeBits(p)+locBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+p.qtyoh2+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
   });
   $("list").innerHTML = html || "<div class='empty'>ไม่พบ</div>";
   if (KIND === "iclow" && SUMMARY && !DOCS.length) showSummary();
@@ -691,14 +703,29 @@ function showP(i) {
   const el = document.getElementById("c"+i); if (el) el.classList.add("active");
   const sizes = p.size_display || "";
   const photos = (p.photos||[]).map(u => "<img src='"+u+"' onerror='imgErr(this)'/>").join("");
+  const locHq = (p.location_hq || "").trim();
+  const locSyp = (p.location_syp || "").trim();
+  const locCur = (p.location || [p.location1, p.location2].filter(Boolean).join(" / ") || "").trim();
+  let locHtml = "";
+  if (locHq || locSyp) {
+    locHtml = "<div class='meta'>ที่เก็บ สนญ "+esc(locHq || "—")+" · สาขา "+esc(locSyp || "—")+"</div>";
+  } else if (locCur) {
+    locHtml = "<div class='meta'>ที่เก็บ "+esc(locCur)+"</div>";
+  }
+  const qtyHq = p.qtyoh2_hq != null ? p.qtyoh2_hq : (String(p.site||"").toUpperCase()==="HQ" ? p.qtyoh2 : null);
+  const qtySyp = p.qtyoh2_syp != null ? p.qtyoh2_syp : (String(p.site||"").toUpperCase()==="SYP" ? p.qtyoh2 : null);
+  const stockHtml = (qtyHq != null || qtySyp != null)
+    ? "<p class='meta'>คงเหลือ สนญ "+(qtyHq != null ? qtyHq : "—")+" · สาขา "+(qtySyp != null ? qtySyp : "—")+" "+esc(p.ui1)+(p.do_not_restock?" (ไม่สั่งซ้ำ)":"")+"</p>"
+    : "<p class='meta'>คงเหลือ QTYOH2 = "+p.qtyoh2+" "+esc(p.ui1)+(p.do_not_restock?" (ไม่สั่งซ้ำ)":"")+"</p>";
   $("detail").innerHTML = "<h2 style='margin:.2rem 0'>"+esc(p.bcode)+"</h2><div>"+esc(p.descr)+"</div>"
     +"<div class='meta'>เบอร์แท้ "+esc(p.pcode||"—")+" · เบอร์โรงงาน "+esc(p.mcode||"—")
     +(p.acode ? " · ชื่อย่อ "+esc(p.acode) : "")
     +" · "+esc(p.brand)+" "+esc(p.model)+"</div>"
     +"<div class='meta'>"+esc(p.category)+" · "+esc(p.code1 ? (p.code1+" "+(p.code1_label||"")) : (p.code1_label||""))+(sizes ? " · "+esc(sizes) : "")+"</div>"
-    +"<div class='meta'>ที่เก็บ "+esc(p.location1)+" "+esc(p.location2)+" · "+esc(p.ui1)+"/"+esc(p.ui2)+"</div>"
+    +locHtml
+    +"<div class='meta'>"+esc(p.ui1)+"/"+esc(p.ui2)+"</div>"
     +"<div class='prices'>"+fmtPrices(p.prices)+"</div><div class='photos'>"+photos+"</div>"
-    +"<p class='meta'>คงเหลือ QTYOH2 = "+p.qtyoh2+" "+esc(p.ui1)+(p.do_not_restock?" (ไม่สั่งซ้ำ)":"")+"</p>"
+    +stockHtml
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(d => {

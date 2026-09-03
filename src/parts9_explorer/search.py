@@ -95,14 +95,26 @@ def product_image_urls(bcode: str) -> list[str]:
     return [f"{root}/storage/v1/object/public/{bucket}/{folder}/{code}/{name}" for name in names]
 
 
+def _format_location(loc1: Any, loc2: Any) -> str:
+    parts = [str(v or "").strip() for v in (loc1, loc2)]
+    return " / ".join(p for p in parts if p)
+
+
+def _peer_site(site: str) -> str:
+    return "syp" if (site or "").strip().lower() == "hq" else "hq"
+
+
 def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
     bcode = str(row.get("BCODE") or "").strip()
     code1 = str(row.get("CODE1") or "").strip().upper() or None
     s1, s2, s3 = size_labels(code1)
     qtymin = _num(row.get("QTYMIN")) or 0.0
     qty = _num(row.get("QTYOH2"))
+    loc1 = str(row.get("LOCATION1") or "").strip()
+    loc2 = str(row.get("LOCATION2") or "").strip()
+    site_key = (site or "hq").strip().lower()
     return {
-        "site": site.upper(),
+        "site": site_key.upper(),
         "bcode": bcode,
         "descr": str(row.get("DESCR") or "").strip(),
         "pcode": str(row.get("PCODE") or "").strip(),
@@ -126,11 +138,75 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
         "qtyoh2": qty if qty is not None else 0.0,
         "qtymin": qtymin,
         "do_not_restock": qtymin < 0,
-        "location1": str(row.get("LOCATION1") or "").strip(),
-        "location2": str(row.get("LOCATION2") or "").strip(),
+        "location1": loc1,
+        "location2": loc2,
+        "location": _format_location(loc1, loc2),
+        "location_hq": _format_location(loc1, loc2) if site_key == "hq" else "",
+        "location_syp": _format_location(loc1, loc2) if site_key == "syp" else "",
         "prices": _price_map(row),
         "photos": product_image_urls(bcode),
     }
+
+
+def _fetch_peer_locations(bcodes: list[str], *, peer: str) -> dict[str, dict[str, Any]]:
+    codes = [c.strip() for c in bcodes if (c or "").strip()]
+    if not codes:
+        return {}
+    try:
+        engine = get_site_engine(peer)
+    except Exception:
+        return {}
+    placeholders = ", ".join(f":b{i}" for i in range(len(codes)))
+    params = {f"b{i}": code for i, code in enumerate(codes)}
+    sql = text(
+        f"SELECT LTRIM(RTRIM(BCODE)) AS BCODE,"
+        f" LTRIM(RTRIM(COALESCE(LOCATION1,''))) AS LOCATION1,"
+        f" LTRIM(RTRIM(COALESCE(LOCATION2,''))) AS LOCATION2,"
+        f" QTYOH2"
+        f" FROM dbo.ICMAS WHERE LTRIM(RTRIM(BCODE)) IN ({placeholders})"
+    )
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        code = str(row.get("BCODE") or "").strip()
+        if not code:
+            continue
+        loc = _format_location(row.get("LOCATION1"), row.get("LOCATION2"))
+        qty = _num(row.get("QTYOH2"))
+        out[code] = {
+            "location1": str(row.get("LOCATION1") or "").strip(),
+            "location2": str(row.get("LOCATION2") or "").strip(),
+            "location": loc,
+            "qtyoh2": qty if qty is not None else 0.0,
+        }
+    return out
+
+
+def _enrich_with_peer_location(products: list[dict[str, Any]], *, site: str) -> list[dict[str, Any]]:
+    if not products:
+        return products
+    site_key = (site or "hq").strip().lower()
+    peer = _peer_site(site_key)
+    peer_map = _fetch_peer_locations([p.get("bcode", "") for p in products], peer=peer)
+    for product in products:
+        code = str(product.get("bcode") or "").strip()
+        peer_info = peer_map.get(code) or {}
+        peer_loc = str(peer_info.get("location") or "")
+        if site_key == "hq":
+            product["location_hq"] = str(product.get("location") or "")
+            product["location_syp"] = peer_loc
+            product["qtyoh2_hq"] = product.get("qtyoh2")
+            product["qtyoh2_syp"] = peer_info.get("qtyoh2")
+        else:
+            product["location_syp"] = str(product.get("location") or "")
+            product["location_hq"] = peer_loc
+            product["qtyoh2_syp"] = product.get("qtyoh2")
+            product["qtyoh2_hq"] = peer_info.get("qtyoh2")
+    return products
 
 
 def _term_match_sql(key: str, *, include_size_slot: int | None = None) -> str:
@@ -245,7 +321,8 @@ def search_products(
             rows = conn.execute(sql, params).mappings().all()
     except Exception as exc:
         return [], _sql_fail(site_key, exc)
-    return [_serialize_product(dict(r), site=site_key) for r in rows], None
+    products = [_serialize_product(dict(r), site=site_key) for r in rows]
+    return _enrich_with_peer_location(products, site=site_key), None
 
 
 def get_product(bcode: str, *, site: str):
@@ -262,7 +339,10 @@ def get_product(bcode: str, *, site: str):
         return None, _sql_fail(site_key, exc)
     if not row:
         return None, None
-    return _serialize_product(dict(row), site=site_key), None
+    products = _enrich_with_peer_location(
+        [_serialize_product(dict(row), site=site_key)], site=site_key
+    )
+    return products[0], None
 
 
 def _row(mapping) -> dict[str, str]:
