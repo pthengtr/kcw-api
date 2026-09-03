@@ -349,8 +349,11 @@ def api_requests(
     out = []
     for req in items:
         lines = enrich_lines(list_lines(client, req["transfer_id"]))
+        ships = list_shipments(client, transfer_id=req["transfer_id"])
         row = dict(req)
         row["line_count"] = len(lines)
+        row["shipment_count"] = len(ships)
+        row["has_shipments"] = bool(ships)
         row.update(summarize_request_progress(lines))
         fb = row.get("from_branch") or "HQ"
         tb = row.get("to_branch") or "SYP"

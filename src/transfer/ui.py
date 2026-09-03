@@ -595,9 +595,13 @@ async function cancelRequest(transferId){
     alert(e.message || "ยกเลิกไม่สำเร็จ");
   }
 }
-function canCancelRequest(status, toBranch){
-  // Requester only; button shown for requested (API also blocks after any ship bill).
-  return status === "requested" && (toBranch||"").toUpperCase() === SITE;
+function canCancelRequest(status, toBranch, hasShipments){
+  // Requester only; match API — allowed until any ship bill exists.
+  if((toBranch||"").toUpperCase() !== SITE) return false;
+  if(hasShipments) return false;
+  const st = status || "";
+  if(["draft","complete","cancelled"].includes(st)) return false;
+  return true;
 }
 function apCounterpartyLabel(writingBranch, counterpartyBranch){
   const w = (writingBranch||"").toUpperCase();
@@ -669,7 +673,7 @@ async function openRequestDetail(transferId){
     }).join("");
     shipHtml = `<div class="tool-section" style="margin-top:.75rem"><p class="tool-title">ใบ TF / การจัดส่ง</p>${shipHtml}</div>`;
   }
-  const canCancel = canCancelRequest(status, toB);
+  const canCancel = canCancelRequest(status, toB, shipments.length > 0);
   const isDraft = status==="draft";
   const shipAp = apCounterpartyLabel(fromB, toB);
   const recvAp = apCounterpartyLabel(toB, fromB);
@@ -1505,7 +1509,7 @@ async function renderStatus(el){
     el.innerHTML += `<div class="card"><div class="empty">ไม่มีรายการ</div></div>`;
   } else if(active.length){
     const activeTableRows = active.map(r=>{
-      const canCancel = canCancelRequest(r.status, r.to_branch);
+      const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
       const mm = !!r.prep_recv_mismatch;
       return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
@@ -1520,7 +1524,7 @@ async function renderStatus(el){
       </tr>`;
     }).join("");
     const activeCardRows = active.map(r=>{
-      const canCancel = canCancelRequest(r.status, r.to_branch);
+      const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
       const mm = !!r.prep_recv_mismatch;
       return `<div class="item-card row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,mm)}</div>
