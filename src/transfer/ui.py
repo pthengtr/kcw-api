@@ -37,6 +37,8 @@ def page(
     other = "HQ" if site_u == "SYP" else "SYP"
     site_label = _BRANCH_LABELS.get(site_u, site_u)
     other_label = _BRANCH_LABELS.get(other, other)
+    # HQ = blue, SYP = teal — distinct at a glance on phone / shared screens
+    theme_color = "#e8eef8" if site_u == "HQ" else "#e6f5f2"
     return (
         _HTML.replace("__USER_JSON__", json.dumps(who, ensure_ascii=False))
         .replace("__USER__", html_lib.escape(who))
@@ -44,6 +46,7 @@ def page(
         .replace("__OTHER__", other)
         .replace("__SITE_LABEL__", site_label)
         .replace("__OTHER_LABEL__", other_label)
+        .replace("__THEME_COLOR__", theme_color)
         .replace('__SHIP_WRITE__ === "true"', "true" if ship_on else "false")
         .replace('__RECV_WRITE__ === "true"', "true" if recv_on else "false")
         .replace("__INITIALS__", html_lib.escape(initials(who)))
@@ -51,21 +54,37 @@ def page(
 
 
 _HTML = r"""<!doctype html>
-<html lang="th" data-theme="light">
+<html lang="th" data-theme="light" data-site="__SITE__">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="color-scheme" content="light"/>
-<meta name="theme-color" content="#f3f5f9" id="themeColor"/>
+<meta name="theme-color" content="__THEME_COLOR__" id="themeColor"/>
 <title>โอนสินค้า · __SITE_LABEL__</title>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
-:root{--acc:#2f6bff;--ok:#15803d;--warn:#c2410c;--down:#dc2626;--card:#fff;--line:#e5e9f2;--text:#111827;--muted:#6b7280;--shadow:0 1px 2px rgba(16,24,40,.06),0 4px 12px rgba(16,24,40,.04)}
-*{box-sizing:border-box}body{margin:0;font-family:Prompt,sans-serif;background:#f3f5f9;color:var(--text)}
+:root{
+  --ok:#15803d;--warn:#c2410c;--down:#dc2626;--card:#fff;--line:#e5e9f2;--text:#111827;--muted:#6b7280;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 12px rgba(16,24,40,.04);
+  /* defaults = HQ blue */
+  --acc:#2563eb;--acc-soft:#dbeafe;--acc-mid:#93c5fd;--acc-pick:#eff6ff;--acc-pick-card:#eff6ff;
+  --page-bg:#e8eef8;--hdr-bar:#2563eb;--site-badge-bg:#1e40af;
+}
+html[data-site="HQ"]{
+  --acc:#2563eb;--acc-soft:#dbeafe;--acc-mid:#93c5fd;--acc-pick:#eff6ff;--acc-pick-card:#eff6ff;
+  --page-bg:#e8eef8;--hdr-bar:#2563eb;--site-badge-bg:#1e40af;
+}
+html[data-site="SYP"]{
+  --acc:#0f766e;--acc-soft:#ccfbf1;--acc-mid:#5eead4;--acc-pick:#f0fdfa;--acc-pick-card:#f0fdfa;
+  --page-bg:#e6f5f2;--hdr-bar:#0f766e;--site-badge-bg:#115e59;
+}
+*{box-sizing:border-box}body{margin:0;font-family:Prompt,sans-serif;background:var(--page-bg);color:var(--text)}
 button{font:inherit;color:var(--text);-webkit-appearance:none;appearance:none}
-.hdr{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);padding:.75rem 1rem;box-shadow:var(--shadow);display:flex;align-items:center;gap:.65rem}
+.hdr{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);border-top:3px solid var(--hdr-bar);padding:.75rem 1rem;box-shadow:var(--shadow);display:flex;align-items:center;gap:.65rem}
 .hdr-main{flex:1;min-width:0}
 .hdr h1{margin:0;font-size:1.05rem;color:var(--text)}.hdr .sub{font-size:.78rem;color:var(--muted)}
+.site-badge{flex:0 0 auto;display:inline-flex;align-items:center;gap:.25rem;padding:.28rem .55rem;border-radius:999px;background:var(--site-badge-bg);color:#fff;font-size:.72rem;font-weight:700;letter-spacing:.02em;line-height:1.2;white-space:nowrap}
+.site-badge .code{opacity:.9;font-weight:600}
 .back-btn{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;padding:.4rem .7rem;font:inherit;cursor:pointer;white-space:nowrap}
 main{padding:1rem;max-width:1200px;margin:0 auto;width:100%}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem;box-shadow:var(--shadow);margin-bottom:.85rem}
@@ -100,7 +119,7 @@ th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
 tbody tr:hover td{background:#f8fafc}
 tbody tr:last-child td{border-bottom:0}
 .badge{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.72rem;font-weight:600}
-.b-requested{background:#e8f0ff;color:#1d4ed8}.b-await{background:#ffedd5;color:#c2410c}.b-done{background:#dcfce7;color:#15803d}.b-alert{background:#fee2e2;color:#b91c1c}
+.b-requested{background:var(--acc-soft);color:var(--acc)}.b-await{background:#ffedd5;color:#c2410c}.b-done{background:#dcfce7;color:#15803d}.b-alert{background:#fee2e2;color:#b91c1c}
 .flag-mismatch{color:#b91c1c;font-weight:700}
 .qty-mismatch{color:#b91c1c;font-weight:600}
 .alert-banner{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:.5rem .75rem;margin:.5rem 0;font-size:.85rem}
@@ -155,7 +174,7 @@ body.busy #busy{display:flex}
 .action-card:hover,.action-card:focus{border-color:var(--acc);box-shadow:var(--shadow);outline:none}
 .action-card .title{font-size:1rem;font-weight:700;margin:0 0 .25rem;color:var(--text)}
 .action-card .desc{font-size:.82rem;color:var(--muted);margin:0;line-height:1.45}
-.action-card .count{display:inline-block;margin-top:.55rem;font-size:.75rem;font-weight:600;color:var(--acc);background:#e8f0ff;padding:.2rem .55rem;border-radius:999px}
+.action-card .count{display:inline-block;margin-top:.55rem;font-size:.75rem;font-weight:600;color:var(--acc);background:var(--acc-soft);padding:.2rem .55rem;border-radius:999px}
 .no-stock{color:var(--muted);font-weight:600;font-size:.85rem}
 .stock-legend{font-size:.72rem;color:var(--muted);margin:.65rem 0 0;line-height:1.45}
 .flow-hint{font-size:.82rem;color:var(--muted);background:#f8fafc;border:1px dashed var(--line);border-radius:12px;padding:.75rem .85rem;margin-bottom:.85rem;line-height:1.5}
@@ -202,8 +221,8 @@ body.busy #busy{display:flex}
 .item-card-actions .btn{margin-left:auto}
 .item-card-actions .qty-input,.item-card-actions .unit-select{flex:0 0 auto}
 .pick-check{width:1.1rem;height:1.1rem;accent-color:var(--acc);cursor:pointer}
-tr.row-picked td{background:#eef4ff}
-.item-card.row-picked{border-color:#93b4ff;background:#f5f8ff}
+tr.row-picked td{background:var(--acc-pick)}
+.item-card.row-picked{border-color:var(--acc-mid);background:var(--acc-pick-card)}
 .commit-bar{
   position:sticky; bottom:0; z-index:15;
   display:flex; gap:.5rem; flex-wrap:wrap; align-items:center;
@@ -222,6 +241,7 @@ tr.row-picked td{background:#eef4ff}
   .hdr{padding:.65rem max(.65rem,env(safe-area-inset-left,0px)) .65rem max(.65rem,env(safe-area-inset-right,0px))}
   .hdr h1{font-size:.98rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hdr .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .site-badge{font-size:.65rem;padding:.22rem .45rem;max-width:42vw;overflow:hidden;text-overflow:ellipsis}
   .card{padding:.85rem .8rem;border-radius:12px;margin-bottom:.65rem;min-width:0}
   .card:not(:has(.view-table)):not(:has(.view-cards)){overflow:hidden}
   .card:has(.view-table){overflow:visible}
@@ -282,6 +302,7 @@ tr.row-picked td{background:#eef4ff}
     <h1 id="hdrTitle">โอนสินค้า · __SITE_LABEL__</h1>
     <div class="sub" id="hdrSub">__USER__</div>
   </div>
+  <span class="site-badge" title="สาขาที่เปิดอยู่ตอนนี้"><span class="code">__SITE__</span> · __SITE_LABEL__</span>
 </header>
 <main><div id="content" class="empty">กำลังโหลด…</div></main>
 <script>
