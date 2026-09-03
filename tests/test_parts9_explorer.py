@@ -416,6 +416,8 @@ def test_search_products_sort_by_price_and_bcode(monkeypatch):
     )
     search_products("6207", site="hq", sort="price")
     assert "PRICE1" in captured["sql"]
+    assert "ISNUMERIC" in captured["sql"]
+    assert "TRY_CONVERT" not in captured["sql"]
     assert "ASC" in captured["sql"]
     assert "exact" not in captured["params"]
 
@@ -434,6 +436,8 @@ def test_product_order_sql_keys():
     assert "bcode" in PRODUCT_SORT_KEYS
     sql, needs = _product_order_sql("price_desc")
     assert "DESC" in sql
+    assert "ISNUMERIC" in sql
+    assert "TRY_CONVERT" not in sql
     assert needs is False
     sql, needs = _product_order_sql("bogus")
     assert needs is True
