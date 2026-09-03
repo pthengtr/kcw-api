@@ -330,11 +330,11 @@ def cancel_unvouchered_pay_note(
     noteno: str,
     engine: Engine | None = None,
 ) -> dict[str, Any]:
-    """Compensate create_pay_note when the Supabase reminder write fails.
+    """Soft-cancel an unvouchered pay note in KSS (no hard DELETE).
 
-    KSS and Supabase cannot share one ACID transaction — on reminder failure we
-    clear PIMAS stamps and mark the PVMAS row canceled so bills are free again
-    and note_exists() returns false.
+    Used for (1) compensate when Supabase reminder write fails after create, and
+    (2) operator cancel of a mistaken unpaid note. Clears PIMAS stamps and sets
+    PVMAS.CANCELED='Y' so bills are free and note_exists() returns false.
     """
     if not settings.pay_notes_write_enabled:
         raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")

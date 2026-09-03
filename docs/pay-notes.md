@@ -11,7 +11,7 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 | Tab | What you do | Editable? | KSS / Supabase |
 |-----|-------------|-----------|----------------|
 | 1. สร้าง | Create note (vendor, bills, discount, images) | yes (new) | `PVMAS` INSERT + `PIMAS` stamp; `pay_note.reminder` |
-| 2. รอชำระ | Pending payment board; edit note; record payment | **yes** (bills, discount, due, bank, remark) | unvouchered `PVMAS` + reminder |
+| 2. รอชำระ | Pending payment board; edit note; **cancel mistaken note**; record payment | **yes** (bills, discount, due, bank, remark); cancel = soft | unvouchered `PVMAS` + reminder |
 | 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `PVMAS`; `payment/{VOUCNO}/` images |
 | 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view / **update** bill + proof images | proof images only (must keep ≥1) | vouchered `PVMAS` with proof |
 | 5. ค้นหาตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
@@ -39,6 +39,7 @@ Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key i
 - `GET /api/notes?acctno=&noteno=` — header, attached purchase bills with `PIDET` lines (qty / price / amount), voucher payments, reminder, images (`noteno` may contain `/`; use query params)
 - `GET /api/notes` — all service notes (optional `acctno` filter); includes `stage`, `workflow_status`, `is_editable`
 - `PATCH /api/notes?acctno=&noteno=` — edit pending note (bills, discount, reminder fields)
+- `DELETE /api/notes?acctno=&noteno=` — **cancel unpaid note only** (soft: `PVMAS.CANCELED='Y'`, clear `PIMAS` stamps, delete reminder, best-effort remove bill images). **409** if already vouchered (`code: already_vouchered`)
 - `GET /api/bills?acctno=&noteno=` — bills for edit UI (attached + pickable)
 - `GET /api/vouchered?proof=awaiting|done|all` — vouchered board (removed: `/api/awaiting-proof`, `/api/paid`)
 - `POST /api/images/payment` — upload/replace payment proof for a `voucno` (also allowed on completed vouchers)
@@ -95,6 +96,17 @@ PARTS9 and Supabase **cannot** share one ACID transaction. Create-note order:
 3. If step 2 fails → **compensate**: clear `PIMAS` stamps and set `PVMAS.CANCELED='Y'` so bills are free and the noteno can be reused  
 
 Do not leave a live KSS note without a reminder going forward.
+
+### Cancel unpaid note (operator mistake)
+
+Only for **รอชำระ** (unvouchered). Soft-cancel — never hard-delete `PVMAS`:
+
+1. Clear `PIMAS.NOTENO` / `NOTEDATE` (bills free again)  
+2. Set `PVMAS.CANCELED='Y'`  
+3. Delete `pay_note.reminder`  
+4. Best-effort remove bill images under that note  
+
+Vouchered notes cannot be canceled via this API.
 
 ### Vendor NOTENO reuse (`_1` suffix)
 

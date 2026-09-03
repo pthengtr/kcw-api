@@ -162,6 +162,111 @@ def test_cancel_pay_note_write_disabled():
     assert raised
 
 
+def test_api_cancel_unpaid_note():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    header = {
+        "acctno": "7GP",
+        "acctname": "Vendor",
+        "noteno": "N-001",
+        "voucno": "",
+        "VOUCED": "N",
+        "BILLAMT": 100,
+        "BILLCNT": 1,
+    }
+    images = [{"name": "a.jpg", "path": "public/pay_note/bill/7GP/N-001/a.jpg"}]
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_note_header", return_value=header),
+        patch("app.routers.pay_notes.get_reminder", return_value={"acctno": "7GP", "noteno": "N-001"}),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch(
+            "app.routers.pay_notes.cancel_unvouchered_pay_note",
+            return_value={"acctno": "7GP", "noteno": "N-001", "canceled": True},
+        ) as cancel_m,
+        patch("app.routers.pay_notes.delete_reminder", return_value=True) as del_rem,
+        patch("app.routers.pay_notes.list_folder", return_value=images),
+        patch("app.routers.pay_notes.remove_paths", return_value=[images[0]["path"]]) as rem_paths,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete("/pay-notes/api/notes", params={"acctno": "7GP", "noteno": "N-001"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["canceled"] is True
+    assert body["reminder_deleted"] is True
+    assert body["images_removed"] == 1
+    cancel_m.assert_called_once()
+    del_rem.assert_called_once()
+    rem_paths.assert_called_once()
+
+
+def test_api_cancel_rejects_vouchered_note():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    header = {
+        "acctno": "7GP",
+        "noteno": "N-001",
+        "voucno": "KCPN6908-001",
+        "VOUCED": "Y",
+    }
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_note_header", return_value=header),
+        patch("app.routers.pay_notes.get_reminder", return_value={"acctno": "7GP", "noteno": "N-001"}),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.cancel_unvouchered_pay_note") as cancel_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete("/pay-notes/api/notes", params={"acctno": "7GP", "noteno": "N-001"})
+    assert res.status_code == 409
+    assert res.json()["code"] == "already_vouchered"
+    cancel_m.assert_not_called()
+
+
+def test_api_cancel_orphan_reminder_only():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_note_header", return_value=None),
+        patch("app.routers.pay_notes.get_reminder", return_value={"acctno": "7GP", "noteno": "N-001"}),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.cancel_unvouchered_pay_note") as cancel_m,
+        patch("app.routers.pay_notes.delete_reminder", return_value=True),
+        patch("app.routers.pay_notes.list_folder", return_value=[]),
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete("/pay-notes/api/notes", params={"acctno": "7GP", "noteno": "N-001"})
+    assert res.status_code == 200
+    assert res.json()["canceled"] is True
+    assert res.json()["reminder_deleted"] is True
+    cancel_m.assert_not_called()
+
+
 def test_baht_text_matches_voucher_sample():
     assert baht_text(18454.25) == "หนึ่งหมื่นแปดพันสี่ร้อยห้าสิบสี่บาทยี่สิบห้าสตางค์"
     assert baht_text(1) == "หนึ่งบาทถ้วน"
