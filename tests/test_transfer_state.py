@@ -137,6 +137,16 @@ def test_cancel_request_denied_after_shipment():
     assert not r.allowed
 
 
+def test_cancel_request_allowed_when_requested():
+    r = can_action("cancel_request", {"has_shipments": False, "status": "requested"})
+    assert r.allowed
+
+
+def test_cancel_request_allowed_without_shipments_if_status_drifted():
+    r = can_action("cancel_request", {"has_shipments": False, "status": "partial_prepared"})
+    assert r.allowed
+
+
 def test_delete_draft_only():
     assert can_action("delete_draft", {"status": "draft"}).allowed
     assert not can_action("delete_draft", {"status": "requested"}).allowed

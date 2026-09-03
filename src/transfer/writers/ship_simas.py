@@ -11,6 +11,7 @@ from src.transfer.direction import ship_billno_prefix
 from src.transfer.writers._engine import (
     TransferWriteError,
     TRANSFER_BOOKNO,
+    interbranch_ap_account,
     next_simas_billno,
     transfer_write_permission_hint,
     writer_engine_for_branch,
@@ -25,6 +26,7 @@ class TransferShipError(TransferWriteError):
 def post_transfer_ship(
     *,
     from_branch: str,
+    to_branch: str = "SYP",
     transfer_id: str,
     short_id: str,
     lines: list[dict[str, Any]],
@@ -54,10 +56,19 @@ def post_transfer_ship(
     jourmode = "2"
     remarks = f"TRF-{short_id}"[:30]
     billtype = "1"
+    from_u = (from_branch or "HQ").strip().upper() or "HQ"
+    to_u = (to_branch or "").strip().upper()
+    if to_u not in ("HQ", "SYP") or to_u == from_u:
+        to_u = "HQ" if from_u == "SYP" else "SYP"
 
     try:
         with engine.begin() as conn:
             billno = next_simas_billno(from_branch=from_branch, when=now)
+            acctno, acctname = interbranch_ap_account(
+                writing_branch=from_u,
+                counterparty_branch=to_u,
+                conn=conn,
+            )
             conn.execute(
                 text(
                     """
@@ -66,12 +77,14 @@ def post_transfer_ship(
                       BILLTYPE, BILLDATE, BILLTIME, BILLNO, LINES, TAXIC,
                       DISCOUNT, DEDUCT, BEFORETAX, VAT, TAX, AFTERTAX, EXEMPT, SVCCHG,
                       PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
+                      ACCTNO, ACCTNAME,
                       SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
                     ) VALUES (
                       :jourmode, 'SJ', :billdate, :jourtime, '1', :bookno,
                       :billtype, :billdate, :billtime, :billno, :lines, 'N',
                       0, 0, 0, 0, 0, 0, 0, 0,
                       'Y', 'Y', 0, 0, 0,
+                      :acctno, :acctname,
                       :sale, :remarks, 'N', 'N', 'N', 'N'
                     )
                     """
@@ -85,6 +98,8 @@ def post_transfer_ship(
                     "billtype": billtype,
                     "billno": billno,
                     "lines": len(lines),
+                    "acctno": acctno,
+                    "acctname": acctname,
                     "sale": operator[:15],
                     "remarks": remarks,
                 },
@@ -172,9 +187,11 @@ def post_transfer_tf(
     operator: str,
     client_token: str,
     from_branch: str = "HQ",
+    to_branch: str = "SYP",
 ) -> dict[str, Any]:
     return post_transfer_ship(
         from_branch=from_branch,
+        to_branch=to_branch,
         transfer_id=transfer_id,
         short_id=short_id,
         lines=lines,

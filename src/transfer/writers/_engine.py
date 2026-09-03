@@ -26,6 +26,63 @@ class TransferWriteError(RuntimeError):
 # PARTS9 book for HQ↔SYP stock transfer bills (SIMAS ship + PIMAS receive).
 TRANSFER_BOOKNO = "9"
 
+# Inter-branch APMAS codes used on live TF/3TF bills (counterparty on this site's books).
+# HQ books → SYP is KCW1; SYP books → HQ is KCW.
+_INTERBRANCH_ACCTNO: dict[str, dict[str, str]] = {
+    "HQ": {"SYP": "KCW1"},
+    "SYP": {"HQ": "KCW"},
+}
+
+
+def interbranch_ap_account(
+    *, writing_branch: str, counterparty_branch: str, conn=None
+) -> tuple[str, str]:
+    """Return (ACCTNO, ACCTNAME) for the other branch on this site's APMAS."""
+    site = (writing_branch or "HQ").strip().upper() or "HQ"
+    other = (counterparty_branch or "").strip().upper()
+    if site not in ("HQ", "SYP") or other not in ("HQ", "SYP") or site == other:
+        raise TransferWriteError(
+            f"invalid inter-branch pair writing={site} counterparty={other}",
+            code="invalid_ap_branch",
+        )
+    acctno = _INTERBRANCH_ACCTNO[site][other]
+    acctname = ""
+    try:
+        if conn is not None:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT LTRIM(RTRIM(COALESCE(ACCTNAME, ''))) AS ACCTNAME
+                    FROM dbo.APMAS WITH (NOLOCK)
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :a
+                    """
+                ),
+                {"a": acctno},
+            ).mappings().first()
+        else:
+            with reader_engine_for_branch(site).connect() as reader_conn:
+                row = reader_conn.execute(
+                    text(
+                        """
+                        SELECT LTRIM(RTRIM(COALESCE(ACCTNAME, ''))) AS ACCTNAME
+                        FROM dbo.APMAS WITH (NOLOCK)
+                        WHERE LTRIM(RTRIM(ACCTNO)) = :a
+                        """
+                    ),
+                    {"a": acctno},
+                ).mappings().first()
+        if row:
+            acctname = str(row.get("ACCTNAME") or "").strip()
+    except Exception:
+        acctname = ""
+    if not acctname:
+        acctname = (
+            "สาขาสี่แยกพัฒนา"
+            if other == "SYP"
+            else "สำนักงานใหญ่"
+        )
+    return acctno, acctname[:60]
+
 
 def transfer_bill_yymm(when: datetime) -> str:
     """YYMM for TF/3TF bills — Buddhist era (2569 → 69), same as PARTS9 pay vouchers."""

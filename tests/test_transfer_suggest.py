@@ -3,7 +3,9 @@ from unittest.mock import MagicMock, patch
 from src.transfer.parts9 import suggest_transfer_skus
 
 
-def _meta(qtyoh2, *, blocked=False, ui1="ชิ้น", ui2="", mtp2=1.0, descr="", model=""):
+def _meta(qtyoh2, *, blocked=False, ui1="ชิ้น", ui2="", mtp2=1.0, descr="", model="", location=""):
+    loc = (location or "").strip()
+    loc1, loc2 = (loc.split(" / ", 1) + [""])[:2] if loc else ("", "")
     return {
         "qtyoh2": qtyoh2,
         "qtymin": -1.0 if blocked else 4.0,
@@ -13,6 +15,9 @@ def _meta(qtyoh2, *, blocked=False, ui1="ชิ้น", ui2="", mtp2=1.0, descr=
         "ui1": ui1,
         "ui2": ui2,
         "mtp2": mtp2,
+        "location1": loc1,
+        "location2": loc2,
+        "location": loc,
     }
 
 
@@ -44,12 +49,12 @@ def test_suggest_transfer_skus_from_iclow_to_be_ordered():
     def fake_icmas_meta(engine, bcodes, include_blocked=False):
         if engine is hq_engine:
             return {
-                "A001": _meta(10.0, descr="Widget A HQ"),
-                "B002": _meta(3.0, descr="Widget B HQ"),
+                "A001": _meta(10.0, descr="Widget A HQ", location="13P-4-13 / B"),
+                "B002": _meta(3.0, descr="Widget B HQ", location="A1"),
             }
         return {
-            "A001": _meta(1.0, descr="Widget A SYP"),
-            "B002": _meta(0.0, descr="Widget B SYP"),
+            "A001": _meta(1.0, descr="Widget A SYP", location="T0-4-4"),
+            "B002": _meta(0.0, descr="Widget B SYP", location="S2"),
         }
 
     hq_engine = MagicMock(name="hq")
@@ -73,6 +78,9 @@ def test_suggest_transfer_skus_from_iclow_to_be_ordered():
     assert a["qtyoh2"] == 1.0
     assert a["hq_qtyoh2"] == 10.0
     assert a["syp_qtyoh2"] == 1.0
+    assert a["location_hq"] == "13P-4-13 / B"
+    assert a["location_syp"] == "T0-4-4"
+    assert a["location"] == "T0-4-4"
     b = next(i for i in items if i["bcode"] == "B002")
     assert b["suggest_qty"] == 5.0
 
