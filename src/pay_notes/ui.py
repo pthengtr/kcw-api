@@ -298,6 +298,13 @@ label.lbl { display:block; font-size:.78rem; color:var(--muted); margin:0 0 .25r
 .drop.drag { border-color:var(--acc); background:var(--acc-soft); color:var(--acc); }
 .thumbs { display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.5rem; }
 .thumbs img { width:72px; height:72px; object-fit:cover; border-radius:.4rem; border:1px solid var(--line); }
+.thumb-item { position:relative; display:inline-flex; }
+.thumb-item .thumb-del {
+  position:absolute; top:-.3rem; right:-.3rem; width:1.35rem; height:1.35rem; padding:0;
+  border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--down, #b91c1c);
+  font-size:.7rem; line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+}
+.thumb-item .thumb-del:disabled { opacity:.35; cursor:not-allowed; color:var(--muted); }
 .file-chip {
   display:inline-flex; align-items:center; gap:.3rem; padding:.35rem .55rem;
   border:1px solid var(--line); border-radius:.45rem; font-size:.78rem; background:var(--card);
@@ -1210,11 +1217,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <h3 style="margin:1rem 0 .4rem;font-size:.95rem">หลักฐานชำระ</h3>
       <div class="thumbs" id="detProofThumbs"></div>
       <div id="detUploadWrap" class="hidden" style="margin-top:.55rem">
-        <label class="lbl">อัปโหลดหลักฐาน</label>
+        <label class="lbl" id="detUploadLabel">อัปโหลดหลักฐาน</label>
         <div class="drop" id="dropProof" tabindex="0">
           <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
-          <div>คลิกหรือลากไฟล์มาวางที่นี่</div>
-          <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB)</div>
+          <div id="detUploadHint">คลิกหรือลากไฟล์มาวางที่นี่</div>
+          <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB) · ต้องมีอย่างน้อย 1 รูป</div>
         </div>
         <input id="detProofFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
         <div id="detProofVerify" class="ai-panel hidden" style="margin-top:.55rem"></div>
@@ -1734,6 +1741,7 @@ function renderVouchers() {
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
     <td class="td-actions" data-label=""><div class="row-actions">
       <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>
+      ${WRITE_ENABLED ? `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}" data-upload="1">อัปเดตรูป</button>` : ''}
       <button type="button" class="btn sm outline" data-print="${esc(keyOf(r))}">พิมพ์</button>
     </div></td>
   </tr>`).join('');
@@ -1754,7 +1762,7 @@ $('voucherBody').addEventListener('click', (e) => {
   const printBtn = e.target.closest('[data-print]');
   if (printBtn) { openDetailByKey(printBtn.dataset.print, {voucher: true, print: true}); return; }
   const open = e.target.closest('[data-open]');
-  if (open) openDetailByKey(open.dataset.open, {voucher: true});
+  if (open) openDetailByKey(open.dataset.open, {voucher: true, canUpload: !!open.dataset.upload});
 });
 
 async function loadByAp() {
@@ -1844,14 +1852,23 @@ function findRow(key) {
   const all = [...pendingRows, ...awaitProofRows, ...voucherRows, ...byApRows];
   return all.find(r => keyOf(r) === key);
 }
-function thumbsHtml(images) {
+function thumbsHtml(images, opts) {
+  opts = opts || {};
   const list = (images || []).filter(x => x && (x.url || x.path));
   if (!list.length) return '<p class="muted">ไม่มีรูป</p>';
+  const canDelete = !!opts.canDelete && list.length > 0;
   return list.map(img => {
     const url = esc(img.url || '');
     const name = String(img.name || img.path || '');
-    if (/\.pdf$/i.test(name)) return `<a class="file-chip" href="${url}" target="_blank" rel="noopener">${esc(name)}</a>`;
-    return url ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""/></a>` : '';
+    const path = esc(img.path || '');
+    let body = '';
+    if (/\.pdf$/i.test(name)) body = `<a class="file-chip" href="${url}" target="_blank" rel="noopener">${esc(name)}</a>`;
+    else body = url ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""/></a>` : '';
+    if (!body) return '';
+    if (!canDelete) return body;
+    const lastOnly = list.length <= 1;
+    const title = lastOnly ? 'ต้องมีอย่างน้อย 1 รูป' : 'ลบรูปนี้';
+    return `<span class="thumb-item">${body}<button type="button" class="thumb-del" data-del-path="${path}" title="${esc(title)}" ${lastOnly ? 'disabled' : ''}>×</button></span>`;
   }).join('');
 }
 function billMonthLabel(bills) {
@@ -2166,12 +2183,22 @@ async function openDetailByKey(key, opts) {
   $('detDueCancel').classList.add('hidden');
   $('detPayBtn').classList.toggle('hidden', !(opts.canPay && canEditDue && WRITE_ENABLED));
   $('detProofWrap').classList.toggle('hidden', !row.voucno);
-  const canUpload = opts.canUpload || (row.voucno && !row.has_proof && row.stage === 'await_proof');
+  const isAwaitProof = row.stage === 'await_proof' || (!!row.voucno && !row.has_proof);
+  const isDoneVoucher = row.stage === 'voucher' || !!row.has_proof;
+  const canUpload = WRITE_ENABLED && !!row.voucno && (opts.canUpload || isAwaitProof);
   $('detUploadWrap').classList.toggle('hidden', !canUpload);
+  if ($('detUploadLabel')) {
+    $('detUploadLabel').textContent = isDoneVoucher ? 'อัปเดตหลักฐาน' : 'อัปโหลดหลักฐาน';
+  }
+  if ($('detUploadHint')) {
+    $('detUploadHint').textContent = isDoneVoucher
+      ? 'อัปโหลดรูปใหม่เพื่อเพิ่ม/แทนที่ · ลบได้แต่ต้องเหลืออย่างน้อย 1 รูป'
+      : 'คลิกหรือลากไฟล์มาวางที่นี่';
+  }
   $('detBills').innerHTML = '<p class="muted">กำลังโหลดบิลซื้อ…</p>';
   $('detBillSum').innerHTML = '';
   $('detBillThumbs').innerHTML = 'กำลังโหลด…';
-  $('detProofThumbs').innerHTML = thumbsHtml(row.payment_images || []);
+  $('detProofThumbs').innerHTML = thumbsHtml(row.payment_images || [], {canDelete: canUpload});
   if (!opts.keepVerify) {
     proofVerifyResult = null;
     proofPendingComplete = false;
@@ -2188,7 +2215,9 @@ async function openDetailByKey(key, opts) {
     renderDetBills(det);
     renderNotenoReuseHint($('detReuseWrap'), {...row, ...det});
     $('detBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
-    if (det.payment_images) $('detProofThumbs').innerHTML = thumbsHtml(det.payment_images);
+    if (det.payment_images) {
+      $('detProofThumbs').innerHTML = thumbsHtml(det.payment_images, {canDelete: canUpload});
+    }
     fillPrintSheet(det, row);
     if (opts.print) printDetail();
   } catch (e) {
@@ -2232,6 +2261,7 @@ function wireDropZone(dropEl, inputEl, onFiles) {
 }
 async function uploadProofFiles(files) {
   if (!detailRow || !detailRow.voucno) return;
+  const wasDone = !!detailRow.has_proof || detailRow.stage === 'voucher';
   let lastFile = null;
   for (const file of files) {
     if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); continue; }
@@ -2249,7 +2279,7 @@ async function uploadProofFiles(files) {
   if (fresh) detailRow = fresh;
 
   let verifyResult = null;
-  if (AI_ENABLED && lastFile) {
+  if (AI_ENABLED && lastFile && !wasDone) {
     try {
       const vfd = new FormData();
       vfd.append('voucno', detailRow.voucno);
@@ -2258,6 +2288,11 @@ async function uploadProofFiles(files) {
       verifyResult = await vr.json().catch(() => ({}));
       if (!vr.ok) verifyResult = null;
     } catch (_) { verifyResult = null; }
+  }
+
+  if (wasDone) {
+    openDetailByKey(keyOf(fresh || detailRow), {voucher: true, canUpload: true});
+    return;
   }
 
   if (fresh && fresh.has_proof) {
@@ -2276,6 +2311,27 @@ async function uploadProofFiles(files) {
     openDetailByKey(keyOf(fresh), {awaitProof: true, canUpload: true});
   }
 }
+async function deleteProofImage(path) {
+  if (!detailRow || !detailRow.voucno || !path) return;
+  if (!confirm('ลบรูปหลักฐานนี้?')) return;
+  const qs = new URLSearchParams({voucno: detailRow.voucno, path});
+  const r = await fetch('/pay-notes/api/images/payment?' + qs.toString(), {method:'DELETE'});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    alert(j.error === 'cannot remove last payment image'
+      ? 'ต้องมีอย่างน้อย 1 รูปหลักฐาน'
+      : (j.detail || j.error || 'ลบไม่สำเร็จ'));
+    return;
+  }
+  await loadAwaitProof();
+  await loadVouchers();
+  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow));
+  if (fresh) detailRow = fresh;
+  const done = !!(detailRow.has_proof) || detailRow.stage === 'voucher';
+  openDetailByKey(keyOf(detailRow), done
+    ? {voucher: true, canUpload: true}
+    : {awaitProof: true, canUpload: true});
+}
 function tryCloseDetail() {
   if (proofPendingComplete && !proofCanComplete()) {
     alert('กรุณายืนยันว่ายอดสลิปถูกต้อง (AI อ่านผิด) ก่อนปิด');
@@ -2290,6 +2346,13 @@ $('dlgDetail').addEventListener('click', (e) => {
   if (e.target === $('dlgDetail')) tryCloseDetail();
 });
 wireDropZone($('dropProof'), $('detProofFiles'), uploadProofFiles);
+$('detProofThumbs').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-del-path]');
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  deleteProofImage(btn.dataset.delPath);
+});
 
 
 const COMPANY_PAY_ACCOUNTS = __COMPANY_PAY_JSON__;

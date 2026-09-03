@@ -64,6 +64,17 @@ def upload_bytes(client, path: str, data: bytes, *, content_type: str = "image/j
     return clean
 
 
+def remove_paths(client, paths: list[str]) -> list[str]:
+    """Delete storage objects. Returns paths that were requested for removal."""
+    settings = get_pay_notes_settings()
+    bucket = settings.supabase_image_bucket or "pictures"
+    clean = [(p or "").lstrip("/") for p in paths if (p or "").strip()]
+    if not clean:
+        return []
+    client.storage.from_(bucket).remove(clean)
+    return clean
+
+
 def relocate_bill_images(client, acctno: str, from_noteno: str, to_noteno: str) -> list[str]:
     """Move bill images when KSS NOTENO gains an auto suffix (_1)."""
     src = from_noteno.strip()
