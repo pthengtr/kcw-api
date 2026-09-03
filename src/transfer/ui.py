@@ -559,6 +559,40 @@ function dualView(tableHtml, cardsHtml){
   return `<div class="view-table">${tableHtml}</div><div class="view-cards">${cardsHtml}</div>`;
 }
 function itemCards(html){ return `<div class="item-cards">${html}</div>`; }
+/** dualView keeps both panes in the DOM; only one is visible — read/sync that one. */
+function visibleDualPane(root){
+  const panes = [...root.querySelectorAll(".view-table, .view-cards")];
+  const shown = panes.find(p => getComputedStyle(p).display !== "none");
+  return shown || root;
+}
+function qtyKeyAttr(inp){
+  return inp.dataset.shipmentLine || inp.dataset.line || "";
+}
+function bindSyncedQtyInputs(root, selector){
+  root.querySelectorAll(selector).forEach(inp=>{
+    inp.oninput = ()=>{
+      const key = qtyKeyAttr(inp);
+      if(!key) return;
+      root.querySelectorAll(selector).forEach(other=>{
+        if(other !== inp && qtyKeyAttr(other) === key) other.value = inp.value;
+      });
+    };
+  });
+}
+/** Collect qty>0 from the visible dualView pane only (hidden twin inputs stay at defaults). */
+function collectPositiveQtyMap(root, selector, dataProp){
+  const qtyMap = {};
+  let any = false;
+  visibleDualPane(root).querySelectorAll(selector).forEach(inp=>{
+    const key = inp.dataset[dataProp];
+    if(!key) return;
+    const q = Number(inp.value);
+    if(!Number.isFinite(q) || q <= 0) return;
+    qtyMap[key] = q;
+    any = true;
+  });
+  return {qtyMap, any};
+}
 function bindDetailRows(container){
   container.querySelectorAll(".row-clickable[data-detail]").forEach(row=>{
     row.onclick = e=>{
@@ -1399,13 +1433,9 @@ async function renderReceive(el){
           <button class="btn btn-primary" id="btnRecvNext2">ถัดไป → ตรวจสอบ</button>
         </div>
       </div>`;
+    bindSyncedQtyInputs(el, ".recv-qty");
     el.querySelector("#btnRecvNext2").onclick = ()=>{
-      const qtyMap = {};
-      let any = false;
-      el.querySelectorAll(".recv-qty").forEach(inp=>{
-        const q = Number(inp.value||0);
-        if(q>0){ qtyMap[inp.dataset.shipmentLine]=q; any=true; }
-      });
+      const {qtyMap, any} = collectPositiveQtyMap(el, ".recv-qty", "shipmentLine");
       if(!any){alert("ระบุจำนวนที่รับ");return;}
       ship._qtyDraft = qtyMap;
       setReceiveStep(3);
@@ -1556,13 +1586,9 @@ async function renderPrepare(el){
           <button class="btn btn-primary" id="btnPrepNext2">ถัดไป → ตรวจสอบ</button>
         </div>
       </div>`;
+    bindSyncedQtyInputs(el, ".prep-qty");
     el.querySelector("#btnPrepNext2").onclick = ()=>{
-      const qtyMap = {};
-      let any = false;
-      el.querySelectorAll(".prep-qty").forEach(inp=>{
-        const q = Number(inp.value||0);
-        if(q>0){ qtyMap[inp.dataset.line]=q; any=true; }
-      });
+      const {qtyMap, any} = collectPositiveQtyMap(el, ".prep-qty", "line");
       if(!any){alert("ระบุจำนวนที่จัด");return;}
       req._qtyDraft = qtyMap;
       setPrepareStep(3);
