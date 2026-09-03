@@ -68,6 +68,13 @@ def test_transfer_page_renders():
         syp_receive_enabled=False,
     )
     assert "โอนสินค้า · สาขา" in html
+    assert 'data-site="SYP"' in html
+    assert 'html[data-site="SYP"]' in html
+    assert 'html[data-site="HQ"]' in html
+    assert "--hdr-bar:#0f766e" in html
+    assert 'content="#e6f5f2"' in html
+    assert "site-badge" in html
+    assert "SYP" in html and "สาขา" in html
     assert 'OTHER_LABEL = "สำนักงานใหญ่"' in html
     assert "ใบจัดสินค้า" in html
     assert "ใบรับสินค้า" in html
@@ -106,6 +113,9 @@ def test_transfer_page_renders():
 
 def test_transfer_hq_page_iclow_not_stamped_on_submit():
     html = page(user_name="ทดสอบ", site="HQ")
+    assert 'data-site="HQ"' in html
+    assert "--hdr-bar:#2563eb" in html
+    assert 'content="#e8eef8"' in html
     assert "ไม่แตะ ICLOW" in html
     assert "เก็บไว้สั่งซื้อจากเจ้าหนี้" in html
     assert "SITE === \"HQ\"" in html
