@@ -158,8 +158,12 @@ def can_action(action: str, ctx: dict[str, Any]) -> ActionResult:
     if action == "cancel_request":
         if ctx.get("has_shipments"):
             return ActionResult(False, "ยกเลิกไม่ได้หลังมีใบ TF แล้ว")
-        if ctx.get("status") != "requested":
-            return ActionResult(False, "ยกเลิกได้เฉพาะคำขอที่ส่งแล้วและยังไม่จัด")
+        status = ctx.get("status") or ""
+        if status == "requested":
+            return ActionResult(True)
+        if status in ("draft", "complete", "cancelled"):
+            return ActionResult(False, "สถานะนี้ยกเลิกไม่ได้")
+        # No shipments yet — allow cancel even if status drifted.
         return ActionResult(True)
 
     if action == "delete_draft":

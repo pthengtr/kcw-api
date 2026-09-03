@@ -133,6 +133,21 @@ body.busy #busy{display:flex}
 .modal-backdrop.on{display:flex}
 .modal{background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:1rem;box-shadow:var(--shadow)}
 .modal h2{margin:0 0 .75rem;font-size:1rem}
+#printSheet{display:none}
+@media print{
+  body > *:not(#printSheet){display:none !important}
+  #printSheet{
+    display:block !important; position:static !important; inset:auto !important;
+    width:auto !important; max-width:none !important; margin:0 !important; padding:16px !important;
+    background:#fff !important; color:#000 !important; font-family:Prompt,sans-serif;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  #printSheet table{width:100%; border-collapse:collapse; font-size:11pt}
+  #printSheet th,#printSheet td{border:1px solid #ccc; padding:6px 8px; text-align:left}
+  #printSheet th.num,#printSheet td.num{text-align:right}
+  #printSheet .sig{margin-top:2rem; display:grid; grid-template-columns:1fr 1fr; gap:2rem}
+  #printSheet .sig-box{border-top:1px solid #999; padding-top:.5rem; font-size:10pt}
+}
 .action-grid{display:grid;gap:.85rem}
 .action-group{display:grid;gap:.55rem}
 .action-group-label{margin:0;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
@@ -248,6 +263,7 @@ body.busy #busy{display:flex}
 <div id="busy">กำลังดำเนินการ…</div>
 <div id="toast" class="toast"></div>
 <div id="modalBackdrop" class="modal-backdrop"><div class="modal" id="modalBox"></div></div>
+<div id="printSheet" aria-hidden="true"></div>
 <header class="hdr">
   <button id="btnBack" class="back-btn" style="display:none">← กลับ</button>
   <div class="hdr-main">
@@ -351,8 +367,20 @@ function fmtModel(row){
   const m = (row && row.model || "").trim();
   return m ? `<div class="model">รุ่น ${m}</div>` : "";
 }
+function fmtLocation(row){
+  const hq = (row && row.location_hq || "").trim();
+  const syp = (row && row.location_syp || "").trim();
+  if(hq || syp){
+    const bits = [];
+    if(hq) bits.push("สนญ "+hq);
+    if(syp) bits.push("สาขา "+syp);
+    return `<div class="meta">ที่เก็บ ${bits.join(" · ")}</div>`;
+  }
+  const cur = (row && row.location || "").trim();
+  return cur ? `<div class="meta">ที่เก็บ ${cur}</div>` : "";
+}
 function fmtDescr(row){
-  return `${(row && row.descr) || ""}${fmtModel(row)}`;
+  return `${(row && row.descr) || ""}${fmtModel(row)}${fmtLocation(row)}`;
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);
@@ -558,10 +586,55 @@ async function deleteDraft(transferId){
   render();
 }
 async function cancelRequest(transferId){
-  if(!confirm("ยกเลิกคำขอนี้?")) return;
-  await api("/transfer/api/requests/"+transferId+"/cancel",{method:"POST",body:"{}"});
-  showToast("ยกเลิกคำขอแล้ว");
-  render();
+  if(!confirm("ยกเลิกคำขอนี้? รายการจะกลับมาขอใหม่ได้ และจะคืนสถานะ ICLOW (ถ้ามี)")) return;
+  try{
+    await api("/transfer/api/requests/"+transferId+"/cancel",{method:"POST",body:"{}"});
+    showToast("ยกเลิกคำขอแล้ว");
+    render();
+  }catch(e){
+    alert(e.message || "ยกเลิกไม่สำเร็จ");
+  }
+}
+function canCancelRequest(status, toBranch){
+  // Requester only; button shown for requested (API also blocks after any ship bill).
+  return status === "requested" && (toBranch||"").toUpperCase() === SITE;
+}
+function apCounterpartyLabel(writingBranch, counterpartyBranch){
+  const w = (writingBranch||"").toUpperCase();
+  const c = (counterpartyBranch||"").toUpperCase();
+  if(w === "HQ" && c === "SYP") return "ACCTNO KCW1 · สาขา (AP)";
+  if(w === "SYP" && c === "HQ") return "ACCTNO KCW · สำนักงานใหญ่ (AP)";
+  return "";
+}
+function printRequestBill(detail){
+  const lines = detail.items || detail.lines || [];
+  const fromB = detail.from_branch;
+  const toB = detail.to_branch;
+  const shortId = detail.short_id || detail.transfer_id || "";
+  const shipAp = apCounterpartyLabel(fromB, toB);
+  const recvAp = apCounterpartyLabel(toB, fromB);
+  const rows = lines.map((ln,i)=>`<tr>
+    <td class="num">${i+1}</td>
+    <td><code>${ln.bcode||""}</code></td>
+    <td>${(ln.descr||"").replace(/</g,"&lt;")}${ln.model?`<div class="meta">รุ่น ${String(ln.model).replace(/</g,"&lt;")}</div>`:""}${ln.location?`<div class="meta">ที่เก็บ ${String(ln.location).replace(/</g,"&lt;")}</div>`:(ln.location_hq||ln.location_syp)?`<div class="meta">ที่เก็บ สนญ ${String(ln.location_hq||"—").replace(/</g,"&lt;")} · สาขา ${String(ln.location_syp||"—").replace(/</g,"&lt;")}</div>`:""}</td>
+    <td class="num">${fmtQty(ln.qty_requested)}</td>
+    <td class="num">${fmtQty(ln.qty_prepared)}</td>
+    <td class="num">${fmtQty(ln.qty_received)}</td>
+  </tr>`).join("");
+  $("printSheet").innerHTML = `
+    <h1 style="margin:0 0 .35rem;font-size:18pt">ใบคำขอโอนสินค้า</h1>
+    <p style="margin:0 0 .75rem;font-size:12pt"><strong>TRF-${String(shortId).replace(/^TRF-/,"")}</strong>
+      · ${dirLabel(fromB,toB)}
+      · สถานะ ${badge(detail.status||"", fromB, toB, detail.prep_recv_mismatch)}</p>
+    <p class="meta" style="margin:0 0 .75rem">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)} · พิมพ์โดย ${USER}</p>
+    <p class="meta" style="margin:0 0 .75rem">AP จัดออก (${branchLabel(fromB)}): ${shipAp||"—"} · AP รับเข้า (${branchLabel(toB)}): ${recvAp||"—"}</p>
+    <table><thead><tr><th class="num">#</th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6">ไม่มีรายการ</td></tr>'}</tbody></table>
+    <div class="sig">
+      <div class="sig-box">ผู้ขอ · ${branchLabel(toB)}<br/>ลายเซ็น / วันที่</div>
+      <div class="sig-box">ผู้จัด · ${branchLabel(fromB)}<br/>ลายเซ็น / วันที่</div>
+    </div>`;
+  window.print();
 }
 async function openRequestDetail(transferId){
   const detail = await api("/transfer/api/requests/"+transferId+"/lines");
@@ -596,8 +669,10 @@ async function openRequestDetail(transferId){
     }).join("");
     shipHtml = `<div class="tool-section" style="margin-top:.75rem"><p class="tool-title">ใบ TF / การจัดส่ง</p>${shipHtml}</div>`;
   }
-  const canCancel = status==="requested";
+  const canCancel = canCancelRequest(status, toB);
   const isDraft = status==="draft";
+  const shipAp = apCounterpartyLabel(fromB, toB);
+  const recvAp = apCounterpartyLabel(toB, fromB);
   const lineCards = lines.map(ln=>`<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
     <div class="item-card-head"><code>${ln.bcode}</code>${lineStatusLabel(ln)}</div>
     <div class="item-card-desc">${fmtDescr(ln)}</div>
@@ -612,6 +687,7 @@ async function openRequestDetail(transferId){
     <p style="margin:.35rem 0">${badge(status, fromB, toB, detail.prep_recv_mismatch)} ${pipeline(status, detail.prep_recv_mismatch)}</p>
     ${mismatchBanner(detail)}
     <p class="meta">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)}</p>
+    <p class="meta">AP จัดออก: ${shipAp||"—"} · AP รับเข้า: ${recvAp||"—"}</p>
     ${dualView(
       `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th></tr></thead><tbody>
         ${lineRows || '<tr><td colspan="6" class="empty">ไม่มีรายการ</td></tr>'}
@@ -621,9 +697,12 @@ async function openRequestDetail(transferId){
     ${shipHtml}
     <div class="row-actions">
       <button class="btn btn-ghost" data-close>ปิด</button>
+      <button class="btn btn-ghost" id="btnDetailPrint">พิมพ์ใบคำขอ</button>
       ${canCancel ? `<button class="btn btn-ghost" id="btnDetailCancel">ยกเลิกคำขอ</button>` : ""}
       ${isDraft ? `<button class="btn btn-primary" id="btnDetailEdit">แก้ไขร่าง</button>` : ""}
     </div>`);
+  const printBtn = modal.box.querySelector("#btnDetailPrint");
+  if(printBtn) printBtn.onclick = ()=>printRequestBill(detail);
   const cancelBtn = modal.box.querySelector("#btnDetailCancel");
   if(cancelBtn) cancelBtn.onclick = async()=>{ modal.close(); await cancelRequest(transferId); };
   const editBtn = modal.box.querySelector("#btnDetailEdit");
@@ -946,7 +1025,7 @@ async function renderRequest(el){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong>${fmtModel(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
+        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong>${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
       }catch(e){
         manualPreviewEl.style.display = "block";
         manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
@@ -1426,7 +1505,7 @@ async function renderStatus(el){
     el.innerHTML += `<div class="card"><div class="empty">ไม่มีรายการ</div></div>`;
   } else if(active.length){
     const activeTableRows = active.map(r=>{
-      const canCancel = r.status==="requested";
+      const canCancel = canCancelRequest(r.status, r.to_branch);
       const mm = !!r.prep_recv_mismatch;
       return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
@@ -1435,12 +1514,13 @@ async function renderStatus(el){
         <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
         <td class="row-actions" style="margin:0">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
+          <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>
           ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
         </td>
       </tr>`;
     }).join("");
     const activeCardRows = active.map(r=>{
-      const canCancel = r.status==="requested";
+      const canCancel = canCancelRequest(r.status, r.to_branch);
       const mm = !!r.prep_recv_mismatch;
       return `<div class="item-card row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,mm)}</div>
@@ -1451,6 +1531,7 @@ async function renderStatus(el){
         ${pipeline(r.status,mm)}
         <div class="item-card-actions">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
+          <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>
           ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
         </div>
       </div>`;
@@ -1465,7 +1546,14 @@ async function renderStatus(el){
   bindDetailRows(el);
   el.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editDraft(b.dataset.edit));
   el.querySelectorAll("[data-del-draft]").forEach(b=>b.onclick=()=>deleteDraft(b.dataset.delDraft));
-  el.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=()=>cancelRequest(b.dataset.cancel));
+  el.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=e=>{e.stopPropagation(); cancelRequest(b.dataset.cancel);});
+  el.querySelectorAll("[data-print]").forEach(b=>b.onclick=async e=>{
+    e.stopPropagation();
+    try{
+      const detail = await api("/transfer/api/requests/"+b.dataset.print+"/lines");
+      printRequestBill(detail);
+    }catch(err){ alert(err.message||"พิมพ์ไม่สำเร็จ"); }
+  });
 }
 
 async function render(){

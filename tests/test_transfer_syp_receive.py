@@ -72,6 +72,8 @@ def test_post_transfer_receive_writes_pimas_not_simas(mock_engine, mock_receipt)
     pimas_params = next(c.args[1] for c in mock_conn.execute.call_args_list if "PIMAS" in str(c.args[0]))
     assert pimas_params["bookno"] == "9"
     assert pimas_params["lines"] == 1
+    assert pimas_params["acctno"] == "KCW"
+    assert pimas_params["acctname"]
 
 
 @patch("src.transfer.writers.receive_pimas.get_receipt_by_token")

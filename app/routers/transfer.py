@@ -548,9 +548,11 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
         if not line.get("descr"):
             line["descr"] = line_info.get("descr")
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
+    to_branch = (header.get("to_branch") or "SYP").upper()
     try:
         result = post_transfer_ship(
             from_branch=from_branch,
+            to_branch=to_branch,
             transfer_id=transfer_id,
             short_id=short_id,
             lines=body.lines,

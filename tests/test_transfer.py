@@ -111,6 +111,12 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
     assert "SITE === \"HQ\"" in html
     assert "ไม่ดึง ICLOW รอสั่งซื้อ" in html
     assert "fmtDescr" in html
+    assert "fmtLocation" in html
+    assert "ที่เก็บ" in html
+    assert "printRequestBill" in html
+    assert "พิมพ์ใบคำขอ" in html
+    assert "canCancelRequest" in html
+    assert "ACCTNO KCW1" in html
     assert "รุ่น ${m}" in html or "รุ่น " in html
 
 

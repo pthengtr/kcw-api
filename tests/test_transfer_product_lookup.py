@@ -20,6 +20,9 @@ def test_lookup_transfer_product_merges_hq_and_syp():
                     "ui1": "หน่วย",
                     "ui2": "",
                     "mtp2": 1.0,
+                    "location1": "13P-4-13",
+                    "location2": "B",
+                    "location": "13P-4-13 / B",
                 }
             }
         return {
@@ -32,6 +35,9 @@ def test_lookup_transfer_product_merges_hq_and_syp():
                 "ui1": "หน่วย",
                 "ui2": "",
                 "mtp2": 1.0,
+                "location1": "T0-4-4",
+                "location2": "",
+                "location": "T0-4-4",
             }
         }
 
@@ -53,6 +59,60 @@ def test_lookup_transfer_product_merges_hq_and_syp():
     assert product["syp_qtyoh2"] == 1.0
     assert product["hq_no_stock"] is False
     assert product["hq_qtymin"] == 2.0
+    assert product["location_hq"] == "13P-4-13 / B"
+    assert product["location_syp"] == "T0-4-4"
+
+
+def test_enrich_transfer_lines_includes_shipper_location():
+    lines = [{"bcode": "SKU1", "qty": 2, "descr": ""}]
+
+    def fake_meta(engine, bcodes, include_blocked=False):
+        if engine is hq_engine:
+            return {
+                "SKU1": {
+                    "qtyoh2": 8.0,
+                    "qtymin": 1.0,
+                    "blocked": False,
+                    "descr": "Bolt",
+                    "ui1": "ชิ้น",
+                    "ui2": "",
+                    "mtp2": 1.0,
+                    "location1": "HQ-A",
+                    "location2": "1",
+                    "location": "HQ-A / 1",
+                }
+            }
+        return {
+            "SKU1": {
+                "qtyoh2": 3.0,
+                "qtymin": 1.0,
+                "blocked": False,
+                "descr": "Bolt",
+                "ui1": "ชิ้น",
+                "ui2": "",
+                "mtp2": 1.0,
+                "location1": "SYP-B",
+                "location2": "",
+                "location": "SYP-B",
+            }
+        }
+
+    hq_engine = object()
+    syp_engine = object()
+
+    def fake_engine(site):
+        return hq_engine if site == "hq" else syp_engine
+
+    with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_meta):
+                out = enrich_transfer_lines(lines, from_branch="HQ", to_branch="SYP")
+
+    assert out[0]["location_hq"] == "HQ-A / 1"
+    assert out[0]["location_syp"] == "SYP-B"
+    assert out[0]["location"] == "HQ-A / 1"
+    assert out[0]["location1"] == "HQ-A"
+    assert out[0]["location2"] == "1"
 
 
 def test_lookup_transfer_product_hq_l1_no_stock():

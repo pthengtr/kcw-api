@@ -28,6 +28,11 @@ def _parse_qty(val) -> float:
         return 0.0
 
 
+def _format_location(loc1: Any, loc2: Any) -> str:
+    parts = [str(v or "").strip() for v in (loc1, loc2)]
+    return " / ".join(p for p in parts if p)
+
+
 def _peer_request_headers() -> dict[str, str]:
     """Cookie token so peer works even when hostname resolves to LAN/loopback (not Tailscale CGNAT)."""
     settings = get_transfer_settings()
@@ -66,7 +71,9 @@ def _fetch_icmas_meta(
           QTYMIN,
           LTRIM(RTRIM(COALESCE(UI1, ''))) AS ui1,
           LTRIM(RTRIM(COALESCE(UI2, ''))) AS ui2,
-          MTP2
+          MTP2,
+          LTRIM(RTRIM(COALESCE(LOCATION1, ''))) AS location1,
+          LTRIM(RTRIM(COALESCE(LOCATION2, ''))) AS location2
         FROM dbo.ICMAS WITH (NOLOCK)
         WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) IN ({placeholders})
         """
@@ -82,6 +89,8 @@ def _fetch_icmas_meta(
             blocked = qtymin < 0
             if blocked and not include_blocked:
                 continue
+            loc1 = (row["location1"] or "").strip()
+            loc2 = (row["location2"] or "").strip()
             out[bcode] = {
                 "qtyoh2": _parse_qty(row["QTYOH2"]),
                 "qtymin": qtymin,
@@ -91,6 +100,9 @@ def _fetch_icmas_meta(
                 "ui1": (row["ui1"] or "").strip(),
                 "ui2": (row["ui2"] or "").strip(),
                 "mtp2": mtp2 if mtp2 > 0 else 1.0,
+                "location1": loc1,
+                "location2": loc2,
+                "location": _format_location(loc1, loc2),
             }
     return out
 
@@ -145,6 +157,9 @@ def _fetch_icmas_via_peer(
         code = (bcode or "").strip()
         if not code or not isinstance(meta, dict):
             continue
+        loc1 = (meta.get("location1") or "").strip()
+        loc2 = (meta.get("location2") or "").strip()
+        loc = (meta.get("location") or "").strip() or _format_location(loc1, loc2)
         out[code] = {
             "qtyoh2": _parse_qty(meta.get("qtyoh2")),
             "qtymin": _parse_qty(meta.get("qtymin")),
@@ -154,6 +169,9 @@ def _fetch_icmas_via_peer(
             "ui1": (meta.get("ui1") or "").strip(),
             "ui2": (meta.get("ui2") or "").strip(),
             "mtp2": float(meta.get("mtp2") or 1.0) or 1.0,
+            "location1": loc1,
+            "location2": loc2,
+            "location": loc,
         }
     return out
 
@@ -229,11 +247,16 @@ def _enrich_suggest_item(
         item["hq_qtyoh2"] = hq_meta["qtyoh2"]
         item["hq_qtymin"] = hq_meta["qtymin"]
         item["hq_no_stock"] = bool(hq_meta.get("blocked"))
+        item["location_hq"] = (hq_meta.get("location") or "").strip()
     else:
         item["hq_qtymin"] = None
         item["hq_no_stock"] = False
+        item["location_hq"] = ""
     if syp_meta:
         item["syp_qtyoh2"] = syp_meta["qtyoh2"]
+        item["location_syp"] = (syp_meta.get("location") or "").strip()
+    else:
+        item["location_syp"] = ""
     for meta in (local_meta, hq_meta, syp_meta):
         if not meta:
             continue
@@ -250,8 +273,12 @@ def _enrich_suggest_item(
     if local_meta:
         item["qtyoh2"] = local_meta["qtyoh2"]
         item["qtymin"] = local_meta["qtymin"]
+        item["location"] = (local_meta.get("location") or "").strip()
+        item["location1"] = (local_meta.get("location1") or "").strip()
+        item["location2"] = (local_meta.get("location2") or "").strip()
     else:
         item["qtyoh2"] = item.get(f"{site_key}_qtyoh2", 0.0)
+        item["location"] = item.get(f"location_{site_key}", "") or ""
     return item
 
 
@@ -422,6 +449,8 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
         if float(meta.get("mtp2") or 1.0) > 1.0:
             mtp2 = float(meta["mtp2"])
     blocked = bool((hq_meta or {}).get("blocked") or (syp_meta or {}).get("blocked"))
+    location_hq = ((hq_meta or {}).get("location") or "").strip()
+    location_syp = ((syp_meta or {}).get("location") or "").strip()
     return {
         "bcode": code,
         "descr": descr,
@@ -434,6 +463,11 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
         "ui2": ui2,
         "mtp2": mtp2,
         "do_not_restock": blocked,
+        "location_hq": location_hq,
+        "location_syp": location_syp,
+        "location": location_hq or location_syp,
+        "location1": ((hq_meta or syp_meta or {}).get("location1") or "").strip(),
+        "location2": ((hq_meta or syp_meta or {}).get("location2") or "").strip(),
     }
 
 
@@ -463,10 +497,23 @@ def enrich_transfer_lines(
         row["syp_qtyoh2"] = float(syp_meta.get("qtyoh2") or 0)
         row["hq_qtymin"] = float(hq_meta["qtymin"]) if hq_meta and "qtymin" in hq_meta else None
         row["hq_no_stock"] = bool(hq_meta.get("blocked"))
+        row["location_hq"] = (hq_meta.get("location") or "").strip()
+        row["location_syp"] = (syp_meta.get("location") or "").strip()
         if from_u == "HQ":
             row["from_qtyoh2"] = row["hq_qtyoh2"]
+            row["location"] = row["location_hq"]
+            row["location1"] = (hq_meta.get("location1") or "").strip()
+            row["location2"] = (hq_meta.get("location2") or "").strip()
         elif from_u == "SYP":
             row["from_qtyoh2"] = row["syp_qtyoh2"]
+            row["location"] = row["location_syp"]
+            row["location1"] = (syp_meta.get("location1") or "").strip()
+            row["location2"] = (syp_meta.get("location2") or "").strip()
+        else:
+            row["location"] = row["location_hq"] or row["location_syp"]
+            prefer = hq_meta or syp_meta
+            row["location1"] = (prefer.get("location1") or "").strip()
+            row["location2"] = (prefer.get("location2") or "").strip()
         if to_u == "HQ":
             row["to_qtyoh2"] = row["hq_qtyoh2"]
         elif to_u == "SYP":

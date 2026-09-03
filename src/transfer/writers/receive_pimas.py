@@ -10,6 +10,7 @@ from src.transfer.db import get_receipt_by_token, get_transfer_supabase_client
 from src.transfer.writers._engine import (
     TransferWriteError,
     TRANSFER_BOOKNO,
+    interbranch_ap_account,
     next_pimas_billno,
     transfer_write_permission_hint,
     writer_engine_for_branch,
@@ -76,6 +77,11 @@ def post_transfer_receive(
             billno = next_pimas_billno(
                 from_branch=from_branch, to_branch=to_branch, when=now
             )
+            acctno, acctname = interbranch_ap_account(
+                writing_branch=to_branch,
+                counterparty_branch=from_branch,
+                conn=conn,
+            )
 
             pidet_insert = text(
                 """
@@ -129,12 +135,14 @@ def post_transfer_receive(
                       BILLTYPE, BILLDATE, BILLTIME, BILLNO, LINES, TAXIC,
                       DISCOUNT, DEDUCT, BEFORETAX, VAT, TAX, AFTERTAX, EXEMPT, SVCCHG,
                       PAID, CASHED, CASHAMT, CHKAMT, DUEAMT,
+                      ACCTNO, ACCTNAME,
                       SALE, REMARKS, POSTED1, POSTED2, CANCELED, DONE
                     ) VALUES (
                       :jourmode, 'PJ', :billdate, :jourtime, '1', :bookno,
                       :billtype, :billdate, :billtime, :billno, :lines, 'N',
                       0, 0, 0, 0, 0, 0, 0, 0,
                       'N', 'N', 0, 0, 0,
+                      :acctno, :acctname,
                       :sale, :remarks, 'N', 'N', 'N', 'N'
                     )
                     """
@@ -148,6 +156,8 @@ def post_transfer_receive(
                     "billtype": billtype,
                     "billno": billno,
                     "lines": len(detail_rows),
+                    "acctno": acctno,
+                    "acctname": acctname,
                     "sale": operator[:15],
                     "remarks": remarks,
                 },

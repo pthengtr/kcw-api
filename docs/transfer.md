@@ -57,6 +57,20 @@ Legacy aliases (one release): `TRANSFER_HQ_WRITE_ENABLED` → HQ ship; `TRANSFER
 
 Live `ICMAS.QTYOH2` from each branch. On **HQ**, both SQL hosts are reachable (`POS_MSSQL_*` → KSS, `PARTS9_SYP_*` → kss-pc). On **SYP**, `POS_MSSQL_*` is also kss-pc — so `get_site_engine("hq")` would wrongly return shop stock. Transfer detects that host collision and loads HQ stock via peer `GET /transfer/api/local-icmas` on the other box (Tailscale CGNAT auth).
 
+## Inter-branch AP (ACCTNO)
+
+Ship (SIMAS) and receive (PIMAS) bills set `ACCTNO`/`ACCTNAME` from APMAS like manual TF:
+
+| Writing site | Counterparty | ACCTNO |
+|--------------|--------------|--------|
+| HQ | SYP | `KCW1` |
+| SYP | HQ | `KCW` |
+
+## Cancel + print
+
+- Cancel: requester (`to_branch`) while status is `requested` and no ship bill yet (`POST /transfer/api/requests/{id}/cancel`).
+- Print: **พิมพ์ใบคำขอ** on request detail / status list — browser print of TRF lines + AP labels.
+
 ## Writer Database Credentials
 
 Grant INSERT on **SIMAS/SIDET** and **PIMAS/PIDET**, UPDATE on **ICMAS** — see `scripts/sql/grant_transfer_writer.sql`.
@@ -80,8 +94,8 @@ curl -s http://127.0.0.1:8792/health
 - `POST /transfer/api/prepare` — only at `from_branch`
 - `POST /transfer/api/receive` — only at `to_branch`
 - `GET /transfer/api/requests?role=prepare|receive|mine`
-- `GET /transfer/api/suggest` — pick list + live HQ/SYP `QTYOH2`
-- `GET /transfer/api/product?bcode=` — one SKU dual stock
+- `GET /transfer/api/suggest` — pick list + live HQ/SYP `QTYOH2` + `LOCATION*` (ที่เก็บ)
+- `GET /transfer/api/product?bcode=` — one SKU dual stock + dual location
 - `GET /transfer/api/local-icmas?bcodes=a,b` — this site’s ICMAS only (peer)
 
 ## Schema
