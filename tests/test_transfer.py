@@ -80,7 +80,8 @@ def test_transfer_page_renders():
     assert "hq_no_stock" in html or "fmtHqStock" in html
     assert 'ไม่สต็อก</span><br>${qtyHtml}' in html or "ไม่สต็อก</span><br>" in html
     assert "ตรวจสอบสถานะ" in html
-    assert "ขั้นตอนโอนสินค้า" in html
+    assert "ติดตาม" in html
+    assert "ขั้นตอนโอนสินค้า" not in html
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
     assert "info-toggle" in html
     assert "ยังไม่ออกใบ TF" in html
@@ -107,3 +108,13 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
     html = page(user_name="ทดสอบ", site="HQ")
     assert "ไม่แตะ ICLOW" in html
     assert "เก็บไว้สั่งซื้อจากเจ้าหนี้" in html
+    assert "SITE === \"HQ\"" in html
+    assert "ไม่ดึง ICLOW รอสั่งซื้อ" in html
+    assert "fmtDescr" in html
+    assert "รุ่น ${m}" in html or "รุ่น " in html
+
+
+def test_transfer_syp_page_keeps_iclow_suggest_copy():
+    html = page(user_name="ทดสอบ", site="SYP")
+    assert "รอสั่ง (ICLOW)" in html
+    assert "ตรงกับแท็บรอสั่งซื้อ" in html

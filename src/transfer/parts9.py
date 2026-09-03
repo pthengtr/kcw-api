@@ -61,6 +61,7 @@ def _fetch_icmas_meta(
         SELECT
           LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS bcode,
           LTRIM(RTRIM(COALESCE(DESCR, ''))) AS descr,
+          LTRIM(RTRIM(COALESCE(MODEL, ''))) AS model,
           QTYOH2,
           QTYMIN,
           LTRIM(RTRIM(COALESCE(UI1, ''))) AS ui1,
@@ -86,6 +87,7 @@ def _fetch_icmas_meta(
                 "qtymin": qtymin,
                 "blocked": blocked,
                 "descr": (row["descr"] or "").strip(),
+                "model": (row["model"] or "").strip(),
                 "ui1": (row["ui1"] or "").strip(),
                 "ui2": (row["ui2"] or "").strip(),
                 "mtp2": mtp2 if mtp2 > 0 else 1.0,
@@ -148,6 +150,7 @@ def _fetch_icmas_via_peer(
             "qtymin": _parse_qty(meta.get("qtymin")),
             "blocked": bool(meta.get("blocked")),
             "descr": (meta.get("descr") or "").strip(),
+            "model": (meta.get("model") or "").strip(),
             "ui1": (meta.get("ui1") or "").strip(),
             "ui2": (meta.get("ui2") or "").strip(),
             "mtp2": float(meta.get("mtp2") or 1.0) or 1.0,
@@ -236,6 +239,8 @@ def _enrich_suggest_item(
             continue
         if not item.get("descr") and meta.get("descr"):
             item["descr"] = meta["descr"]
+        if not item.get("model") and meta.get("model"):
+            item["model"] = meta["model"]
         if not item.get("ui1") and meta.get("ui1"):
             item["ui1"] = meta["ui1"]
         if not item.get("ui2") and meta.get("ui2"):
@@ -257,6 +262,7 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
         SELECT TOP (:lim)
           LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS bcode,
           LTRIM(RTRIM(COALESCE(DESCR, ''))) AS descr,
+          LTRIM(RTRIM(COALESCE(MODEL, ''))) AS model,
           QTYOH2,
           QTYMIN,
           QTYGET,
@@ -289,6 +295,7 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
         out[bcode] = {
             "bcode": bcode,
             "descr": (row["descr"] or "").strip(),
+            "model": (row["model"] or "").strip(),
             "suggest_qty": suggest,
             "qtyoh2": qtyoh2,
             "qtymin": qtymin,
@@ -301,10 +308,15 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
 
 
 def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]]:
-    """ICLOW รอสั่งซื้อ (same order/qty as /po tab) + optional ICMAS low-stock extras."""
+    """Suggest pick list for transfer request.
+
+    SYP: ICLOW รอสั่งซื้อ (same as /po) + ICMAS low-stock extras.
+    HQ: ICMAS low-stock only — HQ ICLOW is for supplier PO, not branch transfer.
+    """
     site_key = (site or "hq").strip().lower()
     lim = max(1, min(int(limit or 200), 200))
-    iclow_rows = _fetch_all_iclow_to_be_ordered(site_key)
+    include_iclow = site_key != "hq"
+    iclow_rows = _fetch_all_iclow_to_be_ordered(site_key) if include_iclow else []
 
     iclow_order: list[str] = []
     by_bcode: dict[str, dict[str, Any]] = {}
@@ -321,6 +333,7 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
         by_bcode[bcode] = {
             "bcode": bcode,
             "descr": (row.get("descr") or "").strip(),
+            "model": "",
             "suggest_qty": qty,
             "qtyoh2": 0.0,
             "hq_qtyoh2": 0.0,
@@ -363,6 +376,7 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
         item = {
             "bcode": bcode,
             "descr": row.get("descr") or "",
+            "model": row.get("model") or "",
             "suggest_qty": row.get("suggest_qty") or 1.0,
             "qtyoh2": row.get("qtyoh2") or 0.0,
             "hq_qtyoh2": 0.0,
@@ -390,6 +404,7 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
     if not hq_meta and not syp_meta:
         return None
     descr = ""
+    model = ""
     ui1 = ""
     ui2 = ""
     mtp2 = 1.0
@@ -398,6 +413,8 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
             continue
         if not descr and meta.get("descr"):
             descr = meta["descr"]
+        if not model and meta.get("model"):
+            model = meta["model"]
         if not ui1 and meta.get("ui1"):
             ui1 = meta["ui1"]
         if not ui2 and meta.get("ui2"):
@@ -408,6 +425,7 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
     return {
         "bcode": code,
         "descr": descr,
+        "model": model,
         "hq_qtyoh2": float((hq_meta or {}).get("qtyoh2") or 0),
         "syp_qtyoh2": float((syp_meta or {}).get("qtyoh2") or 0),
         "hq_qtymin": float((hq_meta or {}).get("qtymin") or 0) if hq_meta else None,
@@ -458,6 +476,8 @@ def enrich_transfer_lines(
                 continue
             if not row.get("descr") and meta.get("descr"):
                 row["descr"] = meta["descr"]
+            if not row.get("model") and meta.get("model"):
+                row["model"] = meta["model"]
             if not row.get("ui1") and meta.get("ui1"):
                 row["ui1"] = meta["ui1"]
             if not row.get("ui2") and meta.get("ui2"):
