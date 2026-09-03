@@ -3,12 +3,13 @@ from unittest.mock import MagicMock, patch
 from src.transfer.parts9 import suggest_transfer_skus
 
 
-def _meta(qtyoh2, *, blocked=False, ui1="ชิ้น", ui2="", mtp2=1.0, descr=""):
+def _meta(qtyoh2, *, blocked=False, ui1="ชิ้น", ui2="", mtp2=1.0, descr="", model=""):
     return {
         "qtyoh2": qtyoh2,
         "qtymin": -1.0 if blocked else 4.0,
         "blocked": blocked,
         "descr": descr,
+        "model": model,
         "ui1": ui1,
         "ui2": ui2,
         "mtp2": mtp2,
@@ -88,7 +89,7 @@ def test_suggest_transfer_skus_skips_do_not_restock():
     def fake_icmas_meta(engine, bcodes, include_blocked=False):
         return {
             "NR01": _meta(0.0, blocked=True),
-            "OK01": _meta(1.0, ui1="ea", ui2="กล่อง", mtp2=12.0),
+            "OK01": _meta(1.0, ui1="ea", ui2="กล่อง", mtp2=12.0, model="ABC-1"),
         }
 
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=iclow_rows["rows"]):
@@ -96,12 +97,50 @@ def test_suggest_transfer_skus_skips_do_not_restock():
             with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
                 with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
                     with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value={}):
-                        items = suggest_transfer_skus(site="hq")
+                        items = suggest_transfer_skus(site="syp")
 
     assert [i["bcode"] for i in items] == ["OK01"]
     assert items[0]["ui1"] == "ea"
     assert items[0]["ui2"] == "กล่อง"
     assert items[0]["mtp2"] == 12.0
+    assert items[0]["model"] == "ABC-1"
+
+
+def test_suggest_hq_skips_iclow_to_be_ordered():
+    """HQ ICLOW is for supplier PO — transfer suggest must not list it."""
+    icmas_low = {
+        "LOW01": {
+            "bcode": "LOW01",
+            "descr": "Low stock",
+            "model": "M-9",
+            "suggest_qty": 2.0,
+            "qtyoh2": 0.0,
+            "qtymin": 2.0,
+            "ui1": "ชิ้น",
+            "ui2": "",
+            "mtp2": 1.0,
+            "source": "icmas",
+        }
+    }
+
+    def fake_icmas_meta(engine, bcodes, include_blocked=False):
+        return {"LOW01": _meta(0.0, descr="Low stock", model="M-9")}
+
+    with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered") as mock_fetch:
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
+                with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                    with patch(
+                        "src.transfer.parts9._suggest_from_icmas_low_stock",
+                        return_value=icmas_low,
+                    ):
+                        items = suggest_transfer_skus(site="hq")
+
+    mock_fetch.assert_not_called()
+    assert len(items) == 1
+    assert items[0]["bcode"] == "LOW01"
+    assert items[0]["source"] == "icmas"
+    assert items[0]["model"] == "M-9"
 
 
 def test_suggest_transfer_skus_includes_icmas_low_stock_without_iclow():

@@ -16,6 +16,7 @@ def test_lookup_transfer_product_merges_hq_and_syp():
                     "qtymin": 2.0,
                     "blocked": False,
                     "descr": "สะดือแหนบหน้า",
+                    "model": "NP-200",
                     "ui1": "หน่วย",
                     "ui2": "",
                     "mtp2": 1.0,
@@ -27,6 +28,7 @@ def test_lookup_transfer_product_merges_hq_and_syp():
                 "qtymin": 1.0,
                 "blocked": False,
                 "descr": "สะดือแหนบหน้า",
+                "model": "NP-200",
                 "ui1": "หน่วย",
                 "ui2": "",
                 "mtp2": 1.0,
@@ -46,6 +48,7 @@ def test_lookup_transfer_product_merges_hq_and_syp():
 
     assert product is not None
     assert product["descr"] == "สะดือแหนบหน้า"
+    assert product["model"] == "NP-200"
     assert product["hq_qtyoh2"] == 3.0
     assert product["syp_qtyoh2"] == 1.0
     assert product["hq_no_stock"] is False

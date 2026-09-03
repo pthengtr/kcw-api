@@ -178,6 +178,7 @@ body.busy #busy{display:flex}
 .item-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:.35rem}
 .item-card-head code{font-size:.92rem}
 .item-card-desc{font-size:.85rem;margin-bottom:.5rem;line-height:1.4;color:var(--text)}
+.model{font-size:.78rem;color:var(--muted);margin-top:.15rem;line-height:1.35}
 .item-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem .75rem;margin-bottom:.45rem}
 .item-field .lbl{display:block;font-size:.68rem;color:var(--muted);margin-bottom:.12rem}
 .item-field .val{font-size:.85rem;line-height:1.35}
@@ -345,6 +346,13 @@ function fmtHqStockPlain(row){
   const qty = fmtQty(row && row.hq_qtyoh2);
   if(isHqNoStock(row)) return "ไม่สต็อก · " + qty;
   return qty;
+}
+function fmtModel(row){
+  const m = (row && row.model || "").trim();
+  return m ? `<div class="model">รุ่น ${m}</div>` : "";
+}
+function fmtDescr(row){
+  return `${(row && row.descr) || ""}${fmtModel(row)}`;
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);
@@ -565,7 +573,7 @@ async function openRequestDetail(transferId){
   const progress = {prep_recv_mismatch: detail.prep_recv_mismatch, prep_recv_mismatch_count: detail.prep_recv_mismatch_count};
   const lineRows = lines.map(ln=>`<tr class="${ln.prep_recv_mismatch?"row-mismatch":""}">
     <td><code>${ln.bcode}</code></td>
-    <td>${ln.descr||""}</td>
+    <td>${fmtDescr(ln)}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
     <td class="num">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</td>
     <td class="num">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</td>
@@ -592,7 +600,7 @@ async function openRequestDetail(transferId){
   const isDraft = status==="draft";
   const lineCards = lines.map(ln=>`<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
     <div class="item-card-head"><code>${ln.bcode}</code>${lineStatusLabel(ln)}</div>
-    <div class="item-card-desc">${ln.descr||""}</div>
+    <div class="item-card-desc">${fmtDescr(ln)}</div>
     <div class="item-card-grid">
       <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
       <div class="item-field num"><span class="lbl">จัด</span><span class="val">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</span></div>
@@ -715,8 +723,6 @@ async function fetchCounts(){
 async function renderHome(el){
   const counts = await fetchCounts();
   el.innerHTML = `
-    <div class="flow-hint"><strong>ขั้นตอนโอนสินค้า</strong><br>
-    1) สาขาที่<strong>ต้องการสินค้า</strong> กดขอโอน → 2) สาขาที่<strong>มีสินค้า</strong> กดส่งสินค้า → 3) สาขาที่ขอ กดรับเข้า</div>
     ${billTimelineHtml(OTHER, SITE)}
     <div class="action-grid">
       <div class="action-group">
@@ -737,10 +743,13 @@ async function renderHome(el){
           <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
         </button>
       </div>
-      <button class="action-card" data-go="status">
-        <p class="title">📋 ตรวจสอบสถานะ</p>
-        <p class="desc">ดูคำขอที่ส่งแล้ว กำลังจัด รอรับ หรือเสร็จสิ้น</p>
-      </button>
+      <div class="action-group">
+        <p class="action-group-label">ติดตาม</p>
+        <button class="action-card" data-go="status">
+          <p class="title">📋 ตรวจสอบสถานะ</p>
+          <p class="desc">ดูคำขอที่ส่งแล้ว กำลังจัด รอรับ หรือเสร็จสิ้น</p>
+        </button>
+      </div>
     </div>`;
   el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>goView(b.dataset.go));
 }
@@ -774,14 +783,15 @@ async function renderRequest(el){
     const filtered = q ? suggestItems.filter(r=>{
       const b = (r.bcode||"").toLowerCase();
       const d = (r.descr||"").toLowerCase();
-      return b.includes(q) || d.includes(q);
+      const m = (r.model||"").toLowerCase();
+      return b.includes(q) || d.includes(q) || m.includes(q);
     }) : suggestItems;
 
     let html = stepBar(2) + `<div class="card">
       <p style="margin:0 0 .75rem"><strong>ทิศทาง:</strong> ${OTHER_LABEL} → ${SITE_LABEL}</p>
 
       <div class="search-bar">
-        <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
+        <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / รุ่น)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
       </div>
 
       <div class="tool-section">
@@ -802,7 +812,9 @@ async function renderRequest(el){
     </div>
 
     <div class="card card-table">
-      <p class="meta" style="margin:0">รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ด้านล่าง (ถ้ามี) คือสต๊อกต่ำ ICMAS หลังโอนครั้งก่อน</p>`;
+      <p class="meta" style="margin:0">${SITE === "HQ"
+        ? "รายการ <strong>สต๊อกต่ำ (ICMAS)</strong> ที่สนญ. — ไม่ดึง ICLOW รอสั่งซื้อ (เก็บไว้สั่งจากเจ้าหนี้) · เพิ่มรหัสเองได้ด้านบน"
+        : "รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ด้านล่าง (ถ้ามี) คือสต๊อกต่ำ ICMAS หลังโอนครั้งก่อน"}</p>`;
 
     if(!suggestItems.length){
       html += `<div class="empty">ไม่พบรายการแนะนำ — ใช้เพิ่มรหัสเองด้านบน</div>`;
@@ -818,7 +830,7 @@ async function renderRequest(el){
         const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
         const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
         const srcTitle = src==="รอสั่ง" && Number(r.iclow_line_count||0)>1 ? ` title="รวม ${r.iclow_line_count} แถว ICLOW"` : "";
-        return `<tr><td><code>${r.bcode}</code></td><td class="meta"${srcTitle}>${src}</td><td>${r.descr||""}</td>
+        return `<tr><td><code>${r.bcode}</code></td><td class="meta"${srcTitle}>${src}</td><td>${fmtDescr(r)}</td>
           <td class="num">${fmtHqStock(r)}</td><td class="num">${fmtStockDual(r.syp_qtyoh2,r)}</td>
           <td class="num">${fmtStockDual(r.suggest_qty,r)}</td>
           <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
@@ -832,7 +844,7 @@ async function renderRequest(el){
         const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
         return `<div class="item-card">
           <div class="item-card-head"><code>${r.bcode}</code><span class="meta">${src}</span></div>
-          <div class="item-card-desc">${r.descr||""}</div>
+          <div class="item-card-desc">${fmtDescr(r)}</div>
           <div class="item-card-grid">
             <div class="item-field num"><span class="lbl">คงเหลือ สำนักงานใหญ่</span><span class="val">${fmtHqStock(r)}</span></div>
             <div class="item-field num"><span class="lbl">คงเหลือ สาขา</span><span class="val">${fmtStockDual(r.syp_qtyoh2,r)}</span></div>
@@ -859,11 +871,11 @@ async function renderRequest(el){
     html += `<div class="card card-table"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
     if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ</div>`;
     else {
-      const cartTableRows = cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td class="num">${fmtQty(n.qty)}</td>
+      const cartTableRows = cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td>
         <td><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></td></tr>`).join("");
       const cartCardRows = cartItems.map(n=>`<div class="item-card">
         <div class="item-card-head"><code>${n.bcode}</code><span class="num">${fmtQty(n.qty)}</span></div>
-        <div class="item-card-desc">${n.descr||""}</div>
+        <div class="item-card-desc">${fmtDescr(n)}</div>
         <div class="item-card-actions"><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></div>
       </div>`).join("");
       html += dualView(
@@ -934,7 +946,7 @@ async function renderRequest(el){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong> · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
+        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong>${fmtModel(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
       }catch(e){
         manualPreviewEl.style.display = "block";
         manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
@@ -965,11 +977,11 @@ async function renderRequest(el){
         ${submitBillNoteHtml(OTHER, SITE)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
-            ${cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${n.descr||""}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
+            ${cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
           </tbody></table></div>`,
           itemCards(cartItems.map(n=>`<div class="item-card">
             <div class="item-card-head"><code>${n.bcode}</code><span class="num">${fmtQty(n.qty)}</span></div>
-            <div class="item-card-desc">${n.descr||""}</div>
+            <div class="item-card-desc">${fmtDescr(n)}</div>
           </div>`).join(""))
         )}
         <div class="row-actions">
@@ -1104,7 +1116,7 @@ async function renderReceive(el){
   if(receiveStep === 2){
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_open||0);
-      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td>
+      return `<tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td>
         <td class="num"><input class="qty-input recv-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-shipment-line="${ln.shipment_line_id}"/></td></tr>`;
     }).join("");
@@ -1112,7 +1124,7 @@ async function renderReceive(el){
       const remain = Number(ln.qty_open||0);
       return `<div class="item-card">
         <div class="item-card-head"><code>${ln.bcode}</code></div>
-        <div class="item-card-desc">${ln.descr||""}</div>
+        <div class="item-card-desc">${fmtDescr(ln)}</div>
         <div class="item-card-grid">
           <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_shipped)}</span></div>
           <div class="item-field num"><span class="lbl">รับแล้ว</span><span class="val">${fmtQty(ln.qty_received)}</span></div>
@@ -1154,11 +1166,11 @@ async function renderReceive(el){
   if(receiveStep === 3){
     const qtyMap = ship._qtyDraft||{};
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.shipment_line_id])}</strong></td></tr>
+      <tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.shipment_line_id])}</strong></td></tr>
     `).join("");
     const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0).map(ln=>`<div class="item-card">
       <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.shipment_line_id])}</strong></div>
-      <div class="item-card-desc">${ln.descr||""}</div>
+      <div class="item-card-desc">${fmtDescr(ln)}</div>
       <div class="item-card-grid">
         <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_shipped)}</span></div>
         <div class="item-field num"><span class="lbl">รับแล้ว</span><span class="val">${fmtQty(ln.qty_received)}</span></div>
@@ -1259,7 +1271,7 @@ async function renderPrepare(el){
     const shipBranchLabel = branchLabel(shipBranch);
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
-      return `<tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
+      return `<tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
         <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-line="${ln.line_id}"/></td></tr>`;
     }).join("");
@@ -1267,7 +1279,7 @@ async function renderPrepare(el){
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
       return `<div class="item-card">
         <div class="item-card-head"><code>${ln.bcode}</code></div>
-        <div class="item-card-desc">${ln.descr||""}</div>
+        <div class="item-card-desc">${fmtDescr(ln)}</div>
         <div class="item-card-grid">
           <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>
           <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
@@ -1313,11 +1325,11 @@ async function renderPrepare(el){
     const shipBranch = (req.from_branch||SITE).toUpperCase();
     const shipBranchLabel = branchLabel(shipBranch);
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code></td><td>${ln.descr||""}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
+      <tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
     `).join("");
     const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`<div class="item-card">
       <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.line_id])}</strong></div>
-      <div class="item-card-desc">${ln.descr||""}</div>
+      <div class="item-card-desc">${fmtDescr(ln)}</div>
       <div class="item-card-grid">
         <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>
         <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
