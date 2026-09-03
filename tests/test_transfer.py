@@ -116,6 +116,7 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
     assert "printRequestBill" in html
     assert "พิมพ์ใบคำขอ" in html
     assert "canCancelRequest" in html
+    assert "hasShipments" in html
     assert "ACCTNO KCW1" in html
     assert "รุ่น ${m}" in html or "รุ่น " in html
 
