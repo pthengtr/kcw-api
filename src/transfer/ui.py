@@ -201,6 +201,18 @@ body.busy #busy{display:flex}
 .item-card-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.35rem}
 .item-card-actions .btn{margin-left:auto}
 .item-card-actions .qty-input,.item-card-actions .unit-select{flex:0 0 auto}
+.pick-check{width:1.1rem;height:1.1rem;accent-color:var(--acc);cursor:pointer}
+tr.row-picked td{background:#eef4ff}
+.item-card.row-picked{border-color:#93b4ff;background:#f5f8ff}
+.commit-bar{
+  position:sticky; bottom:0; z-index:15;
+  display:flex; gap:.5rem; flex-wrap:wrap; align-items:center;
+  margin:0 -1rem -1rem; padding:.75rem 1rem calc(.75rem + env(safe-area-inset-bottom,0px));
+  background:#fff; border-top:1px solid var(--line);
+  box-shadow:0 -4px 12px rgba(16,24,40,.06);
+}
+.commit-bar .commit-meta{flex:1; min-width:8rem; font-size:.82rem; color:var(--muted)}
+.commit-bar .commit-meta strong{color:var(--text)}
 @media (min-width:900px){
   main{padding:1.25rem 1.5rem}
   .table-wrap table{table-layout:auto}
@@ -295,6 +307,8 @@ let prepareStep = 1;
 let prepareRequest = null;
 let suggestItems = [];
 let suggestFilter = "";
+/** Local picks on suggest list: bcode → {checked, unit, qty} — survives soft re-renders. */
+let suggestPick = {};
 let toastTimer = null;
 
 const VIEWS = {
@@ -729,11 +743,35 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; prepareStep=1; prepareRequest=null; editingDraftId=null; render(); }
-function goView(v){ view=v; if(v==="request" && !editingDraftId) requestStep=1; if(v==="receive"){ receiveStep=1; receiveShipment=null; } if(v==="prepare"){ prepareStep=1; prepareRequest=null; } render(); }
+function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; render(); }
+function goView(v){ view=v; if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; } if(v==="receive"){ receiveStep=1; receiveShipment=null; } if(v==="prepare"){ prepareStep=1; prepareRequest=null; } render(); }
 function setReceiveStep(n){ receiveStep=n; render(); }
 function setPrepareStep(n){ prepareStep=n; render(); }
 function setRequestStep(n){ requestStep=n; render(); }
+function withScrollPreserved(fn){
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  return Promise.resolve(fn()).then((v)=>{
+    requestAnimationFrame(()=>{ window.scrollTo(0, y); });
+    return v;
+  });
+}
+function readSuggestPick(row){
+  const b = row.bcode;
+  const entry = defaultEntryQty(row);
+  const cur = suggestPick[b] || {};
+  return {
+    checked: !!cur.checked,
+    unit: cur.unit || entry.unit,
+    qty: cur.qty != null ? cur.qty : entry.qty,
+  };
+}
+function writeSuggestPick(bcode, patch){
+  const cur = suggestPick[bcode] || {checked:false, unit:"small", qty:1};
+  suggestPick[bcode] = {...cur, ...patch};
+}
+function pickedCount(){
+  return Object.values(suggestPick).filter(p=>p && p.checked).length;
+}
 
 function updateHeader(){
   const titles = {
@@ -862,6 +900,7 @@ async function renderRequest(el){
     const [rows, cart] = await Promise.all([api("/transfer/api/suggest"), api("/transfer/api/need-list")]);
     suggestItems = rows.items || [];
     const cartItems = cart.items || [];
+    const cartBcodes = new Set(cartItems.map(n=>(n.bcode||"").trim()).filter(Boolean));
     const q = (suggestFilter || "").trim().toLowerCase();
     const filtered = q ? suggestItems.filter(r=>{
       const b = (r.bcode||"").toLowerCase();
@@ -869,9 +908,11 @@ async function renderRequest(el){
       const m = (r.model||"").toLowerCase();
       return b.includes(q) || d.includes(q) || m.includes(q);
     }) : suggestItems;
+    const nPicked = pickedCount();
 
     let html = stepBar(2) + `<div class="card">
       <p style="margin:0 0 .75rem"><strong>ทิศทาง:</strong> ${OTHER_LABEL} → ${SITE_LABEL}</p>
+      <p class="meta" style="margin:0 0 .75rem">ติ๊กเลือกรายการ ปรับจำนวน แล้วกด <strong>เพิ่มที่เลือก</strong> — หน้าจอจะไม่กระโดดกลับด้านบน</p>
 
       <div class="search-bar">
         <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / รุ่น)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
@@ -904,29 +945,37 @@ async function renderRequest(el){
     } else if(!filtered.length){
       html += `<div class="empty">ไม่พบ "${suggestFilter}" ในรายการ — ลองเพิ่มรหัสเองด้านบน</div>`;
       if(/^[0-9A-Za-z-]+$/.test(q)){
-        html += `<div class="row-actions"><button class="btn btn-ghost" id="btnSearchAdd">เพิ่ม <code>${q}</code></button></div>`;
+        html += `<div class="row-actions"><button class="btn btn-ghost" id="btnSearchAdd">เพิ่ม <code>${q}</code> เข้าคำขอ</button></div>`;
       }
     } else {
       const suggestTableRows = filtered.map((r)=>{
         const idx = suggestItems.indexOf(r);
-        const entry = defaultEntryQty(r);
-        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
+        const pick = readSuggestPick(r);
+        const inCart = cartBcodes.has((r.bcode||"").trim());
+        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${c.label}</option>`).join("");
         const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
         const srcTitle = src==="รอสั่ง" && Number(r.iclow_line_count||0)>1 ? ` title="รวม ${r.iclow_line_count} แถว ICLOW"` : "";
-        return `<tr><td><code>${r.bcode}</code></td><td class="meta"${srcTitle}>${src}</td><td>${fmtDescr(r)}</td>
+        return `<tr class="${pick.checked?"row-picked":""}"><td><input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""} ${inCart?"title=\"มีในคำขอแล้ว — ติ๊กแล้วเพิ่มซ้ำได้\"":""}/></td>
+          <td><code>${r.bcode}</code>${inCart?` <span class="meta">ในคำขอ</span>`:""}</td><td class="meta"${srcTitle}>${src}</td><td>${fmtDescr(r)}</td>
           <td class="num">${fmtHqStock(r)}</td><td class="num">${fmtStockDual(r.syp_qtyoh2,r)}</td>
           <td class="num">${fmtStockDual(r.suggest_qty,r)}</td>
           <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
-          <td class="num"><input class="qty-input" type="number" min="0.01" step="any" value="${entry.qty}" data-qty="${idx}"/></td>
-          <td><button class="btn btn-ghost" data-add="${idx}">เพิ่ม</button></td></tr>`;
+          <td class="num"><input class="qty-input" type="number" min="0.01" step="any" value="${pick.qty}" data-qty="${idx}"/></td></tr>`;
       }).join("");
       const suggestCardRows = filtered.map((r)=>{
         const idx = suggestItems.indexOf(r);
-        const entry = defaultEntryQty(r);
-        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===entry.unit?"selected":""}>${c.label}</option>`).join("");
+        const pick = readSuggestPick(r);
+        const inCart = cartBcodes.has((r.bcode||"").trim());
+        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${c.label}</option>`).join("");
         const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
-        return `<div class="item-card">
-          <div class="item-card-head"><code>${r.bcode}</code><span class="meta">${src}</span></div>
+        return `<div class="item-card ${pick.checked?"row-picked":""}">
+          <div class="item-card-head">
+            <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer">
+              <input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""}/>
+              <code>${r.bcode}</code>
+            </label>
+            <span class="meta">${src}${inCart?" · ในคำขอ":""}</span>
+          </div>
           <div class="item-card-desc">${fmtDescr(r)}</div>
           <div class="item-card-grid">
             <div class="item-field num"><span class="lbl">คงเหลือ สำนักงานใหญ่</span><span class="val">${fmtHqStock(r)}</span></div>
@@ -935,24 +984,29 @@ async function renderRequest(el){
           </div>
           <div class="item-card-actions">
             <select class="unit-select" data-unit="${idx}">${unitOpts}</select>
-            <input class="qty-input" type="number" min="0.01" step="any" value="${entry.qty}" data-qty="${idx}"/>
-            <button class="btn btn-ghost" data-add="${idx}">เพิ่ม</button>
+            <input class="qty-input" type="number" min="0.01" step="any" value="${pick.qty}" data-qty="${idx}"/>
           </div>
         </div>`;
       }).join("");
       html += dualView(
         `<div class="table-wrap table-wrap--tall"><table><thead><tr>
-          <th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ สำนักงานใหญ่</th><th class="num">คงเหลือ สาขา</th><th class="num">แนะนำ</th><th>หน่วย</th><th class="num">จำนวน</th><th></th>
+          <th style="width:2.2rem"></th><th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ สำนักงานใหญ่</th><th class="num">คงเหลือ สาขา</th><th class="num">แนะนำ</th><th>หน่วย</th><th class="num">จำนวน</th>
         </tr></thead><tbody>${suggestTableRows}</tbody></table></div>`,
         itemCards(suggestCardRows)
       );
       html += hqNoStockNoteHtml();
       if(q) html += `<p class="meta" style="margin:.5rem 1rem 0">แสดง ${filtered.length} จาก ${suggestItems.length} รายการ</p>`;
     }
-    html += `</div>`;
+    html += `
+      <div class="commit-bar">
+        <div class="commit-meta">เลือกแล้ว <strong id="pickCountLabel">${nPicked}</strong> · ในคำขอ <strong>${cartItems.length}</strong></div>
+        <button class="btn btn-ghost" id="btnClearPick" ${nPicked?"":"disabled"}>ล้างที่เลือก</button>
+        <button class="btn btn-primary" id="btnCommitPick" ${nPicked?"":"disabled"}>เพิ่มที่เลือก (${nPicked})</button>
+      </div>
+    </div>`;
 
     html += `<div class="card card-table"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
-    if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ</div>`;
+    if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ — ติ๊กจากรายการแนะนำแล้วกดเพิ่มที่เลือก</div>`;
     else {
       const cartTableRows = cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td>
         <td><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></td></tr>`).join("");
@@ -972,50 +1026,127 @@ async function renderRequest(el){
     </div></div>`;
     el.innerHTML = html;
 
-    const searchEl = el.querySelector("#suggestSearch");
-    if(searchEl){
-      searchEl.oninput = ()=>{ suggestFilter = searchEl.value; renderRequest(el); };
-      searchEl.onkeydown = e=>{ if(e.key==="Enter"){ e.preventDefault(); suggestFilter = searchEl.value; renderRequest(el); } };
+    function syncPickChrome(){
+      const n = pickedCount();
+      const lbl = el.querySelector("#pickCountLabel");
+      if(lbl) lbl.textContent = String(n);
+      const commit = el.querySelector("#btnCommitPick");
+      if(commit){ commit.disabled = n===0; commit.textContent = `เพิ่มที่เลือก (${n})`; }
+      const clear = el.querySelector("#btnClearPick");
+      if(clear) clear.disabled = n===0;
     }
-
-    el.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=async()=>{
-      const idx = Number(btn.dataset.add);
+    function bindPickRow(idx){
       const row = suggestItems[idx];
       if(!row) return;
-      const unitId = el.querySelector(`[data-unit="${idx}"]`).value;
-      const qty = Number(el.querySelector(`[data-qty="${idx}"]`).value||0);
-      const qtySmall = qtyToSmall(qty, unitId, row);
-      if(qtySmall <= 0){alert("ระบุจำนวน");return;}
-      await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({
-        bcode:row.bcode, qty:qtySmall, suggest_qty:row.suggest_qty, descr:row.descr||"", hq_qtyoh2:row.hq_qtyoh2,
-      })});
-      showToast("เพิ่มแล้ว");
-      setRequestStep(2);
-    });
+      const checks = el.querySelectorAll(`[data-pick="${idx}"]`);
+      const unitEls = el.querySelectorAll(`[data-unit="${idx}"]`);
+      const qtyEls = el.querySelectorAll(`[data-qty="${idx}"]`);
+      checks.forEach(chk=>{
+        chk.onchange = ()=>{
+          writeSuggestPick(row.bcode, {checked: chk.checked});
+          checks.forEach(c=>{ c.checked = chk.checked; });
+          const tr = chk.closest("tr");
+          const card = chk.closest(".item-card");
+          if(tr) tr.classList.toggle("row-picked", chk.checked);
+          if(card) card.classList.toggle("row-picked", chk.checked);
+          syncPickChrome();
+        };
+      });
+      unitEls.forEach(sel=>{
+        sel.onchange = ()=>{
+          writeSuggestPick(row.bcode, {unit: sel.value, checked: true});
+          unitEls.forEach(s=>{ s.value = sel.value; });
+          checks.forEach(c=>{ c.checked = true; });
+          const tr = sel.closest("tr");
+          const card = sel.closest(".item-card");
+          if(tr) tr.classList.add("row-picked");
+          if(card) card.classList.add("row-picked");
+          syncPickChrome();
+        };
+      });
+      qtyEls.forEach(inp=>{
+        inp.oninput = ()=>{
+          writeSuggestPick(row.bcode, {qty: Number(inp.value||0), checked: true});
+          qtyEls.forEach(i=>{ if(i!==inp) i.value = inp.value; });
+          checks.forEach(c=>{ c.checked = true; });
+          const tr = inp.closest("tr");
+          const card = inp.closest(".item-card");
+          if(tr) tr.classList.add("row-picked");
+          if(card) card.classList.add("row-picked");
+          syncPickChrome();
+        };
+      });
+    }
+    filtered.forEach(r=>bindPickRow(suggestItems.indexOf(r)));
+
+    const searchEl = el.querySelector("#suggestSearch");
+    if(searchEl){
+      let searchTimer = null;
+      searchEl.oninput = ()=>{
+        suggestFilter = searchEl.value;
+        if(searchTimer) clearTimeout(searchTimer);
+        searchTimer = setTimeout(()=>withScrollPreserved(()=>renderRequest(el)), 280);
+      };
+      searchEl.onkeydown = e=>{
+        if(e.key==="Enter"){
+          e.preventDefault();
+          if(searchTimer) clearTimeout(searchTimer);
+          suggestFilter = searchEl.value;
+          withScrollPreserved(()=>renderRequest(el));
+        }
+      };
+    }
+
+    el.querySelector("#btnClearPick").onclick = ()=>{
+      suggestPick = {};
+      withScrollPreserved(()=>renderRequest(el));
+    };
+    el.querySelector("#btnCommitPick").onclick = async()=>{
+      const picks = [];
+      for(const row of suggestItems){
+        const pick = suggestPick[row.bcode];
+        if(!pick || !pick.checked) continue;
+        const qtySmall = qtyToSmall(pick.qty, pick.unit, row);
+        if(qtySmall <= 0){ alert("จำนวนของ "+row.bcode+" ไม่ถูกต้อง"); return; }
+        picks.push({row, qtySmall});
+      }
+      if(!picks.length){ alert("ยังไม่ได้เลือกรายการ"); return; }
+      try{
+        for(const p of picks){
+          await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({
+            bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
+            descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
+          })});
+          writeSuggestPick(p.row.bcode, {checked:false});
+        }
+        showToast("เพิ่ม "+picks.length+" รายการแล้ว");
+        await withScrollPreserved(()=>renderRequest(el));
+      }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
+    };
+
     el.querySelector("#btnManualAdd").onclick = async()=>{
       const b = el.querySelector("#manualBcode").value.trim();
-      const q = Number(el.querySelector("#manualQty").value||0);
-      if(!b||q<=0){alert("ระบุรหัสและจำนวน");return;}
+      const qv = Number(el.querySelector("#manualQty").value||0);
+      if(!b||qv<=0){alert("ระบุรหัสและจำนวน");return;}
       try{
-        await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr:""})});
+        await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:qv, descr:""})});
         showToast("เพิ่มแล้ว");
         el.querySelector("#manualBcode").value = "";
         const prev = el.querySelector("#manualPreview");
         if(prev){ prev.style.display="none"; prev.textContent=""; }
-        setRequestStep(2);
+        await withScrollPreserved(()=>renderRequest(el));
       }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
     };
     const btnSearchAdd = el.querySelector("#btnSearchAdd");
     if(btnSearchAdd){
       btnSearchAdd.onclick = async()=>{
         const b = (suggestFilter||"").trim();
-        const q = 1;
         if(!b) return;
         try{
-          await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:q, descr:""})});
+          await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:1, descr:""})});
           showToast("เพิ่มแล้ว");
           suggestFilter = "";
-          setRequestStep(2);
+          await withScrollPreserved(()=>renderRequest(el));
         }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
       };
     }
@@ -1044,7 +1175,7 @@ async function renderRequest(el){
     }
     el.querySelectorAll("[data-del]").forEach(btn=>btn.onclick=async()=>{
       await api("/transfer/api/need-list/"+btn.dataset.del,{method:"DELETE"});
-      setRequestStep(2);
+      await withScrollPreserved(()=>renderRequest(el));
     });
     el.querySelector("#btnReqNext2").onclick = ()=>setRequestStep(3);
     return;
