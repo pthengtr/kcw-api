@@ -118,6 +118,11 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
     assert "canCancelRequest" in html
     assert "hasShipments" in html
     assert "ACCTNO KCW1" in html
+    assert "btnCommitPick" in html
+    assert "เพิ่มที่เลือก" in html
+    assert "suggestPick" in html
+    assert "withScrollPreserved" in html
+    assert 'data-add="' not in html
     assert "รุ่น ${m}" in html or "รุ่น " in html
 
 
