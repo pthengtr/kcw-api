@@ -765,8 +765,9 @@ function readSuggestPick(row){
     qty: cur.qty != null ? cur.qty : entry.qty,
   };
 }
-function writeSuggestPick(bcode, patch){
-  const cur = suggestPick[bcode] || {checked:false, unit:"small", qty:1};
+function writeSuggestPick(bcode, patch, row){
+  const entry = row ? defaultEntryQty(row) : {unit:"small", qty:1};
+  const cur = suggestPick[bcode] || {checked:false, unit:entry.unit, qty:entry.qty};
   suggestPick[bcode] = {...cur, ...patch};
 }
 function pickedCount(){
@@ -1035,6 +1036,14 @@ async function renderRequest(el){
       const clear = el.querySelector("#btnClearPick");
       if(clear) clear.disabled = n===0;
     }
+    function livePickFromDom(idx, row){
+      const fallback = readSuggestPick(row);
+      const qtyEl = el.querySelector(`[data-qty="${idx}"]`);
+      const unitEl = el.querySelector(`[data-unit="${idx}"]`);
+      const qty = qtyEl != null ? Number(qtyEl.value||0) : fallback.qty;
+      const unit = unitEl != null ? unitEl.value : fallback.unit;
+      return {qty, unit};
+    }
     function bindPickRow(idx){
       const row = suggestItems[idx];
       if(!row) return;
@@ -1043,7 +1052,8 @@ async function renderRequest(el){
       const qtyEls = el.querySelectorAll(`[data-qty="${idx}"]`);
       checks.forEach(chk=>{
         chk.onchange = ()=>{
-          writeSuggestPick(row.bcode, {checked: chk.checked});
+          const live = livePickFromDom(idx, row);
+          writeSuggestPick(row.bcode, {checked: chk.checked, qty: live.qty, unit: live.unit}, row);
           checks.forEach(c=>{ c.checked = chk.checked; });
           const tr = chk.closest("tr");
           const card = chk.closest(".item-card");
@@ -1054,7 +1064,8 @@ async function renderRequest(el){
       });
       unitEls.forEach(sel=>{
         sel.onchange = ()=>{
-          writeSuggestPick(row.bcode, {unit: sel.value, checked: true});
+          const live = livePickFromDom(idx, row);
+          writeSuggestPick(row.bcode, {unit: sel.value, qty: live.qty, checked: true}, row);
           unitEls.forEach(s=>{ s.value = sel.value; });
           checks.forEach(c=>{ c.checked = true; });
           const tr = sel.closest("tr");
@@ -1066,7 +1077,8 @@ async function renderRequest(el){
       });
       qtyEls.forEach(inp=>{
         inp.oninput = ()=>{
-          writeSuggestPick(row.bcode, {qty: Number(inp.value||0), checked: true});
+          const live = livePickFromDom(idx, row);
+          writeSuggestPick(row.bcode, {qty: Number(inp.value||0), unit: live.unit, checked: true}, row);
           qtyEls.forEach(i=>{ if(i!==inp) i.value = inp.value; });
           checks.forEach(c=>{ c.checked = true; });
           const tr = inp.closest("tr");
@@ -1106,7 +1118,10 @@ async function renderRequest(el){
       for(const row of suggestItems){
         const pick = suggestPick[row.bcode];
         if(!pick || !pick.checked) continue;
-        const qtySmall = qtyToSmall(pick.qty, pick.unit, row);
+        const idx = suggestItems.indexOf(row);
+        const live = livePickFromDom(idx, row);
+        writeSuggestPick(row.bcode, {qty: live.qty, unit: live.unit, checked: true}, row);
+        const qtySmall = qtyToSmall(live.qty, live.unit, row);
         if(qtySmall <= 0){ alert("จำนวนของ "+row.bcode+" ไม่ถูกต้อง"); return; }
         picks.push({row, qtySmall});
       }
