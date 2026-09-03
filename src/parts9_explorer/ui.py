@@ -62,20 +62,24 @@ h1 { font-size:1.02rem; margin:0; letter-spacing:.02em; }
 .row { display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; }
 .search-form { display:grid; gap:.5rem; align-items:end; grid-template-columns:1fr; }
 .search-main { min-width:0; width:100%; display:flex; flex-direction:column; gap:.35rem; }
-.search-main #categoryField { display:none; }
-.search-main.mode-product #categoryField { display:flex; }
+.search-main #productFilters { display:none; }
+.search-main.mode-product #productFilters { display:grid; }
+.product-filters { gap:.45rem; grid-template-columns:1fr; width:100%; }
+@media (min-width:560px) {
+  .product-filters { grid-template-columns:1fr 1fr; }
+}
 .search-main #codeSizePanel { display:none; }
 .search-main.mode-code-size #q { display:none; }
 .search-main.mode-code-size #codeSizePanel { display:flex; }
 .search-actions { display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; }
 #site { min-width:5.5rem; }
 #searchBtn { flex:1; min-width:6.5rem; }
-input[type=search], .field-inp, #code1, #category, #site, #searchBtn {
+input[type=search], .field-inp, #code1, #category, #sort, #site, #searchBtn {
   font: inherit; font-size:var(--field-font); line-height:1.25;
   min-height:var(--field-h); padding:var(--field-pad-y) var(--field-pad-x);
   border-radius:var(--field-radius); border:1px solid var(--line); background:var(--inset); color:var(--text);
 }
-input[type=search], .field-inp, #code1, #category, #site { width:100%; }
+input[type=search], .field-inp, #code1, #category, #sort, #site { width:100%; }
 button, select { font: inherit; font-size:.92rem; padding:.6rem .75rem; border-radius:.55rem; border:1px solid var(--line); background:var(--chip); color:var(--text); }
 #searchBtn { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:650; font-size:var(--field-font); }
 input[type=search] { -webkit-appearance:none; appearance:none; }
@@ -176,12 +180,27 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
   <div class="search-panel" id="searchPanel">
   <form class="search-form" id="f" onsubmit="go(event); return false;">
     <div class="search-main">
-      <label class="field" id="categoryField" for="category">
-        <span class="field-lbl">หมวดสินค้า</span>
-        <select id="category" aria-label="หมวดสินค้า">
-          <option value="">— ทุกหมวด —</option>
-        </select>
-      </label>
+      <div class="product-filters" id="productFilters">
+        <label class="field" id="categoryField" for="category">
+          <span class="field-lbl">หมวดสินค้า</span>
+          <select id="category" aria-label="หมวดสินค้า">
+            <option value="">— ทุกหมวด —</option>
+          </select>
+        </label>
+        <label class="field" id="sortField" for="sort">
+          <span class="field-lbl">เรียงตาม</span>
+          <select id="sort" aria-label="เรียงตาม">
+            <option value="relevance">ตรงที่สุด</option>
+            <option value="bcode">รหัส A→Z</option>
+            <option value="bcode_desc">รหัส Z→A</option>
+            <option value="price">ราคาต่ำ→สูง</option>
+            <option value="price_desc">ราคาสูง→ต่ำ</option>
+            <option value="descr">ชื่อสินค้า</option>
+            <option value="qty_desc">คงเหลือมาก→น้อย</option>
+            <option value="qty">คงเหลือน้อย→มาก</option>
+          </select>
+        </label>
+      </div>
       <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ นมฮPT / I K ซีล / PO เลขบิล" autofocus />
       <div id="codeSizePanel" class="code-size-panel" aria-hidden="true">
         <div class="code-size-fields">
@@ -278,6 +297,16 @@ const MONEY_KEYS = new Set(["PRICE","AMOUNT","CHKAMT","AFTERTAX","BILLAMT","NETA
 const CODE1_LABELS = __CODE1_LABELS_JSON__;
 const SIZE_LABELS = __SIZE_LABELS_JSON__;
 const CATEGORY_LABELS = __CATEGORY_LABELS_JSON__;
+const SORT_LABELS = {
+  relevance: "ตรงที่สุด",
+  bcode: "รหัส A→Z",
+  bcode_desc: "รหัส Z→A",
+  price: "ราคาต่ำ→สูง",
+  price_desc: "ราคาสูง→ต่ำ",
+  descr: "ชื่อสินค้า",
+  qty_desc: "คงเหลือมาก→น้อย",
+  qty: "คงเหลือน้อย→มาก",
+};
 let KIND = "all";
 let ITEMS = [];
 let DOCS = [];
@@ -343,8 +372,12 @@ function searchSummaryText() {
   const site = $("site") ? $("site").options[$("site").selectedIndex].text : "";
   const cat = $("category");
   const catLabel = cat && cat.value ? (CATEGORY_LABELS[cat.value] || cat.value) : "";
+  const sort = $("sort");
+  const sortKey = sort && sort.value ? sort.value : "relevance";
+  const sortLabel = (sortKey !== "relevance") ? (SORT_LABELS[sortKey] || sortKey) : "";
   const parts = [mode];
   if (catLabel) parts.push(catLabel);
+  if (sortLabel) parts.push("เรียง "+sortLabel);
   if (q) parts.push(q);
   if (site) parts.push(site);
   return parts.join(" · ");
@@ -523,6 +556,10 @@ async function go(ev, opts) {
     let url = "/parts9/api/search?site="+encodeURIComponent(site)+"&include_skip="+skip+"&kind="+encodeURIComponent(KIND)+"&q="+encodeURIComponent(q);
     const cat = $("category");
     if (cat && cat.value && isProductMode()) url += "&category="+encodeURIComponent(cat.value);
+    const sort = $("sort");
+    if (sort && sort.value && sort.value !== "relevance" && isProductMode()) {
+      url += "&sort="+encodeURIComponent(sort.value);
+    }
     const r = await fetch(url);
     const data = await r.json();
     if (!r.ok) {
@@ -773,6 +810,10 @@ $("q").addEventListener("input", scheduleGo);
 $("q").addEventListener("search", (e) => go(e, { collapse: true }));
 $("skip").addEventListener("change", () => { if (currentQuery()) go(); });
 $("category").addEventListener("change", () => {
+  updateSearchSummary();
+  if (currentQuery()) go();
+});
+$("sort").addEventListener("change", () => {
   updateSearchSummary();
   if (currentQuery()) go();
 });

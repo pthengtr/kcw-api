@@ -124,6 +124,7 @@ def api_search(
     include_skip: str = "0",
     kind: str = "all",
     category: str = "",
+    sort: str = "",
 ):
     ident, err = _require(request)
     if err:
@@ -144,6 +145,7 @@ def api_search(
             include_skip=include_skip in ("1", "true", "yes"),
             mode="code_size" if mode == "code_size" else None,
             category=category.strip() or None,
+            sort=sort.strip() or None,
         )
     want_docs = mode in ("si", "pi", "po", "pv", "rv", "iclow") or (
         mode == "all" and q.strip() and (parsed.kind == "document" or not parsed.want_product)
@@ -165,6 +167,7 @@ def api_search(
         "q": q,
         "kind": mode,
         "category": category.strip() or None,
+        "sort": sort.strip() or "relevance",
         "parsed": parsed.kind,
         "doc_kind": parsed.doc_kind,
         "products": products,

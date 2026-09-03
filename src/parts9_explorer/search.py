@@ -51,6 +51,69 @@ PRODUCT_COLS = """
   LTRIM(RTRIM(COALESCE(CANCELED,''))) AS CANCELED
 """
 
+# Allowed product-search sort keys (UI + API).
+PRODUCT_SORT_KEYS = frozenset(
+    {
+        "relevance",
+        "bcode",
+        "bcode_desc",
+        "price",
+        "price_desc",
+        "descr",
+        "qty",
+        "qty_desc",
+    }
+)
+
+_PRICE_SORT_EXPR = (
+    "TRY_CONVERT(float, REPLACE(CONVERT(varchar(50), PRICE1), ',', ''))"
+)
+_QTY_SORT_EXPR = (
+    "TRY_CONVERT(float, REPLACE(CONVERT(varchar(50), QTYOH2), ',', ''))"
+)
+
+
+def _product_order_sql(sort: str | None) -> tuple[str, bool]:
+    """Return (ORDER BY clause, needs_relevance_params)."""
+    key = (sort or "relevance").strip().lower()
+    if key not in PRODUCT_SORT_KEYS:
+        key = "relevance"
+    if key == "bcode":
+        return "ORDER BY BCODE ASC", False
+    if key == "bcode_desc":
+        return "ORDER BY BCODE DESC", False
+    if key == "price":
+        return (
+            "ORDER BY CASE WHEN "
+            + _PRICE_SORT_EXPR
+            + " IS NULL THEN 1 ELSE 0 END, "
+            + _PRICE_SORT_EXPR
+            + " ASC, BCODE",
+            False,
+        )
+    if key == "price_desc":
+        return (
+            "ORDER BY CASE WHEN "
+            + _PRICE_SORT_EXPR
+            + " IS NULL THEN 1 ELSE 0 END, "
+            + _PRICE_SORT_EXPR
+            + " DESC, BCODE",
+            False,
+        )
+    if key == "descr":
+        return "ORDER BY DESCR ASC, BCODE", False
+    if key == "qty":
+        return "ORDER BY " + _QTY_SORT_EXPR + " ASC, BCODE", False
+    if key == "qty_desc":
+        return "ORDER BY " + _QTY_SORT_EXPR + " DESC, BCODE", False
+    return (
+        "ORDER BY CASE WHEN LTRIM(RTRIM(BCODE)) = :exact THEN 0"
+        " WHEN LTRIM(RTRIM(COALESCE(PCODE,''))) = :exact THEN 1"
+        " WHEN LTRIM(RTRIM(COALESCE(MCODE,''))) = :exact THEN 1"
+        " WHEN LTRIM(RTRIM(BCODE)) LIKE :pre THEN 2 ELSE 3 END, BCODE",
+        True,
+    )
+
 
 def _sql_fail(site: str, exc: BaseException) -> str:
     return format_sql_error(exc, site=site)
@@ -243,6 +306,7 @@ def search_products(
     limit: int = 50,
     mode: str | None = None,
     category: str | None = None,
+    sort: str | None = None,
 ):
     code_size = (mode or "").strip().lower() == "code_size"
     parsed = parse_code_size_query(raw) if code_size else parse_query(raw)
@@ -306,16 +370,16 @@ def search_products(
         else:
             return [], None
     top_n = max(1, min(int(limit), 50))
+    order_sql, needs_relevance = _product_order_sql(sort)
     sql = text(
         f"SELECT TOP {top_n} {PRODUCT_COLS} FROM dbo.ICMAS WHERE "
         + " AND ".join(where)
-        + " ORDER BY CASE WHEN LTRIM(RTRIM(BCODE)) = :exact THEN 0"
-        " WHEN LTRIM(RTRIM(COALESCE(PCODE,''))) = :exact THEN 1"
-        " WHEN LTRIM(RTRIM(COALESCE(MCODE,''))) = :exact THEN 1"
-        " WHEN LTRIM(RTRIM(BCODE)) LIKE :pre THEN 2 ELSE 3 END, BCODE"
+        + " "
+        + order_sql
     )
-    params["exact"] = parsed.raw.strip()
-    params["pre"] = (parsed.bcode_prefix or parsed.raw.strip()) + "%"
+    if needs_relevance:
+        params["exact"] = parsed.raw.strip()
+        params["pre"] = (parsed.bcode_prefix or parsed.raw.strip()) + "%"
     try:
         with engine.connect() as conn:
             rows = conn.execute(sql, params).mappings().all()
