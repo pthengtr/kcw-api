@@ -172,6 +172,22 @@ body.busy #busy{display:flex}
   #printSheet th.num,#printSheet td.num{text-align:right}
   #printSheet .sig{margin-top:2rem; display:grid; grid-template-columns:1fr 1fr; gap:2rem}
   #printSheet .sig-box{border-top:1px solid #999; padding-top:.5rem; font-size:10pt}
+  #printSheet.print-stickers{
+    padding:0 !important; margin:0 !important;
+  }
+  #printSheet.print-stickers .stk-label{
+    width:5cm; height:3.5cm; margin:0; padding:0; border:0;
+    display:block; page-break-after:always; break-after:page;
+    page-break-inside:avoid; break-inside:avoid;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  #printSheet.print-stickers .stk-label:last-child{
+    page-break-after:auto; break-after:auto;
+  }
+  #printSheet.print-stickers .stk-label img{
+    width:5cm; height:3.5cm; display:block; margin:0; border:0;
+    object-fit:fill; image-rendering:pixelated;
+  }
 }
 .action-grid{display:grid;gap:.85rem}
 .action-group{display:grid;gap:.55rem}
@@ -818,6 +834,30 @@ async function sendStickerPrint(job, model, host){
     body:JSON.stringify({lines, printer_model:model, printer_host:host, action:"print"}),
   });
 }
+async function printStickersBrowser(job, model){
+  setBusy(true);
+  try{
+    const data = await fetchStickerPreview(job, model);
+    const labels = (data && data.labels) || [];
+    const parts = [];
+    labels.forEach(lb=>{
+      const png = lb.preview_png_b64 || "";
+      if(!png) return;
+      const copies = Math.max(1, Math.min(200, Math.round(Number(lb.qty||1))));
+      const src = "data:image/png;base64,"+png;
+      const alt = String(lb.bcode||"").replace(/"/g,"");
+      for(let n=0;n<copies;n++){
+        parts.push(`<div class="stk-label"><img src="${src}" alt="${alt}"/></div>`);
+      }
+    });
+    if(!parts.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
+    const sheet = $("printSheet");
+    sheet.className = "print-stickers";
+    sheet.innerHTML = parts.join("");
+    sheet.setAttribute("aria-hidden","false");
+    window.print();
+  } finally { setBusy(false); }
+}
 function renderStickerComposer(el, job){
   const model = stickerPrinterModel();
   const host = stickerPrinterHost();
@@ -849,7 +889,7 @@ function renderStickerComposer(el, job){
   </div>`).join("");
   el.innerHTML = `<div class="card">
       <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
-      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
+      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน · กดพิมพ์แล้วเลือกเครื่องจากหน้าต่างพิมพ์ของเบราว์เซอร์</p>
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
@@ -862,9 +902,9 @@ function renderStickerComposer(el, job){
         itemCards(cards)
       )}
       <details class="info-toggle" id="stkAdvanced">
-        <summary>ตั้งค่าไฟล์พิมพ์ (ไม่ต้องเลือกทุกครั้ง)</summary>
+        <summary>ตั้งค่าไฟล์พิมพ์ (ทางเลือก — สำหรับ TSC ผ่าน LAN / ไฟล์ .prn)</summary>
         <div class="info-body">
-          <p class="meta" style="margin:0 0 .5rem">เลย์เอาต์ถูกจัดให้ตรงสติ๊กเกอร์ 5 × 3.5 ซม. ที่ออกจาก TSC TE310 / 244 Pro — เปลี่ยนตรงนี้เฉพาะตอนส่งไฟล์เข้าเครื่องคนละรุ่น</p>
+          <p class="meta" style="margin:0 0 .5rem">ปกติใช้ปุ่มพิมพ์ด้านล่าง (เบราว์เซอร์) · ส่วนนี้สำหรับส่ง TSPL ตรงเข้าเครื่องหรือดาวน์โหลดไฟล์</p>
           <div class="field" style="margin:.35rem 0">
             <label>ความละเอียดไฟล์</label>
             <div class="seg" id="stkModelSeg">
@@ -875,14 +915,16 @@ function renderStickerComposer(el, job){
             <label>ส่งเข้าเครื่องบน LAN (ถ้ามี)</label>
             <input id="stkHost" class="text-input" type="text" placeholder="เว้นว่างได้ — จะดาวน์โหลดไฟล์" value="${escapeAttr(host)}"/>
           </div>
+          <div class="row-actions" style="margin:.5rem 0 0">
+            <button class="btn btn-ghost" id="btnStkDownload" type="button" ${copies?"":"disabled"}>ดาวน์โหลดไฟล์พิมพ์</button>
+            <button class="btn btn-ghost" id="btnStkLan" type="button" ${copies && host?"":"disabled"}>พิมพ์ผ่าน LAN</button>
+          </div>
         </div>
       </details>
       <div class="commit-bar">
         <div class="commit-meta">จะพิมพ์ <strong id="stkCopyCount">${copies}</strong> ดวง · เลือกแล้ว ${(job.lines||[]).filter(l=>l.selected).length} รายการ</div>
         <button class="btn btn-ghost" id="btnStkSkip">ข้าม</button>
-        ${host?`<button class="btn btn-ghost" id="btnStkDownload">ดาวน์โหลดไฟล์</button>
-        <button class="btn btn-primary" id="btnStkPrint" ${copies?"":"disabled"}>พิมพ์ทั้งหมด</button>`
-        :`<button class="btn btn-primary" id="btnStkDownload" ${copies?"":"disabled"}>ดาวน์โหลดไฟล์พิมพ์</button>`}
+        <button class="btn btn-primary" id="btnStkPrint" ${copies?"":"disabled"}>พิมพ์</button>
       </div>
     </div>`;
   const syncQty = ()=>{
@@ -898,9 +940,11 @@ function renderStickerComposer(el, job){
     const n = stickerCopies(job);
     const meta = el.querySelector("#stkCopyCount");
     if(meta) meta.textContent = n;
-    el.querySelectorAll("#btnStkPrint, #btnStkDownload").forEach(btn=>{
-      if(btn && btn.id==="btnStkPrint") btn.disabled = n<=0;
-      if(btn && btn.id==="btnStkDownload" && !host) btn.disabled = n<=0;
+    const hostVal = ((el.querySelector("#stkHost")||{}).value || stickerPrinterHost() || "").trim();
+    el.querySelectorAll("#btnStkPrint, #btnStkDownload, #btnStkLan").forEach(btn=>{
+      if(!btn) return;
+      if(btn.id==="btnStkLan") btn.disabled = n<=0 || !hostVal;
+      else btn.disabled = n<=0;
     });
   };
   let previewTimer = null;
@@ -954,7 +998,10 @@ function renderStickerComposer(el, job){
     refreshPreview();
   };
   const hostInput = el.querySelector("#stkHost");
-  if(hostInput) hostInput.onchange = e=> setStickerPrinterHost(e.target.value.trim());
+  if(hostInput) hostInput.oninput = hostInput.onchange = e=>{
+    setStickerPrinterHost(e.target.value.trim());
+    syncQty();
+  };
   el.querySelector("#btnStkSkip").onclick = ()=> leaveStickerPrint();
   const downloadBtn = el.querySelector("#btnStkDownload");
   if(downloadBtn) downloadBtn.onclick = async()=>{
@@ -965,16 +1012,23 @@ function renderStickerComposer(el, job){
       showToast("ดาวน์โหลดไฟล์พิมพ์แล้ว");
     }catch(e){ alert(e.message); }
   };
-  const printBtn = el.querySelector("#btnStkPrint");
-  if(printBtn) printBtn.onclick = async()=>{
+  const lanBtn = el.querySelector("#btnStkLan");
+  if(lanBtn) lanBtn.onclick = async()=>{
     syncQty();
     const h = hostInput ? hostInput.value.trim() : stickerPrinterHost();
     setStickerPrinterHost(h);
-    if(!h){ alert("ยังไม่ได้ตั้งค่าเครื่องบน LAN — ใช้ดาวน์โหลดไฟล์พิมพ์"); return; }
+    if(!h){ alert("ยังไม่ได้ตั้งค่าเครื่องบน LAN"); return; }
     try{
       const result = await sendStickerPrint(job, stickerPrinterModel(), h);
       showToast("พิมพ์แล้ว "+(result.copies||copies)+" ดวง");
       leaveStickerPrint();
+    }catch(e){ alert(e.message); }
+  };
+  const printBtn = el.querySelector("#btnStkPrint");
+  if(printBtn) printBtn.onclick = async()=>{
+    syncQty();
+    try{
+      await printStickersBrowser(job, stickerPrinterModel());
     }catch(e){ alert(e.message); }
   };
   refreshPreview();
@@ -994,6 +1048,7 @@ function printRequestBill(detail){
     <td class="num">${fmtQty(ln.qty_prepared)}</td>
     <td class="num">${fmtQty(ln.qty_received)}</td>
   </tr>`).join("");
+  $("printSheet").className = "";
   $("printSheet").innerHTML = `
     <h1 style="margin:0 0 .35rem;font-size:18pt">ใบคำขอโอนสินค้า</h1>
     <p style="margin:0 0 .75rem;font-size:12pt"><strong>TRF-${String(shortId).replace(/^TRF-/,"")}</strong>
