@@ -898,7 +898,7 @@ def api_sticker_preview(body: StickerPrintRequest, request: Request):
     if problem and not labels:
         return JSONResponse({"error": problem}, status_code=400)
     model = normalize_printer_model(body.printer_model)
-    # Composer only needs the first PNG; browser print asks for all_previews.
+    # Composer only needs the first PNG; all_previews keeps multi-label payloads available.
     want_all = bool(body.all_previews)
     label_payloads = []
     preview_b64 = ""

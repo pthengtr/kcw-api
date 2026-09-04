@@ -162,10 +162,6 @@ body.busy #busy{display:flex}
   position:absolute; left:-10000px; top:0; width:5cm;
   overflow:hidden; pointer-events:none; opacity:0;
 }
-@page sticker{
-  size:101.6mm 35mm;
-  margin:0;
-}
 @media print{
   body > *:not(#printSheet){display:none !important}
   #printSheet{
@@ -180,37 +176,6 @@ body.busy #busy{display:flex}
   #printSheet th.num,#printSheet td.num{text-align:right}
   #printSheet .sig{margin-top:2rem; display:grid; grid-template-columns:1fr 1fr; gap:2rem}
   #printSheet .sig-box{border-top:1px solid #999; padding-top:.5rem; font-size:10pt}
-  html.print-sticker-mode, html.print-sticker-mode body{
-    margin:0 !important; padding:0 !important; width:101.6mm !important; min-height:0 !important;
-    height:auto !important; background:#fff !important;
-  }
-  html.print-sticker-mode body > *:not(#printSheet){display:none !important}
-  #printSheet.print-stickers, html.print-sticker-mode #printSheet{
-    width:101.6mm !important; max-width:101.6mm !important; padding:0 !important; margin:0 !important;
-    overflow:hidden !important;
-  }
-  #printSheet.print-stickers .stk-row{
-    page:sticker;
-    display:flex; flex-direction:row; flex-wrap:nowrap;
-    width:101.6mm; height:35mm; margin:0; padding:0; border:0; overflow:hidden;
-    page-break-after:always; break-after:page;
-    page-break-inside:avoid; break-inside:avoid;
-  }
-  #printSheet.print-stickers .stk-row:last-child{
-    page-break-after:auto; break-after:auto;
-  }
-  #printSheet.print-stickers .stk-label{
-    width:50mm; height:35mm; margin:0; padding:0; border:0; overflow:hidden;
-    display:block; flex:0 0 50mm;
-    -webkit-print-color-adjust:exact; print-color-adjust:exact;
-  }
-  #printSheet.print-stickers .stk-label.stk-empty{
-    background:transparent;
-  }
-  #printSheet.print-stickers .stk-label img{
-    width:50mm; height:35mm; max-width:50mm; max-height:35mm;
-    display:block; margin:0; border:0; object-fit:fill; image-rendering:pixelated;
-  }
 }
 .action-grid{display:grid;gap:.85rem}
 .action-group{display:grid;gap:.55rem}
@@ -871,116 +836,6 @@ async function sendStickerPrint(job, model, host){
     body:JSON.stringify({lines, printer_model:model, printer_host:host, action:"print"}),
   });
 }
-function stickerPrintReadyKey(job, model){
-  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0);
-  return String(model||"")+"|"+lines.map(l=>String(l.bcode)+":"+String(l.qty)).join(",");
-}
-function fireStickerWindowPrint(objectUrls){
-  const pageStyle = document.getElementById("stickerPrintPage") || document.createElement("style");
-  pageStyle.id = "stickerPrintPage";
-  pageStyle.textContent = "@page{size:101.6mm 35mm;margin:0}";
-  const prevTitle = document.title;
-  let cleaned = false;
-  const cleanupPrint = ()=>{
-    if(cleaned) return;
-    cleaned = true;
-    document.title = prevTitle;
-    document.documentElement.classList.remove("print-sticker-mode");
-    if(pageStyle.parentNode) pageStyle.remove();
-    (objectUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
-  };
-  document.title = " ";
-  document.documentElement.classList.add("print-sticker-mode");
-  if(!pageStyle.parentNode) document.head.appendChild(pageStyle);
-  window.addEventListener("afterprint", cleanupPrint, {once:true});
-  setTimeout(cleanupPrint, 120000);
-  // Must run in the click stack (no await/setTimeout before this) or Chrome
-  // drops transient user activation and silently skips the print dialog.
-  window.print();
-}
-async function printStickersBrowser(job, model){
-  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
-  if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
-  const readyKey = stickerPrintReadyKey(job, model);
-  const sheet = $("printSheet");
-  // Second click: sheet already prepared — print synchronously so the dialog opens.
-  if(job._stkPrintReadyKey === readyKey && sheet && sheet.classList.contains("print-stickers") && sheet.querySelector(".stk-label img")){
-    fireStickerWindowPrint(job._stkPrintObjectUrls || []);
-    job._stkPrintReadyKey = "";
-    job._stkPrintObjectUrls = null;
-    return;
-  }
-  setBusy(true);
-  const objectUrls = [];
-  try{
-    let data;
-    try{
-      const r = await fetch("/transfer/api/stickers/preview",{
-        method:"POST",
-        credentials:"same-origin",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({lines, printer_model:model, all_previews:true}),
-      });
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(j.error||j.detail||("HTTP "+r.status));
-      data = j;
-    }catch(e){
-      const msg = String((e && e.message) || e || "");
-      if(/load failed|failed to fetch|networkerror|network error/i.test(msg)){
-        throw new Error("โหลดรูปสติ๊กเกอร์ไม่สำเร็จ — ตรวจเน็ตแล้วลองใหม่");
-      }
-      throw e;
-    }
-    const labels = (data && data.labels) || [];
-    const cells = [];
-    for(const lb of labels){
-      const png = lb.preview_png_b64 || "";
-      if(!png) continue;
-      const copies = Math.max(1, Math.min(200, Math.round(Number(lb.qty||1))));
-      const bin = atob(png);
-      const bytes = new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], {type:"image/png"}));
-      objectUrls.push(url);
-      const alt = String(lb.bcode||"").replace(/"/g,"");
-      for(let n=0;n<copies;n++){
-        cells.push(`<div class="stk-label"><img src="${url}" alt="${alt}"/></div>`);
-      }
-    }
-    if(!cells.length) throw new Error("สร้างรูปสติ๊กเกอร์ไม่สำเร็จ");
-    // 2-across × 1 row per page (101.6×35 mm) — odd last sticker leaves right cell empty.
-    const rowsHtml = [];
-    for(let i=0;i<cells.length;i+=2){
-      const left = cells[i];
-      const right = cells[i+1] || `<div class="stk-label stk-empty" aria-hidden="true"></div>`;
-      rowsHtml.push(`<div class="stk-row">${left}${right}</div>`);
-    }
-    sheet.className = "print-stickers";
-    sheet.innerHTML = rowsHtml.join("");
-    sheet.setAttribute("aria-hidden","false");
-    const imgs = Array.from(sheet.querySelectorAll("img"));
-    await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
-    job._stkPrintReadyKey = readyKey;
-    job._stkPrintObjectUrls = objectUrls;
-    setBusy(false);
-    // Do not setTimeout before print — timers clear Chrome user activation.
-    const gestActive = !(navigator.userActivation) || navigator.userActivation.isActive;
-    if(gestActive){
-      fireStickerWindowPrint(objectUrls);
-      job._stkPrintReadyKey = "";
-      job._stkPrintObjectUrls = null;
-    }else{
-      showToast("พร้อมพิมพ์แล้ว — กดพิมพ์อีกครั้ง");
-    }
-  } catch(e){
-    objectUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
-    job._stkPrintReadyKey = "";
-    job._stkPrintObjectUrls = null;
-    throw e;
-  } finally {
-    setBusy(false);
-  }
-}
 function renderStickerComposer(el, job){
   const model = stickerPrinterModel();
   const host = stickerPrinterHost();
@@ -1012,8 +867,8 @@ function renderStickerComposer(el, job){
   </div>`).join("");
   el.innerHTML = `<div class="card">
       <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
-      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน · พิมพ์เบราว์เซอร์จัด <strong>2 ดวงต่อแถว</strong> (กว้าง 101.6 มม.)</p>
-      <p class="meta">ในหน้าต่างพิมพ์: กระดาษกว้าง <strong>101.6 มม.</strong> · แถวละ 35 มม. (ม้วนเครื่องอาจเป็น 101.6 × 152.4) · ไม่ใช่ A4 · ขอบไม่มี · ปิด Headers and footers / ส่วนหัวและส่วนท้าย · ขนาด 100%</p>
+      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
+      <p class="meta">ดาวน์โหลดไฟล์ <strong>.prn</strong> (TSPL) แล้วส่งเข้าเครื่อง TSC — อย่าเปิดด้วย Word/Notepad · เลือกรุ่นเครื่องให้ตรงก่อนดาวน์โหลด</p>
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
@@ -1025,22 +880,21 @@ function renderStickerComposer(el, job){
         `<div class="table-wrap table-wrap--tall"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ดวง</th></tr></thead><tbody>${rows}</tbody></table></div>`,
         itemCards(cards)
       )}
+      <div class="field" style="margin:.75rem 0 .35rem">
+        <label>รุ่นเครื่องพิมพ์ (ความละเอียดไฟล์ .prn)</label>
+        <div class="seg" id="stkModelSeg">
+          ${STICKER_PRINTERS.map(p=>`<button type="button" data-model="${p.id}" class="${p.id===model?"on":""}">${p.label}</button>`).join("")}
+        </div>
+      </div>
       <details class="info-toggle" id="stkAdvanced">
-        <summary>ตั้งค่าไฟล์พิมพ์ (ทางเลือก — สำหรับ TSC ผ่าน LAN / ไฟล์ .prn)</summary>
+        <summary>พิมพ์ผ่าน LAN (ทางเลือก)</summary>
         <div class="info-body">
-          <p class="meta" style="margin:0 0 .5rem">ปกติใช้ปุ่มพิมพ์ด้านล่าง (เบราว์เซอร์) · ส่วนนี้สำหรับส่ง TSPL ตรงเข้าเครื่องหรือดาวน์โหลดไฟล์</p>
+          <p class="meta" style="margin:0 0 .5rem">ส่ง TSPL ตรงเข้าเครื่องบนพอร์ต 9100 — ต้องอยู่ในวง LAN / Tailscale เดียวกับเซิร์ฟเวอร์</p>
           <div class="field" style="margin:.35rem 0">
-            <label>ความละเอียดไฟล์</label>
-            <div class="seg" id="stkModelSeg">
-              ${STICKER_PRINTERS.map(p=>`<button type="button" data-model="${p.id}" class="${p.id===model?"on":""}">${p.label}</button>`).join("")}
-            </div>
-          </div>
-          <div class="field" style="margin:.35rem 0">
-            <label>ส่งเข้าเครื่องบน LAN (ถ้ามี)</label>
-            <input id="stkHost" class="text-input" type="text" placeholder="เว้นว่างได้ — จะดาวน์โหลดไฟล์" value="${escapeAttr(host)}"/>
+            <label>IP เครื่องพิมพ์</label>
+            <input id="stkHost" class="text-input" type="text" placeholder="เช่น 192.168.1.50" value="${escapeAttr(host)}"/>
           </div>
           <div class="row-actions" style="margin:.5rem 0 0">
-            <button class="btn btn-ghost" id="btnStkDownload" type="button" ${copies?"":"disabled"}>ดาวน์โหลดไฟล์พิมพ์</button>
             <button class="btn btn-ghost" id="btnStkLan" type="button" ${copies && host?"":"disabled"}>พิมพ์ผ่าน LAN</button>
           </div>
         </div>
@@ -1048,7 +902,7 @@ function renderStickerComposer(el, job){
       <div class="commit-bar">
         <div class="commit-meta">จะพิมพ์ <strong id="stkCopyCount">${copies}</strong> ดวง · เลือกแล้ว <strong id="stkSelectedCount">${(job.lines||[]).filter(l=>l.selected).length}</strong> รายการ</div>
         <button class="btn btn-ghost" id="btnStkSkip">ข้าม</button>
-        <button class="btn btn-primary" id="btnStkPrint" ${copies?"":"disabled"}>พิมพ์</button>
+        <button class="btn btn-primary" id="btnStkDownload" type="button" ${copies?"":"disabled"}>ดาวน์โหลดไฟล์ .prn</button>
       </div>
     </div>`;
   const syncQty = ()=>{
@@ -1073,11 +927,10 @@ function renderStickerComposer(el, job){
     const selMeta = el.querySelector("#stkSelectedCount");
     if(selMeta) selMeta.textContent = selectedN;
     const hostVal = ((el.querySelector("#stkHost")||{}).value || stickerPrinterHost() || "").trim();
-    el.querySelectorAll("#btnStkPrint, #btnStkDownload, #btnStkLan").forEach(btn=>{
-      if(!btn) return;
-      if(btn.id==="btnStkLan") btn.disabled = n<=0 || !hostVal;
-      else btn.disabled = n<=0;
-    });
+    const downloadBtn = el.querySelector("#btnStkDownload");
+    if(downloadBtn) downloadBtn.disabled = n<=0;
+    const lanBtn = el.querySelector("#btnStkLan");
+    if(lanBtn) lanBtn.disabled = n<=0 || !hostVal;
   };
   let previewTimer = null;
   let lastPreviewKey = "";
@@ -1156,10 +1009,9 @@ function renderStickerComposer(el, job){
   const downloadBtn = el.querySelector("#btnStkDownload");
   if(downloadBtn) downloadBtn.onclick = async()=>{
     syncQty();
-    if(hostInput) setStickerPrinterHost(hostInput.value.trim());
     try{
       await downloadStickerPrn(job, stickerPrinterModel());
-      showToast("ดาวน์โหลดไฟล์พิมพ์แล้ว");
+      showToast("ดาวน์โหลดไฟล์ .prn แล้ว — ส่งเข้าเครื่อง TSC เป็น raw/TSPL");
     }catch(e){ alert(e.message); }
   };
   const lanBtn = el.querySelector("#btnStkLan");
@@ -1172,13 +1024,6 @@ function renderStickerComposer(el, job){
       const result = await sendStickerPrint(job, stickerPrinterModel(), h);
       showToast("พิมพ์แล้ว "+(result.copies||copies)+" ดวง");
       leaveStickerPrint();
-    }catch(e){ alert(e.message); }
-  };
-  const printBtn = el.querySelector("#btnStkPrint");
-  if(printBtn) printBtn.onclick = async()=>{
-    syncQty();
-    try{
-      await printStickersBrowser(job, stickerPrinterModel());
     }catch(e){ alert(e.message); }
   };
   refreshPreview();
