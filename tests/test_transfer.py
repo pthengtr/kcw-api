@@ -116,6 +116,7 @@ def test_transfer_page_renders():
     assert "chkPrintStickers" in html
     assert "TSC TE310" in html
     assert "ตั้งค่าไฟล์พิมพ์" in html
+    assert "printStickersBrowser" in html
     assert "data-stickers=" in html
 
 

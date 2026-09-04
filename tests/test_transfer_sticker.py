@@ -148,6 +148,7 @@ def test_transfer_page_has_sticker_print_flow():
     assert "openStickerPrint" in html
     assert "openStickerPrintFromTransfer" in html
     assert "renderStickerComposer" in html
+    assert "printStickersBrowser" in html
     assert "chkPrintStickers" in html
     assert "พิมพ์สติ๊กเกอร์บาร์โค้ด" in html
     assert "data-stickers=" in html
@@ -162,11 +163,14 @@ def test_transfer_page_has_sticker_print_flow():
     assert "1 ชิ้นที่รับ = 1 ดวง" in html
     assert "ตั้งค่าไฟล์พิมพ์" in html
     assert "ดาวน์โหลดไฟล์พิมพ์" in html
+    assert "print-stickers" in html
+    assert "window.print()" in html
     assert "btnDetailStickers" in html
     assert "เลือกทั้งหมด" in html
     assert "btnStkAll" in html
     assert "kcw-stickers-" in html
-
+    assert 'id="btnStkPrint"' in html
+    assert ">พิมพ์<" in html or ">พิมพ์</button>" in html
 
 def test_sticker_preview_and_download_api():
     from app.transfer_app import app
@@ -205,6 +209,8 @@ def test_sticker_preview_and_download_api():
         assert body["copies"] == 4
         assert body["labels"][0]["price_code"] == "OTSMXLTM"
         assert body["preview_png_b64"]
+        assert body["labels"][0]["preview_png_b64"]
+        assert body["labels"][0]["preview_png_b64"] == body["preview_png_b64"]
 
         prn = client.post(
             "/transfer/api/stickers/print",

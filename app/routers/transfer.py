@@ -833,15 +833,19 @@ def api_sticker_preview(body: StickerPrintRequest, request: Request):
     if problem and not labels:
         return JSONResponse({"error": problem}, status_code=400)
     model = normalize_printer_model(body.printer_model)
-    preview_b64 = ""
-    if labels:
-        preview_b64 = base64.standard_b64encode(
-            render_label_png(labels[0], printer_model=model)
+    label_payloads = []
+    for label in labels:
+        png_b64 = base64.standard_b64encode(
+            render_label_png(label, printer_model=model)
         ).decode("ascii")
+        row = label.as_preview_dict()
+        row["preview_png_b64"] = png_b64
+        label_payloads.append(row)
+    preview_b64 = label_payloads[0]["preview_png_b64"] if label_payloads else ""
     return {
         "printer_model": model,
         "copies": count_copies(labels),
-        "labels": [label.as_preview_dict() for label in labels],
+        "labels": label_payloads,
         "preview_png_b64": preview_b64,
     }
 
