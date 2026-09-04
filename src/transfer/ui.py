@@ -863,36 +863,24 @@ async function sendStickerPrint(job, model, host){
     body:JSON.stringify({lines, printer_model:model, printer_host:host, action:"print"}),
   });
 }
-function stickerPrintCss(){
-  return `@page{size:50mm 35mm;margin:0}`
-    +`html,body{margin:0;padding:0;width:50mm;min-height:0;height:auto;background:#fff}`
-    +`.stk-label{width:50mm;height:35mm;margin:0;padding:0;overflow:hidden;`
-    +`page-break-after:always;break-after:page;page-break-inside:avoid;break-inside:avoid}`
-    +`.stk-label:last-child{page-break-after:auto;break-after:auto}`
-    +`.stk-label img{width:50mm;height:35mm;max-width:50mm;max-height:35mm;`
-    +`display:block;margin:0;border:0;object-fit:fill;`
-    +`-webkit-print-color-adjust:exact;print-color-adjust:exact}`;
-}
-function waitPrintDialog(win){
-  return new Promise(resolve=>{
-    let settled = false;
-    const done = ()=>{ if(settled) return; settled = true; resolve(); };
-    const target = win || window;
-    try{ target.addEventListener("afterprint", done, {once:true}); }catch(_e){}
-    try{ target.focus(); target.print(); }catch(_e){ try{ window.print(); }catch(_e2){} }
-    done();
-  });
-}
 async function printStickersBrowser(job, model){
   const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
   if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
   setBusy(true);
   const objectUrls = [];
-  let iframe = null;
   const pageStyle = document.getElementById("stickerPrintPage") || document.createElement("style");
   pageStyle.id = "stickerPrintPage";
   pageStyle.textContent = "@page{size:50mm 35mm;margin:0}";
   const prevTitle = document.title;
+  let cleaned = false;
+  const cleanupPrint = ()=>{
+    if(cleaned) return;
+    cleaned = true;
+    document.title = prevTitle;
+    document.documentElement.classList.remove("print-sticker-mode");
+    if(pageStyle.parentNode) pageStyle.remove();
+    objectUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
+  };
   try{
     let data;
     try{
@@ -936,41 +924,18 @@ async function printStickersBrowser(job, model){
     sheet.className = "print-stickers";
     sheet.innerHTML = parts.join("");
     sheet.setAttribute("aria-hidden","false");
-    iframe = document.createElement("iframe");
-    iframe.setAttribute("aria-hidden","true");
-    iframe.setAttribute("title"," ");
-    iframe.style.cssText = "position:fixed;left:0;top:0;width:50mm;height:35mm;border:0;opacity:0;pointer-events:none;";
-    document.body.appendChild(iframe);
-    const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
-    if(doc){
-      doc.open();
-      doc.write(`<!doctype html><html><head><meta charset="utf-8"/><title> </title><style>${stickerPrintCss()}</style></head><body>${parts.join("")}</body></html>`);
-      doc.close();
-      const imgs = Array.from(doc.images||[]);
-      await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
-      setBusy(false);
-      await new Promise(r=> setTimeout(r, 80));
-      await waitPrintDialog(iframe.contentWindow);
-    }else{
-      const sheet = $("printSheet");
-      sheet.className = "print-stickers";
-      sheet.innerHTML = parts.join("");
-      sheet.setAttribute("aria-hidden","false");
-      const imgs = Array.from(sheet.querySelectorAll("img"));
-      await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
-      setBusy(false);
-      await new Promise(r=> setTimeout(r, 80));
-      await waitPrintDialog(window);
-    }
-  } finally {
-    document.title = prevTitle;
-    document.documentElement.classList.remove("print-sticker-mode");
-    if(pageStyle.parentNode) pageStyle.remove();
+    const imgs = Array.from(sheet.querySelectorAll("img"));
+    await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
     setBusy(false);
-    setTimeout(()=>{
-      if(iframe) try{ iframe.remove(); }catch(_e){}
-      objectUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
-    }, 60000);
+    await new Promise(r=> setTimeout(r, 50));
+    window.addEventListener("afterprint", cleanupPrint, {once:true});
+    setTimeout(cleanupPrint, 120000);
+    window.print();
+  } catch(e){
+    cleanupPrint();
+    throw e;
+  } finally {
+    setBusy(false);
   }
 }
 function renderStickerComposer(el, job){
