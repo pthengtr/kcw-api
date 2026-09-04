@@ -1,38 +1,25 @@
 # KCW PRN Printer
 
-Windows helper for transfer-desk sticker printing: double-click a `.prn` → preview stickers / barcode quantities → send RAW to a local TSC (or other) printer.
+Windows helper for transfer sticker printing: double-click a `.prn` to preview and print.
 
 Served by the **transfer** app (`kcw-transfer`, typically `:8792`).
 
-## For transfer users
+## For ops (simple)
 
-On the sticker print screen, expand **ตัวช่วยพิมพ์ .prn บน Windows**, or open:
+1. Download `KCW-PRN-Install-v….cmd` from the sticker screen or `/tools/prn-printer/install.cmd`
+2. Double-click it
+3. Done — next time just double-click downloaded `.prn` files
 
-`http://<transfer-host>:8792/tools/prn-printer/`
+To update later: download and double-click again (replaces the old install).
 
-One-line install / update / replace (PowerShell):
-
-```powershell
-irm http://<transfer-host>:8792/tools/prn-printer/install.ps1 | iex
-```
-
-Re-running the same command **replaces** the previous install under `%LOCALAPPDATA%\KCW\PrnPrinter` and keeps the `.prn` file association.
-
-## Local / offline install
-
-From this folder:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-PrnPrinter.ps1
-```
-
-## API endpoints (transfer app)
+## API
 
 | Path | Purpose |
 |------|---------|
-| `GET /tools/prn-printer/` | Install instructions (HTML) |
-| `GET /tools/prn-printer/version` | `{ version, notes, ... }` |
-| `GET /tools/prn-printer/install.ps1` | Bootstrap installer |
+| `GET /tools/prn-printer/` | Short install page |
+| `GET /tools/prn-printer/install.cmd` | **Double-click installer** (download) |
+| `GET /tools/prn-printer/install.ps1` | PowerShell bootstrap (advanced) |
+| `GET /tools/prn-printer/version` | Version JSON |
 | `GET /tools/prn-printer/download.zip` | Full package zip |
 
 ## Third-party

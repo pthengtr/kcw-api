@@ -172,8 +172,8 @@ def test_transfer_page_has_sticker_print_flow():
     assert "พิมพ์ผ่าน LAN" in html
     assert "รุ่นเครื่องพิมพ์" in html
     assert "stkPrnHelper" in html
-    assert "/tools/prn-printer/" in html
-    assert "btnStkPrnHelperCopy" in html
+    assert "/tools/prn-printer/install.cmd" in html
+    assert "ดาวน์โหลดตัวติดตั้ง" in html
     assert 'action:"download"' in html
     assert "print-sticker-mode" not in html
     assert "stk-row" not in html
