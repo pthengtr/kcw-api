@@ -828,6 +828,10 @@ function renderStickerComposer(el, job){
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
+      <div class="row-actions" style="margin:.35rem 0 .15rem">
+        <button class="btn btn-ghost" id="btnStkAll" type="button">เลือกทั้งหมด</button>
+        <button class="btn btn-ghost" id="btnStkNone" type="button">ล้าง</button>
+      </div>
       ${dualView(
         `<div class="table-wrap table-wrap--tall"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ดวง</th></tr></thead><tbody>${rows}</tbody></table></div>`,
         itemCards(cards)
@@ -891,6 +895,18 @@ function renderStickerComposer(el, job){
     if(!b) return;
     setStickerPrinterModel(b.dataset.model);
     el.querySelectorAll("#stkModelSeg button").forEach(x=>x.classList.toggle("on", x===b));
+    refreshPreview();
+  };
+  el.querySelector("#btnStkAll").onclick = ()=>{
+    job.lines.forEach(l=>l.selected=true);
+    el.querySelectorAll(".stk-sel").forEach(inp=>inp.checked=true);
+    syncQty();
+    refreshPreview();
+  };
+  el.querySelector("#btnStkNone").onclick = ()=>{
+    job.lines.forEach(l=>l.selected=false);
+    el.querySelectorAll(".stk-sel").forEach(inp=>inp.checked=false);
+    syncQty();
     refreshPreview();
   };
   el.querySelector("#stkHost").onchange = e=> setStickerPrinterHost(e.target.value.trim());
