@@ -74,7 +74,7 @@ def test_transfer_sticker_ui_offers_one_click_prn_helper():
         syp_receive_enabled=False,
     )
     assert "stkPrnHelper" in html
+    assert "stk-prn-helper" in html
     assert "/tools/prn-printer/install.cmd" in html
-    assert "btnStkPrnHelperDownload" in html
     assert "ดาวน์โหลดตัวติดตั้ง" in html
     assert "btnStkPrnHelperCopy" not in html

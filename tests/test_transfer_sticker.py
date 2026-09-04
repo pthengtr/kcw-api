@@ -167,7 +167,8 @@ def test_transfer_page_has_sticker_print_flow():
     assert "/transfer/api/stickers/print" in html
     assert "TSC TE310" in html
     assert "244 Pro" in html
-    assert "1 ชิ้นที่รับ = 1 ดวง" in html
+    assert "1 ชิ้น = 1 ดวง" in html
+    assert "stk-prn-helper" in html
     assert "ดาวน์โหลดไฟล์ .prn" in html
     assert "พิมพ์ผ่าน LAN" in html
     assert "รุ่นเครื่องพิมพ์" in html
