@@ -169,12 +169,12 @@ def test_transfer_page_has_sticker_print_flow():
     assert "ตั้งค่าไฟล์พิมพ์" in html
     assert "ดาวน์โหลดไฟล์พิมพ์" in html
     assert "print-stickers" in html
-    assert "window.print()" in html or "contentWindow.print" in html or "waitPrintDialog" in html
+    assert "window.print()" in html
     assert "@page" in html
     assert "50mm 35mm" in html
     assert "print-sticker-mode" in html
     assert "Headers and footers" in html
-    assert "stickerPrintCss" in html
+    assert "stickerPrintPage" in html
     assert "all_previews" in html
     assert "left:-10000px" in html
     assert "btnDetailStickers" in html
