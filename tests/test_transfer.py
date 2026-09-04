@@ -94,6 +94,8 @@ def test_transfer_page_renders():
     assert "ยังไม่ออกใบ TF" in html
     assert "receive-lines" in html
     assert "receiveStepBar" in html or "เลือกคำขอ" in html
+    assert "recvSearch" in html
+    assert "bindLineSearch" in html
     assert "prepareStepBar" in html
     assert "openPrepareRequest" in html
     assert "@media (max-width:640px)" in html

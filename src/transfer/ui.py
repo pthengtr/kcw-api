@@ -330,6 +330,7 @@ let suggestItems = [];
 let suggestFilter = "";
 /** Local picks on suggest list: bcode → {checked, unit, qty} — survives soft re-renders. */
 let suggestPick = {};
+let receiveFilter = "";
 let toastTimer = null;
 
 const VIEWS = {
@@ -798,8 +799,8 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; render(); }
-function goView(v){ view=v; if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; } if(v==="receive"){ receiveStep=1; receiveShipment=null; } if(v==="prepare"){ prepareStep=1; prepareRequest=null; } render(); }
+function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; render(); }
+function goView(v){ view=v; if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; } if(v==="receive"){ receiveStep=1; receiveShipment=null; receiveFilter=""; } if(v==="prepare"){ prepareStep=1; prepareRequest=null; } render(); }
 function setReceiveStep(n){ receiveStep=n; render(); }
 function setPrepareStep(n){ prepareStep=n; render(); }
 function setRequestStep(n){ requestStep=n; render(); }
@@ -885,6 +886,50 @@ function groupReceiveQueue(items){
     map.get(key).lines.push(row);
   }
   return [...map.values()];
+}
+function lineFilterText(ln){
+  return [ln.bcode, ln.descr, ln.model, ln.location, ln.location_hq, ln.location_syp]
+    .map(v=>(v==null?"":String(v))).join(" ").trim();
+}
+function escapeAttr(s){
+  return String(s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+}
+/** Client-side hide/show of line rows — keeps qty inputs in DOM. */
+function bindLineSearch(root, {inputId, rowSelector, metaId, total}){
+  const input = root.querySelector(inputId);
+  if(!input) return;
+  const apply = ()=>{
+    const q = (input.value||"").trim().toLowerCase();
+    receiveFilter = input.value;
+    let shown = 0;
+    root.querySelectorAll(rowSelector).forEach(row=>{
+      const hay = (row.dataset.filterText||"").toLowerCase();
+      const ok = !q || hay.includes(q);
+      row.hidden = !ok;
+      if(ok) shown++;
+    });
+    const meta = metaId ? root.querySelector(metaId) : null;
+    if(meta){
+      if(q){
+        meta.hidden = false;
+        meta.textContent = shown
+          ? `แสดง ${shown} จาก ${total} รายการ`
+          : `ไม่พบ "${input.value.trim()}" ในรายการ`;
+      } else {
+        meta.hidden = true;
+        meta.textContent = "";
+      }
+    }
+  };
+  input.oninput = apply;
+  input.onkeydown = e=>{
+    if(e.key==="Escape"){
+      e.preventDefault();
+      input.value = "";
+      apply();
+    }
+  };
+  if((input.value||"").trim()) apply();
 }
 
 async function fetchCounts(){
@@ -1372,12 +1417,14 @@ async function renderReceive(el){
     el.querySelectorAll("[data-recv-open]").forEach(b=>b.onclick=e=>{
       e.stopPropagation();
       receiveShipment = window._receiveGroups[Number(b.dataset.recvOpen)];
+      receiveFilter = "";
       setReceiveStep(2);
     });
     el.querySelectorAll(".row-clickable[data-recv-idx]").forEach(row=>{
       row.onclick = e=>{
         if(e.target.closest("button")) return;
         receiveShipment = window._receiveGroups[Number(row.dataset.recvIdx)];
+        receiveFilter = "";
         setReceiveStep(2);
       };
     });
@@ -1400,13 +1447,15 @@ async function renderReceive(el){
   if(receiveStep === 2){
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_open||0);
-      return `<tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td>
+      const ft = escapeAttr(lineFilterText(ln));
+      return `<tr class="recv-line" data-filter-text="${ft}"><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td>
         <td class="num"><input class="qty-input recv-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-shipment-line="${ln.shipment_line_id}"/></td></tr>`;
     }).join("");
     const cardRows = openLines.map(ln=>{
       const remain = Number(ln.qty_open||0);
-      return `<div class="item-card">
+      const ft = escapeAttr(lineFilterText(ln));
+      return `<div class="item-card recv-line" data-filter-text="${ft}">
         <div class="item-card-head"><code>${ln.bcode}</code></div>
         <div class="item-card-desc">${fmtDescr(ln)}</div>
         <div class="item-card-grid">
@@ -1419,13 +1468,19 @@ async function renderReceive(el){
         </div>
       </div>`;
     }).join("");
+    const filterVal = escapeAttr(receiveFilter);
     el.innerHTML = `${receiveStepBar(2)}
       <div class="card">
         <p><strong>${ship.short_id}</strong> · ${dirLabel(ship.from_branch, ship.to_branch)}</p>
-        <p class="meta">ใบจัด <code>${ship.ship_billno||"-"}</code> — ระบุจำนวนที่รับแต่ละรายการ</p>
+        <p class="meta">ใบจัด <code>${ship.ship_billno||"-"}</code> — ค้นหารหัสที่แกะกล่องแล้วกรอกจำนวนรับ (รายการที่ซ่อนยังคงจำนวนเดิม)</p>
         ${receiveBillNoteHtml(ship.from_branch, ship.to_branch, ship.ship_billno)}
+        <div class="search-bar" style="margin-top:.75rem">
+          <input id="recvSearch" class="text-input" type="search" autocomplete="off"
+            placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / รุ่น / ที่เก็บ)" value="${filterVal}"/>
+        </div>
+        <p id="recvFilterMeta" class="meta" style="margin:.35rem 0 0" hidden></p>
         ${dualView(
-          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+          `<div class="table-wrap table-wrap--tall" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>`,
           itemCards(cardRows)
         )}
         <div class="row-actions">
@@ -1434,10 +1489,23 @@ async function renderReceive(el){
         </div>
       </div>`;
     bindSyncedQtyInputs(el, ".recv-qty");
+    bindLineSearch(el, {
+      inputId: "#recvSearch",
+      rowSelector: ".recv-line",
+      metaId: "#recvFilterMeta",
+      total: openLines.length,
+    });
+    const searchEl = el.querySelector("#recvSearch");
+    if(searchEl && receiveFilter){
+      searchEl.focus();
+      const len = searchEl.value.length;
+      try{ searchEl.setSelectionRange(len, len); }catch(_e){}
+    }
     el.querySelector("#btnRecvNext2").onclick = ()=>{
       const {qtyMap, any} = collectPositiveQtyMap(el, ".recv-qty", "shipmentLine");
       if(!any){alert("ระบุจำนวนที่รับ");return;}
       ship._qtyDraft = qtyMap;
+      receiveFilter = "";
       setReceiveStep(3);
     };
     return;
