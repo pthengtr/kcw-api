@@ -117,6 +117,8 @@ def test_transfer_page_renders():
     assert "TSC TE310" in html
     assert "ดาวน์โหลดไฟล์ .prn" in html
     assert "downloadStickerPrn" in html
+    assert "stkPrnHelper" in html
+    assert "/tools/prn-printer/install.ps1" in html or "tools/prn-printer" in html
     assert "printStickersBrowser" not in html
     assert "data-stickers=" in html
 

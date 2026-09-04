@@ -869,6 +869,20 @@ function renderStickerComposer(el, job){
       <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
       <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
       <p class="meta">ดาวน์โหลดไฟล์ <strong>.prn</strong> (TSPL) แล้วส่งเข้าเครื่อง TSC — อย่าเปิดด้วย Word/Notepad · เลือกรุ่นเครื่องให้ตรงก่อนดาวน์โหลด</p>
+      <details class="info-toggle" id="stkPrnHelper" open>
+        <summary>ตัวช่วยพิมพ์ .prn บน Windows (ดับเบิลคลิก)</summary>
+        <div class="info-body">
+          <p class="meta" style="margin:0 0 .45rem">ติดตั้งครั้งเดียวบน PC ที่ต่อ TSC — ดาวน์โหลด .prn แล้วดับเบิลคลิกจะพรีวิว + เลือกเครื่องพิมพ์ให้</p>
+          <p class="meta" id="stkPrnHelperVer" style="margin:0 0 .45rem">กำลังตรวจเวอร์ชันตัวช่วย…</p>
+          <pre id="stkPrnHelperCmd" style="margin:.35rem 0;padding:.65rem .75rem;background:#0f172a;color:#e2e8f0;border-radius:10px;font-size:.82rem;overflow:auto;white-space:pre-wrap">irm …/tools/prn-printer/install.ps1 | iex</pre>
+          <div class="row-actions" style="margin:.5rem 0 0;flex-wrap:wrap;gap:.4rem">
+            <button class="btn btn-ghost" id="btnStkPrnHelperCopy" type="button">คัดลอกคำสั่งติดตั้ง / อัปเดต</button>
+            <a class="btn btn-ghost" id="btnStkPrnHelperPage" href="/tools/prn-printer/" target="_blank" rel="noopener">เปิดหน้าติดตั้ง</a>
+            <a class="btn btn-ghost" id="btnStkPrnHelperZip" href="/tools/prn-printer/download.zip">ดาวน์โหลด ZIP</a>
+          </div>
+          <p class="meta" style="margin:.55rem 0 0">อัปเดตหรือแทนที่ของเก่า: รันคำสั่งเดิมอีกครั้ง (เขียนทับที่ %LOCALAPPDATA%\\KCW\\PrnPrinter)</p>
+        </div>
+      </details>
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
@@ -1011,9 +1025,42 @@ function renderStickerComposer(el, job){
     syncQty();
     try{
       await downloadStickerPrn(job, stickerPrinterModel());
-      showToast("ดาวน์โหลดไฟล์ .prn แล้ว — ส่งเข้าเครื่อง TSC เป็น raw/TSPL");
+      showToast("ดาวน์โหลด .prn แล้ว — ดับเบิลคลิกเพื่อพิมพ์ (ถ้าติดตั้งตัวช่วยแล้ว)");
     }catch(e){ alert(e.message); }
   };
+  // PRN helper install / update (served by this transfer app)
+  (function setupPrnHelper(){
+    const base = window.location.origin;
+    const installUrl = base + "/tools/prn-printer/install.ps1";
+    const cmd = "irm " + installUrl + " | iex";
+    const cmdEl = el.querySelector("#stkPrnHelperCmd");
+    if(cmdEl) cmdEl.textContent = cmd;
+    const pageBtn = el.querySelector("#btnStkPrnHelperPage");
+    if(pageBtn) pageBtn.href = base + "/tools/prn-printer/";
+    const zipBtn = el.querySelector("#btnStkPrnHelperZip");
+    if(zipBtn) zipBtn.href = base + "/tools/prn-printer/download.zip";
+    const copyBtn = el.querySelector("#btnStkPrnHelperCopy");
+    if(copyBtn) copyBtn.onclick = async()=>{
+      try{
+        await navigator.clipboard.writeText(cmd);
+        showToast("คัดลอกคำสั่งติดตั้งแล้ว — วางใน PowerShell");
+      }catch(_e){
+        prompt("คัดลอกคำสั่งนี้:", cmd);
+      }
+    };
+    const verEl = el.querySelector("#stkPrnHelperVer");
+    if(verEl){
+      fetch(base + "/tools/prn-printer/version", {credentials:"same-origin"})
+        .then(r=>r.ok?r.json():null)
+        .then(v=>{
+          if(!v){ verEl.textContent = "เปิดหน้าติดตั้งได้จากปุ่มด้านล่าง"; return; }
+          verEl.textContent = "เวอร์ชันล่าสุดบนเซิร์ฟเวอร์: v"+(v.version||"?")
+            + (v.notes ? " — "+v.notes : "")
+            + " · รันคำสั่งเดิมอีกครั้งเพื่ออัปเดต/แทนที่";
+        })
+        .catch(()=>{ verEl.textContent = "เปิดหน้าติดตั้งได้จากปุ่มด้านล่าง"; });
+    }
+  })();
   const lanBtn = el.querySelector("#btnStkLan");
   if(lanBtn) lanBtn.onclick = async()=>{
     syncQty();
