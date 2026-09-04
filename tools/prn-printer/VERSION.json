@@ -1,7 +1,7 @@
 {
   "name": "kcw-prn-printer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "released": "2026-09-05",
   "min_windows": "10",
-  "notes": "One-click: download install.cmd and double-click to install or update."
+  "notes": "Fix install.cmd download URL (one-click install)."
 }
