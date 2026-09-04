@@ -149,6 +149,8 @@ def test_transfer_page_has_sticker_print_flow():
     assert "openStickerPrintFromTransfer" in html
     assert "renderStickerComposer" in html
     assert "printStickersBrowser" in html
+    assert "visibleDualPane" in html
+    assert "stkSelectedCount" in html
     assert "chkPrintStickers" in html
     assert "พิมพ์สติ๊กเกอร์บาร์โค้ด" in html
     assert "data-stickers=" in html

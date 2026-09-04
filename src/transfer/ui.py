@@ -959,24 +959,32 @@ function renderStickerComposer(el, job){
         </div>
       </details>
       <div class="commit-bar">
-        <div class="commit-meta">จะพิมพ์ <strong id="stkCopyCount">${copies}</strong> ดวง · เลือกแล้ว ${(job.lines||[]).filter(l=>l.selected).length} รายการ</div>
+        <div class="commit-meta">จะพิมพ์ <strong id="stkCopyCount">${copies}</strong> ดวง · เลือกแล้ว <strong id="stkSelectedCount">${(job.lines||[]).filter(l=>l.selected).length}</strong> รายการ</div>
         <button class="btn btn-ghost" id="btnStkSkip">ข้าม</button>
         <button class="btn btn-primary" id="btnStkPrint" ${copies?"":"disabled"}>พิมพ์</button>
       </div>
     </div>`;
   const syncQty = ()=>{
-    el.querySelectorAll(".stk-qty").forEach(inp=>{
+    const pane = visibleDualPane(el);
+    pane.querySelectorAll(".stk-qty").forEach(inp=>{
       const i = Number(inp.dataset.i);
+      if(!Number.isFinite(i) || !job.lines[i]) return;
       const q = Math.max(1, Math.min(200, Math.round(Number(inp.value||1))));
       job.lines[i].qty = q;
-      inp.value = q;
+      el.querySelectorAll(`.stk-qty[data-i="${i}"]`).forEach(other=>{ other.value = q; });
     });
-    el.querySelectorAll(".stk-sel").forEach(inp=>{
-      job.lines[Number(inp.dataset.i)].selected = inp.checked;
+    pane.querySelectorAll(".stk-sel").forEach(inp=>{
+      const i = Number(inp.dataset.i);
+      if(!Number.isFinite(i) || !job.lines[i]) return;
+      job.lines[i].selected = !!inp.checked;
+      el.querySelectorAll(`.stk-sel[data-i="${i}"]`).forEach(other=>{ other.checked = inp.checked; });
     });
     const n = stickerCopies(job);
+    const selectedN = (job.lines||[]).filter(l=>l.selected).length;
     const meta = el.querySelector("#stkCopyCount");
     if(meta) meta.textContent = n;
+    const selMeta = el.querySelector("#stkSelectedCount");
+    if(selMeta) selMeta.textContent = selectedN;
     const hostVal = ((el.querySelector("#stkHost")||{}).value || stickerPrinterHost() || "").trim();
     el.querySelectorAll("#btnStkPrint, #btnStkDownload, #btnStkLan").forEach(btn=>{
       if(!btn) return;
