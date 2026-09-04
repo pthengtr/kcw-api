@@ -19,6 +19,7 @@ from src.transfer.db import (
     bump_line_received,
     bump_shipment_line_received,
     cancel_request,
+    clear_need_list,
     create_draft,
     create_receipt,
     create_shipment,
@@ -30,12 +31,15 @@ from src.transfer.db import (
     get_shipment_by_token,
     get_transfer_supabase_client,
     list_lines,
+    list_lines_by_transfers,
     list_need,
     list_receive_queue,
     list_requests,
     list_shipment_lines,
     list_shipments,
+    list_shipments_by_transfers,
     refresh_request_status,
+    replace_need_list,
     set_request_lines,
     shipment_has_lines,
     submit_request,
@@ -93,6 +97,10 @@ class NeedCreate(BaseModel):
     descr: str = ""
     suggest_qty: float = 0
     hq_qtyoh2: float | None = None
+
+
+class NeedReplace(BaseModel):
+    lines: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DraftCreate(BaseModel):
@@ -339,6 +347,28 @@ def api_need_create(body: NeedCreate, request: Request):
     return row
 
 
+@router.delete("/api/need-list")
+def api_need_clear(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    clear_need_list(get_transfer_supabase_client())
+    return {"ok": True}
+
+
+@router.put("/api/need-list")
+def api_need_replace(body: NeedReplace, request: Request):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    rows = replace_need_list(
+        get_transfer_supabase_client(),
+        body.lines or [],
+        actor=ident.display_name,
+    )
+    return {"items": enrich_transfer_lines(rows)}
+
+
 @router.delete("/api/need-list/{need_id}")
 def api_need_delete(need_id: str, request: Request):
     _, err = _require_api(request)
@@ -370,10 +400,14 @@ def api_requests(
     settings = _settings()
     client = get_transfer_supabase_client()
     items = list_requests(client, status=status, role=role, site=settings.site)
+    transfer_ids = [req["transfer_id"] for req in items]
+    lines_by = list_lines_by_transfers(client, transfer_ids)
+    ships_by = list_shipments_by_transfers(client, transfer_ids)
     out = []
     for req in items:
-        lines = enrich_lines(list_lines(client, req["transfer_id"]))
-        ships = list_shipments(client, transfer_id=req["transfer_id"])
+        tid = req["transfer_id"]
+        lines = enrich_lines(lines_by.get(tid) or [])
+        ships = ships_by.get(tid) or []
         row = dict(req)
         row["line_count"] = len(lines)
         row["shipment_count"] = len(ships)

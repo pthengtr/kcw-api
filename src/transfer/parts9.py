@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from sqlalchemy import text
@@ -128,30 +131,13 @@ def _should_use_peer_for_site(site_key: str) -> bool:
     return site_sql_hosts_collide()
 
 
-def _fetch_icmas_via_peer(
-    bcodes: list[str], *, include_blocked: bool = True
-) -> dict[str, dict[str, Any]]:
-    codes = sorted({c for c in bcodes if c})
-    if not codes:
-        return {}
-    base = get_transfer_settings().peer_base_url
-    qs = urllib.parse.urlencode(
-        {
-            "bcodes": ",".join(codes),
-            "include_blocked": "1" if include_blocked else "0",
-        }
-    )
-    url = f"{base}/transfer/api/local-icmas?{qs}"
-    req = urllib.request.Request(url, headers=_peer_request_headers())
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-        logger.warning("transfer peer ICMAS fetch failed (%s): %s", url, exc)
-        return {}
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not isinstance(items, dict):
-        return {}
+_PEER_ICMAS_CHUNK = 80
+_PEER_ICMAS_CACHE_TTL_SEC = 20.0
+_peer_icmas_cache: dict[tuple[Any, ...], tuple[float, dict[str, dict[str, Any]]]] = {}
+_peer_icmas_lock = threading.Lock()
+
+
+def _normalize_peer_icmas_items(items: dict[str, Any]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for bcode, meta in items.items():
         code = (bcode or "").strip()
@@ -173,6 +159,69 @@ def _fetch_icmas_via_peer(
             "location2": loc2,
             "location": loc,
         }
+    return out
+
+
+def _fetch_icmas_via_peer_chunk(
+    codes: list[str], *, include_blocked: bool = True
+) -> dict[str, dict[str, Any]]:
+    if not codes:
+        return {}
+    base = get_transfer_settings().peer_base_url
+    qs = urllib.parse.urlencode(
+        {
+            "bcodes": ",".join(codes),
+            "include_blocked": "1" if include_blocked else "0",
+        }
+    )
+    url = f"{base}/transfer/api/local-icmas?{qs}"
+    req = urllib.request.Request(url, headers=_peer_request_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("transfer peer ICMAS fetch failed (%s): %s", url, exc)
+        return {}
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, dict):
+        return {}
+    return _normalize_peer_icmas_items(items)
+
+
+def _fetch_icmas_via_peer(
+    bcodes: list[str], *, include_blocked: bool = True
+) -> dict[str, dict[str, Any]]:
+    codes = sorted({c for c in bcodes if c})
+    if not codes:
+        return {}
+    base = (get_transfer_settings().peer_base_url or "").strip()
+    cache_key = (base, include_blocked, tuple(codes))
+    now = time.monotonic()
+    with _peer_icmas_lock:
+        hit = _peer_icmas_cache.get(cache_key)
+        if hit and (now - hit[0]) <= _PEER_ICMAS_CACHE_TTL_SEC:
+            return dict(hit[1])
+
+    chunks = [codes[i : i + _PEER_ICMAS_CHUNK] for i in range(0, len(codes), _PEER_ICMAS_CHUNK)]
+    out: dict[str, dict[str, Any]] = {}
+    if len(chunks) == 1:
+        out = _fetch_icmas_via_peer_chunk(chunks[0], include_blocked=include_blocked)
+    else:
+        with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as pool:
+            futs = [
+                pool.submit(_fetch_icmas_via_peer_chunk, chunk, include_blocked=include_blocked)
+                for chunk in chunks
+            ]
+            for fut in as_completed(futs):
+                out.update(fut.result())
+
+    with _peer_icmas_lock:
+        _peer_icmas_cache[cache_key] = (time.monotonic(), dict(out))
+        if len(_peer_icmas_cache) > 64:
+            # Drop oldest entries when the cache grows.
+            oldest = sorted(_peer_icmas_cache.items(), key=lambda kv: kv[1][0])[:16]
+            for key, _ in oldest:
+                _peer_icmas_cache.pop(key, None)
     return out
 
 
@@ -199,10 +248,11 @@ def _fetch_site_icmas(
 def _fetch_dual_icmas(
     bcodes: list[str], *, include_blocked: bool = True
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-    return (
-        _fetch_site_icmas("hq", bcodes, include_blocked=include_blocked),
-        _fetch_site_icmas("syp", bcodes, include_blocked=include_blocked),
-    )
+    codes = list(bcodes)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_hq = pool.submit(_fetch_site_icmas, "hq", codes, include_blocked=include_blocked)
+        fut_syp = pool.submit(_fetch_site_icmas, "syp", codes, include_blocked=include_blocked)
+        return fut_hq.result(), fut_syp.result()
 
 
 _ICLOW_PAGE_SIZE = 200
@@ -476,12 +526,15 @@ def enrich_transfer_lines(
     *,
     from_branch: str | None = None,
     to_branch: str | None = None,
+    hq_icmas: dict[str, dict[str, Any]] | None = None,
+    syp_icmas: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Fill descr and live ICMAS stock (QTYOH2) from PARTS9 for transfer line dicts."""
     codes = sorted({(ln.get("bcode") or "").strip() for ln in lines if (ln.get("bcode") or "").strip()})
     if not codes:
         return [dict(ln) for ln in lines]
-    hq_icmas, syp_icmas = _fetch_dual_icmas(codes, include_blocked=True)
+    if hq_icmas is None or syp_icmas is None:
+        hq_icmas, syp_icmas = _fetch_dual_icmas(codes, include_blocked=True)
     from_u = (from_branch or "").strip().upper()
     to_u = (to_branch or "").strip().upper()
     out: list[dict[str, Any]] = []
