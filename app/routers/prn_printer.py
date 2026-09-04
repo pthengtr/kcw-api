@@ -94,18 +94,22 @@ finally {{
 @router.get("/install.cmd")
 async def prn_printer_install_cmd(request: Request) -> Response:
     """Double-clickable Windows installer bootstrap (download then run)."""
-    base = _public_base(request)
-    # ASCII-only .cmd so Windows cmd.exe parses it reliably.
+    base = _public_base(request).rstrip("/")
+    # Keep this .cmd boring: expand URLs in cmd.exe, then run a tiny PowerShell
+    # bootstrap. Avoid '$BaseUrl/...' inside single quotes (never expands).
+    boot_url = f"{base}/tools/prn-printer/install.ps1"
     body = f"""@echo off
 setlocal
 title KCW PRN Printer Setup
+set "BASE={base}"
+set "BOOT=%TEMP%\\kcw-prn-install-boot.ps1"
 echo.
 echo  KCW PRN Printer - installing...
-echo  Source: {base}
+echo  Source: %BASE%
 echo.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference='Stop'; $BaseUrl='{base}'; $env:KCW_PRN_INSTALL_BASE=$BaseUrl; $u='$BaseUrl/tools/prn-printer/files/Install-PrnPrinter.ps1'; $t=Join-Path $env:TEMP ('Install-PrnPrinter-'+[guid]::NewGuid().ToString('N')+'.ps1'); try {{ Invoke-WebRequest -Uri $u -OutFile $t -UseBasicParsing; & $t -BaseUrl $BaseUrl; if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }} }} finally {{ Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }}"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri '{boot_url}' -OutFile $env:TEMP\\kcw-prn-install-boot.ps1 -UseBasicParsing; & $env:TEMP\\kcw-prn-install-boot.ps1"
 set ERR=%ERRORLEVEL%
+del /q "%BOOT%" >nul 2>nul
 if %ERR% NEQ 0 (
   echo.
   echo  Install failed. Ask IT / admin for help.

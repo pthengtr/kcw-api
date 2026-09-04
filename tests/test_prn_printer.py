@@ -37,14 +37,16 @@ def test_prn_printer_install_page_on_transfer_app():
 
 def test_prn_printer_install_cmd_is_downloadable():
     client = TestClient(app)
-    res = client.get("/tools/prn-printer/install.cmd")
+    res = client.get("/tools/prn-printer/install.cmd", headers={"host": "192.168.1.216:8792"})
     assert res.status_code == 200
     assert "attachment" in res.headers.get("content-disposition", "")
     assert ".cmd" in res.headers.get("content-disposition", "")
     body = res.content.decode("ascii", errors="replace")
     assert "@echo off" in body
-    assert "Install-PrnPrinter" in body
-    assert "tools/prn-printer/files/Install-PrnPrinter.ps1" in body
+    assert "http://192.168.1.216:8792/tools/prn-printer/install.ps1" in body
+    # Regression: never leave '$BaseUrl/...' inside single quotes (does not expand).
+    assert "$BaseUrl/tools" not in body
+    assert "Invoke-WebRequest" in body
 
 
 def test_prn_printer_install_ps1_bootstrap():
