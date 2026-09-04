@@ -148,7 +148,9 @@ def test_transfer_page_has_sticker_print_flow():
     assert "openStickerPrint" in html
     assert "openStickerPrintFromTransfer" in html
     assert "renderStickerComposer" in html
-    assert "printStickersBrowser" in html
+    assert "downloadStickerPrn" in html
+    assert "printStickersBrowser" not in html
+    assert "fireStickerWindowPrint" not in html
     assert "busyDepth" in html
     assert "reuseSuggest" in html
     assert "lastPreviewKey" in html
@@ -166,34 +168,25 @@ def test_transfer_page_has_sticker_print_flow():
     assert "TSC TE310" in html
     assert "244 Pro" in html
     assert "1 ชิ้นที่รับ = 1 ดวง" in html
-    assert "ตั้งค่าไฟล์พิมพ์" in html
-    assert "ดาวน์โหลดไฟล์พิมพ์" in html
-    assert "print-stickers" in html
-    assert "window.print()" in html
-    assert "fireStickerWindowPrint" in html
-    assert "stickerPrintReadyKey" in html
-    assert "userActivation" in html
-    assert "กดพิมพ์อีกครั้ง" in html
-    assert "@page" in html
-    assert "101.6mm 35mm" in html
-    assert "stk-row" in html
-    assert "stk-empty" in html
-    assert "2 ดวงต่อแถว" in html
-    assert "101.6 × 152.4" in html
-    assert "@page{size:50mm 35mm;margin:0}" not in html
-    assert "print-sticker-mode" in html
-    assert "Headers and footers" in html
-    assert "stickerPrintPage" in html
-    assert "all_previews" in html
-    assert "left:-10000px" in html
+    assert "ดาวน์โหลดไฟล์ .prn" in html
+    assert "พิมพ์ผ่าน LAN" in html
+    assert "รุ่นเครื่องพิมพ์" in html
+    assert 'action:"download"' in html
+    assert "print-sticker-mode" not in html
+    assert "stk-row" not in html
+    assert "101.6mm" not in html
+    assert "กดพิมพ์อีกครั้ง" not in html
+    assert "stickerPrintPage" not in html
     assert "btnDetailStickers" in html
     assert "เลือกทั้งหมด" in html
     assert "btnStkAll" in html
     assert "kcw-stickers-" in html
-    assert 'id="btnStkPrint"' in html
-    assert ">พิมพ์<" in html or ">พิมพ์</button>" in html
-    assert "await new Promise(r=> setTimeout(r, 50))" not in html
-    assert "await new Promise(r=> setTimeout(r, 80))" not in html
+    assert 'id="btnStkDownload"' in html
+    assert "btnStkPrint" not in html
+    # Bill print still uses window.print; sticker flow must not.
+    assert "window.print()" in html
+    assert "printRequestBill" in html
+    assert "left:-10000px" in html
 
 def test_sticker_preview_and_download_api():
     from app.transfer_app import app
