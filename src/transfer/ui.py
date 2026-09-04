@@ -195,6 +195,18 @@ body.busy #busy{display:flex}
 .info-toggle[open] summary::before{transform:rotate(90deg)}
 .info-toggle .info-body{padding:.65rem .85rem .75rem;border-top:1px solid #fde68a;font-size:.82rem;color:var(--text);line-height:1.55}
 .info-toggle .info-body strong{color:#92400e}
+.stk-prn-helper{
+  display:flex;align-items:center;justify-content:space-between;gap:.5rem .75rem;flex-wrap:wrap;
+  margin:.55rem 0 0;padding:.4rem .65rem;
+  border:1px solid var(--line);border-radius:10px;background:#f8fafc;
+}
+.stk-prn-helper .stk-prn-helper-text{font-size:.72rem;color:var(--muted);line-height:1.35;min-width:0}
+.stk-prn-helper a{
+  flex:0 0 auto;font-size:.78rem;font-weight:600;color:var(--acc);text-decoration:none;
+  padding:.25rem .55rem;border:1px solid #c5d4ce;
+  border-radius:999px;background:#fff;white-space:nowrap;
+}
+.stk-prn-helper a:hover{background:#eef7f3}
 .bill-explain{font-size:.82rem;color:var(--text);background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:.75rem .85rem;margin:.75rem 0;line-height:1.55}
 .bill-explain strong{color:#92400e}
 .bill-steps{margin:.45rem 0 0;padding-left:1.15rem}
@@ -867,15 +879,7 @@ function renderStickerComposer(el, job){
   </div>`).join("");
   el.innerHTML = `<div class="card">
       <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
-      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
-      <p class="meta">ดาวน์โหลดไฟล์ <strong>.prn</strong> แล้ว <strong>ดับเบิลคลิก</strong> เพื่อพิมพ์ (ติดตั้งตัวช่วยครั้งแรกด้านล่าง)</p>
-      <div class="card" id="stkPrnHelper" style="margin:.65rem 0;padding:.85rem 1rem;border:1px dashed var(--line);border-radius:12px;background:#f8fafc">
-        <p style="margin:0 0 .35rem"><strong>พิมพ์สติ๊กเกอร์บนเครื่องนี้</strong> <span class="meta" id="stkPrnHelperVer"></span></p>
-        <p class="meta" style="margin:0 0 .65rem">1) ดาวน์โหลดตัวติดตั้ง → 2) ดับเบิลคลิก → เสร็จ · อัปเดตทีหลังก็โหลดแล้วดับเบิลคลิกอีกครั้ง</p>
-        <div class="row-actions" style="margin:0;flex-wrap:wrap;gap:.45rem">
-          <a class="btn btn-primary" id="btnStkPrnHelperDownload" href="/tools/prn-printer/install.cmd">ดาวน์โหลดตัวติดตั้ง</a>
-        </div>
-      </div>
+      <p class="meta">ติ๊กสินค้า · 1 ชิ้น = 1 ดวง · 5×3.5 ซม. · ดาวน์โหลด .prn แล้วดับเบิลคลิกเพื่อพิมพ์</p>
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
@@ -906,6 +910,10 @@ function renderStickerComposer(el, job){
           </div>
         </div>
       </details>
+      <div class="stk-prn-helper" id="stkPrnHelper">
+        <span class="stk-prn-helper-text">ครั้งแรกบนเครื่องนี้? ติดตั้งตัวช่วย แล้วดับเบิลคลิกไฟล์ .prn <span id="stkPrnHelperVer"></span></span>
+        <a id="btnStkPrnHelperDownload" href="/tools/prn-printer/install.cmd">ดาวน์โหลดตัวติดตั้ง</a>
+      </div>
       <div class="commit-bar">
         <div class="commit-meta">จะพิมพ์ <strong id="stkCopyCount">${copies}</strong> ดวง · เลือกแล้ว <strong id="stkSelectedCount">${(job.lines||[]).filter(l=>l.selected).length}</strong> รายการ</div>
         <button class="btn btn-ghost" id="btnStkSkip">ข้าม</button>
