@@ -154,6 +154,8 @@ def test_transfer_page_has_sticker_print_flow():
     assert "TSC TE310" in html
     assert "244 Pro" in html
     assert "1 ชิ้นที่รับ = 1 ดวง" in html
+    assert "ตั้งค่าไฟล์พิมพ์" in html
+    assert "ดาวน์โหลดไฟล์พิมพ์" in html
     assert "btnDetailStickers" in html
     assert "เลือกทั้งหมด" in html
     assert "btnStkAll" in html

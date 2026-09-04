@@ -814,17 +814,7 @@ function renderStickerComposer(el, job){
   </div>`).join("");
   el.innerHTML = `<div class="card">
       <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
-      <p class="meta">1 ชิ้นที่รับ = 1 ดวง · ขนาด 5 × 3.5 ซม. · เครื่อง TSC TE310 / 244 Pro (TSPL)</p>
-      <div class="field" style="margin:.65rem 0 .35rem">
-        <label>เครื่องพิมพ์</label>
-        <div class="seg" id="stkModelSeg">
-          ${STICKER_PRINTERS.map(p=>`<button type="button" data-model="${p.id}" class="${p.id===model?"on":""}">${p.label}</button>`).join("")}
-        </div>
-      </div>
-      <div class="field" style="margin:.35rem 0">
-        <label>IP เครื่องพิมพ์ LAN (พอร์ต 9100)</label>
-        <input id="stkHost" class="text-input" type="text" placeholder="เช่น 192.168.1.50" value="${escapeAttr(host)}"/>
-      </div>
+      <p class="meta">1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
@@ -836,11 +826,28 @@ function renderStickerComposer(el, job){
         `<div class="table-wrap table-wrap--tall"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ดวง</th></tr></thead><tbody>${rows}</tbody></table></div>`,
         itemCards(cards)
       )}
+      <details class="info-toggle" id="stkAdvanced">
+        <summary>ตั้งค่าไฟล์พิมพ์ (ไม่ต้องเลือกทุกครั้ง)</summary>
+        <div class="info-body">
+          <p class="meta" style="margin:0 0 .5rem">เลย์เอาต์ถูกจัดให้ตรงสติ๊กเกอร์ 5 × 3.5 ซม. ที่ออกจาก TSC TE310 / 244 Pro — เปลี่ยนตรงนี้เฉพาะตอนส่งไฟล์เข้าเครื่องคนละรุ่น</p>
+          <div class="field" style="margin:.35rem 0">
+            <label>ความละเอียดไฟล์</label>
+            <div class="seg" id="stkModelSeg">
+              ${STICKER_PRINTERS.map(p=>`<button type="button" data-model="${p.id}" class="${p.id===model?"on":""}">${p.label}</button>`).join("")}
+            </div>
+          </div>
+          <div class="field" style="margin:.35rem 0">
+            <label>ส่งเข้าเครื่องบน LAN (ถ้ามี)</label>
+            <input id="stkHost" class="text-input" type="text" placeholder="เว้นว่างได้ — จะดาวน์โหลดไฟล์" value="${escapeAttr(host)}"/>
+          </div>
+        </div>
+      </details>
       <div class="commit-bar">
         <div class="commit-meta">จะพิมพ์ <strong id="stkCopyCount">${copies}</strong> ดวง · เลือกแล้ว ${(job.lines||[]).filter(l=>l.selected).length} รายการ</div>
         <button class="btn btn-ghost" id="btnStkSkip">ข้าม</button>
-        <button class="btn btn-ghost" id="btnStkDownload">ดาวน์โหลด .prn</button>
-        <button class="btn btn-primary" id="btnStkPrint" ${copies?"":"disabled"}>${host?"พิมพ์ทั้งหมด":"พิมพ์ (ใส่ IP ก่อน)"}</button>
+        ${host?`<button class="btn btn-ghost" id="btnStkDownload">ดาวน์โหลดไฟล์</button>
+        <button class="btn btn-primary" id="btnStkPrint" ${copies?"":"disabled"}>พิมพ์ทั้งหมด</button>`
+        :`<button class="btn btn-primary" id="btnStkDownload" ${copies?"":"disabled"}>ดาวน์โหลดไฟล์พิมพ์</button>`}
       </div>
     </div>`;
   const syncQty = ()=>{
@@ -856,8 +863,10 @@ function renderStickerComposer(el, job){
     const n = stickerCopies(job);
     const meta = el.querySelector("#stkCopyCount");
     if(meta) meta.textContent = n;
-    const printBtn = el.querySelector("#btnStkPrint");
-    if(printBtn) printBtn.disabled = n<=0;
+    el.querySelectorAll("#btnStkPrint, #btnStkDownload").forEach(btn=>{
+      if(btn && btn.id==="btnStkPrint") btn.disabled = n<=0;
+      if(btn && btn.id==="btnStkDownload" && !host) btn.disabled = n<=0;
+    });
   };
   let previewTimer = null;
   const refreshPreview = ()=>{
@@ -909,26 +918,29 @@ function renderStickerComposer(el, job){
     syncQty();
     refreshPreview();
   };
-  el.querySelector("#stkHost").onchange = e=> setStickerPrinterHost(e.target.value.trim());
+  const hostInput = el.querySelector("#stkHost");
+  if(hostInput) hostInput.onchange = e=> setStickerPrinterHost(e.target.value.trim());
   el.querySelector("#btnStkSkip").onclick = ()=>{
     receivePrintJob = null;
     receiveStep = 1;
     receiveShipment = null;
     render();
   };
-  el.querySelector("#btnStkDownload").onclick = async()=>{
+  const downloadBtn = el.querySelector("#btnStkDownload");
+  if(downloadBtn) downloadBtn.onclick = async()=>{
     syncQty();
-    setStickerPrinterHost((el.querySelector("#stkHost").value||"").trim());
+    if(hostInput) setStickerPrinterHost(hostInput.value.trim());
     try{
       await downloadStickerPrn(job, stickerPrinterModel());
-      showToast("ดาวน์โหลดไฟล์พิมพ์แล้ว — ส่งเข้าเครื่อง TSC ได้");
+      showToast("ดาวน์โหลดไฟล์พิมพ์แล้ว");
     }catch(e){ alert(e.message); }
   };
-  el.querySelector("#btnStkPrint").onclick = async()=>{
+  const printBtn = el.querySelector("#btnStkPrint");
+  if(printBtn) printBtn.onclick = async()=>{
     syncQty();
-    const h = (el.querySelector("#stkHost").value||"").trim();
+    const h = hostInput ? hostInput.value.trim() : stickerPrinterHost();
     setStickerPrinterHost(h);
-    if(!h){ alert("กรอก IP เครื่องพิมพ์บน LAN หรือกดดาวน์โหลดไฟล์ .prn"); return; }
+    if(!h){ alert("ยังไม่ได้ตั้งค่าเครื่องบน LAN — ใช้ดาวน์โหลดไฟล์พิมพ์"); return; }
     try{
       const result = await sendStickerPrint(job, stickerPrinterModel(), h);
       showToast("พิมพ์แล้ว "+(result.copies||copies)+" ดวง");

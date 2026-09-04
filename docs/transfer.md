@@ -70,7 +70,7 @@ Ship (SIMAS) and receive (PIMAS) bills set `ACCTNO`/`ACCTNAME` from APMAS like m
 
 - Cancel: requester (`to_branch`) while status is `requested` and no ship bill yet (`POST /transfer/api/requests/{id}/cancel`).
 - Print: **พิมพ์ใบคำขอ** on request detail / status list — browser print of TRF lines + AP labels.
-- Barcode stickers: after **ยืนยันรับเข้า**, operators can print one 5×3.5 cm TSC sticker per received unit (`TSC TE310` 300 dpi or `TTP-244 Pro` 203 dpi, TSPL). Qty defaults to the receive qty; reprint from request detail. Send raw TSPL to a LAN printer (`:9100`) or download `.prn`.
+- Barcode stickers: after **ยืนยันรับเข้า**, operators get a 5×3.5 cm shop-sticker batch (one sticker per received unit). Qty defaults to the receive qty; reprint from request detail. Output is TSPL sized for the shop TSC label printers (TE310 / 244 Pro). Download the print file, or optionally send it to a LAN host if `TRANSFER_STICKER_PRINTER_HOST` is set.
 
 ```env
 TRANSFER_STICKER_PRINTER_MODEL=te310   # or ttp244pro
