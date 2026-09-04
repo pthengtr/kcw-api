@@ -1,0 +1,7 @@
+{
+  "name": "kcw-prn-printer",
+  "version": "1.0.1",
+  "released": "2026-09-05",
+  "min_windows": "10",
+  "notes": "Served from transfer app. Re-run install.ps1 to update/replace."
+}

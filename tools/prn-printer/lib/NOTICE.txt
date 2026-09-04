@@ -1,0 +1,2 @@
+ZXing.Net (Apache License 2.0)
+https://github.com/micjahn/ZXing.Net

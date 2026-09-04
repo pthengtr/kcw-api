@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KCW PRN Printer</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #fff;
+      --ink: #1a1f24;
+      --muted: #5b6770;
+      --accent: #0b6e4f;
+      --accent-soft: #e6f4ef;
+      --line: #d7dee3;
+      --code-bg: #0f1720;
+      --code-ink: #e8eef4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Sarabun", Tahoma, sans-serif;
+      background: linear-gradient(180deg, #eef3f1 0%, var(--bg) 40%);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+    h1 { font-size: 1.75rem; margin: 0 0 8px; }
+    h2 { font-size: 1.15rem; margin: 28px 0 10px; }
+    p { color: var(--muted); margin: 0 0 12px; }
+    .badge {
+      display: inline-block;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 18px 16px;
+      margin: 16px 0;
+    }
+    ol { margin: 8px 0 0 1.2rem; padding: 0; color: var(--ink); }
+    li { margin: 6px 0; }
+    code, pre {
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-ink);
+      padding: 12px 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+      margin: 10px 0 0;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    a.btn {
+      display: inline-block;
+      text-decoration: none;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      padding: 10px 14px;
+      border-radius: 8px;
+    }
+    a.btn.secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="badge">Transfer / sticker printing</div>
+    <h1>KCW PRN Printer</h1>
+    <p>
+      โปรแกรมช่วยพิมพ์ไฟล์ <strong>.prn</strong> ไปยังเครื่องพิมพ์ TSC บน Windows -
+      แสดงตัวอย่างสติ๊กเกอร์, จำนวนที่พิมพ์ต่อบาร์โค้ด, แล้วส่งพิมพ์แบบ RAW
+    </p>
+    <p class="muted" id="versionLine">กำลังโหลดเวอร์ชัน…</p>
+
+    <div class="card">
+      <h2>ติดตั้งครั้งแรก (แนะนำ)</h2>
+      <ol>
+        <li>เปิด <strong>PowerShell</strong> บน PC ที่ต่อเครื่องพิมพ์ TSC</li>
+        <li>วางคำสั่งด้านล่างแล้วกด Enter</li>
+        <li>รอจนขึ้นข้อความติดตั้งสำเร็จ</li>
+        <li>ดาวน์โหลดไฟล์ <code>.prn</code> จากระบบโอน แล้ว <strong>ดับเบิลคลิก</strong> เพื่อพิมพ์</li>
+      </ol>
+      <pre id="installCmd">irm https://HOST/tools/prn-printer/install.ps1 | iex</pre>
+      <div class="actions">
+        <a class="btn" id="downloadZip" href="download.zip">Download ZIP</a>
+        <a class="btn secondary" id="installLink" href="install.ps1">Download install.ps1</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>อัปเดตเวอร์ชันใหม่</h2>
+      <p>เมื่อมีการปรับปรุง ให้รันคำสั่งติดตั้งเดิมอีกครั้ง - จะเขียนทับของเดิมและคงการเชื่อมไฟล์ <code>.prn</code></p>
+      <p class="muted">หรือดาวน์โหลด ZIP แล้วรัน <code>Install-PrnPrinter.ps1</code> ในโฟลเดอร์ที่แตกไฟล์</p>
+      <p class="muted">ถ้ามีเวอร์ชันใหม่ หน้าต่างพิมพ์จะขึ้นแถบเตือนอัปเดตให้อัตโนมัติ</p>
+    </div>
+
+    <div class="card">
+      <h2>ถอนการติดตั้ง</h2>
+      <pre>%LOCALAPPDATA%\KCW\PrnPrinter\Uninstall-PrnPrinter.ps1</pre>
+      <p class="muted">หรือใน PowerShell: <code>&amp; "$env:LOCALAPPDATA\KCW\PrnPrinter\Uninstall-PrnPrinter.ps1"</code></p>
+    </div>
+
+    <div class="card">
+      <h2>สิ่งที่ได้หลังติดตั้ง</h2>
+      <ul>
+        <li>ดับเบิลคลิก <code>.prn</code> → หน้าต่างพรีวิว + เลือกเครื่องพิมพ์</li>
+        <li>สรุปจำนวนสติ๊กเกอร์ / บาร์โค้ดที่จะพิมพ์</li>
+        <li>ติดตั้งที่ <code>%LOCALAPPDATA%\KCW\PrnPrinter</code> (ต่อ user, ไม่ต้อง admin)</li>
+      </ul>
+    </div>
+  </main>
+  <script>
+    (function () {
+      var base = window.location.origin + window.location.pathname.replace(/\/?$/, "");
+      var cmd = 'irm ' + base + '/install.ps1 | iex';
+      document.getElementById("installCmd").textContent = cmd;
+      document.getElementById("downloadZip").href = base + "/download.zip";
+      document.getElementById("installLink").href = base + "/install.ps1";
+      fetch(base + "/version")
+        .then(function (r) { return r.json(); })
+        .then(function (v) {
+          document.getElementById("versionLine").textContent =
+            "Version " + (v.version || "?") +
+            (v.released ? " · released " + v.released : "") +
+            (v.notes ? " - " + v.notes : "");
+        })
+        .catch(function () {
+          document.getElementById("versionLine").textContent = "";
+        });
+    })();
+  </script>
+</body>
+</html>
