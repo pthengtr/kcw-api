@@ -70,6 +70,15 @@ Ship (SIMAS) and receive (PIMAS) bills set `ACCTNO`/`ACCTNAME` from APMAS like m
 
 - Cancel: requester (`to_branch`) while status is `requested` and no ship bill yet (`POST /transfer/api/requests/{id}/cancel`).
 - Print: **พิมพ์ใบคำขอ** on request detail / status list — browser print of TRF lines + AP labels.
+- Barcode stickers: after **ยืนยันรับเข้า**, operators can print one 5×3.5 cm TSC sticker per received unit (`TSC TE310` 300 dpi or `TTP-244 Pro` 203 dpi, TSPL). Qty defaults to the receive qty; reprint from request detail. Send raw TSPL to a LAN printer (`:9100`) or download `.prn`.
+
+```env
+TRANSFER_STICKER_PRINTER_MODEL=te310   # or ttp244pro
+TRANSFER_STICKER_PRINTER_HOST=192.168.1.50
+TRANSFER_STICKER_PRINTER_PORT=9100
+```
+
+Sticker fields come from the receiving site's ICMAS (ที่เก็บ, ยี่ห้อ, หน่วย, ชื่อย่อ, บริษัท, รุ่น, เบอร์โรงงาน, รหัสสินค้า, ชื่อสินค้า, รหัสราคาทุน/ขาย, เบอร์แท้). Price letters: M0 P1 T2 N3 L4 B5 V6 S7 R8 C9 — `O` = cost, `X` = sell (270/420 → `OTSMXLTM`).
 
 ## Writer Database Credentials
 
@@ -92,7 +101,9 @@ curl -s http://127.0.0.1:8792/health
 - `POST /transfer/api/requests/draft` — body `{direction: "to_syp"|"to_hq", lines: [...]}`
 - `POST /transfer/api/submit` — only at `to_branch`
 - `POST /transfer/api/prepare` — only at `from_branch`
-- `POST /transfer/api/receive` — only at `to_branch`
+- `POST /transfer/api/receive` — only at `to_branch` (response includes `lines` for sticker print)
+- `POST /transfer/api/stickers/preview` — ICMAS-backed 5×3.5 cm preview + resolved fields
+- `POST /transfer/api/stickers/print` — `action=print` (LAN :9100) or `action=download` (.prn)
 - `GET /transfer/api/requests?role=prepare|receive|mine`
 - `GET /transfer/api/suggest` — pick list + live HQ/SYP `QTYOH2` + `LOCATION*` (ที่เก็บ)
 - `GET /transfer/api/product?bcode=` — one SKU dual stock + dual location

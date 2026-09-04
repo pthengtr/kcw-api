@@ -111,6 +111,9 @@ def test_transfer_page_renders():
     assert "card-table" in html
     assert "card:has(.view-table)" in html
     assert "th.num,td.num" in html
+    assert "openStickerPrint" in html
+    assert "chkPrintStickers" in html
+    assert "TSC TE310" in html
 
 
 def test_transfer_hq_page_iclow_not_stamped_on_submit():

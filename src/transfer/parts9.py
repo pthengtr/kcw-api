@@ -533,3 +533,63 @@ def enrich_transfer_lines(
                 row["mtp2"] = float(meta["mtp2"])
         out.append(row)
     return out
+
+
+def fetch_sticker_catalog(bcodes: list[str], *, site: str | None = None) -> dict[str, dict[str, Any]]:
+    """ICMAS fields for the 5×3.5 cm receive sticker, from the receiving site's PARTS9."""
+    codes = sorted({(c or "").strip() for c in bcodes if (c or "").strip()})
+    if not codes:
+        return {}
+    site_key = (site or get_transfer_settings().site or "hq").strip().lower()
+    if site_key not in ("hq", "syp"):
+        site_key = "hq"
+    placeholders = ", ".join(f":c{i}" for i in range(len(codes)))
+    params = {f"c{i}": c for i, c in enumerate(codes)}
+    sql = text(
+        f"""
+        SELECT
+          LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS bcode,
+          LTRIM(RTRIM(COALESCE(DESCR, ''))) AS descr,
+          LTRIM(RTRIM(COALESCE(BRAND, ''))) AS brand,
+          LTRIM(RTRIM(COALESCE(MODEL, ''))) AS model,
+          LTRIM(RTRIM(COALESCE(ACODE, ''))) AS acode,
+          LTRIM(RTRIM(COALESCE(UI1, ''))) AS ui1,
+          LTRIM(RTRIM(COALESCE(LOCATION1, ''))) AS location1,
+          LTRIM(RTRIM(COALESCE(LOCATION2, ''))) AS location2,
+          LTRIM(RTRIM(COALESCE(MCODE, ''))) AS mcode,
+          LTRIM(RTRIM(COALESCE(PCODE, ''))) AS pcode,
+          LTRIM(RTRIM(COALESCE(VENDOR, ''))) AS vendor,
+          COSTNET,
+          PRICE1
+        FROM dbo.ICMAS WITH (NOLOCK)
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) IN ({placeholders})
+        """
+    )
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        engine = get_site_engine(site_key)
+        with engine.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sticker ICMAS fetch failed (%s): %s", site_key, exc)
+        return {}
+    for row in rows:
+        bcode = (row.get("bcode") or "").strip()
+        if not bcode:
+            continue
+        out[bcode] = {
+            "bcode": bcode,
+            "descr": (row.get("descr") or "").strip(),
+            "brand": (row.get("brand") or "").strip(),
+            "model": (row.get("model") or "").strip(),
+            "acode": (row.get("acode") or "").strip(),
+            "ui1": (row.get("ui1") or "").strip(),
+            "location1": (row.get("location1") or "").strip(),
+            "location2": (row.get("location2") or "").strip(),
+            "mcode": (row.get("mcode") or "").strip(),
+            "pcode": (row.get("pcode") or "").strip(),
+            "vendor": (row.get("vendor") or "").strip(),
+            "costnet": row.get("COSTNET"),
+            "price1": row.get("PRICE1"),
+        }
+    return out
