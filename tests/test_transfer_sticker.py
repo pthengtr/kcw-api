@@ -165,6 +165,8 @@ def test_transfer_page_has_sticker_print_flow():
     assert "ดาวน์โหลดไฟล์พิมพ์" in html
     assert "print-stickers" in html
     assert "window.print()" in html
+    assert "all_previews" in html
+    assert "left:-10000px" in html
     assert "btnDetailStickers" in html
     assert "เลือกทั้งหมด" in html
     assert "btnStkAll" in html
@@ -211,6 +213,17 @@ def test_sticker_preview_and_download_api():
         assert body["preview_png_b64"]
         assert body["labels"][0]["preview_png_b64"]
         assert body["labels"][0]["preview_png_b64"] == body["preview_png_b64"]
+
+        all_prev = client.post(
+            "/transfer/api/stickers/preview",
+            json={
+                "lines": [{"bcode": "12052328", "qty": 4}],
+                "printer_model": "te310",
+                "all_previews": True,
+            },
+        )
+        assert all_prev.status_code == 200
+        assert all_prev.json()["labels"][0]["preview_png_b64"]
 
         prn = client.post(
             "/transfer/api/stickers/print",

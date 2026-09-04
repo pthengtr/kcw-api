@@ -118,6 +118,7 @@ class StickerPrintRequest(BaseModel):
     printer_model: str = "te310"
     printer_host: str = ""
     action: str = "preview"
+    all_previews: bool = False
 
 
 def _settings():
@@ -833,15 +834,20 @@ def api_sticker_preview(body: StickerPrintRequest, request: Request):
     if problem and not labels:
         return JSONResponse({"error": problem}, status_code=400)
     model = normalize_printer_model(body.printer_model)
+    # Composer only needs the first PNG; browser print asks for all_previews.
+    want_all = bool(body.all_previews)
     label_payloads = []
-    for label in labels:
-        png_b64 = base64.standard_b64encode(
-            render_label_png(label, printer_model=model)
-        ).decode("ascii")
+    preview_b64 = ""
+    for i, label in enumerate(labels):
         row = label.as_preview_dict()
-        row["preview_png_b64"] = png_b64
+        if want_all or i == 0:
+            png_b64 = base64.standard_b64encode(
+                render_label_png(label, printer_model=model)
+            ).decode("ascii")
+            row["preview_png_b64"] = png_b64
+            if i == 0:
+                preview_b64 = png_b64
         label_payloads.append(row)
-    preview_b64 = label_payloads[0]["preview_png_b64"] if label_payloads else ""
     return {
         "printer_model": model,
         "copies": count_copies(labels),

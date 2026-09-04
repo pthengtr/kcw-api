@@ -158,13 +158,17 @@ body.busy #busy{display:flex}
 .modal-backdrop.on{display:flex}
 .modal{background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:1rem;box-shadow:var(--shadow)}
 .modal h2{margin:0 0 .75rem;font-size:1rem}
-#printSheet{display:none}
+#printSheet{
+  position:absolute; left:-10000px; top:0; width:5cm;
+  overflow:hidden; pointer-events:none; opacity:0;
+}
 @media print{
   body > *:not(#printSheet){display:none !important}
   #printSheet{
-    display:block !important; position:static !important; inset:auto !important;
+    display:block !important; position:static !important; inset:auto !important; left:auto !important;
     width:auto !important; max-width:none !important; margin:0 !important; padding:16px !important;
     background:#fff !important; color:#000 !important; font-family:Prompt,sans-serif;
+    opacity:1 !important; pointer-events:auto !important; overflow:visible !important;
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
   #printSheet table{width:100%; border-collapse:collapse; font-size:11pt}
@@ -835,28 +839,61 @@ async function sendStickerPrint(job, model, host){
   });
 }
 async function printStickersBrowser(job, model){
+  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
+  if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
   setBusy(true);
+  const objectUrls = [];
   try{
-    const data = await fetchStickerPreview(job, model);
+    let data;
+    try{
+      const r = await fetch("/transfer/api/stickers/preview",{
+        method:"POST",
+        credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({lines, printer_model:model, all_previews:true}),
+      });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error||j.detail||("HTTP "+r.status));
+      data = j;
+    }catch(e){
+      const msg = String((e && e.message) || e || "");
+      if(/load failed|failed to fetch|networkerror|network error/i.test(msg)){
+        throw new Error("โหลดรูปสติ๊กเกอร์ไม่สำเร็จ — ตรวจเน็ตแล้วลองใหม่");
+      }
+      throw e;
+    }
     const labels = (data && data.labels) || [];
     const parts = [];
-    labels.forEach(lb=>{
+    for(const lb of labels){
       const png = lb.preview_png_b64 || "";
-      if(!png) return;
+      if(!png) continue;
       const copies = Math.max(1, Math.min(200, Math.round(Number(lb.qty||1))));
-      const src = "data:image/png;base64,"+png;
+      const bin = atob(png);
+      const bytes = new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], {type:"image/png"}));
+      objectUrls.push(url);
       const alt = String(lb.bcode||"").replace(/"/g,"");
       for(let n=0;n<copies;n++){
-        parts.push(`<div class="stk-label"><img src="${src}" alt="${alt}"/></div>`);
+        parts.push(`<div class="stk-label"><img src="${url}" alt="${alt}" width="189" height="132"/></div>`);
       }
-    });
-    if(!parts.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
+    }
+    if(!parts.length) throw new Error("สร้างรูปสติ๊กเกอร์ไม่สำเร็จ");
     const sheet = $("printSheet");
     sheet.className = "print-stickers";
     sheet.innerHTML = parts.join("");
     sheet.setAttribute("aria-hidden","false");
+    const imgs = Array.from(sheet.querySelectorAll("img"));
+    await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
+    setBusy(false);
+    await new Promise(r=> setTimeout(r, 50));
     window.print();
-  } finally { setBusy(false); }
+  } finally {
+    setBusy(false);
+    setTimeout(()=>{
+      objectUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
+    }, 60000);
+  }
 }
 function renderStickerComposer(el, job){
   const model = stickerPrinterModel();
