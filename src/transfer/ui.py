@@ -162,6 +162,10 @@ body.busy #busy{display:flex}
   position:absolute; left:-10000px; top:0; width:5cm;
   overflow:hidden; pointer-events:none; opacity:0;
 }
+@page sticker{
+  size:50mm 35mm;
+  margin:0;
+}
 @media print{
   body > *:not(#printSheet){display:none !important}
   #printSheet{
@@ -176,11 +180,18 @@ body.busy #busy{display:flex}
   #printSheet th.num,#printSheet td.num{text-align:right}
   #printSheet .sig{margin-top:2rem; display:grid; grid-template-columns:1fr 1fr; gap:2rem}
   #printSheet .sig-box{border-top:1px solid #999; padding-top:.5rem; font-size:10pt}
-  #printSheet.print-stickers{
-    padding:0 !important; margin:0 !important;
+  html.print-sticker-mode, html.print-sticker-mode body{
+    margin:0 !important; padding:0 !important; width:50mm !important; min-height:0 !important;
+    height:auto !important; background:#fff !important;
+  }
+  html.print-sticker-mode body > *:not(#printSheet){display:none !important}
+  #printSheet.print-stickers, html.print-sticker-mode #printSheet{
+    width:50mm !important; max-width:50mm !important; padding:0 !important; margin:0 !important;
+    overflow:hidden !important;
   }
   #printSheet.print-stickers .stk-label{
-    width:5cm; height:3.5cm; margin:0; padding:0; border:0;
+    page:sticker;
+    width:50mm; height:35mm; margin:0; padding:0; border:0; overflow:hidden;
     display:block; page-break-after:always; break-after:page;
     page-break-inside:avoid; break-inside:avoid;
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
@@ -189,8 +200,8 @@ body.busy #busy{display:flex}
     page-break-after:auto; break-after:auto;
   }
   #printSheet.print-stickers .stk-label img{
-    width:5cm; height:3.5cm; display:block; margin:0; border:0;
-    object-fit:fill; image-rendering:pixelated;
+    width:50mm; height:35mm; max-width:50mm; max-height:35mm;
+    display:block; margin:0; border:0; object-fit:fill; image-rendering:pixelated;
   }
 }
 .action-grid{display:grid;gap:.85rem}
@@ -852,11 +863,36 @@ async function sendStickerPrint(job, model, host){
     body:JSON.stringify({lines, printer_model:model, printer_host:host, action:"print"}),
   });
 }
+function stickerPrintCss(){
+  return `@page{size:50mm 35mm;margin:0}`
+    +`html,body{margin:0;padding:0;width:50mm;min-height:0;height:auto;background:#fff}`
+    +`.stk-label{width:50mm;height:35mm;margin:0;padding:0;overflow:hidden;`
+    +`page-break-after:always;break-after:page;page-break-inside:avoid;break-inside:avoid}`
+    +`.stk-label:last-child{page-break-after:auto;break-after:auto}`
+    +`.stk-label img{width:50mm;height:35mm;max-width:50mm;max-height:35mm;`
+    +`display:block;margin:0;border:0;object-fit:fill;`
+    +`-webkit-print-color-adjust:exact;print-color-adjust:exact}`;
+}
+function waitPrintDialog(win){
+  return new Promise(resolve=>{
+    let settled = false;
+    const done = ()=>{ if(settled) return; settled = true; resolve(); };
+    const target = win || window;
+    try{ target.addEventListener("afterprint", done, {once:true}); }catch(_e){}
+    try{ target.focus(); target.print(); }catch(_e){ try{ window.print(); }catch(_e2){} }
+    done();
+  });
+}
 async function printStickersBrowser(job, model){
   const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
   if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
   setBusy(true);
   const objectUrls = [];
+  let iframe = null;
+  const pageStyle = document.getElementById("stickerPrintPage") || document.createElement("style");
+  pageStyle.id = "stickerPrintPage";
+  pageStyle.textContent = "@page{size:50mm 35mm;margin:0}";
+  const prevTitle = document.title;
   try{
     let data;
     try{
@@ -889,22 +925,50 @@ async function printStickersBrowser(job, model){
       objectUrls.push(url);
       const alt = String(lb.bcode||"").replace(/"/g,"");
       for(let n=0;n<copies;n++){
-        parts.push(`<div class="stk-label"><img src="${url}" alt="${alt}" width="189" height="132"/></div>`);
+        parts.push(`<div class="stk-label"><img src="${url}" alt="${alt}"/></div>`);
       }
     }
     if(!parts.length) throw new Error("สร้างรูปสติ๊กเกอร์ไม่สำเร็จ");
+    document.title = " ";
+    document.documentElement.classList.add("print-sticker-mode");
+    if(!pageStyle.parentNode) document.head.appendChild(pageStyle);
     const sheet = $("printSheet");
     sheet.className = "print-stickers";
     sheet.innerHTML = parts.join("");
     sheet.setAttribute("aria-hidden","false");
-    const imgs = Array.from(sheet.querySelectorAll("img"));
-    await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
-    setBusy(false);
-    await new Promise(r=> setTimeout(r, 50));
-    window.print();
+    iframe = document.createElement("iframe");
+    iframe.setAttribute("aria-hidden","true");
+    iframe.setAttribute("title"," ");
+    iframe.style.cssText = "position:fixed;left:0;top:0;width:50mm;height:35mm;border:0;opacity:0;pointer-events:none;";
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+    if(doc){
+      doc.open();
+      doc.write(`<!doctype html><html><head><meta charset="utf-8"/><title> </title><style>${stickerPrintCss()}</style></head><body>${parts.join("")}</body></html>`);
+      doc.close();
+      const imgs = Array.from(doc.images||[]);
+      await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
+      setBusy(false);
+      await new Promise(r=> setTimeout(r, 80));
+      await waitPrintDialog(iframe.contentWindow);
+    }else{
+      const sheet = $("printSheet");
+      sheet.className = "print-stickers";
+      sheet.innerHTML = parts.join("");
+      sheet.setAttribute("aria-hidden","false");
+      const imgs = Array.from(sheet.querySelectorAll("img"));
+      await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
+      setBusy(false);
+      await new Promise(r=> setTimeout(r, 80));
+      await waitPrintDialog(window);
+    }
   } finally {
+    document.title = prevTitle;
+    document.documentElement.classList.remove("print-sticker-mode");
+    if(pageStyle.parentNode) pageStyle.remove();
     setBusy(false);
     setTimeout(()=>{
+      if(iframe) try{ iframe.remove(); }catch(_e){}
       objectUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
     }, 60000);
   }
@@ -940,7 +1004,8 @@ function renderStickerComposer(el, job){
   </div>`).join("");
   el.innerHTML = `<div class="card">
       <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
-      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน · กดพิมพ์แล้วเลือกเครื่องจากหน้าต่างพิมพ์ของเบราว์เซอร์</p>
+      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน · กดพิมพ์แล้วเลือกเครื่องจากหน้าต่างพิมพ์</p>
+      <p class="meta">ในหน้าต่างพิมพ์: เลือกกระดาษ <strong>50 × 35 มม.</strong> (ไม่ใช่ A4) · ขอบไม่มี · ปิด Headers and footers / ส่วนหัวและส่วนท้าย · ขนาด 100%</p>
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
