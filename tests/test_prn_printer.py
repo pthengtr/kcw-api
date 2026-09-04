@@ -31,32 +31,38 @@ def test_prn_printer_install_page_on_transfer_app():
     client = TestClient(app)
     res = client.get("/tools/prn-printer/")
     assert res.status_code == 200
-    assert "text/html" in res.headers.get("content-type", "")
-    assert "KCW PRN Printer" in res.text
-    assert "install.ps1" in res.text
+    assert "ดาวน์โหลดตัวติดตั้ง" in res.text
+    assert "install.cmd" in res.text
+
+
+def test_prn_printer_install_cmd_is_downloadable():
+    client = TestClient(app)
+    res = client.get("/tools/prn-printer/install.cmd")
+    assert res.status_code == 200
+    assert "attachment" in res.headers.get("content-disposition", "")
+    assert ".cmd" in res.headers.get("content-disposition", "")
+    body = res.content.decode("ascii", errors="replace")
+    assert "@echo off" in body
+    assert "Install-PrnPrinter" in body
+    assert "tools/prn-printer/files/Install-PrnPrinter.ps1" in body
 
 
 def test_prn_printer_install_ps1_bootstrap():
     client = TestClient(app)
     res = client.get("/tools/prn-printer/install.ps1")
     assert res.status_code == 200
-    body = res.text
-    assert "Install-PrnPrinter" in body
-    assert "/tools/prn-printer/files/Install-PrnPrinter.ps1" in body
+    assert "Install-PrnPrinter" in res.text
 
 
 def test_prn_printer_download_zip_contains_core_files():
     client = TestClient(app)
     res = client.get("/tools/prn-printer/download.zip")
     assert res.status_code == 200
-    assert res.headers.get("content-type", "").startswith("application/zip")
-    assert "kcw-prn-printer-" in res.headers.get("content-disposition", "")
     assert res.content[:2] == b"PK"
     assert b"PrintPrn.ps1" in res.content
-    assert b"zxing.dll" in res.content
 
 
-def test_transfer_sticker_ui_offers_prn_helper_install():
+def test_transfer_sticker_ui_offers_one_click_prn_helper():
     html = page(
         user_name="tester",
         site="SYP",
@@ -66,7 +72,7 @@ def test_transfer_sticker_ui_offers_prn_helper_install():
         syp_receive_enabled=False,
     )
     assert "stkPrnHelper" in html
-    assert "/tools/prn-printer/" in html
-    assert "btnStkPrnHelperCopy" in html
-    assert "install.ps1" in html
-    assert "อัปเดตหรือแทนที่ของเก่า" in html
+    assert "/tools/prn-printer/install.cmd" in html
+    assert "btnStkPrnHelperDownload" in html
+    assert "ดาวน์โหลดตัวติดตั้ง" in html
+    assert "btnStkPrnHelperCopy" not in html

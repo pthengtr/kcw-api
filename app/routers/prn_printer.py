@@ -91,6 +91,47 @@ finally {{
     )
 
 
+@router.get("/install.cmd")
+async def prn_printer_install_cmd(request: Request) -> Response:
+    """Double-clickable Windows installer bootstrap (download then run)."""
+    base = _public_base(request)
+    # ASCII-only .cmd so Windows cmd.exe parses it reliably.
+    body = f"""@echo off
+setlocal
+title KCW PRN Printer Setup
+echo.
+echo  KCW PRN Printer - installing...
+echo  Source: {base}
+echo.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Stop'; $BaseUrl='{base}'; $env:KCW_PRN_INSTALL_BASE=$BaseUrl; $u='$BaseUrl/tools/prn-printer/files/Install-PrnPrinter.ps1'; $t=Join-Path $env:TEMP ('Install-PrnPrinter-'+[guid]::NewGuid().ToString('N')+'.ps1'); try {{ Invoke-WebRequest -Uri $u -OutFile $t -UseBasicParsing; & $t -BaseUrl $BaseUrl; if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }} }} finally {{ Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }}"
+set ERR=%ERRORLEVEL%
+if %ERR% NEQ 0 (
+  echo.
+  echo  Install failed. Ask IT / admin for help.
+  echo.
+  pause
+  exit /b %ERR%
+)
+echo.
+echo  Done. You can close this window.
+echo  Next: download a .prn from Transfer, then double-click it to print.
+echo.
+pause
+exit /b 0
+"""
+    version = _version_payload().get("version", "0.0.0")
+    filename = f"KCW-PRN-Install-v{version}.cmd"
+    return Response(
+        content=body.encode("ascii", errors="replace"),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get("/download.zip")
 async def prn_printer_download_zip() -> Response:
     root = _require_package()
