@@ -59,6 +59,9 @@ def test_summarize_request_progress_flags_mismatch():
     assert summary["prep_recv_mismatch_count"] == 1
     assert summary["qty_short_order_prepare"] == 4
     assert summary["qty_short_order_receive"] == 7
+    assert summary["has_received"] is True
+    assert summary["qty_received_total"] == 3
+    assert summary["received_line_count"] == 1
 
 
 def test_request_status_partial_prepared_vs_order():

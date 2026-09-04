@@ -146,9 +146,15 @@ def test_render_label_native_dpi():
 def test_transfer_page_has_sticker_print_flow():
     html = page(user_name="ทดสอบ", site="SYP", sticker_printer_model="te310")
     assert "openStickerPrint" in html
+    assert "openStickerPrintFromTransfer" in html
     assert "renderStickerComposer" in html
     assert "chkPrintStickers" in html
     assert "พิมพ์สติ๊กเกอร์บาร์โค้ด" in html
+    assert "data-stickers=" in html
+    assert "พิมพ์บาร์โค้ดที่เลือก" in html
+    assert "เลือกสินค้าทั้งหมด" in html
+    assert ">บาร์โค้ด<" in html
+    assert 'view==="stickers"' in html
     assert "/transfer/api/stickers/preview" in html
     assert "/transfer/api/stickers/print" in html
     assert "TSC TE310" in html

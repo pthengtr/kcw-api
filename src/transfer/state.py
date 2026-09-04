@@ -71,12 +71,17 @@ def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
     mismatch_lines: list[str] = []
     short_prepare = 0.0
     short_receive = 0.0
+    qty_received_total = 0.0
+    received_line_count = 0
     for ln in active:
         req = float(ln.get("qty_requested") or 0)
         prep = float(ln.get("qty_prepared") or 0)
         recv = float(ln.get("qty_received") or 0)
         short_prepare += qty_short_vs_order(req, prep)
         short_receive += qty_short_vs_order(req, recv)
+        qty_received_total += max(recv, 0.0)
+        if recv > 0:
+            received_line_count += 1
         if prep_recv_mismatch(prep, recv):
             bcode = str(ln.get("bcode") or "").strip()
             if bcode:
@@ -87,6 +92,9 @@ def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
         "prep_recv_mismatch_bcodes": mismatch_lines,
         "qty_short_order_prepare": short_prepare,
         "qty_short_order_receive": short_receive,
+        "qty_received_total": qty_received_total,
+        "received_line_count": received_line_count,
+        "has_received": received_line_count > 0,
     }
 
 
