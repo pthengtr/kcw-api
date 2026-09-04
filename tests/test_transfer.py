@@ -153,3 +153,85 @@ def test_transfer_syp_page_keeps_iclow_suggest_copy():
     html = page(user_name="ทดสอบ", site="SYP")
     assert "รอสั่ง (ICLOW)" in html
     assert "ตรงกับแท็บรอสั่งซื้อ" in html
+
+
+def _mint_transfer_token(*, secret: str, ttl_seconds: int = 86400, now: float | None = None, name: str = "Tester"):
+    from src.stock_check.auth import mint_access_token
+    from src.transfer.ui import APP
+
+    return mint_access_token(
+        secret=secret,
+        line_user_id="Ulineuser",
+        display_name=name,
+        branch="HQ",
+        ttl_seconds=ttl_seconds,
+        app=APP,
+        now=now,
+    )
+
+
+def _transfer_client(monkeypatch, secret: str = "transfer-test-secret"):
+    from fastapi.testclient import TestClient
+
+    from src.transfer.config import get_transfer_settings
+
+    monkeypatch.setenv("STOCK_CHECK_TOKEN_SECRET", secret)
+    monkeypatch.setenv("TRANSFER_TOKEN_SECRET", secret)
+    monkeypatch.setenv("TRANSFER_SITE", "HQ")
+    monkeypatch.setenv("TRANSFER_ENABLED", "true")
+    get_transfer_settings.cache_clear()
+    from app.transfer_app import app
+
+    return TestClient(app)
+
+
+def test_transfer_home_missing_token_asks_for_line(monkeypatch):
+    client = _transfer_client(monkeypatch)
+    res = client.get("/transfer/", follow_redirects=False)
+    assert res.status_code == 401
+    assert "ต้องเปิดลิงก์จาก LINE" in res.text
+
+
+def test_transfer_home_accepts_line_query_token(monkeypatch):
+    secret = "transfer-test-secret"
+    client = _transfer_client(monkeypatch, secret=secret)
+    token = _mint_transfer_token(secret=secret)
+    res = client.get("/transfer/", params={"t": token}, follow_redirects=False)
+    assert res.status_code == 303
+    assert res.headers.get("location") == "/transfer/"
+    assert "kcw_transfer" in res.headers.get("set-cookie", "")
+
+
+def test_transfer_home_prefers_fresh_query_token_over_stale_cookie(monkeypatch):
+    """LINE Desktop opens Chrome, which still has yesterday's expired cookie."""
+    import time
+
+    secret = "transfer-test-secret"
+    client = _transfer_client(monkeypatch, secret=secret)
+    stale = _mint_transfer_token(secret=secret, ttl_seconds=60, now=time.time() - 3600)
+    fresh = _mint_transfer_token(secret=secret)
+    client.cookies.set("kcw_transfer", stale, path="/transfer")
+    res = client.get("/transfer/", params={"t": fresh}, follow_redirects=False)
+    assert res.status_code == 303
+    assert res.headers.get("location") == "/transfer/"
+    assert "ต้องเปิดลิงก์จาก LINE" not in res.text
+
+
+def test_transfer_home_invalid_query_token_explains_failure(monkeypatch):
+    client = _transfer_client(monkeypatch)
+    res = client.get("/transfer/", params={"t": "not-a-real-token"}, follow_redirects=False)
+    assert res.status_code == 401
+    assert "ลิงก์ไม่ถูกต้อง" in res.text
+    assert "ต้องเปิดลิงก์จาก LINE" not in res.text
+
+
+def test_transfer_home_expired_query_token_explains_failure(monkeypatch):
+    import time
+
+    secret = "transfer-test-secret"
+    client = _transfer_client(monkeypatch, secret=secret)
+    expired = _mint_transfer_token(secret=secret, ttl_seconds=60, now=time.time() - 3600)
+    res = client.get("/transfer/", params={"t": expired}, follow_redirects=False)
+    assert res.status_code == 401
+    assert "ลิงก์ไม่ถูกต้อง" in res.text
+    assert "expired" in res.text.lower()

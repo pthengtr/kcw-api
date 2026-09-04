@@ -158,13 +158,30 @@ def _verify_token(token: str):
         )
 
 
+def _tokens_from_request(request: Request) -> list[str]:
+    """Prefer a fresh LINE `?t=` over a leftover session cookie.
+
+    LINE Desktop on Windows opens the branch URL in Chrome, which reuses any
+    `kcw_transfer` cookie from a previous visit. That cookie can outlive the
+    JWT inside it (cookie max-age is 7 days, token TTL is ~1 day), so cookie
+    first would 401 even when the URL still has a valid token.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in (request.query_params.get("t"), request.cookies.get(SESSION_COOKIE)):
+        token = (raw or "").strip()
+        if token and token not in seen:
+            seen.add(token)
+            out.append(token)
+    return out
+
+
 def _identity_from_request(request: Request):
-    token = request.cookies.get(SESSION_COOKIE) or request.query_params.get("t")
-    if token:
+    for token in _tokens_from_request(request):
         try:
             return _verify_token(token)
         except TokenError:
-            pass
+            continue
     if is_tailscale_cg_nat(_client_ip(request)):
         return None
     return False
@@ -184,12 +201,13 @@ def _tailscale_identity():
 
 def _set_session(resp, identity) -> None:
     settings = _settings()
+    ttl = max(settings.stock_check_token_ttl_seconds, 86400)
     token = mint_access_token(
         secret=settings.token_secret,
         line_user_id=identity.line_user_id,
         display_name=identity.display_name,
         branch=identity.branch,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=ttl,
         app=APP,
     )
     resp.set_cookie(
@@ -197,7 +215,7 @@ def _set_session(resp, identity) -> None:
         token,
         httponly=True,
         samesite="lax",
-        max_age=86400 * 7,
+        max_age=ttl,
         path="/transfer",
     )
 
@@ -239,6 +257,18 @@ def _receive_write_enabled(to_branch: str) -> bool:
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, t: str | None = None):
     ident, err = _require(request)
+    if err and t:
+        try:
+            ident = _verify_token(t)
+            err = None
+        except TokenError as exc:
+            return HTMLResponse(
+                f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>",
+                status_code=401,
+            )
+    if err and is_tailscale_cg_nat(_client_ip(request)):
+        ident = _tailscale_identity()
+        err = None
     if err:
         return err
     settings = _settings()
