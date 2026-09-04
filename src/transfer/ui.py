@@ -652,7 +652,16 @@ function bindDetailRows(container){
     };
   });
 }
-function setBusy(on){document.body.classList.toggle("busy",!!on)}
+let busyDepth = 0;
+function setBusy(on){
+  if(on){
+    busyDepth++;
+    document.body.classList.add("busy");
+  }else{
+    busyDepth = Math.max(0, busyDepth-1);
+    if(!busyDepth) document.body.classList.remove("busy");
+  }
+}
 function showModal(html){
   const box = $("modalBox");
   box.innerHTML = html;
@@ -663,13 +672,17 @@ function showModal(html){
   return {close, box};
 }
 async function api(path, opts){
-  setBusy(true);
+  const o = Object.assign({}, opts||{});
+  const quiet = !!o.quiet;
+  delete o.quiet;
+  if(!quiet) setBusy(true);
   try{
-    const r = await fetch(path, Object.assign({credentials:"same-origin",headers:{"Content-Type":"application/json"}}, opts||{}));
+    const headers = Object.assign({"Content-Type":"application/json"}, o.headers||{});
+    const r = await fetch(path, Object.assign({credentials:"same-origin"}, o, {headers}));
     const j = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error||j.detail||("HTTP "+r.status));
     return j;
-  } finally { setBusy(false); }
+  } finally { if(!quiet) setBusy(false); }
 }
 async function submitTransferLines(lines, direction){
   let transferId = editingDraftId;
@@ -801,6 +814,7 @@ async function fetchStickerPreview(job, model){
   if(!lines.length) return null;
   return api("/transfer/api/stickers/preview",{
     method:"POST",
+    quiet:true,
     body:JSON.stringify({lines, printer_model:model}),
   });
 }
@@ -993,11 +1007,29 @@ function renderStickerComposer(el, job){
     });
   };
   let previewTimer = null;
-  const refreshPreview = ()=>{
+  let lastPreviewKey = "";
+  const refreshPreview = (force)=>{
     clearTimeout(previewTimer);
     previewTimer = setTimeout(async()=>{
       try{
+        const selected = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0);
+        const first = selected[0];
+        const key = first ? (stickerPrinterModel()+"|"+first.bcode) : "";
+        if(!force && key && key === lastPreviewKey){
+          const note = el.querySelector("#stkPreviewMeta");
+          if(note) note.hidden = true;
+          return;
+        }
+        if(!key){
+          lastPreviewKey = "";
+          const img = el.querySelector("#stkPreview");
+          const note = el.querySelector("#stkPreviewMeta");
+          if(img){ img.hidden = true; img.removeAttribute("src"); }
+          if(note){ note.textContent = "เลือกอย่างน้อย 1 รายการเพื่อดูตัวอย่าง"; note.hidden = false; }
+          return;
+        }
         const data = await fetchStickerPreview(job, stickerPrinterModel());
+        lastPreviewKey = key;
         const img = el.querySelector("#stkPreview");
         const note = el.querySelector("#stkPreviewMeta");
         if(data && data.preview_png_b64 && img){
@@ -1028,7 +1060,7 @@ function renderStickerComposer(el, job){
     if(!b) return;
     setStickerPrinterModel(b.dataset.model);
     el.querySelectorAll("#stkModelSeg button").forEach(x=>x.classList.toggle("on", x===b));
-    refreshPreview();
+    refreshPreview(true);
   };
   el.querySelector("#btnStkAll").onclick = ()=>{
     job.lines.forEach(l=>l.selected=true);
@@ -1224,14 +1256,14 @@ async function editDraft(transferId){
   editingDraftId = transferId;
   orderDirection = (detail.to_branch||"SYP").toUpperCase() === SITE ? "to_syp" : "to_hq";
   const lines = detail.items || detail.lines || [];
-  for(const n of await (await api("/transfer/api/need-list")).items || []){
-    await api("/transfer/api/need-list/"+n.need_id,{method:"DELETE"});
-  }
-  for(const ln of lines){
-    await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({
-      bcode:ln.bcode, qty:ln.qty_requested, descr:ln.descr||"", suggest_qty:ln.qty_requested,
-    })});
-  }
+  await api("/transfer/api/need-list",{
+    method:"PUT",
+    body:JSON.stringify({
+      lines: lines.map(ln=>({
+        bcode:ln.bcode, qty:ln.qty_requested, descr:ln.descr||"", suggest_qty:ln.qty_requested,
+      })),
+    }),
+  });
   view = "request";
   requestStep = 2;
   render();
@@ -1380,8 +1412,8 @@ function bindLineSearch(root, {inputId, rowSelector, metaId, total}){
 async function fetchCounts(){
   try{
     const [prep, recv] = await Promise.all([
-      api("/transfer/api/requests?role=prepare"),
-      api("/transfer/api/receive-lines"),
+      api("/transfer/api/requests?role=prepare",{quiet:true}),
+      api("/transfer/api/receive-lines",{quiet:true}),
     ]);
     return {prepare:(prep.items||[]).length, receive:(recv.items||[]).length};
   }catch(e){ return {prepare:0, receive:0}; }
@@ -1421,7 +1453,8 @@ async function renderHome(el){
   el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>goView(b.dataset.go));
 }
 
-async function renderRequest(el){
+async function renderRequest(el, opts){
+  const reuseSuggest = !!(opts && opts.reuseSuggest);
   if(requestStep === 1){
     if(SITE === "SYP") orderDirection = "to_syp";
     else orderDirection = "to_hq";
@@ -1443,8 +1476,17 @@ async function renderRequest(el){
   }
 
   if(requestStep === 2){
-    const [rows, cart] = await Promise.all([api("/transfer/api/suggest"), api("/transfer/api/need-list")]);
-    suggestItems = rows.items || [];
+    let cart;
+    if(reuseSuggest && Array.isArray(suggestItems) && suggestItems.length){
+      cart = await api("/transfer/api/need-list",{quiet:true});
+    }else{
+      const [rows, cartResp] = await Promise.all([
+        api("/transfer/api/suggest"),
+        api("/transfer/api/need-list",{quiet:true}),
+      ]);
+      suggestItems = rows.items || [];
+      cart = cartResp;
+    }
     const cartItems = cart.items || [];
     const cartBcodes = new Set(cartItems.map(n=>(n.bcode||"").trim()).filter(Boolean));
     const q = (suggestFilter || "").trim().toLowerCase();
@@ -1642,21 +1684,21 @@ async function renderRequest(el){
       searchEl.oninput = ()=>{
         suggestFilter = searchEl.value;
         if(searchTimer) clearTimeout(searchTimer);
-        searchTimer = setTimeout(()=>withScrollPreserved(()=>renderRequest(el)), 280);
+        searchTimer = setTimeout(()=>withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true})), 280);
       };
       searchEl.onkeydown = e=>{
         if(e.key==="Enter"){
           e.preventDefault();
           if(searchTimer) clearTimeout(searchTimer);
           suggestFilter = searchEl.value;
-          withScrollPreserved(()=>renderRequest(el));
+          withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
         }
       };
     }
 
     el.querySelector("#btnClearPick").onclick = ()=>{
       suggestPick = {};
-      withScrollPreserved(()=>renderRequest(el));
+      withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
     };
     el.querySelector("#btnCommitPick").onclick = async()=>{
       const picks = [];
@@ -1672,15 +1714,17 @@ async function renderRequest(el){
       }
       if(!picks.length){ alert("ยังไม่ได้เลือกรายการ"); return; }
       try{
-        for(const p of picks){
-          await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({
+        await Promise.all(picks.map(p=>api("/transfer/api/need-list",{
+          method:"POST",
+          quiet:true,
+          body:JSON.stringify({
             bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
             descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
-          })});
-          writeSuggestPick(p.row.bcode, {checked:false});
-        }
+          }),
+        })));
+        picks.forEach(p=>writeSuggestPick(p.row.bcode, {checked:false}));
         showToast("เพิ่ม "+picks.length+" รายการแล้ว");
-        await withScrollPreserved(()=>renderRequest(el));
+        await withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
       }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
     };
 
@@ -1694,7 +1738,7 @@ async function renderRequest(el){
         el.querySelector("#manualBcode").value = "";
         const prev = el.querySelector("#manualPreview");
         if(prev){ prev.style.display="none"; prev.textContent=""; }
-        await withScrollPreserved(()=>renderRequest(el));
+        await withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
       }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
     };
     const btnSearchAdd = el.querySelector("#btnSearchAdd");
@@ -1706,7 +1750,7 @@ async function renderRequest(el){
           await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:1, descr:""})});
           showToast("เพิ่มแล้ว");
           suggestFilter = "";
-          await withScrollPreserved(()=>renderRequest(el));
+          await withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
         }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
       };
     }
@@ -1718,7 +1762,7 @@ async function renderRequest(el){
       if(!manualPreviewEl) return;
       if(!b){ manualPreviewEl.style.display="none"; manualPreviewEl.textContent=""; return; }
       try{
-        const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b));
+        const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b),{quiet:true});
         manualPreviewEl.style.display = "block";
         manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong>${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
       }catch(e){
@@ -1771,7 +1815,7 @@ async function renderRequest(el){
           cartItems.map(n=>({bcode:n.bcode, qty:n.qty, descr:n.descr||""})),
           orderDirection,
         );
-        for(const n of cartItems) await api("/transfer/api/need-list/"+n.need_id,{method:"DELETE"});
+        await api("/transfer/api/need-list",{method:"DELETE"});
         showToast("ส่งคำขอแล้ว: "+(submitted.short_id||submitted.transfer_id));
         goView("status");
         statusFilter = "active";
