@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
@@ -51,8 +52,21 @@ from src.transfer.direction import (
 from src.transfer.parts9 import (
     enrich_transfer_lines,
     fetch_local_icmas_meta,
+    fetch_sticker_catalog,
     lookup_transfer_product,
     suggest_transfer_skus,
+)
+from src.transfer.sticker import (
+    PRINTER_PORT,
+    build_batch_tspl,
+    count_copies,
+    is_lan_printer_host,
+    normalize_printer_model,
+    render_label_png,
+    resolve_sticker_labels,
+    send_tspl,
+    sticker_config_payload,
+    validate_batch,
 )
 from src.transfer.state import can_action, shipment_lines_fully_received, summarize_request_progress
 from src.transfer.ui import APP, SESSION_COOKIE, page
@@ -97,6 +111,13 @@ class PrepareRequest(BaseModel):
 class ReceiveRequest(BaseModel):
     client_token: str = ""
     lines: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class StickerPrintRequest(BaseModel):
+    lines: list[dict[str, Any]] = Field(default_factory=list)
+    printer_model: str = "te310"
+    printer_host: str = ""
+    action: str = "preview"
 
 
 def _settings():
@@ -219,6 +240,8 @@ def home(request: Request, t: str | None = None):
         syp_ship_enabled=settings.syp_ship_write_enabled,
         hq_receive_enabled=settings.hq_receive_write_enabled,
         syp_receive_enabled=settings.syp_receive_write_enabled,
+        sticker_printer_model=settings.transfer_sticker_printer_model,
+        sticker_printer_host=settings.transfer_sticker_printer_host,
     )
     if t:
         resp = RedirectResponse(url="/transfer/", status_code=303)
@@ -730,7 +753,20 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
             {"error": str(exc), "receive_billno": receive_billno, "reconcile": True},
             status_code=500,
         )
-    return {**result, "warnings": warnings}
+    received_lines = [
+        {
+            "bcode": str(line.get("bcode") or "").strip(),
+            "qty": float(line.get("qty_receive") or 0),
+            "descr": str(
+                (transfer_lines.get(line.get("line_id")) or {}).get("descr")
+                or line.get("descr")
+                or ""
+            ),
+        }
+        for line in body.lines
+        if float(line.get("qty_receive") or 0) > 0 and str(line.get("bcode") or "").strip()
+    ]
+    return {**result, "warnings": warnings, "lines": received_lines}
 
 
 @router.post("/api/requests/{transfer_id}/cancel")
@@ -764,3 +800,99 @@ def api_cancel(transfer_id: str, request: Request):
             return JSONResponse({"error": f"Failed to revert ICLOW stamp: {exc}"}, status_code=500)
     cancel_request(client, transfer_id=transfer_id)
     return {"status": "canceled"}
+
+
+def _sticker_labels_from_body(body: StickerPrintRequest):
+    settings = _settings()
+    catalog = fetch_sticker_catalog(
+        [str(ln.get("bcode") or "") for ln in body.lines],
+        site=settings.site,
+    )
+    return resolve_sticker_labels(body.lines, catalog)
+
+
+@router.get("/api/stickers/config")
+def api_sticker_config(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    return sticker_config_payload(
+        model=settings.transfer_sticker_printer_model,
+        host=settings.transfer_sticker_printer_host,
+    )
+
+
+@router.post("/api/stickers/preview")
+def api_sticker_preview(body: StickerPrintRequest, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    labels = _sticker_labels_from_body(body)
+    problem = validate_batch(labels)
+    if problem and not labels:
+        return JSONResponse({"error": problem}, status_code=400)
+    model = normalize_printer_model(body.printer_model)
+    preview_b64 = ""
+    if labels:
+        preview_b64 = base64.standard_b64encode(
+            render_label_png(labels[0], printer_model=model)
+        ).decode("ascii")
+    return {
+        "printer_model": model,
+        "copies": count_copies(labels),
+        "labels": [label.as_preview_dict() for label in labels],
+        "preview_png_b64": preview_b64,
+    }
+
+
+@router.post("/api/stickers/print")
+def api_sticker_print(body: StickerPrintRequest, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    labels = _sticker_labels_from_body(body)
+    problem = validate_batch(labels)
+    if problem:
+        return JSONResponse({"error": problem}, status_code=400)
+    settings = _settings()
+    model = normalize_printer_model(body.printer_model)
+    payload = build_batch_tspl(labels, printer_model=model)
+    action = (body.action or "print").strip().lower()
+    if action == "download":
+        return Response(
+            content=payload,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": 'attachment; filename="kcw-stickers.prn"',
+            },
+        )
+    host = (body.printer_host or settings.transfer_sticker_printer_host or "").strip()
+    if not host:
+        return JSONResponse(
+            {
+                "error": "ยังไม่ได้ตั้งค่า IP เครื่องพิมพ์ — กรอกที่อยู่ LAN หรือดาวน์โหลดไฟล์ .prn",
+                "need_host": True,
+            },
+            status_code=400,
+        )
+    if not is_lan_printer_host(host):
+        return JSONResponse({"error": "IP เครื่องพิมพ์ต้องอยู่ในวง LAN / Tailscale"}, status_code=400)
+    port = int(settings.transfer_sticker_printer_port or PRINTER_PORT)
+    try:
+        send_tspl(payload, host=host, port=port)
+    except OSError as exc:
+        return JSONResponse(
+            {"error": f"ส่งไปเครื่องพิมพ์ไม่สำเร็จ ({host}:{port}): {exc}"},
+            status_code=502,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return {
+        "status": "sent",
+        "printer_model": model,
+        "host": host,
+        "port": port,
+        "copies": count_copies(labels),
+        "skus": len(labels),
+    }

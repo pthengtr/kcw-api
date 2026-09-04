@@ -86,6 +86,16 @@ class TransferSettings(BaseSettings):
     pos_mssql_driver: str = Field(
         default="ODBC Driver 18 for SQL Server", validation_alias="POS_MSSQL_DRIVER"
     )
+    # TSC barcode sticker printers on the shop LAN (raw TSPL :9100).
+    transfer_sticker_printer_model: str = Field(
+        default="te310", validation_alias="TRANSFER_STICKER_PRINTER_MODEL"
+    )
+    transfer_sticker_printer_host: str = Field(
+        default="", validation_alias="TRANSFER_STICKER_PRINTER_HOST"
+    )
+    transfer_sticker_printer_port: int = Field(
+        default=9100, validation_alias="TRANSFER_STICKER_PRINTER_PORT"
+    )
 
     @property
     def token_secret(self) -> str:

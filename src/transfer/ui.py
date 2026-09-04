@@ -29,6 +29,8 @@ def page(
     syp_ship_enabled: bool = False,
     hq_receive_enabled: bool = False,
     syp_receive_enabled: bool = False,
+    sticker_printer_model: str = "te310",
+    sticker_printer_host: str = "",
 ) -> str:
     who = (user_name or "operator").strip()
     site_u = (site or "HQ").upper()
@@ -39,6 +41,8 @@ def page(
     other_label = _BRANCH_LABELS.get(other, other)
     # HQ = blue, SYP = teal — distinct at a glance on phone / shared screens
     theme_color = "#e8eef8" if site_u == "HQ" else "#e6f5f2"
+    model = (sticker_printer_model or "te310").strip() or "te310"
+    host = (sticker_printer_host or "").strip()
     return (
         _HTML.replace("__USER_JSON__", json.dumps(who, ensure_ascii=False))
         .replace("__USER__", html_lib.escape(who))
@@ -50,6 +54,8 @@ def page(
         .replace('__SHIP_WRITE__ === "true"', "true" if ship_on else "false")
         .replace('__RECV_WRITE__ === "true"', "true" if recv_on else "false")
         .replace("__INITIALS__", html_lib.escape(initials(who)))
+        .replace("__STICKER_MODEL_JSON__", json.dumps(model, ensure_ascii=False))
+        .replace("__STICKER_HOST_JSON__", json.dumps(host, ensure_ascii=False))
     )
 
 
@@ -288,7 +294,22 @@ tr.row-picked td{background:var(--acc-pick)}
   .toast{bottom:calc(1rem + env(safe-area-inset-bottom,0px));font-size:.8rem}
   .empty{padding:1.5rem .75rem}
   .bill-steps{padding-left:1rem}
+  .sticker-preview{width:min(100%,10rem);height:auto}
 }
+.success-card{text-align:center;padding:1.25rem 1rem}
+.success-card .ok-mark{width:3rem;height:3rem;border-radius:50%;background:#dcfce7;color:var(--ok);display:inline-flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:700;margin-bottom:.65rem}
+.success-card h2{margin:.15rem 0 .35rem;font-size:1.15rem}
+.seg{display:flex;gap:.35rem;flex-wrap:wrap}
+.seg button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:.4rem .75rem;font:inherit;cursor:pointer}
+.seg button.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.sticker-preview-wrap{display:flex;justify-content:center;padding:.75rem;background:#f8fafc;border:1px dashed var(--line);border-radius:12px;margin:.65rem 0}
+.sticker-preview{width:5cm;height:3.5cm;object-fit:contain;background:#fff;border:1px solid #d1d5db;box-shadow:var(--shadow);image-rendering:pixelated}
+.sticker-line{display:flex;align-items:center;gap:.55rem;padding:.45rem 0;border-bottom:1px solid var(--line)}
+.sticker-line:last-child{border-bottom:0}
+.sticker-line .grow{flex:1;min-width:0}
+.qty-step{display:inline-flex;align-items:center;gap:.2rem}
+.qty-step button{width:1.85rem;height:1.85rem;border:1px solid var(--line);background:#fff;border-radius:8px;font:inherit;cursor:pointer;padding:0}
+.qty-step .qty-input{width:3.6rem;text-align:center}
 </style>
 </head>
 <body>
@@ -316,6 +337,12 @@ const RECV_BILL = "ใบรับสินค้า";
 const SHIP_WRITE = __SHIP_WRITE__ === "true";
 const RECV_WRITE = __RECV_WRITE__ === "true";
 const USER = __USER_JSON__;
+const STICKER_DEFAULT_MODEL = __STICKER_MODEL_JSON__;
+const STICKER_DEFAULT_HOST = __STICKER_HOST_JSON__;
+const STICKER_PRINTERS = [
+  {id:"te310", label:"TSC TE310 · 300 dpi"},
+  {id:"ttp244pro", label:"TSC 244 Pro · 203 dpi"},
+];
 
 let view = "home";
 let requestStep = 1;
@@ -331,6 +358,8 @@ let suggestFilter = "";
 /** Local picks on suggest list: bcode → {checked, unit, qty} — survives soft re-renders. */
 let suggestPick = {};
 let receiveFilter = "";
+/** After a successful receive: {bill, shortId, lines:[{bcode,descr,qty}]} */
+let receivePrintJob = null;
 let toastTimer = null;
 
 const VIEWS = {
@@ -680,6 +709,249 @@ function apCounterpartyLabel(writingBranch, counterpartyBranch){
   if(w === "SYP" && c === "HQ") return "ACCTNO KCW · สำนักงานใหญ่ (AP)";
   return "";
 }
+function stickerPrinterModel(){
+  try{ return localStorage.getItem("kcw_sticker_model") || STICKER_DEFAULT_MODEL || "te310"; }
+  catch(_e){ return STICKER_DEFAULT_MODEL || "te310"; }
+}
+function stickerPrinterHost(){
+  try{ return localStorage.getItem("kcw_sticker_host") || STICKER_DEFAULT_HOST || ""; }
+  catch(_e){ return STICKER_DEFAULT_HOST || ""; }
+}
+function setStickerPrinterModel(id){
+  try{ localStorage.setItem("kcw_sticker_model", id); }catch(_e){}
+}
+function setStickerPrinterHost(host){
+  try{ localStorage.setItem("kcw_sticker_host", host || ""); }catch(_e){}
+}
+function openStickerPrint(job){
+  receivePrintJob = {
+    bill: job.bill || "",
+    shortId: job.shortId || "",
+    lines: (job.lines || []).map(ln=>({
+      bcode: ln.bcode,
+      descr: ln.descr || "",
+      qty: Math.max(1, Math.round(Number(ln.qty || ln.qty_receive || ln.qty_received || 0))),
+      selected: ln.selected !== false,
+    })).filter(ln=>ln.bcode && ln.qty>0),
+  };
+  view = "receive";
+  receiveStep = 4;
+  render();
+}
+function stickerCopies(job){
+  return (job.lines||[]).filter(l=>l.selected).reduce((n,l)=>n+Number(l.qty||0),0);
+}
+async function fetchStickerPreview(job, model){
+  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
+  if(!lines.length) return null;
+  return api("/transfer/api/stickers/preview",{
+    method:"POST",
+    body:JSON.stringify({lines, printer_model:model}),
+  });
+}
+async function downloadStickerPrn(job, model){
+  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
+  if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
+  setBusy(true);
+  try{
+    const r = await fetch("/transfer/api/stickers/print",{
+      method:"POST",
+      credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({lines, printer_model:model, action:"download"}),
+    });
+    if(!r.ok){
+      const j = await r.json().catch(()=>({}));
+      throw new Error(j.error||("HTTP "+r.status));
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "kcw-stickers-"+(job.bill||job.shortId||"batch")+".prn";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } finally { setBusy(false); }
+}
+async function sendStickerPrint(job, model, host){
+  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
+  if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
+  return api("/transfer/api/stickers/print",{
+    method:"POST",
+    body:JSON.stringify({lines, printer_model:model, printer_host:host, action:"print"}),
+  });
+}
+function renderStickerComposer(el, job){
+  const model = stickerPrinterModel();
+  const host = stickerPrinterHost();
+  const copies = stickerCopies(job);
+  const rows = (job.lines||[]).map((ln,i)=>`
+    <tr class="sticker-row">
+      <td><input type="checkbox" class="pick-check stk-sel" data-i="${i}" ${ln.selected?"checked":""}/></td>
+      <td><code>${ln.bcode}</code></td>
+      <td>${(ln.descr||"").replace(/</g,"&lt;")}</td>
+      <td class="num"><span class="qty-step">
+        <button type="button" data-stk-delta="${i}" data-d="-1">−</button>
+        <input class="qty-input stk-qty" type="number" min="1" max="200" step="1" value="${ln.qty}" data-i="${i}"/>
+        <button type="button" data-stk-delta="${i}" data-d="1">+</button>
+      </span></td>
+    </tr>`).join("");
+  const cards = (job.lines||[]).map((ln,i)=>`<div class="item-card">
+    <div class="item-card-head">
+      <label style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" class="pick-check stk-sel" data-i="${i}" ${ln.selected?"checked":""}/><code>${ln.bcode}</code></label>
+    </div>
+    <div class="item-card-desc">${(ln.descr||"").replace(/</g,"&lt;")}</div>
+    <div class="item-card-actions">
+      <span class="meta" style="margin-right:auto">จำนวนดวง</span>
+      <span class="qty-step">
+        <button type="button" data-stk-delta="${i}" data-d="-1">−</button>
+        <input class="qty-input stk-qty" type="number" min="1" max="200" step="1" value="${ln.qty}" data-i="${i}"/>
+        <button type="button" data-stk-delta="${i}" data-d="1">+</button>
+      </span>
+    </div>
+  </div>`).join("");
+  el.innerHTML = `<div class="card">
+      <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
+      <p class="meta">1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
+      <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
+        <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
+      </div>
+      <div class="row-actions" style="margin:.35rem 0 .15rem">
+        <button class="btn btn-ghost" id="btnStkAll" type="button">เลือกทั้งหมด</button>
+        <button class="btn btn-ghost" id="btnStkNone" type="button">ล้าง</button>
+      </div>
+      ${dualView(
+        `<div class="table-wrap table-wrap--tall"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ดวง</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+        itemCards(cards)
+      )}
+      <details class="info-toggle" id="stkAdvanced">
+        <summary>ตั้งค่าไฟล์พิมพ์ (ไม่ต้องเลือกทุกครั้ง)</summary>
+        <div class="info-body">
+          <p class="meta" style="margin:0 0 .5rem">เลย์เอาต์ถูกจัดให้ตรงสติ๊กเกอร์ 5 × 3.5 ซม. ที่ออกจาก TSC TE310 / 244 Pro — เปลี่ยนตรงนี้เฉพาะตอนส่งไฟล์เข้าเครื่องคนละรุ่น</p>
+          <div class="field" style="margin:.35rem 0">
+            <label>ความละเอียดไฟล์</label>
+            <div class="seg" id="stkModelSeg">
+              ${STICKER_PRINTERS.map(p=>`<button type="button" data-model="${p.id}" class="${p.id===model?"on":""}">${p.label}</button>`).join("")}
+            </div>
+          </div>
+          <div class="field" style="margin:.35rem 0">
+            <label>ส่งเข้าเครื่องบน LAN (ถ้ามี)</label>
+            <input id="stkHost" class="text-input" type="text" placeholder="เว้นว่างได้ — จะดาวน์โหลดไฟล์" value="${escapeAttr(host)}"/>
+          </div>
+        </div>
+      </details>
+      <div class="commit-bar">
+        <div class="commit-meta">จะพิมพ์ <strong id="stkCopyCount">${copies}</strong> ดวง · เลือกแล้ว ${(job.lines||[]).filter(l=>l.selected).length} รายการ</div>
+        <button class="btn btn-ghost" id="btnStkSkip">ข้าม</button>
+        ${host?`<button class="btn btn-ghost" id="btnStkDownload">ดาวน์โหลดไฟล์</button>
+        <button class="btn btn-primary" id="btnStkPrint" ${copies?"":"disabled"}>พิมพ์ทั้งหมด</button>`
+        :`<button class="btn btn-primary" id="btnStkDownload" ${copies?"":"disabled"}>ดาวน์โหลดไฟล์พิมพ์</button>`}
+      </div>
+    </div>`;
+  const syncQty = ()=>{
+    el.querySelectorAll(".stk-qty").forEach(inp=>{
+      const i = Number(inp.dataset.i);
+      const q = Math.max(1, Math.min(200, Math.round(Number(inp.value||1))));
+      job.lines[i].qty = q;
+      inp.value = q;
+    });
+    el.querySelectorAll(".stk-sel").forEach(inp=>{
+      job.lines[Number(inp.dataset.i)].selected = inp.checked;
+    });
+    const n = stickerCopies(job);
+    const meta = el.querySelector("#stkCopyCount");
+    if(meta) meta.textContent = n;
+    el.querySelectorAll("#btnStkPrint, #btnStkDownload").forEach(btn=>{
+      if(btn && btn.id==="btnStkPrint") btn.disabled = n<=0;
+      if(btn && btn.id==="btnStkDownload" && !host) btn.disabled = n<=0;
+    });
+  };
+  let previewTimer = null;
+  const refreshPreview = ()=>{
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(async()=>{
+      try{
+        const data = await fetchStickerPreview(job, stickerPrinterModel());
+        const img = el.querySelector("#stkPreview");
+        const note = el.querySelector("#stkPreviewMeta");
+        if(data && data.preview_png_b64 && img){
+          img.src = "data:image/png;base64,"+data.preview_png_b64;
+          img.hidden = false;
+          if(note) note.hidden = true;
+        }else if(note){
+          note.textContent = "เลือกอย่างน้อย 1 รายการเพื่อดูตัวอย่าง";
+          note.hidden = false;
+        }
+      }catch(e){
+        const note = el.querySelector("#stkPreviewMeta");
+        if(note){ note.textContent = e.message||"โหลดตัวอย่างไม่สำเร็จ"; note.hidden=false; }
+      }
+    }, 250);
+  };
+  el.querySelectorAll(".stk-qty, .stk-sel").forEach(inp=>inp.addEventListener("change", ()=>{ syncQty(); refreshPreview(); }));
+  el.querySelectorAll("[data-stk-delta]").forEach(btn=>btn.onclick=()=>{
+    const i = Number(btn.dataset.stkDelta);
+    const d = Number(btn.dataset.d);
+    job.lines[i].qty = Math.max(1, Math.min(200, Number(job.lines[i].qty||1)+d));
+    el.querySelectorAll(`.stk-qty[data-i="${i}"]`).forEach(inp=>inp.value=job.lines[i].qty);
+    syncQty();
+    refreshPreview();
+  });
+  el.querySelector("#stkModelSeg").onclick = e=>{
+    const b = e.target.closest("[data-model]");
+    if(!b) return;
+    setStickerPrinterModel(b.dataset.model);
+    el.querySelectorAll("#stkModelSeg button").forEach(x=>x.classList.toggle("on", x===b));
+    refreshPreview();
+  };
+  el.querySelector("#btnStkAll").onclick = ()=>{
+    job.lines.forEach(l=>l.selected=true);
+    el.querySelectorAll(".stk-sel").forEach(inp=>inp.checked=true);
+    syncQty();
+    refreshPreview();
+  };
+  el.querySelector("#btnStkNone").onclick = ()=>{
+    job.lines.forEach(l=>l.selected=false);
+    el.querySelectorAll(".stk-sel").forEach(inp=>inp.checked=false);
+    syncQty();
+    refreshPreview();
+  };
+  const hostInput = el.querySelector("#stkHost");
+  if(hostInput) hostInput.onchange = e=> setStickerPrinterHost(e.target.value.trim());
+  el.querySelector("#btnStkSkip").onclick = ()=>{
+    receivePrintJob = null;
+    receiveStep = 1;
+    receiveShipment = null;
+    render();
+  };
+  const downloadBtn = el.querySelector("#btnStkDownload");
+  if(downloadBtn) downloadBtn.onclick = async()=>{
+    syncQty();
+    if(hostInput) setStickerPrinterHost(hostInput.value.trim());
+    try{
+      await downloadStickerPrn(job, stickerPrinterModel());
+      showToast("ดาวน์โหลดไฟล์พิมพ์แล้ว");
+    }catch(e){ alert(e.message); }
+  };
+  const printBtn = el.querySelector("#btnStkPrint");
+  if(printBtn) printBtn.onclick = async()=>{
+    syncQty();
+    const h = hostInput ? hostInput.value.trim() : stickerPrinterHost();
+    setStickerPrinterHost(h);
+    if(!h){ alert("ยังไม่ได้ตั้งค่าเครื่องบน LAN — ใช้ดาวน์โหลดไฟล์พิมพ์"); return; }
+    try{
+      const result = await sendStickerPrint(job, stickerPrinterModel(), h);
+      showToast("พิมพ์แล้ว "+(result.copies||copies)+" ดวง");
+      receivePrintJob = null;
+      receiveStep = 1;
+      receiveShipment = null;
+      render();
+    }catch(e){ alert(e.message); }
+  };
+  refreshPreview();
+}
 function printRequestBill(detail){
   const lines = detail.items || detail.lines || [];
   const fromB = detail.from_branch;
@@ -745,6 +1017,11 @@ async function openRequestDetail(transferId){
   }
   const canCancel = canCancelRequest(status, toB, shipments.length > 0);
   const isDraft = status==="draft";
+  const stickerLines = lines.filter(ln=>Number(ln.qty_received||0)>0).map(ln=>({
+    bcode: ln.bcode,
+    descr: ln.descr || "",
+    qty: Number(ln.qty_received||0),
+  }));
   const shipAp = apCounterpartyLabel(fromB, toB);
   const recvAp = apCounterpartyLabel(toB, fromB);
   const lineCards = lines.map(ln=>`<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
@@ -772,11 +1049,21 @@ async function openRequestDetail(transferId){
     <div class="row-actions">
       <button class="btn btn-ghost" data-close>ปิด</button>
       <button class="btn btn-ghost" id="btnDetailPrint">พิมพ์ใบคำขอ</button>
+      ${stickerLines.length ? `<button class="btn btn-ghost" id="btnDetailStickers">พิมพ์สติ๊กเกอร์</button>` : ""}
       ${canCancel ? `<button class="btn btn-ghost" id="btnDetailCancel">ยกเลิกคำขอ</button>` : ""}
       ${isDraft ? `<button class="btn btn-primary" id="btnDetailEdit">แก้ไขร่าง</button>` : ""}
     </div>`);
   const printBtn = modal.box.querySelector("#btnDetailPrint");
   if(printBtn) printBtn.onclick = ()=>printRequestBill(detail);
+  const stickerBtn = modal.box.querySelector("#btnDetailStickers");
+  if(stickerBtn) stickerBtn.onclick = ()=>{
+    modal.close();
+    openStickerPrint({
+      bill: "",
+      shortId: detail.short_id || transferId,
+      lines: stickerLines,
+    });
+  };
   const cancelBtn = modal.box.querySelector("#btnDetailCancel");
   if(cancelBtn) cancelBtn.onclick = async()=>{ modal.close(); await cancelRequest(transferId); };
   const editBtn = modal.box.querySelector("#btnDetailEdit");
@@ -799,8 +1086,15 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; render(); }
-function goView(v){ view=v; if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; } if(v==="receive"){ receiveStep=1; receiveShipment=null; receiveFilter=""; } if(v==="prepare"){ prepareStep=1; prepareRequest=null; } render(); }
+function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; render(); }
+function goView(v){
+  view=v;
+  if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; }
+  if(v==="receive"){ receiveStep=1; receiveShipment=null; receiveFilter=""; }
+  else receivePrintJob=null;
+  if(v==="prepare"){ prepareStep=1; prepareRequest=null; }
+  render();
+}
 function setReceiveStep(n){ receiveStep=n; render(); }
 function setPrepareStep(n){ prepareStep=n; render(); }
 function setRequestStep(n){ requestStep=n; render(); }
@@ -835,7 +1129,7 @@ function updateHeader(){
     home: ["โอนสินค้า · " + SITE_LABEL, USER + " · เลือกสิ่งที่ต้องการทำ"],
     request: ["ขอสินค้าจาก " + OTHER_LABEL, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
     prepare: ["ส่งสินค้าไป " + OTHER_LABEL, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันส่งสินค้า"],
-    receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
+    receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : receiveStep===3 ? "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า" : "พิมพ์สติ๊กเกอร์บาร์โค้ดของสินค้าที่รับ"],
     status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
   };
   const t = titles[view] || titles.home;
@@ -1380,6 +1674,10 @@ async function submitReceive(shipment, qtyByLineId){
 }
 
 async function renderReceive(el){
+  if(receiveStep === 4 && receivePrintJob && (receivePrintJob.lines||[]).length){
+    renderStickerComposer(el, receivePrintJob);
+    return;
+  }
   const data = await api("/transfer/api/receive-lines");
   const queue = groupReceiveQueue(data.items||[]);
   if(!queue.length){
@@ -1428,6 +1726,16 @@ async function renderReceive(el){
         setReceiveStep(2);
       };
     });
+    return;
+  }
+
+  if(receiveStep === 4){
+    if(!receivePrintJob || !(receivePrintJob.lines||[]).length){
+      receivePrintJob = null;
+      receiveStep = 1;
+      return renderReceive(el);
+    }
+    renderStickerComposer(el, receivePrintJob);
     return;
   }
 
@@ -1534,6 +1842,10 @@ async function renderReceive(el){
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>`,
           itemCards(confirmCards)
         )}
+        <label class="meta" style="display:flex;align-items:center;gap:.45rem;margin:.85rem 0 .25rem">
+          <input id="chkPrintStickers" type="checkbox" class="pick-check" checked/>
+          พิมพ์สติ๊กเกอร์บาร์โค้ดตามจำนวนที่รับ (1 ชิ้น = 1 ดวง)
+        </label>
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setReceiveStep(2)">← แก้ไขจำนวน</button>
           <button class="btn btn-primary" id="btnConfirmReceive">ยืนยันรับเข้า (ออกใบ TF)</button>
@@ -1541,10 +1853,20 @@ async function renderReceive(el){
       </div>`;
     el.querySelector("#btnConfirmReceive").onclick = async()=>{
       try{
+        const wantPrint = !!(el.querySelector("#chkPrintStickers")||{}).checked;
         const result = await submitReceive(ship, qtyMap);
         const bill = result.receive_billno || "";
+        const printLines = (result.lines && result.lines.length ? result.lines : openLines
+          .filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0)
+          .map(ln=>({bcode:ln.bcode, descr:ln.descr||"", qty:Number(qtyMap[ln.shipment_line_id]||0)}))
+        ).filter(ln=>ln.bcode && Number(ln.qty||ln.qty_receive||0)>0)
+         .map(ln=>({bcode:ln.bcode, descr:ln.descr||"", qty:Number(ln.qty||ln.qty_receive||0)}));
         showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
         receiveShipment = null;
+        if(wantPrint && printLines.length){
+          openStickerPrint({bill, shortId: ship.short_id, lines: printLines});
+          return;
+        }
         receiveStep = 1;
         render();
       }catch(e){ if(e.message!=="ยกเลิก") alert(e.message); }
