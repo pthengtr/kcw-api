@@ -175,7 +175,12 @@ def test_transfer_page_has_sticker_print_flow():
     assert "userActivation" in html
     assert "กดพิมพ์อีกครั้ง" in html
     assert "@page" in html
-    assert "50mm 35mm" in html
+    assert "101.6mm 35mm" in html
+    assert "stk-row" in html
+    assert "stk-empty" in html
+    assert "2 ดวงต่อแถว" in html
+    assert "101.6 × 152.4" in html
+    assert "@page{size:50mm 35mm;margin:0}" not in html
     assert "print-sticker-mode" in html
     assert "Headers and footers" in html
     assert "stickerPrintPage" in html
