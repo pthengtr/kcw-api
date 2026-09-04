@@ -358,8 +358,9 @@ let suggestFilter = "";
 /** Local picks on suggest list: bcode → {checked, unit, qty} — survives soft re-renders. */
 let suggestPick = {};
 let receiveFilter = "";
-/** After a successful receive: {bill, shortId, lines:[{bcode,descr,qty}]} */
+/** After a successful receive / history reprint: {bill, shortId, lines:[{bcode,descr,qty,selected}]} */
 let receivePrintJob = null;
+let stickerReturnView = "home";
 let toastTimer = null;
 
 const VIEWS = {
@@ -723,7 +724,23 @@ function setStickerPrinterModel(id){
 function setStickerPrinterHost(host){
   try{ localStorage.setItem("kcw_sticker_host", host || ""); }catch(_e){}
 }
+function stickerLinesFromDetail(detail, {selected}={}){
+  const lines = detail.items || detail.lines || [];
+  const recvBill = (detail.shipments||[]).map(s=>s.receive_billno).filter(Boolean)[0] || "";
+  return {
+    bill: recvBill,
+    shortId: detail.short_id || detail.transfer_id || "",
+    lines: lines.filter(ln=>Number(ln.qty_received||0)>0).map(ln=>({
+      bcode: ln.bcode,
+      descr: ln.descr || "",
+      qty: Number(ln.qty_received||0),
+      selected: selected === true ? true : selected === false ? false : !!ln.selected,
+    })),
+  };
+}
 function openStickerPrint(job){
+  stickerReturnView = job.returnView || view || "home";
+  const pick = job.selectAll === false;
   receivePrintJob = {
     bill: job.bill || "",
     shortId: job.shortId || "",
@@ -731,12 +748,30 @@ function openStickerPrint(job){
       bcode: ln.bcode,
       descr: ln.descr || "",
       qty: Math.max(1, Math.round(Number(ln.qty || ln.qty_receive || ln.qty_received || 0))),
-      selected: ln.selected !== false,
+      selected: pick ? ln.selected === true : ln.selected !== false,
     })).filter(ln=>ln.bcode && ln.qty>0),
   };
-  view = "receive";
-  receiveStep = 4;
+  view = "stickers";
   render();
+}
+function leaveStickerPrint(){
+  receivePrintJob = null;
+  const back = stickerReturnView || "home";
+  stickerReturnView = "home";
+  if(back === "receive"){
+    view = "receive";
+    receiveStep = 1;
+    receiveShipment = null;
+  }else{
+    view = back;
+  }
+  render();
+}
+async function openStickerPrintFromTransfer(transferId, {selectAll}={}){
+  const detail = await api("/transfer/api/requests/"+transferId+"/lines");
+  const job = stickerLinesFromDetail(detail, {selected: selectAll === true});
+  if(!job.lines.length) throw new Error("ยังไม่มีสินค้าที่รับเข้าสำหรับพิมพ์บาร์โค้ด");
+  openStickerPrint({...job, selectAll: selectAll === true, returnView: "status"});
 }
 function stickerCopies(job){
   return (job.lines||[]).filter(l=>l.selected).reduce((n,l)=>n+Number(l.qty||0),0);
@@ -814,7 +849,7 @@ function renderStickerComposer(el, job){
   </div>`).join("");
   el.innerHTML = `<div class="card">
       <p><strong>พิมพ์สติ๊กเกอร์บาร์โค้ด</strong>${job.bill?` · ใบรับ <code>${job.bill}</code>`:""}${job.shortId?` · <code>${job.shortId}</code>`:""}</p>
-      <p class="meta">1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
+      <p class="meta">ติ๊กสินค้าที่ต้องการพิมพ์ · 1 ชิ้นที่รับ = 1 ดวง · สติ๊กเกอร์ 5 × 3.5 ซม. ตามแบบร้าน</p>
       <div class="sticker-preview-wrap"><img id="stkPreview" class="sticker-preview" alt="ตัวอย่างสติ๊กเกอร์" hidden/>
         <p id="stkPreviewMeta" class="meta">กำลังโหลดตัวอย่าง…</p>
       </div>
@@ -920,12 +955,7 @@ function renderStickerComposer(el, job){
   };
   const hostInput = el.querySelector("#stkHost");
   if(hostInput) hostInput.onchange = e=> setStickerPrinterHost(e.target.value.trim());
-  el.querySelector("#btnStkSkip").onclick = ()=>{
-    receivePrintJob = null;
-    receiveStep = 1;
-    receiveShipment = null;
-    render();
-  };
+  el.querySelector("#btnStkSkip").onclick = ()=> leaveStickerPrint();
   const downloadBtn = el.querySelector("#btnStkDownload");
   if(downloadBtn) downloadBtn.onclick = async()=>{
     syncQty();
@@ -944,10 +974,7 @@ function renderStickerComposer(el, job){
     try{
       const result = await sendStickerPrint(job, stickerPrinterModel(), h);
       showToast("พิมพ์แล้ว "+(result.copies||copies)+" ดวง");
-      receivePrintJob = null;
-      receiveStep = 1;
-      receiveShipment = null;
-      render();
+      leaveStickerPrint();
     }catch(e){ alert(e.message); }
   };
   refreshPreview();
@@ -990,14 +1017,25 @@ async function openRequestDetail(transferId){
   const fromB = detail.from_branch;
   const toB = detail.to_branch;
   const progress = {prep_recv_mismatch: detail.prep_recv_mismatch, prep_recv_mismatch_count: detail.prep_recv_mismatch_count};
-  const lineRows = lines.map(ln=>`<tr class="${ln.prep_recv_mismatch?"row-mismatch":""}">
+  const stickerLines = lines.filter(ln=>Number(ln.qty_received||0)>0).map(ln=>({
+    bcode: ln.bcode,
+    descr: ln.descr || "",
+    qty: Number(ln.qty_received||0),
+  }));
+  const stickerIndex = Object.fromEntries(stickerLines.map((ln,i)=>[ln.bcode, i]));
+  const lineRows = lines.map(ln=>{
+    const si = stickerIndex[ln.bcode];
+    const pick = si!=null ? `<input type="checkbox" class="pick-check stk-pick" data-i="${si}" title="พิมพ์บาร์โค้ด"/>` : "";
+    return `<tr class="${ln.prep_recv_mismatch?"row-mismatch":""}">
+    <td>${pick}</td>
     <td><code>${ln.bcode}</code></td>
     <td>${fmtDescr(ln)}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
     <td class="num">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</td>
     <td class="num">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</td>
     <td>${lineStatusLabel(ln)}</td>
-  </tr>`).join("");
+  </tr>`;
+  }).join("");
   let shipHtml = "";
   if(shipments.length){
     shipHtml = shipments.map((ship,i)=>{
@@ -1017,31 +1055,31 @@ async function openRequestDetail(transferId){
   }
   const canCancel = canCancelRequest(status, toB, shipments.length > 0);
   const isDraft = status==="draft";
-  const stickerLines = lines.filter(ln=>Number(ln.qty_received||0)>0).map(ln=>({
-    bcode: ln.bcode,
-    descr: ln.descr || "",
-    qty: Number(ln.qty_received||0),
-  }));
   const shipAp = apCounterpartyLabel(fromB, toB);
   const recvAp = apCounterpartyLabel(toB, fromB);
-  const lineCards = lines.map(ln=>`<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
-    <div class="item-card-head"><code>${ln.bcode}</code>${lineStatusLabel(ln)}</div>
+  const lineCards = lines.map(ln=>{
+    const si = stickerIndex[ln.bcode];
+    const pick = si!=null ? `<label style="display:flex;align-items:center;gap:.35rem"><input type="checkbox" class="pick-check stk-pick" data-i="${si}"/><code>${ln.bcode}</code></label>` : `<code>${ln.bcode}</code>`;
+    return `<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
+    <div class="item-card-head">${pick}${lineStatusLabel(ln)}</div>
     <div class="item-card-desc">${fmtDescr(ln)}</div>
     <div class="item-card-grid">
       <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
       <div class="item-field num"><span class="lbl">จัด</span><span class="val">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</span></div>
       <div class="item-field num"><span class="lbl">รับ</span><span class="val">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</span></div>
     </div>
-  </div>`).join("");
+  </div>`;
+  }).join("");
   const modal = showModal(`<h2>รายละเอียด · <code>${detail.short_id||transferId}</code></h2>
     <p class="dir">${dirLabel(fromB, toB)}</p>
     <p style="margin:.35rem 0">${badge(status, fromB, toB, detail.prep_recv_mismatch)} ${pipeline(status, detail.prep_recv_mismatch)}</p>
     ${mismatchBanner(detail)}
     <p class="meta">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)}</p>
     <p class="meta">AP จัดออก: ${shipAp||"—"} · AP รับเข้า: ${recvAp||"—"}</p>
+    ${stickerLines.length ? `<p class="meta" style="margin:.65rem 0 0">ติ๊กสินค้าที่ต้องการพิมพ์บาร์โค้ด — จำนวนดวง = จำนวนที่รับ</p>` : ""}
     ${dualView(
-      `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th></tr></thead><tbody>
-        ${lineRows || '<tr><td colspan="6" class="empty">ไม่มีรายการ</td></tr>'}
+      `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th></tr></thead><tbody>
+        ${lineRows || '<tr><td colspan="7" class="empty">ไม่มีรายการ</td></tr>'}
       </tbody></table></div>`,
       itemCards(lineCards || '<div class="empty">ไม่มีรายการ</div>')
     )}
@@ -1049,19 +1087,31 @@ async function openRequestDetail(transferId){
     <div class="row-actions">
       <button class="btn btn-ghost" data-close>ปิด</button>
       <button class="btn btn-ghost" id="btnDetailPrint">พิมพ์ใบคำขอ</button>
-      ${stickerLines.length ? `<button class="btn btn-ghost" id="btnDetailStickers">พิมพ์สติ๊กเกอร์</button>` : ""}
+      ${stickerLines.length ? `<button class="btn btn-ghost" id="btnDetailStkAll">เลือกสินค้าทั้งหมด</button>
+      <button class="btn btn-primary" id="btnDetailStickers">พิมพ์บาร์โค้ดที่เลือก</button>` : ""}
       ${canCancel ? `<button class="btn btn-ghost" id="btnDetailCancel">ยกเลิกคำขอ</button>` : ""}
       ${isDraft ? `<button class="btn btn-primary" id="btnDetailEdit">แก้ไขร่าง</button>` : ""}
     </div>`);
   const printBtn = modal.box.querySelector("#btnDetailPrint");
   if(printBtn) printBtn.onclick = ()=>printRequestBill(detail);
+  const pickAllBtn = modal.box.querySelector("#btnDetailStkAll");
+  if(pickAllBtn) pickAllBtn.onclick = ()=>{
+    modal.box.querySelectorAll(".stk-pick").forEach(inp=>inp.checked=true);
+  };
   const stickerBtn = modal.box.querySelector("#btnDetailStickers");
   if(stickerBtn) stickerBtn.onclick = ()=>{
+    const picked = [...modal.box.querySelectorAll(".stk-pick:checked")].map(inp=>{
+      const ln = stickerLines[Number(inp.dataset.i)];
+      return ln ? {...ln, selected:true} : null;
+    }).filter(Boolean);
+    if(!picked.length){ alert("ติ๊กสินค้าที่ต้องการพิมพ์บาร์โค้ด"); return; }
     modal.close();
+    const job = stickerLinesFromDetail(detail, {selected:false});
     openStickerPrint({
-      bill: "",
-      shortId: detail.short_id || transferId,
-      lines: stickerLines,
+      ...job,
+      lines: picked,
+      selectAll: false,
+      returnView: "status",
     });
   };
   const cancelBtn = modal.box.querySelector("#btnDetailCancel");
@@ -1086,12 +1136,12 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; render(); }
+function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; render(); }
 function goView(v){
   view=v;
   if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; }
   if(v==="receive"){ receiveStep=1; receiveShipment=null; receiveFilter=""; }
-  else receivePrintJob=null;
+  if(v!=="stickers" && v!=="receive") receivePrintJob=null;
   if(v==="prepare"){ prepareStep=1; prepareRequest=null; }
   render();
 }
@@ -1129,8 +1179,9 @@ function updateHeader(){
     home: ["โอนสินค้า · " + SITE_LABEL, USER + " · เลือกสิ่งที่ต้องการทำ"],
     request: ["ขอสินค้าจาก " + OTHER_LABEL, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
     prepare: ["ส่งสินค้าไป " + OTHER_LABEL, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันส่งสินค้า"],
-    receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : receiveStep===3 ? "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า" : "พิมพ์สติ๊กเกอร์บาร์โค้ดของสินค้าที่รับ"],
+    receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
     status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
+    stickers: ["พิมพ์สติ๊กเกอร์บาร์โค้ด", "เลือกสินค้าที่ต้องการพิมพ์"],
   };
   const t = titles[view] || titles.home;
   $("hdrTitle").textContent = t[0];
@@ -1864,7 +1915,7 @@ async function renderReceive(el){
         showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
         receiveShipment = null;
         if(wantPrint && printLines.length){
-          openStickerPrint({bill, shortId: ship.short_id, lines: printLines});
+          openStickerPrint({bill, shortId: ship.short_id, lines: printLines, returnView:"receive"});
           return;
         }
         receiveStep = 1;
@@ -2102,6 +2153,7 @@ async function renderStatus(el){
         <td class="row-actions" style="margin:0">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
           <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>
+          ${r.has_received || isDone ? `<button class="btn btn-ghost" data-stickers="${r.transfer_id}">บาร์โค้ด</button>` : ""}
           ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
         </td>
       </tr>`;
@@ -2119,6 +2171,7 @@ async function renderStatus(el){
         <div class="item-card-actions">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
           <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>
+          ${r.has_received || isDone ? `<button class="btn btn-ghost" data-stickers="${r.transfer_id}">บาร์โค้ด</button>` : ""}
           ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
         </div>
       </div>`;
@@ -2141,6 +2194,11 @@ async function renderStatus(el){
       printRequestBill(detail);
     }catch(err){ alert(err.message||"พิมพ์ไม่สำเร็จ"); }
   });
+  el.querySelectorAll("[data-stickers]").forEach(b=>b.onclick=async e=>{
+    e.stopPropagation();
+    try{ await openStickerPrintFromTransfer(b.dataset.stickers, {selectAll:false}); }
+    catch(err){ alert(err.message||"เปิดพิมพ์บาร์โค้ดไม่สำเร็จ"); }
+  });
 }
 
 async function render(){
@@ -2152,10 +2210,18 @@ async function render(){
     else if(view==="prepare") await renderPrepare(el);
     else if(view==="receive") await renderReceive(el);
     else if(view==="status") await renderStatus(el);
+    else if(view==="stickers"){
+      if(!receivePrintJob || !(receivePrintJob.lines||[]).length){
+        view = stickerReturnView || "status";
+        receivePrintJob = null;
+        return render();
+      }
+      renderStickerComposer(el, receivePrintJob);
+    }
   }catch(e){el.innerHTML='<div class="card empty">'+String(e.message||e)+'</div>';}
 }
 
-$("btnBack").onclick = goHome;
+$("btnBack").onclick = ()=> view==="stickers" ? leaveStickerPrint() : goHome();
 render();
 </script>
 </body>
