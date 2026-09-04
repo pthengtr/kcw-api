@@ -863,11 +863,11 @@ async function sendStickerPrint(job, model, host){
     body:JSON.stringify({lines, printer_model:model, printer_host:host, action:"print"}),
   });
 }
-async function printStickersBrowser(job, model){
-  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
-  if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
-  setBusy(true);
-  const objectUrls = [];
+function stickerPrintReadyKey(job, model){
+  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0);
+  return String(model||"")+"|"+lines.map(l=>String(l.bcode)+":"+String(l.qty)).join(",");
+}
+function fireStickerWindowPrint(objectUrls){
   const pageStyle = document.getElementById("stickerPrintPage") || document.createElement("style");
   pageStyle.id = "stickerPrintPage";
   pageStyle.textContent = "@page{size:50mm 35mm;margin:0}";
@@ -879,8 +879,31 @@ async function printStickersBrowser(job, model){
     document.title = prevTitle;
     document.documentElement.classList.remove("print-sticker-mode");
     if(pageStyle.parentNode) pageStyle.remove();
-    objectUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
+    (objectUrls||[]).forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
   };
+  document.title = " ";
+  document.documentElement.classList.add("print-sticker-mode");
+  if(!pageStyle.parentNode) document.head.appendChild(pageStyle);
+  window.addEventListener("afterprint", cleanupPrint, {once:true});
+  setTimeout(cleanupPrint, 120000);
+  // Must run in the click stack (no await/setTimeout before this) or Chrome
+  // drops transient user activation and silently skips the print dialog.
+  window.print();
+}
+async function printStickersBrowser(job, model){
+  const lines = (job.lines||[]).filter(l=>l.selected && Number(l.qty)>0).map(l=>({bcode:l.bcode, qty:Number(l.qty), descr:l.descr||""}));
+  if(!lines.length) throw new Error("เลือกอย่างน้อย 1 รายการ");
+  const readyKey = stickerPrintReadyKey(job, model);
+  const sheet = $("printSheet");
+  // Second click: sheet already prepared — print synchronously so the dialog opens.
+  if(job._stkPrintReadyKey === readyKey && sheet && sheet.classList.contains("print-stickers") && sheet.querySelector(".stk-label img")){
+    fireStickerWindowPrint(job._stkPrintObjectUrls || []);
+    job._stkPrintReadyKey = "";
+    job._stkPrintObjectUrls = null;
+    return;
+  }
+  setBusy(true);
+  const objectUrls = [];
   try{
     let data;
     try{
@@ -917,22 +940,27 @@ async function printStickersBrowser(job, model){
       }
     }
     if(!parts.length) throw new Error("สร้างรูปสติ๊กเกอร์ไม่สำเร็จ");
-    document.title = " ";
-    document.documentElement.classList.add("print-sticker-mode");
-    if(!pageStyle.parentNode) document.head.appendChild(pageStyle);
-    const sheet = $("printSheet");
     sheet.className = "print-stickers";
     sheet.innerHTML = parts.join("");
     sheet.setAttribute("aria-hidden","false");
     const imgs = Array.from(sheet.querySelectorAll("img"));
     await Promise.all(imgs.map(img=> img.decode ? img.decode().catch(()=>{}) : Promise.resolve()));
+    job._stkPrintReadyKey = readyKey;
+    job._stkPrintObjectUrls = objectUrls;
     setBusy(false);
-    await new Promise(r=> setTimeout(r, 50));
-    window.addEventListener("afterprint", cleanupPrint, {once:true});
-    setTimeout(cleanupPrint, 120000);
-    window.print();
+    // Do not setTimeout before print — timers clear Chrome user activation.
+    const gestActive = !(navigator.userActivation) || navigator.userActivation.isActive;
+    if(gestActive){
+      fireStickerWindowPrint(objectUrls);
+      job._stkPrintReadyKey = "";
+      job._stkPrintObjectUrls = null;
+    }else{
+      showToast("พร้อมพิมพ์แล้ว — กดพิมพ์อีกครั้ง");
+    }
   } catch(e){
-    cleanupPrint();
+    objectUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_e){} });
+    job._stkPrintReadyKey = "";
+    job._stkPrintObjectUrls = null;
     throw e;
   } finally {
     setBusy(false);

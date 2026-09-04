@@ -170,6 +170,10 @@ def test_transfer_page_has_sticker_print_flow():
     assert "ดาวน์โหลดไฟล์พิมพ์" in html
     assert "print-stickers" in html
     assert "window.print()" in html
+    assert "fireStickerWindowPrint" in html
+    assert "stickerPrintReadyKey" in html
+    assert "userActivation" in html
+    assert "กดพิมพ์อีกครั้ง" in html
     assert "@page" in html
     assert "50mm 35mm" in html
     assert "print-sticker-mode" in html
@@ -183,6 +187,8 @@ def test_transfer_page_has_sticker_print_flow():
     assert "kcw-stickers-" in html
     assert 'id="btnStkPrint"' in html
     assert ">พิมพ์<" in html or ">พิมพ์</button>" in html
+    assert "await new Promise(r=> setTimeout(r, 50))" not in html
+    assert "await new Promise(r=> setTimeout(r, 80))" not in html
 
 def test_sticker_preview_and_download_api():
     from app.transfer_app import app
