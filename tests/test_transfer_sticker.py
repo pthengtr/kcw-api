@@ -3,6 +3,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from src.transfer.sticker import (
+    BARCODE_LEFT_MM,
     LABEL_HEIGHT_MM,
     LABEL_WIDTH_MM,
     StickerLabel,
@@ -13,6 +14,7 @@ from src.transfer.sticker import (
     decode_price_letters,
     encode_price_digits,
     format_price_code,
+    format_unit_line,
     is_lan_printer_host,
     label_from_icmas,
     normalize_printer_model,
@@ -20,6 +22,7 @@ from src.transfer.sticker import (
     render_label_png,
     resolve_sticker_labels,
     sticker_config_payload,
+    sticker_name_lines,
     validate_batch,
 )
 from src.transfer.ui import page
@@ -114,6 +117,47 @@ def test_lan_printer_host_guard():
     assert not is_lan_printer_host("example.com/x")
     assert not is_lan_printer_host("http://192.168.1.50")
     assert not is_lan_printer_host("")
+
+
+SHOP_REF = StickerLabel(
+    bcode="13010754",
+    descr="30 มิล เหล็ก ตาน้ำถ้วย",
+    location="19P-1-3",
+    brand="SAK",
+    unit="ตนถ",
+    abbreviation="SMA",
+    factory_no="SAK-03010",
+    price_code="OPMXTM2605",
+    qty=2,
+)
+
+
+def test_unit_line_matches_shop_prefix():
+    assert format_unit_line("ตนถ") == "หน่วย ตนถ"
+    assert format_unit_line("ชุด") == "หน่วย ชุด"
+    assert format_unit_line("หน่วย ชุด") == "หน่วย ชุด"
+    assert format_unit_line("  ") == ""
+
+
+def test_shop_reference_wraps_name_in_left_column():
+    assert sticker_name_lines(SHOP_REF.descr, printer_model="te310") == [
+        "30 มิล เหล็ก",
+        "ตาน้ำถ้วย",
+    ]
+    assert sticker_name_lines(SHOP_REF.descr, printer_model="ttp244pro") == [
+        "30 มิล เหล็ก",
+        "ตาน้ำถ้วย",
+    ]
+
+
+def test_shop_reference_label_renders():
+    img = render_label_image(SHOP_REF, printer_model="te310")
+    assert img.size == (600, 420)
+    # Ink in the top-right barcode band and bottom-left factory code.
+    px = img.load()
+    barcode_x = int(600 * BARCODE_LEFT_MM / LABEL_WIDTH_MM) + 8
+    assert any(px[x, y] == 0 for x in range(barcode_x, 580) for y in range(20, 100))
+    assert any(px[x, y] == 0 for x in range(10, 120) for y in range(360, 410))
 
 
 def test_tspl_job_uses_received_qty_and_label_size():
