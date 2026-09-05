@@ -38,9 +38,14 @@ LABEL_WIDTH_MM = 50.0
 LABEL_HEIGHT_MM = 35.0
 LABEL_GAP_MM = 2.0
 # Top-right barcode starts here; left stack (location → name) stays left of it.
-BARCODE_LEFT_MM = 22.0
-LABEL_PAD_MM = 1.3
-BODY_FONT_MM = 2.5
+BARCODE_LEFT_MM = 21.5
+LABEL_PAD_MM = 2.2
+BODY_FONT_MM = 2.3
+LINE_H_MM = 3.75
+NAME_H_MM = 3.9
+LOC_FONT_MM = 2.6
+ATTR_FONT_MM = 2.4
+BARCODE_HEIGHT_MM = 8.0
 # Keep รหัสราคา under the human-readable BCODE, never on the bars.
 PRICE_BELOW_BARCODE_MM = 3.2
 TSPL_BIT0_PRINTS_MARK = "kcw_tspl_bit0_prints"
@@ -448,7 +453,7 @@ def sticker_name_lines(descr: str, *, printer_model: str = "te310") -> list[str]
     dots_mm = int(profile["dots_mm"])
     probe = Image.new("1", (8, 8), 1)
     draw = ImageDraw.Draw(probe)
-    latin, thai = _load_font_pair(max(12, _mm(dots_mm, BODY_FONT_MM)))
+    latin, thai = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
     return _wrap_text(draw, descr, latin, thai, _left_text_width(dots_mm), max_lines=2)
 
 
@@ -463,18 +468,18 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
 
     pad = _mm(dots_mm, LABEL_PAD_MM)
     barcode_left = _mm(dots_mm, BARCODE_LEFT_MM)
-    left_w = barcode_left - _mm(dots_mm, 0.6)
-    line_h = _mm(dots_mm, 3.45)
-    name_h = _mm(dots_mm, 3.7)
-    latin_loc, thai_loc = _load_font_pair(max(14, _mm(dots_mm, 3.0)), bold=True)
-    latin_attr, thai_attr = _load_font_pair(max(13, _mm(dots_mm, 2.7)), bold=True)
-    latin_body, thai_body = _load_font_pair(max(12, _mm(dots_mm, BODY_FONT_MM)))
-    latin_bcode, thai_bcode = _load_font_pair(max(13, _mm(dots_mm, 2.6)), bold=True)
-    latin_price, thai_price = _load_font_pair(max(11, _mm(dots_mm, 2.3)))
-    latin_foot, thai_foot = _load_font_pair(max(13, _mm(dots_mm, 2.7)), bold=True)
+    left_w = barcode_left - _mm(dots_mm, 0.8)
+    line_h = _mm(dots_mm, LINE_H_MM)
+    name_h = _mm(dots_mm, NAME_H_MM)
+    latin_loc, thai_loc = _load_font_pair(max(13, _mm(dots_mm, LOC_FONT_MM)), bold=True)
+    latin_attr, thai_attr = _load_font_pair(max(12, _mm(dots_mm, ATTR_FONT_MM)), bold=True)
+    latin_body, thai_body = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
+    latin_bcode, thai_bcode = _load_font_pair(max(12, _mm(dots_mm, 2.5)), bold=True)
+    latin_price, thai_price = _load_font_pair(max(11, _mm(dots_mm, 2.2)))
+    latin_foot, thai_foot = _load_font_pair(max(12, _mm(dots_mm, ATTR_FONT_MM)), bold=True)
 
     barcode_top = pad
-    barcode_bottom = _mm(dots_mm, 9.0)
+    barcode_bottom = pad + _mm(dots_mm, BARCODE_HEIGHT_MM)
     barcode_right = width - pad
     _draw_code128(draw, label.bcode, (barcode_left, barcode_top, barcode_right, barcode_bottom))
 

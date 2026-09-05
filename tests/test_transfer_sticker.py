@@ -3,8 +3,10 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from src.transfer.sticker import (
+    BARCODE_HEIGHT_MM,
     BARCODE_LEFT_MM,
     LABEL_HEIGHT_MM,
+    LABEL_PAD_MM,
     LABEL_WIDTH_MM,
     StickerLabel,
     build_batch_tspl,
@@ -160,8 +162,8 @@ def test_shop_reference_label_renders():
     # Ink in the top-right barcode band and bottom-left factory code.
     px = img.load()
     barcode_x = int(600 * BARCODE_LEFT_MM / LABEL_WIDTH_MM) + 8
-    assert any(px[x, y] == 0 for x in range(barcode_x, 580) for y in range(20, 100))
-    assert any(px[x, y] == 0 for x in range(10, 120) for y in range(360, 410))
+    assert any(px[x, y] == 0 for x in range(barcode_x, 580) for y in range(20, 140))
+    assert any(px[x, y] == 0 for x in range(10, 140) for y in range(330, 415))
 
 
 def test_tspl_job_uses_received_qty_and_label_size():
@@ -223,8 +225,8 @@ def test_price_stays_below_barcode_when_left_stack_is_short():
     )
     img = render_label_image(short, printer_model="ttp244pro")
     dots_mm = 8
-    barcode_bottom = int(round(9.0 * dots_mm))
-    barcode_left = int(round(22.0 * dots_mm))
+    barcode_bottom = int(round(LABEL_PAD_MM * dots_mm)) + int(round(BARCODE_HEIGHT_MM * dots_mm))
+    barcode_left = int(round(BARCODE_LEFT_MM * dots_mm))
     px = img.load()
     below = barcode_bottom + int(round(3.2 * dots_mm))
     assert any(
