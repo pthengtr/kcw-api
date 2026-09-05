@@ -356,7 +356,7 @@ const USER = __USER_JSON__;
 const STICKER_DEFAULT_MODEL = __STICKER_MODEL_JSON__;
 const STICKER_DEFAULT_HOST = __STICKER_HOST_JSON__;
 const STICKER_PRINTERS = [
-  {id:"te310", label:"TSC TE310 · 300 dpi"},
+  {id:"te310", label:"TSC TE310 · 300 dpi · 2 คอลัมน์"},
   {id:"ttp244pro", label:"TSC 244 Pro · 203 dpi · 2 คอลัมน์"},
 ];
 

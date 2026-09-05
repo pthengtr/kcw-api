@@ -15,8 +15,9 @@ company/model, two-line product name, factory no. Barcode + BCODE sit in
 the top-right; price code shares the abbreviation row on the right.
 Thai text is rasterized (TSC built-in fonts are ASCII-only) as BITMAP.
 
-TTP-244 Pro jobs are 2-across (SIZE 102×35 mm). Both TE310 and 244 Pro invert
-BITMAP polarity (TSC prints 0-bits) so shop labels stay black-on-white.
+TTP-244 Pro and TE310 both print the shop 2-across 50×35 mm roll
+(SIZE 102×35 mm). Both invert BITMAP polarity (TSC prints 0-bits) so
+labels stay black-on-white.
 """
 
 from __future__ import annotations
@@ -55,15 +56,15 @@ PRINTER_PORT = 9100
 PRINTER_TIMEOUT_SEC = 8.0
 
 PRINTER_MODELS: dict[str, dict[str, Any]] = {
-    # Shop TE310: same BITMAP polarity as 244 Pro (0=printed on the wire).
+    # Shop TE310: same 2-across 50×35 mm stock + BITMAP polarity as 244 Pro.
     "te310": {
         "id": "te310",
         "label": "TSC TE310",
         "dpi": 300,
         "dots_mm": 12,
-        "columns": 1,
+        "columns": 2,
         "invert_bitmap": True,
-        "column_gap_mm": 0.0,
+        "column_gap_mm": 2.0,
     },
     # Shop 244 Pro: 2-across 50×35 mm stock. TSC BITMAP uses 0=printed, so we
     # invert the in-memory 1=black raster or the label comes out white-on-black.
