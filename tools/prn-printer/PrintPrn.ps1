@@ -104,6 +104,7 @@ public static class PrnPreview {
         public double WidthMm;
         public double HeightMm;
         public bool HasSize;
+        public bool Bit0Prints;
         public List<BitmapPart> Bitmaps = new List<BitmapPart>();
         public List<PrintJob> PrintJobs = new List<PrintJob>();
         public int TotalLabels {
@@ -139,6 +140,7 @@ public static class PrnPreview {
             result.WidthMm = double.Parse(sizeMatch.Groups[1].Value);
             result.HeightMm = double.Parse(sizeMatch.Groups[2].Value);
         }
+        result.Bit0Prints = head.IndexOf("kcw_tspl_bit0_prints", StringComparison.OrdinalIgnoreCase) >= 0;
 
         var sb = new StringBuilder(bytes.Length);
         for (int i = 0; i < bytes.Length; i++) {
@@ -206,15 +208,23 @@ public static class PrnPreview {
     }
 
     public static Bitmap RenderPart(BitmapPart b) {
+        return RenderPart(b, false);
+    }
+
+    public static Bitmap RenderPart(BitmapPart b, bool bit0Prints) {
         int w = Math.Max(1, b.X + b.WidthBytes * 8);
         int h = Math.Max(1, b.Y + b.Height);
         var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp)) g.Clear(Color.White);
-        BlitMono(bmp, b, 0, 0);
+        BlitMono(bmp, b, 0, 0, bit0Prints);
         return bmp;
     }
 
     static void BlitMono(Bitmap bmp, BitmapPart b, int offsetX, int offsetY) {
+        BlitMono(bmp, b, offsetX, offsetY, false);
+    }
+
+    static void BlitMono(Bitmap bmp, BitmapPart b, int offsetX, int offsetY, bool bit0Prints) {
         var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
         var bd = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
         try {
@@ -230,7 +240,9 @@ public static class PrnPreview {
                 for (int colByte = 0; colByte < b.WidthBytes; colByte++) {
                     byte byteVal = b.Data[rowOffset + colByte];
                     for (int bit = 0; bit < 8; bit++) {
-                        if ((byteVal & (0x80 >> bit)) == 0) continue;
+                        bool on = (byteVal & (0x80 >> bit)) != 0;
+                        if (bit0Prints) on = !on;
+                        if (!on) continue;
                         int xx = offsetX + b.X + colByte * 8 + bit;
                         if (xx < 0 || xx >= bmp.Width) continue;
                         int idx = destRow + xx * 4;
@@ -284,7 +296,7 @@ public static class PrnPreview {
 
         for (int i = 0; i < n; i++) {
             int ox = i * (cellW + gap);
-            BlitMono(bmp, parts[i], ox, headerH);
+            BlitMono(bmp, parts[i], ox, headerH, parsed.Bit0Prints);
         }
         return bmp;
     }

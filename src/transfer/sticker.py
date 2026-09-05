@@ -41,6 +41,9 @@ LABEL_GAP_MM = 2.0
 BARCODE_LEFT_MM = 22.0
 LABEL_PAD_MM = 1.3
 BODY_FONT_MM = 2.5
+# Keep รหัสราคา under the human-readable BCODE, never on the bars.
+PRICE_BELOW_BARCODE_MM = 3.2
+TSPL_BIT0_PRINTS_MARK = "kcw_tspl_bit0_prints"
 MAX_QTY_PER_LINE = 200
 MAX_COPIES_TOTAL = 1000
 PRINTER_PORT = 9100
@@ -428,6 +431,11 @@ def _wrap_text(
     return lines[:max_lines]
 
 
+def price_text_y(dots_mm: int, abbrev_y: int, barcode_bottom: int) -> int:
+    """Price shares the abbreviation row only when that row is below the barcode."""
+    return max(abbrev_y, barcode_bottom + _mm(dots_mm, PRICE_BELOW_BARCODE_MM))
+
+
 def _left_text_width(dots_mm: int) -> int:
     barcode_left = _mm(dots_mm, BARCODE_LEFT_MM)
     pad = _mm(dots_mm, LABEL_PAD_MM)
@@ -500,12 +508,13 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
 
     abbrev = _fit_text(draw, label.abbreviation, latin_attr, thai_attr, left_w - pad)
     price = _fit_text(draw, label.price_code, latin_price, thai_price, barcode_right - barcode_left)
+    abbrev_y = y
     if abbrev:
-        _draw_mixed(draw, (pad, y), abbrev, latin_attr, thai_attr)
-    if price:
-        _draw_mixed(draw, (barcode_left, y), price, latin_price, thai_price)
-    if abbrev or price:
+        _draw_mixed(draw, (pad, abbrev_y), abbrev, latin_attr, thai_attr)
         y += line_h
+    if price:
+        py = price_text_y(dots_mm, abbrev_y, barcode_bottom)
+        _draw_mixed(draw, (barcode_left, py), price, latin_price, thai_price)
 
     for extra in (label.company, label.model):
         text = _fit_text(draw, extra, latin_attr, thai_attr, left_w - pad)
@@ -594,9 +603,11 @@ def _compose_row_image(
 
 def _tspl_page(img: Image.Image, *, width_mm: float, copies: int, invert: bool) -> bytes:
     width_bytes, height, bitmap = _image_to_bitmap_bytes(img, invert=invert)
+    polarity = f"REM {TSPL_BIT0_PRINTS_MARK}\r\n" if invert else ""
     header = (
         f"SIZE {width_mm:g} mm,{LABEL_HEIGHT_MM:g} mm\r\n"
         f"GAP {LABEL_GAP_MM:g} mm,0 mm\r\n"
+        f"{polarity}"
         "DENSITY 10\r\n"
         "DIRECTION 0\r\n"
         "REFERENCE 0,0\r\n"

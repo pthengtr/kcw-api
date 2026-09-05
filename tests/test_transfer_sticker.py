@@ -19,6 +19,7 @@ from src.transfer.sticker import (
     label_from_icmas,
     normalize_printer_model,
     page_width_mm,
+    price_text_y,
     printer_profile,
     render_label_image,
     render_label_png,
@@ -192,6 +193,7 @@ def test_244_pro_two_up_and_inverted_bitmap():
 
     pair = build_label_tspl(SHOP_REF, printer_model="ttp244pro")  # qty=2
     assert b"SIZE 102 mm,35 mm" in pair
+    assert b"REM kcw_tspl_bit0_prints" in pair
     assert pair.count(b"PRINT 1,") == 1
     assert b"PRINT 1,1" in pair
 
@@ -203,6 +205,33 @@ def test_244_pro_two_up_and_inverted_bitmap():
     te = build_label_tspl(SHOP_REF, printer_model="te310")
     assert te.startswith(b"SIZE 50 mm,35 mm")
     assert b"SIZE 102" not in te
+    assert b"kcw_tspl_bit0_prints" not in te
+
+
+def test_price_stays_below_barcode_when_left_stack_is_short():
+    assert price_text_y(8, 10, 72) == 72 + 26
+    assert price_text_y(8, 120, 72) == 120
+    short = StickerLabel(
+        bcode="70010300",
+        descr="เทิร์นแบตเก่า (300.-)",
+        unit="ลูก",
+        abbreviation="กบภ",
+        company="KCW1",
+        model="N50 , DIN LN 3",
+        price_code="ONMMMMMM",
+        qty=1,
+    )
+    img = render_label_image(short, printer_model="ttp244pro")
+    dots_mm = 8
+    barcode_bottom = int(round(9.0 * dots_mm))
+    barcode_left = int(round(22.0 * dots_mm))
+    px = img.load()
+    below = barcode_bottom + int(round(3.2 * dots_mm))
+    assert any(
+        px[x, y] == 0
+        for y in range(below, min(img.height, below + 24))
+        for x in range(barcode_left, img.width - 6)
+    )
 
 
 def test_render_label_native_dpi():

@@ -10,6 +10,9 @@ PACKAGE = Path(__file__).resolve().parents[1] / "tools" / "prn-printer"
 
 def test_prn_package_files_exist():
     assert (PACKAGE / "PrintPrn.ps1").is_file()
+    helper = (PACKAGE / "PrintPrn.ps1").read_text(encoding="utf-8")
+    assert "kcw_tspl_bit0_prints" in helper
+    assert "Bit0Prints" in helper
     assert (PACKAGE / "PrintPrn.cmd").is_file()
     assert (PACKAGE / "Install-PrnPrinter.ps1").is_file()
     assert (PACKAGE / "VERSION.json").is_file()
