@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from src.transfer.sticker import (
     BARCODE_HEIGHT_MM,
     BARCODE_LEFT_MM,
+    FOOT_H_MM,
     LABEL_HEIGHT_MM,
     LABEL_PAD_MM,
     LABEL_WIDTH_MM,
@@ -15,13 +16,16 @@ from src.transfer.sticker import (
     count_copies,
     decode_price_letters,
     encode_price_digits,
+    format_footer_line,
+    format_header_line,
+    format_meta_line,
     format_price_code,
     format_unit_line,
     is_lan_printer_host,
     label_from_icmas,
     normalize_printer_model,
+    normalize_site,
     page_width_mm,
-    price_text_y,
     printer_profile,
     render_label_image,
     render_label_png,
@@ -46,6 +50,7 @@ SAMPLE = StickerLabel(
     factory_no="SK0013",
     genuine_no="EDPN500B",
     price_code="OTSMXLTM",
+    site="HQ",
     qty=3,
 )
 
@@ -84,12 +89,13 @@ def test_label_from_icmas_and_qty_merge():
         "COSTNET": 270,
         "PRICE1": 420,
     }
-    label = label_from_icmas(row, qty=4)
+    label = label_from_icmas(row, qty=4, site="HQ")
     assert label.price_code == "OTSMXLTM"
     assert label.location == "14F-5-2.2"
     assert label.abbreviation == "ยฮปป"
     assert label.factory_no == "SK0013"
     assert label.genuine_no == "EDPN500B"
+    assert label.site == "HQ"
     merged = resolve_sticker_labels(
         [
             {"bcode": "12052328", "qty": 2, "descr": "ชุดยางไฮปั๊มขาว"},
@@ -97,10 +103,12 @@ def test_label_from_icmas_and_qty_merge():
             {"bcode": "999", "qty": 0},
         ],
         {"12052328": row},
+        site="SYP",
     )
     assert len(merged) == 1
     assert merged[0].qty == 5
     assert merged[0].price_code == "OTSMXLTM"
+    assert merged[0].site == "SYP"
 
 
 def test_qty_caps_and_validate():
@@ -145,15 +153,29 @@ def test_unit_line_matches_shop_prefix():
     assert format_unit_line("  ") == ""
 
 
-def test_shop_reference_wraps_name_in_left_column():
-    assert sticker_name_lines(SHOP_REF.descr, printer_model="te310") == [
-        "30 มิล เหล็ก",
-        "ตาน้ำถ้วย",
-    ]
-    assert sticker_name_lines(SHOP_REF.descr, printer_model="ttp244pro") == [
-        "30 มิล เหล็ก",
-        "ตาน้ำถ้วย",
-    ]
+def test_layout_line_helpers():
+    assert normalize_site("hq") == "HQ"
+    assert normalize_site("syp") == "SYP"
+    assert normalize_site("other") == ""
+    assert format_header_line("14F-5-2.2", "HQ") == "14F-5-2.2 | HQ"
+    assert format_header_line("14F-5-2.2", "") == "14F-5-2.2"
+    assert format_header_line("", "syp") == "SYP"
+    assert format_meta_line("นอกแท้", "ชุด", "7MCP") == "นอกแท้ • ชุด • 7MCP"
+    assert format_meta_line("นอกแท้", "", "") == "นอกแท้"
+    assert format_footer_line("SK0013", "EDPN500B", "OTSMXLTM") == "SK0013 | EDPN500B | OTSMXLTM"
+    assert format_footer_line("", "", "ONMMMMMM") == "ONMMMMMM"
+    assert SAMPLE.as_preview_dict()["site"] == "HQ"
+
+
+def test_name_uses_full_width():
+    assert sticker_name_lines(SAMPLE.descr, printer_model="te310") == [SAMPLE.descr]
+    assert sticker_name_lines(SAMPLE.descr, printer_model="ttp244pro") == [SAMPLE.descr]
+    # Shop-era wrap ("30 มิล เหล็ก" / "ตาน้ำถ้วย") is gone — name is full width.
+    assert sticker_name_lines(SHOP_REF.descr, printer_model="te310") == [SHOP_REF.descr]
+    long_name = "สายพานหน้าเครื่องปรับอากาศรถยนต์รุ่นพิเศษยาวมากเกินหนึ่งบรรทัด"
+    lines = sticker_name_lines(long_name, printer_model="te310")
+    assert 1 <= len(lines) <= 2
+    assert all(lines)
 
 
 def test_shop_reference_label_renders():
@@ -219,9 +241,7 @@ def test_244_pro_two_up_and_inverted_bitmap():
     assert b"PRINT 1,1" in te
 
 
-def test_price_stays_below_barcode_when_left_stack_is_short():
-    assert price_text_y(8, 10, 72) == 72 + 26
-    assert price_text_y(8, 120, 72) == 120
+def test_price_lives_in_footer_not_on_barcode():
     short = StickerLabel(
         bcode="70010300",
         descr="เทิร์นแบตเก่า (300.-)",
@@ -230,18 +250,25 @@ def test_price_stays_below_barcode_when_left_stack_is_short():
         company="KCW1",
         model="N50 , DIN LN 3",
         price_code="ONMMMMMM",
+        site="HQ",
         qty=1,
     )
     img = render_label_image(short, printer_model="ttp244pro")
     dots_mm = 8
-    barcode_bottom = int(round(LABEL_PAD_MM * dots_mm)) + int(round(BARCODE_HEIGHT_MM * dots_mm))
+    barcode_top = int(round(LABEL_PAD_MM * dots_mm))
+    barcode_bottom = barcode_top + int(round(BARCODE_HEIGHT_MM * dots_mm))
     barcode_left = int(round(BARCODE_LEFT_MM * dots_mm))
+    footer_top = img.height - int(round(FOOT_H_MM * dots_mm))
     px = img.load()
-    below = barcode_bottom + int(round(3.2 * dots_mm))
     assert any(
         px[x, y] == 0
-        for y in range(below, min(img.height, below + 24))
+        for y in range(barcode_top, barcode_bottom)
         for x in range(barcode_left, img.width - 6)
+    )
+    assert any(
+        px[x, y] == 0
+        for y in range(footer_top + 4, img.height - 2)
+        for x in range(6, img.width - 6)
     )
 
 
@@ -344,6 +371,7 @@ def test_sticker_preview_and_download_api():
         body = preview.json()
         assert body["copies"] == 4
         assert body["labels"][0]["price_code"] == "OTSMXLTM"
+        assert body["labels"][0]["site"] in {"HQ", "SYP"}
         assert body["preview_png_b64"]
         assert body["labels"][0]["preview_png_b64"]
         assert body["labels"][0]["preview_png_b64"] == body["preview_png_b64"]
@@ -369,6 +397,16 @@ def test_sticker_preview_and_download_api():
         )
         assert prn.status_code == 200
         assert prn.content.startswith(b"SIZE 102 mm,35 mm")
-        assert b"PRINT 1,2" in prn.content
+        assert prn.content.count(b"PRINT 1,") == 2
         assert b"PRINT 1,4" not in prn.content
         assert "kcw-stickers.prn" in prn.headers.get("content-disposition", "")
+
+
+def test_batch_packs_two_single_skus_on_one_row():
+    left = StickerLabel(bcode="31050663", descr="ชุดหมุนไดเเมสซี่", location="0M-0-1", qty=1)
+    right = StickerLabel(bcode="31050239", descr="ฝาถังโซล่า", location="3M-3-5.1", qty=1)
+    raw = build_batch_tspl([left, right], printer_model="te310")
+    assert raw.count(b"SIZE 102 mm,35 mm") == 1
+    assert raw.count(b"PRINT 1,") == 1
+    # 102 mm at 12 dot/mm = 1224 dots → 153 bytes/row
+    assert b"BITMAP 0,0,153," in raw

@@ -1,23 +1,15 @@
 """5×3.5 cm product barcode stickers for TSC TE310 / TTP-244 Pro (TSPL).
 
-Shop two-up reference (each 50×35 mm sticker):
+    14F-5-2.2 | HQ          [======= BARCODE =======]
+                                 12052328
+    ชุดยางไฮปั๊มขาว
+    F/6600
+    นอกแท้ • ชุด • 7MCP
+    -----------------------------------------------
+    SK0013 | EDPN500B | OTSMXLTM
 
-    19P-1-3                 [======= BARCODE =======]
-    SAK                          13010754
-    หน่วย ตนถ
-    SMA                     OPMXTM2605
-    30 มิล เหล็ก
-    ตาน้ำถ้วย
-    SAK-03010
-
-Left stack is location, brand, ``หน่วย`` + unit, abbreviation, optional
-company/model, two-line product name, factory no. Barcode + BCODE sit in
-the top-right; price code shares the abbreviation row on the right.
 Thai text is rasterized (TSC built-in fonts are ASCII-only) as BITMAP.
-
-TTP-244 Pro and TE310 both print the shop 2-across 50×35 mm roll
-(SIZE 102×35 mm). Both invert BITMAP polarity (TSC prints 0-bits) so
-labels stay black-on-white.
+Both printers are 2-across (SIZE 102×35 mm) and invert BITMAP polarity.
 """
 
 from __future__ import annotations
@@ -38,17 +30,18 @@ logger = logging.getLogger(__name__)
 LABEL_WIDTH_MM = 50.0
 LABEL_HEIGHT_MM = 35.0
 LABEL_GAP_MM = 2.0
-# Top-right barcode starts here; left stack (location → name) stays left of it.
-BARCODE_LEFT_MM = 21.5
+# Top-right barcode; header (location | site) stays left of this.
+BARCODE_LEFT_MM = 27.0
 LABEL_PAD_MM = 2.2
-BODY_FONT_MM = 2.3
-LINE_H_MM = 3.75
-NAME_H_MM = 3.9
+BODY_FONT_MM = 2.2
+NAME_FONT_MM = 3.5
+MODEL_FONT_MM = 3.1
 LOC_FONT_MM = 2.6
-ATTR_FONT_MM = 2.4
-BARCODE_HEIGHT_MM = 8.0
-# Keep รหัสราคา under the human-readable BCODE, never on the bars.
-PRICE_BELOW_BARCODE_MM = 3.2
+FOOT_FONT_MM = 2.3
+BARCODE_HEIGHT_MM = 7.6
+# Human-readable BCODE + gap under the bars before the Thai name.
+NAME_GAP_AFTER_BARCODE_MM = 2.9
+FOOT_H_MM = 6.4
 TSPL_BIT0_PRINTS_MARK = "kcw_tspl_bit0_prints"
 MAX_QTY_PER_LINE = 200
 MAX_COPIES_TOTAL = 1000
@@ -165,6 +158,7 @@ class StickerLabel:
     factory_no: str = ""
     genuine_no: str = ""
     price_code: str = ""
+    site: str = ""
     qty: int = 1
 
     def as_preview_dict(self) -> dict[str, Any]:
@@ -180,6 +174,7 @@ class StickerLabel:
             "factory_no": self.factory_no,
             "genuine_no": self.genuine_no,
             "price_code": self.price_code,
+            "site": self.site,
             "qty": self.qty,
         }
 
@@ -252,7 +247,7 @@ def clamp_sticker_qty(qty: Any) -> int:
 
 
 def format_unit_line(unit: str) -> str:
-    """Shop stickers print the unit as ``หน่วย {ui1}``."""
+    """Legacy ``หน่วย {ui1}`` line; the current layout uses the raw unit in meta."""
     raw = (unit or "").strip()
     if not raw:
         return ""
@@ -261,7 +256,32 @@ def format_unit_line(unit: str) -> str:
     return f"หน่วย {raw}"
 
 
-def label_from_icmas(row: dict[str, Any], *, qty: int = 1) -> StickerLabel:
+def normalize_site(site: str | None) -> str:
+    key = (site or "").strip().upper()
+    if key in {"HQ", "SYP"}:
+        return key
+    return ""
+
+
+def format_header_line(location: str, site: str = "") -> str:
+    loc = (location or "").strip()
+    site_key = normalize_site(site)
+    if loc and site_key:
+        return f"{loc} | {site_key}"
+    return loc or site_key
+
+
+def format_meta_line(brand: str = "", unit: str = "", company: str = "") -> str:
+    parts = [p.strip() for p in (brand, unit, company) if (p or "").strip()]
+    return " • ".join(parts)
+
+
+def format_footer_line(factory_no: str = "", genuine_no: str = "", price_code: str = "") -> str:
+    parts = [p.strip() for p in (factory_no, genuine_no, price_code) if (p or "").strip()]
+    return " | ".join(parts)
+
+
+def label_from_icmas(row: dict[str, Any], *, qty: int = 1, site: str = "") -> StickerLabel:
     loc1 = str(row.get("location1") or row.get("LOCATION1") or "").strip()
     loc2 = str(row.get("location2") or row.get("LOCATION2") or "").strip()
     location = loc1 or loc2
@@ -284,6 +304,7 @@ def label_from_icmas(row: dict[str, Any], *, qty: int = 1) -> StickerLabel:
         genuine_no=str(row.get("genuine_no") or row.get("pcode") or row.get("PCODE") or "").strip(),
         price_code=str(row.get("price_code") or "").strip()
         or format_price_code(cost=cost, sell=sell),
+        site=normalize_site(site or row.get("site") or row.get("SITE")),
         qty=clamp_sticker_qty(qty),
     )
 
@@ -438,25 +459,18 @@ def _wrap_text(
     return lines[:max_lines]
 
 
-def price_text_y(dots_mm: int, abbrev_y: int, barcode_bottom: int) -> int:
-    """Price shares the abbreviation row only when that row is below the barcode."""
-    return max(abbrev_y, barcode_bottom + _mm(dots_mm, PRICE_BELOW_BARCODE_MM))
-
-
-def _left_text_width(dots_mm: int) -> int:
-    barcode_left = _mm(dots_mm, BARCODE_LEFT_MM)
-    pad = _mm(dots_mm, LABEL_PAD_MM)
-    return barcode_left - _mm(dots_mm, 0.6) - pad
+def _name_max_width(dots_mm: int) -> int:
+    return _mm(dots_mm, LABEL_WIDTH_MM) - 2 * _mm(dots_mm, LABEL_PAD_MM)
 
 
 def sticker_name_lines(descr: str, *, printer_model: str = "te310") -> list[str]:
-    """Wrap the product name the same way the shop sticker does (left column, 2 lines)."""
+    """Wrap the product name at full label width (2 lines max)."""
     profile = printer_profile(printer_model)
     dots_mm = int(profile["dots_mm"])
     probe = Image.new("1", (8, 8), 1)
     draw = ImageDraw.Draw(probe)
-    latin, thai = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
-    return _wrap_text(draw, descr, latin, thai, _left_text_width(dots_mm), max_lines=2)
+    latin, thai = _load_font_pair(max(16, _mm(dots_mm, NAME_FONT_MM)), bold=True)
+    return _wrap_text(draw, descr, latin, thai, _name_max_width(dots_mm), max_lines=2)
 
 
 def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> Image.Image:
@@ -470,21 +484,20 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
 
     pad = _mm(dots_mm, LABEL_PAD_MM)
     barcode_left = _mm(dots_mm, BARCODE_LEFT_MM)
-    left_w = barcode_left - _mm(dots_mm, 0.8)
-    line_h = _mm(dots_mm, LINE_H_MM)
-    name_h = _mm(dots_mm, NAME_H_MM)
-    latin_loc, thai_loc = _load_font_pair(max(13, _mm(dots_mm, LOC_FONT_MM)), bold=True)
-    latin_attr, thai_attr = _load_font_pair(max(12, _mm(dots_mm, ATTR_FONT_MM)), bold=True)
-    latin_body, thai_body = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
-    latin_bcode, thai_bcode = _load_font_pair(max(12, _mm(dots_mm, 2.5)), bold=True)
-    latin_price, thai_price = _load_font_pair(max(11, _mm(dots_mm, 2.2)))
-    latin_foot, thai_foot = _load_font_pair(max(12, _mm(dots_mm, ATTR_FONT_MM)), bold=True)
-
+    barcode_right = width - pad
     barcode_top = pad
     barcode_bottom = pad + _mm(dots_mm, BARCODE_HEIGHT_MM)
-    barcode_right = width - pad
-    _draw_code128(draw, label.bcode, (barcode_left, barcode_top, barcode_right, barcode_bottom))
+    full_w = width - pad * 2
+    header_w = barcode_left - pad - _mm(dots_mm, 0.6)
 
+    latin_head, thai_head = _load_font_pair(max(13, _mm(dots_mm, LOC_FONT_MM)), bold=True)
+    latin_name, thai_name = _load_font_pair(max(16, _mm(dots_mm, NAME_FONT_MM)), bold=True)
+    latin_model, thai_model = _load_font_pair(max(15, _mm(dots_mm, MODEL_FONT_MM)), bold=True)
+    latin_meta, thai_meta = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
+    latin_bcode, thai_bcode = _load_font_pair(max(12, _mm(dots_mm, 2.4)), bold=True)
+    latin_foot, thai_foot = _load_font_pair(max(12, _mm(dots_mm, FOOT_FONT_MM)), bold=True)
+
+    _draw_code128(draw, label.bcode, (barcode_left, barcode_top, barcode_right, barcode_bottom))
     bcode = _fit_text(draw, label.bcode, latin_bcode, thai_bcode, barcode_right - barcode_left)
     if bcode:
         bw = _text_length(draw, bcode, latin_bcode, thai_bcode)
@@ -497,55 +510,60 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
             thai_bcode,
         )
 
-    y = pad
-    loc = _fit_text(draw, label.location, latin_loc, thai_loc, left_w - pad)
-    if loc:
-        _draw_mixed(draw, (pad, y), loc, latin_loc, thai_loc)
-        y += line_h
+    header = _fit_text(
+        draw,
+        format_header_line(label.location, label.site),
+        latin_head,
+        thai_head,
+        header_w,
+    )
+    if header:
+        _draw_mixed(draw, (pad, pad), header, latin_head, thai_head)
 
-    brand = _fit_text(draw, label.brand, latin_attr, thai_attr, left_w - pad)
-    if brand:
-        _draw_mixed(draw, (pad, y), brand, latin_attr, thai_attr)
-        y += line_h
+    rule_y = height - _mm(dots_mm, FOOT_H_MM)
+    draw.line(
+        [(_mm(dots_mm, 1.2), rule_y), (width - _mm(dots_mm, 1.2), rule_y)],
+        fill=0,
+        width=1,
+    )
+    footer = _fit_text(
+        draw,
+        format_footer_line(label.factory_no, label.genuine_no, label.price_code),
+        latin_foot,
+        thai_foot,
+        full_w,
+    )
+    if footer:
+        _draw_mixed(
+            draw,
+            (pad, rule_y + _mm(dots_mm, 0.7)),
+            footer,
+            latin_foot,
+            thai_foot,
+        )
 
-    unit = _fit_text(draw, format_unit_line(label.unit), latin_body, thai_body, left_w - pad)
-    if unit:
-        _draw_mixed(draw, (pad, y), unit, latin_body, thai_body)
-        y += line_h
-
-    abbrev = _fit_text(draw, label.abbreviation, latin_attr, thai_attr, left_w - pad)
-    price = _fit_text(draw, label.price_code, latin_price, thai_price, barcode_right - barcode_left)
-    abbrev_y = y
-    if abbrev:
-        _draw_mixed(draw, (pad, abbrev_y), abbrev, latin_attr, thai_attr)
-        y += line_h
-    if price:
-        py = price_text_y(dots_mm, abbrev_y, barcode_bottom)
-        _draw_mixed(draw, (barcode_left, py), price, latin_price, thai_price)
-
-    for extra in (label.company, label.model):
-        text = _fit_text(draw, extra, latin_attr, thai_attr, left_w - pad)
-        if text:
-            _draw_mixed(draw, (pad, y), text, latin_attr, thai_attr)
-            y += line_h
-
-    foot_y = height - pad - _mm(dots_mm, 3.2)
-    # Keep the name in the left column so long Thai titles wrap like the shop print
-    # ("30 มิล เหล็ก" / "ตาน้ำถ้วย"), not one wide line under the barcode.
-    name_lines = sticker_name_lines(label.descr, printer_model=printer_model)
-    for line in name_lines:
-        if y + name_h > foot_y - _mm(dots_mm, 0.4):
+    y = barcode_bottom + _mm(dots_mm, NAME_GAP_AFTER_BARCODE_MM)
+    name_step = _mm(dots_mm, NAME_FONT_MM) + _mm(dots_mm, 0.15)
+    for line in sticker_name_lines(label.descr, printer_model=printer_model):
+        if y + name_step > rule_y - _mm(dots_mm, 0.2):
             break
-        _draw_mixed(draw, (pad, y), line, latin_body, thai_body)
-        y += name_h
+        _draw_mixed(draw, (pad, y), line, latin_name, thai_name)
+        y += name_step
 
-    factory = _fit_text(draw, label.factory_no, latin_foot, thai_foot, width - pad * 2)
-    if factory:
-        _draw_mixed(draw, (pad, foot_y), factory, latin_foot, thai_foot)
-    genuine = _fit_text(draw, label.genuine_no, latin_body, thai_body, _mm(dots_mm, 22.0))
-    if genuine:
-        gw = _text_length(draw, genuine, latin_body, thai_body)
-        _draw_mixed(draw, (width - pad - gw, foot_y), genuine, latin_body, thai_body)
+    model = _fit_text(draw, label.model, latin_model, thai_model, full_w)
+    if model and y + _mm(dots_mm, MODEL_FONT_MM) <= rule_y - _mm(dots_mm, 0.2):
+        _draw_mixed(draw, (pad, y), model, latin_model, thai_model)
+        y += _mm(dots_mm, MODEL_FONT_MM) + _mm(dots_mm, 0.3)
+
+    meta = _fit_text(
+        draw,
+        format_meta_line(label.brand, label.unit, label.company),
+        latin_meta,
+        thai_meta,
+        full_w,
+    )
+    if meta and y < rule_y - _mm(dots_mm, 0.4):
+        _draw_mixed(draw, (pad, y), meta, latin_meta, thai_meta)
 
     return img
 
@@ -591,20 +609,23 @@ def page_width_mm(profile: dict[str, Any]) -> float:
     return LABEL_WIDTH_MM * columns + gap * (columns - 1)
 
 
-def _compose_row_image(
-    label_img: Image.Image,
+def _compose_row_images(
+    label_imgs: list[Image.Image],
     *,
     columns: int,
-    copies_in_row: int,
     dots_mm: int,
     column_gap_mm: float,
 ) -> Image.Image:
-    label_w, label_h = label_img.size
+    if not label_imgs:
+        raise ValueError("no stickers to compose")
+    label_w, label_h = label_imgs[0].size
     gap = _mm(dots_mm, column_gap_mm) if columns > 1 else 0
     page_w = label_w * max(1, columns) + gap * max(0, columns - 1)
     page = Image.new("1", (page_w, label_h), 1)
-    for i in range(max(1, min(copies_in_row, columns))):
-        page.paste(label_img, (i * (label_w + gap), 0))
+    for i, img in enumerate(label_imgs[:columns]):
+        if img.size != (label_w, label_h):
+            img = img.resize((label_w, label_h), Image.Resampling.NEAREST)
+        page.paste(img, (i * (label_w + gap), 0))
     return page
 
 
@@ -627,43 +648,40 @@ def _tspl_page(img: Image.Image, *, width_mm: float, copies: int, invert: bool) 
 
 def build_label_tspl(label: StickerLabel, *, printer_model: str = "te310") -> bytes:
     """TSPL for one SKU. PRINT copies = received qty (one sticker per unit)."""
-    copies = max(1, clamp_sticker_qty(label.qty) or 1)
+    return build_batch_tspl([label], printer_model=printer_model)
+
+
+def build_batch_tspl(labels: Iterable[StickerLabel], *, printer_model: str = "te310") -> bytes:
+    """Pack copies onto the printer's columns so two qty=1 SKUs share one row."""
     profile = printer_profile(printer_model)
     columns = max(1, int(profile.get("columns") or 1))
     invert = bool(profile.get("invert_bitmap"))
     dots_mm = int(profile["dots_mm"])
-    img = render_label_image(label, printer_model=printer_model)
     width_mm = page_width_mm(profile)
-    if columns <= 1:
-        return _tspl_page(img, width_mm=width_mm, copies=copies, invert=invert)
-
     gap_mm = float(profile.get("column_gap_mm") or 0)
+
+    tiles: list[Image.Image] = []
+    for label in labels:
+        if not label.bcode:
+            continue
+        copies = max(1, clamp_sticker_qty(label.qty) or 1)
+        img = render_label_image(label, printer_model=printer_model)
+        tiles.extend([img] * copies)
+    if not tiles:
+        return b""
+
+    if columns <= 1:
+        return b"".join(_tspl_page(img, width_mm=width_mm, copies=1, invert=invert) for img in tiles)
+
     chunks: list[bytes] = []
-    full_rows = copies // columns
-    leftover = copies % columns
-    if full_rows:
-        row = _compose_row_image(
-            img,
+    for i in range(0, len(tiles), columns):
+        row = _compose_row_images(
+            tiles[i : i + columns],
             columns=columns,
-            copies_in_row=columns,
-            dots_mm=dots_mm,
-            column_gap_mm=gap_mm,
-        )
-        chunks.append(_tspl_page(row, width_mm=width_mm, copies=full_rows, invert=invert))
-    if leftover:
-        row = _compose_row_image(
-            img,
-            columns=columns,
-            copies_in_row=leftover,
             dots_mm=dots_mm,
             column_gap_mm=gap_mm,
         )
         chunks.append(_tspl_page(row, width_mm=width_mm, copies=1, invert=invert))
-    return b"".join(chunks)
-
-
-def build_batch_tspl(labels: Iterable[StickerLabel], *, printer_model: str = "te310") -> bytes:
-    chunks = [build_label_tspl(label, printer_model=printer_model) for label in labels if label.bcode]
     return b"".join(chunks)
 
 
@@ -712,6 +730,8 @@ def send_tspl(
 def resolve_sticker_labels(
     lines: Iterable[dict[str, Any]],
     catalog: dict[str, dict[str, Any]] | None = None,
+    *,
+    site: str = "",
 ) -> list[StickerLabel]:
     """Merge receive lines (bcode + qty) with ICMAS catalog rows."""
     catalog = catalog or {}
@@ -740,7 +760,7 @@ def resolve_sticker_labels(
             row["descr"] = raw.get("descr")
         if raw.get("model") and not row.get("model"):
             row["model"] = raw.get("model")
-        out.append(label_from_icmas(row, qty=int(raw["qty"])))
+        out.append(label_from_icmas(row, qty=int(raw["qty"]), site=site))
     return out
 
 
