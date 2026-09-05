@@ -38,9 +38,17 @@ LABEL_WIDTH_MM = 50.0
 LABEL_HEIGHT_MM = 35.0
 LABEL_GAP_MM = 2.0
 # Top-right barcode starts here; left stack (location → name) stays left of it.
-BARCODE_LEFT_MM = 22.0
-LABEL_PAD_MM = 1.3
-BODY_FONT_MM = 2.5
+BARCODE_LEFT_MM = 21.5
+LABEL_PAD_MM = 2.2
+BODY_FONT_MM = 2.3
+LINE_H_MM = 3.75
+NAME_H_MM = 3.9
+LOC_FONT_MM = 2.6
+ATTR_FONT_MM = 2.4
+BARCODE_HEIGHT_MM = 8.0
+# Keep รหัสราคา under the human-readable BCODE, never on the bars.
+PRICE_BELOW_BARCODE_MM = 3.2
+TSPL_BIT0_PRINTS_MARK = "kcw_tspl_bit0_prints"
 MAX_QTY_PER_LINE = 200
 MAX_COPIES_TOTAL = 1000
 PRINTER_PORT = 9100
@@ -428,6 +436,11 @@ def _wrap_text(
     return lines[:max_lines]
 
 
+def price_text_y(dots_mm: int, abbrev_y: int, barcode_bottom: int) -> int:
+    """Price shares the abbreviation row only when that row is below the barcode."""
+    return max(abbrev_y, barcode_bottom + _mm(dots_mm, PRICE_BELOW_BARCODE_MM))
+
+
 def _left_text_width(dots_mm: int) -> int:
     barcode_left = _mm(dots_mm, BARCODE_LEFT_MM)
     pad = _mm(dots_mm, LABEL_PAD_MM)
@@ -440,7 +453,7 @@ def sticker_name_lines(descr: str, *, printer_model: str = "te310") -> list[str]
     dots_mm = int(profile["dots_mm"])
     probe = Image.new("1", (8, 8), 1)
     draw = ImageDraw.Draw(probe)
-    latin, thai = _load_font_pair(max(12, _mm(dots_mm, BODY_FONT_MM)))
+    latin, thai = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
     return _wrap_text(draw, descr, latin, thai, _left_text_width(dots_mm), max_lines=2)
 
 
@@ -455,18 +468,18 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
 
     pad = _mm(dots_mm, LABEL_PAD_MM)
     barcode_left = _mm(dots_mm, BARCODE_LEFT_MM)
-    left_w = barcode_left - _mm(dots_mm, 0.6)
-    line_h = _mm(dots_mm, 3.45)
-    name_h = _mm(dots_mm, 3.7)
-    latin_loc, thai_loc = _load_font_pair(max(14, _mm(dots_mm, 3.0)), bold=True)
-    latin_attr, thai_attr = _load_font_pair(max(13, _mm(dots_mm, 2.7)), bold=True)
-    latin_body, thai_body = _load_font_pair(max(12, _mm(dots_mm, BODY_FONT_MM)))
-    latin_bcode, thai_bcode = _load_font_pair(max(13, _mm(dots_mm, 2.6)), bold=True)
-    latin_price, thai_price = _load_font_pair(max(11, _mm(dots_mm, 2.3)))
-    latin_foot, thai_foot = _load_font_pair(max(13, _mm(dots_mm, 2.7)), bold=True)
+    left_w = barcode_left - _mm(dots_mm, 0.8)
+    line_h = _mm(dots_mm, LINE_H_MM)
+    name_h = _mm(dots_mm, NAME_H_MM)
+    latin_loc, thai_loc = _load_font_pair(max(13, _mm(dots_mm, LOC_FONT_MM)), bold=True)
+    latin_attr, thai_attr = _load_font_pair(max(12, _mm(dots_mm, ATTR_FONT_MM)), bold=True)
+    latin_body, thai_body = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
+    latin_bcode, thai_bcode = _load_font_pair(max(12, _mm(dots_mm, 2.5)), bold=True)
+    latin_price, thai_price = _load_font_pair(max(11, _mm(dots_mm, 2.2)))
+    latin_foot, thai_foot = _load_font_pair(max(12, _mm(dots_mm, ATTR_FONT_MM)), bold=True)
 
     barcode_top = pad
-    barcode_bottom = _mm(dots_mm, 9.0)
+    barcode_bottom = pad + _mm(dots_mm, BARCODE_HEIGHT_MM)
     barcode_right = width - pad
     _draw_code128(draw, label.bcode, (barcode_left, barcode_top, barcode_right, barcode_bottom))
 
@@ -500,12 +513,13 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
 
     abbrev = _fit_text(draw, label.abbreviation, latin_attr, thai_attr, left_w - pad)
     price = _fit_text(draw, label.price_code, latin_price, thai_price, barcode_right - barcode_left)
+    abbrev_y = y
     if abbrev:
-        _draw_mixed(draw, (pad, y), abbrev, latin_attr, thai_attr)
-    if price:
-        _draw_mixed(draw, (barcode_left, y), price, latin_price, thai_price)
-    if abbrev or price:
+        _draw_mixed(draw, (pad, abbrev_y), abbrev, latin_attr, thai_attr)
         y += line_h
+    if price:
+        py = price_text_y(dots_mm, abbrev_y, barcode_bottom)
+        _draw_mixed(draw, (barcode_left, py), price, latin_price, thai_price)
 
     for extra in (label.company, label.model):
         text = _fit_text(draw, extra, latin_attr, thai_attr, left_w - pad)
@@ -594,9 +608,11 @@ def _compose_row_image(
 
 def _tspl_page(img: Image.Image, *, width_mm: float, copies: int, invert: bool) -> bytes:
     width_bytes, height, bitmap = _image_to_bitmap_bytes(img, invert=invert)
+    polarity = f"REM {TSPL_BIT0_PRINTS_MARK}\r\n" if invert else ""
     header = (
         f"SIZE {width_mm:g} mm,{LABEL_HEIGHT_MM:g} mm\r\n"
         f"GAP {LABEL_GAP_MM:g} mm,0 mm\r\n"
+        f"{polarity}"
         "DENSITY 10\r\n"
         "DIRECTION 0\r\n"
         "REFERENCE 0,0\r\n"

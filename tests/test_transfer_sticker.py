@@ -3,8 +3,10 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from src.transfer.sticker import (
+    BARCODE_HEIGHT_MM,
     BARCODE_LEFT_MM,
     LABEL_HEIGHT_MM,
+    LABEL_PAD_MM,
     LABEL_WIDTH_MM,
     StickerLabel,
     build_batch_tspl,
@@ -19,6 +21,7 @@ from src.transfer.sticker import (
     label_from_icmas,
     normalize_printer_model,
     page_width_mm,
+    price_text_y,
     printer_profile,
     render_label_image,
     render_label_png,
@@ -159,8 +162,8 @@ def test_shop_reference_label_renders():
     # Ink in the top-right barcode band and bottom-left factory code.
     px = img.load()
     barcode_x = int(600 * BARCODE_LEFT_MM / LABEL_WIDTH_MM) + 8
-    assert any(px[x, y] == 0 for x in range(barcode_x, 580) for y in range(20, 100))
-    assert any(px[x, y] == 0 for x in range(10, 120) for y in range(360, 410))
+    assert any(px[x, y] == 0 for x in range(barcode_x, 580) for y in range(20, 140))
+    assert any(px[x, y] == 0 for x in range(10, 140) for y in range(330, 415))
 
 
 def test_tspl_job_uses_received_qty_and_label_size():
@@ -192,6 +195,7 @@ def test_244_pro_two_up_and_inverted_bitmap():
 
     pair = build_label_tspl(SHOP_REF, printer_model="ttp244pro")  # qty=2
     assert b"SIZE 102 mm,35 mm" in pair
+    assert b"REM kcw_tspl_bit0_prints" in pair
     assert pair.count(b"PRINT 1,") == 1
     assert b"PRINT 1,1" in pair
 
@@ -203,6 +207,33 @@ def test_244_pro_two_up_and_inverted_bitmap():
     te = build_label_tspl(SHOP_REF, printer_model="te310")
     assert te.startswith(b"SIZE 50 mm,35 mm")
     assert b"SIZE 102" not in te
+    assert b"kcw_tspl_bit0_prints" not in te
+
+
+def test_price_stays_below_barcode_when_left_stack_is_short():
+    assert price_text_y(8, 10, 72) == 72 + 26
+    assert price_text_y(8, 120, 72) == 120
+    short = StickerLabel(
+        bcode="70010300",
+        descr="เทิร์นแบตเก่า (300.-)",
+        unit="ลูก",
+        abbreviation="กบภ",
+        company="KCW1",
+        model="N50 , DIN LN 3",
+        price_code="ONMMMMMM",
+        qty=1,
+    )
+    img = render_label_image(short, printer_model="ttp244pro")
+    dots_mm = 8
+    barcode_bottom = int(round(LABEL_PAD_MM * dots_mm)) + int(round(BARCODE_HEIGHT_MM * dots_mm))
+    barcode_left = int(round(BARCODE_LEFT_MM * dots_mm))
+    px = img.load()
+    below = barcode_bottom + int(round(3.2 * dots_mm))
+    assert any(
+        px[x, y] == 0
+        for y in range(below, min(img.height, below + 24))
+        for x in range(barcode_left, img.width - 6)
+    )
 
 
 def test_render_label_native_dpi():
