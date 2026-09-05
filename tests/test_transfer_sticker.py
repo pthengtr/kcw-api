@@ -18,12 +18,15 @@ from src.transfer.sticker import (
     is_lan_printer_host,
     label_from_icmas,
     normalize_printer_model,
+    page_width_mm,
+    printer_profile,
     render_label_image,
     render_label_png,
     resolve_sticker_labels,
     sticker_config_payload,
     sticker_name_lines,
     validate_batch,
+    _image_to_bitmap_bytes,
 )
 from src.transfer.ui import page
 
@@ -168,10 +171,38 @@ def test_tspl_job_uses_received_qty_and_label_size():
     assert b"PRINT 1,3" in raw
     batch = build_batch_tspl(
         [SAMPLE, StickerLabel(bcode="22010585", descr="test", qty=2)],
-        printer_model="ttp244pro",
+        printer_model="te310",
     )
     assert batch.count(b"PRINT 1,") == 2
     assert b"PRINT 1,2" in batch
+
+
+def test_244_pro_two_up_and_inverted_bitmap():
+    from PIL import Image
+
+    assert page_width_mm(printer_profile("ttp244pro")) == 102.0
+    assert printer_profile("ttp244pro")["invert_bitmap"] is True
+    assert printer_profile("ttp244pro")["columns"] == 2
+
+    white = Image.new("1", (8, 1), 1)
+    _, _, raw = _image_to_bitmap_bytes(white, invert=False)
+    _, _, flipped = _image_to_bitmap_bytes(white, invert=True)
+    assert raw == b"\x00"
+    assert flipped == b"\xff"
+
+    pair = build_label_tspl(SHOP_REF, printer_model="ttp244pro")  # qty=2
+    assert b"SIZE 102 mm,35 mm" in pair
+    assert pair.count(b"PRINT 1,") == 1
+    assert b"PRINT 1,1" in pair
+
+    odd = build_label_tspl(SAMPLE, printer_model="ttp244pro")  # qty=3
+    assert odd.count(b"SIZE 102 mm,35 mm") == 2
+    assert odd.count(b"PRINT 1,") == 2
+    assert b"PRINT 1,1" in odd
+
+    te = build_label_tspl(SHOP_REF, printer_model="te310")
+    assert te.startswith(b"SIZE 50 mm,35 mm")
+    assert b"SIZE 102" not in te
 
 
 def test_render_label_native_dpi():
@@ -211,6 +242,7 @@ def test_transfer_page_has_sticker_print_flow():
     assert "/transfer/api/stickers/print" in html
     assert "TSC TE310" in html
     assert "244 Pro" in html
+    assert "2 คอลัมน์" in html
     assert "1 ชิ้น = 1 ดวง" in html
     assert "stk-prn-helper" in html
     assert "ดาวน์โหลดไฟล์ .prn" in html
@@ -296,6 +328,7 @@ def test_sticker_preview_and_download_api():
             },
         )
         assert prn.status_code == 200
-        assert prn.content.startswith(b"SIZE 50 mm,35 mm")
-        assert b"PRINT 1,4" in prn.content
+        assert prn.content.startswith(b"SIZE 102 mm,35 mm")
+        assert b"PRINT 1,2" in prn.content
+        assert b"PRINT 1,4" not in prn.content
         assert "kcw-stickers.prn" in prn.headers.get("content-disposition", "")

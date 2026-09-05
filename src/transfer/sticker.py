@@ -14,6 +14,9 @@ Left stack is location, brand, ``หน่วย`` + unit, abbreviation, optiona
 company/model, two-line product name, factory no. Barcode + BCODE sit in
 the top-right; price code shares the abbreviation row on the right.
 Thai text is rasterized (TSC built-in fonts are ASCII-only) as BITMAP.
+
+TTP-244 Pro jobs are 2-across (SIZE 102×35 mm) and invert BITMAP polarity
+(TSC prints 0-bits) so the shop roll does not come out white-on-black.
 """
 
 from __future__ import annotations
@@ -49,12 +52,20 @@ PRINTER_MODELS: dict[str, dict[str, Any]] = {
         "label": "TSC TE310",
         "dpi": 300,
         "dots_mm": 12,
+        "columns": 1,
+        "invert_bitmap": False,
+        "column_gap_mm": 0.0,
     },
+    # Shop 244 Pro: 2-across 50×35 mm stock. TSC BITMAP uses 0=printed, so we
+    # invert the in-memory 1=black raster or the label comes out white-on-black.
     "ttp244pro": {
         "id": "ttp244pro",
         "label": "TSC 244 Pro",
         "dpi": 203,
         "dots_mm": 8,
+        "columns": 2,
+        "invert_bitmap": True,
+        "column_gap_mm": 2.0,
     },
 }
 
@@ -535,7 +546,7 @@ def render_label_png(label: StickerLabel, *, printer_model: str = "te310") -> by
     return buf.getvalue()
 
 
-def _image_to_bitmap_bytes(img: Image.Image) -> tuple[int, int, bytes]:
+def _image_to_bitmap_bytes(img: Image.Image, *, invert: bool = False) -> tuple[int, int, bytes]:
     mono = img.convert("1")
     width, height = mono.size
     width_bytes = (width + 7) // 8
@@ -551,16 +562,40 @@ def _image_to_bitmap_bytes(img: Image.Image) -> tuple[int, int, bytes]:
                     byte |= 0x80 >> bit
             out[i] = byte
             i += 1
+    if invert:
+        out = bytearray(b ^ 0xFF for b in out)
     return width_bytes, height, bytes(out)
 
 
-def build_label_tspl(label: StickerLabel, *, printer_model: str = "te310") -> bytes:
-    """TSPL for one SKU. PRINT copies = received qty (one sticker per unit)."""
-    copies = max(1, clamp_sticker_qty(label.qty) or 1)
-    img = render_label_image(label, printer_model=printer_model)
-    width_bytes, height, bitmap = _image_to_bitmap_bytes(img)
+def page_width_mm(profile: dict[str, Any]) -> float:
+    columns = max(1, int(profile.get("columns") or 1))
+    gap = float(profile.get("column_gap_mm") or 0)
+    if columns <= 1:
+        return LABEL_WIDTH_MM
+    return LABEL_WIDTH_MM * columns + gap * (columns - 1)
+
+
+def _compose_row_image(
+    label_img: Image.Image,
+    *,
+    columns: int,
+    copies_in_row: int,
+    dots_mm: int,
+    column_gap_mm: float,
+) -> Image.Image:
+    label_w, label_h = label_img.size
+    gap = _mm(dots_mm, column_gap_mm) if columns > 1 else 0
+    page_w = label_w * max(1, columns) + gap * max(0, columns - 1)
+    page = Image.new("1", (page_w, label_h), 1)
+    for i in range(max(1, min(copies_in_row, columns))):
+        page.paste(label_img, (i * (label_w + gap), 0))
+    return page
+
+
+def _tspl_page(img: Image.Image, *, width_mm: float, copies: int, invert: bool) -> bytes:
+    width_bytes, height, bitmap = _image_to_bitmap_bytes(img, invert=invert)
     header = (
-        f"SIZE {LABEL_WIDTH_MM:g} mm,{LABEL_HEIGHT_MM:g} mm\r\n"
+        f"SIZE {width_mm:g} mm,{LABEL_HEIGHT_MM:g} mm\r\n"
         f"GAP {LABEL_GAP_MM:g} mm,0 mm\r\n"
         "DENSITY 10\r\n"
         "DIRECTION 0\r\n"
@@ -568,8 +603,45 @@ def build_label_tspl(label: StickerLabel, *, printer_model: str = "te310") -> by
         "CLS\r\n"
         f"BITMAP 0,0,{width_bytes},{height},0,"
     ).encode("ascii")
-    footer = f"\r\nPRINT 1,{copies}\r\n".encode("ascii")
+    footer = f"\r\nPRINT 1,{max(1, copies)}\r\n".encode("ascii")
     return header + bitmap + footer
+
+
+def build_label_tspl(label: StickerLabel, *, printer_model: str = "te310") -> bytes:
+    """TSPL for one SKU. PRINT copies = received qty (one sticker per unit)."""
+    copies = max(1, clamp_sticker_qty(label.qty) or 1)
+    profile = printer_profile(printer_model)
+    columns = max(1, int(profile.get("columns") or 1))
+    invert = bool(profile.get("invert_bitmap"))
+    dots_mm = int(profile["dots_mm"])
+    img = render_label_image(label, printer_model=printer_model)
+    width_mm = page_width_mm(profile)
+    if columns <= 1:
+        return _tspl_page(img, width_mm=width_mm, copies=copies, invert=invert)
+
+    gap_mm = float(profile.get("column_gap_mm") or 0)
+    chunks: list[bytes] = []
+    full_rows = copies // columns
+    leftover = copies % columns
+    if full_rows:
+        row = _compose_row_image(
+            img,
+            columns=columns,
+            copies_in_row=columns,
+            dots_mm=dots_mm,
+            column_gap_mm=gap_mm,
+        )
+        chunks.append(_tspl_page(row, width_mm=width_mm, copies=full_rows, invert=invert))
+    if leftover:
+        row = _compose_row_image(
+            img,
+            columns=columns,
+            copies_in_row=leftover,
+            dots_mm=dots_mm,
+            column_gap_mm=gap_mm,
+        )
+        chunks.append(_tspl_page(row, width_mm=width_mm, copies=1, invert=invert))
+    return b"".join(chunks)
 
 
 def build_batch_tspl(labels: Iterable[StickerLabel], *, printer_model: str = "te310") -> bytes:
@@ -674,6 +746,8 @@ def sticker_config_payload(*, model: str = "te310", host: str = "") -> dict[str,
                 "label": p["label"],
                 "dpi": p["dpi"],
                 "dots_mm": p["dots_mm"],
+                "columns": int(p.get("columns") or 1),
+                "invert_bitmap": bool(p.get("invert_bitmap")),
             }
             for p in PRINTER_MODELS.values()
         ],
