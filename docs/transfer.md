@@ -78,7 +78,7 @@ TRANSFER_STICKER_PRINTER_HOST=192.168.1.50
 TRANSFER_STICKER_PRINTER_PORT=9100
 ```
 
-Sticker fields come from the receiving site's ICMAS (ที่เก็บ, ยี่ห้อ, หน่วย, ชื่อย่อ, บริษัท, รุ่น, เบอร์โรงงาน, รหัสสินค้า, ชื่อสินค้า, รหัสราคาทุน/ขาย, เบอร์แท้). Price letters: M0 P1 T2 N3 L4 B5 V6 S7 R8 C9 — `O` = cost, `X` = sell (270/420 → `OTSMXLTM`).
+Sticker fields come from the receiving site's ICMAS (ที่เก็บ + `HQ SYP`, ยี่ห้อ, หน่วย, บริษัท, รุ่น, เบอร์โรงงาน, รหัสสินค้า, ชื่อสินค้า, รหัสราคาทุน/ขาย, เบอร์แท้). ชื่อย่อ (ACODE) is not printed. Price letters: M0 P1 T2 N3 L4 B5 V6 S7 R8 C9 — `O` = cost, `X` = sell (270/420 → `OTSMXLTM`).
 
 ## Writer Database Credentials
 
