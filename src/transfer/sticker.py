@@ -591,20 +591,23 @@ def page_width_mm(profile: dict[str, Any]) -> float:
     return LABEL_WIDTH_MM * columns + gap * (columns - 1)
 
 
-def _compose_row_image(
-    label_img: Image.Image,
+def _compose_row_images(
+    label_imgs: list[Image.Image],
     *,
     columns: int,
-    copies_in_row: int,
     dots_mm: int,
     column_gap_mm: float,
 ) -> Image.Image:
-    label_w, label_h = label_img.size
+    if not label_imgs:
+        raise ValueError("no stickers to compose")
+    label_w, label_h = label_imgs[0].size
     gap = _mm(dots_mm, column_gap_mm) if columns > 1 else 0
     page_w = label_w * max(1, columns) + gap * max(0, columns - 1)
     page = Image.new("1", (page_w, label_h), 1)
-    for i in range(max(1, min(copies_in_row, columns))):
-        page.paste(label_img, (i * (label_w + gap), 0))
+    for i, img in enumerate(label_imgs[:columns]):
+        if img.size != (label_w, label_h):
+            img = img.resize((label_w, label_h), Image.Resampling.NEAREST)
+        page.paste(img, (i * (label_w + gap), 0))
     return page
 
 
@@ -627,43 +630,40 @@ def _tspl_page(img: Image.Image, *, width_mm: float, copies: int, invert: bool) 
 
 def build_label_tspl(label: StickerLabel, *, printer_model: str = "te310") -> bytes:
     """TSPL for one SKU. PRINT copies = received qty (one sticker per unit)."""
-    copies = max(1, clamp_sticker_qty(label.qty) or 1)
+    return build_batch_tspl([label], printer_model=printer_model)
+
+
+def build_batch_tspl(labels: Iterable[StickerLabel], *, printer_model: str = "te310") -> bytes:
+    """Pack copies onto the printer's columns so two qty=1 SKUs share one row."""
     profile = printer_profile(printer_model)
     columns = max(1, int(profile.get("columns") or 1))
     invert = bool(profile.get("invert_bitmap"))
     dots_mm = int(profile["dots_mm"])
-    img = render_label_image(label, printer_model=printer_model)
     width_mm = page_width_mm(profile)
-    if columns <= 1:
-        return _tspl_page(img, width_mm=width_mm, copies=copies, invert=invert)
-
     gap_mm = float(profile.get("column_gap_mm") or 0)
+
+    tiles: list[Image.Image] = []
+    for label in labels:
+        if not label.bcode:
+            continue
+        copies = max(1, clamp_sticker_qty(label.qty) or 1)
+        img = render_label_image(label, printer_model=printer_model)
+        tiles.extend([img] * copies)
+    if not tiles:
+        return b""
+
+    if columns <= 1:
+        return b"".join(_tspl_page(img, width_mm=width_mm, copies=1, invert=invert) for img in tiles)
+
     chunks: list[bytes] = []
-    full_rows = copies // columns
-    leftover = copies % columns
-    if full_rows:
-        row = _compose_row_image(
-            img,
+    for i in range(0, len(tiles), columns):
+        row = _compose_row_images(
+            tiles[i : i + columns],
             columns=columns,
-            copies_in_row=columns,
-            dots_mm=dots_mm,
-            column_gap_mm=gap_mm,
-        )
-        chunks.append(_tspl_page(row, width_mm=width_mm, copies=full_rows, invert=invert))
-    if leftover:
-        row = _compose_row_image(
-            img,
-            columns=columns,
-            copies_in_row=leftover,
             dots_mm=dots_mm,
             column_gap_mm=gap_mm,
         )
         chunks.append(_tspl_page(row, width_mm=width_mm, copies=1, invert=invert))
-    return b"".join(chunks)
-
-
-def build_batch_tspl(labels: Iterable[StickerLabel], *, printer_model: str = "te310") -> bytes:
-    chunks = [build_label_tspl(label, printer_model=printer_model) for label in labels if label.bcode]
     return b"".join(chunks)
 
 

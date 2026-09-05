@@ -369,6 +369,16 @@ def test_sticker_preview_and_download_api():
         )
         assert prn.status_code == 200
         assert prn.content.startswith(b"SIZE 102 mm,35 mm")
-        assert b"PRINT 1,2" in prn.content
+        assert prn.content.count(b"PRINT 1,") == 2
         assert b"PRINT 1,4" not in prn.content
         assert "kcw-stickers.prn" in prn.headers.get("content-disposition", "")
+
+
+def test_batch_packs_two_single_skus_on_one_row():
+    left = StickerLabel(bcode="31050663", descr="ชุดหมุนไดเเมสซี่", location="0M-0-1", qty=1)
+    right = StickerLabel(bcode="31050239", descr="ฝาถังโซล่า", location="3M-3-5.1", qty=1)
+    raw = build_batch_tspl([left, right], printer_model="te310")
+    assert raw.count(b"SIZE 102 mm,35 mm") == 1
+    assert raw.count(b"PRINT 1,") == 1
+    # 102 mm at 12 dot/mm = 1224 dots → 153 bytes/row
+    assert b"BITMAP 0,0,153," in raw
