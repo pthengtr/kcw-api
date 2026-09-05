@@ -185,6 +185,7 @@ def test_244_pro_two_up_and_inverted_bitmap():
 
     assert page_width_mm(printer_profile("ttp244pro")) == 102.0
     assert printer_profile("ttp244pro")["invert_bitmap"] is True
+    assert printer_profile("te310")["invert_bitmap"] is True
     assert printer_profile("ttp244pro")["columns"] == 2
 
     white = Image.new("1", (8, 1), 1)
@@ -207,7 +208,8 @@ def test_244_pro_two_up_and_inverted_bitmap():
     te = build_label_tspl(SHOP_REF, printer_model="te310")
     assert te.startswith(b"SIZE 50 mm,35 mm")
     assert b"SIZE 102" not in te
-    assert b"kcw_tspl_bit0_prints" not in te
+    # TE310 uses the same 0=printed polarity as 244 Pro (shop confirmed).
+    assert b"REM kcw_tspl_bit0_prints" in te
 
 
 def test_price_stays_below_barcode_when_left_stack_is_short():

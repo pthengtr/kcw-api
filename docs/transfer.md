@@ -73,7 +73,7 @@ Ship (SIMAS) and receive (PIMAS) bills set `ACCTNO`/`ACCTNAME` from APMAS like m
 - Barcode stickers: after **ยืนยันรับเข้า**, or later from **ตรวจสอบสถานะ** (history) / request detail. Operators pick which received SKUs to print (one sticker per received unit). Primary output is a **TSPL `.prn` download** for shop TSC printers (TE310 / 244 Pro) — send the file raw to the printer (e.g. port 9100). Optional LAN send if `TRANSFER_STICKER_PRINTER_HOST` is set. Browser print is not used for stickers.
 
 ```env
-TRANSFER_STICKER_PRINTER_MODEL=te310   # or ttp244pro (2-across + inverted BITMAP)
+TRANSFER_STICKER_PRINTER_MODEL=te310   # or ttp244pro (2-across); both invert BITMAP
 TRANSFER_STICKER_PRINTER_HOST=192.168.1.50
 TRANSFER_STICKER_PRINTER_PORT=9100
 ```

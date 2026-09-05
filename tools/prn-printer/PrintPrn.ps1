@@ -370,9 +370,9 @@ public class RawPrinterHelper {
 "@
 
 function Get-StickerBarcode {
-    param($Part)
+    param($Part, [bool]$Bit0Prints = $false)
     if (-not $script:zxingOk) { return $null }
-    $bmp = [PrnPreview]::RenderPart($Part)
+    $bmp = [PrnPreview]::RenderPart($Part, $Bit0Prints)
     try {
         $reader = New-Object ZXing.BarcodeReader
         $reader.Options.TryHarder = $true
@@ -402,7 +402,7 @@ $parsed = [PrnPreview]::Parse($bytes)
 
 # Decode barcode per sticker, then render (captions include barcode)
 foreach ($part in $parsed.Bitmaps) {
-    $code = Get-StickerBarcode -Part $part
+    $code = Get-StickerBarcode -Part $part -Bit0Prints $parsed.Bit0Prints
     if ($code) { $part.Barcode = $code }
 }
 
