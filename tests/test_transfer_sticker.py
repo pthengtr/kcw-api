@@ -167,26 +167,31 @@ def test_shop_reference_label_renders():
 
 
 def test_tspl_job_uses_received_qty_and_label_size():
+    # qty=3 on 2-across → one full row (PRINT 1,1) + one leftover (PRINT 1,1)
     raw = build_label_tspl(SAMPLE, printer_model="te310")
-    assert raw.startswith(b"SIZE 50 mm,35 mm")
+    assert b"SIZE 102 mm,35 mm" in raw
     assert b"GAP 2 mm,0 mm" in raw
     assert b"BITMAP 0,0," in raw
-    assert b"PRINT 1,3" in raw
+    assert raw.count(b"PRINT 1,") == 2
+    assert b"PRINT 1,1" in raw
     batch = build_batch_tspl(
         [SAMPLE, StickerLabel(bcode="22010585", descr="test", qty=2)],
         printer_model="te310",
     )
-    assert batch.count(b"PRINT 1,") == 2
-    assert b"PRINT 1,2" in batch
+    # SAMPLE qty=3 → 2 pages; qty=2 → 1 page (one full pair)
+    assert batch.count(b"PRINT 1,") == 3
+    assert b"SIZE 102 mm,35 mm" in batch
 
 
 def test_244_pro_two_up_and_inverted_bitmap():
     from PIL import Image
 
     assert page_width_mm(printer_profile("ttp244pro")) == 102.0
+    assert page_width_mm(printer_profile("te310")) == 102.0
     assert printer_profile("ttp244pro")["invert_bitmap"] is True
     assert printer_profile("te310")["invert_bitmap"] is True
     assert printer_profile("ttp244pro")["columns"] == 2
+    assert printer_profile("te310")["columns"] == 2
 
     white = Image.new("1", (8, 1), 1)
     _, _, raw = _image_to_bitmap_bytes(white, invert=False)
@@ -205,11 +210,13 @@ def test_244_pro_two_up_and_inverted_bitmap():
     assert odd.count(b"PRINT 1,") == 2
     assert b"PRINT 1,1" in odd
 
-    te = build_label_tspl(SHOP_REF, printer_model="te310")
-    assert te.startswith(b"SIZE 50 mm,35 mm")
-    assert b"SIZE 102" not in te
-    # TE310 uses the same 0=printed polarity as 244 Pro (shop confirmed).
+    # TE310 uses the same 2-across stock + 0=printed polarity as 244 Pro.
+    te = build_label_tspl(SHOP_REF, printer_model="te310")  # qty=2
+    assert b"SIZE 102 mm,35 mm" in te
+    assert b"SIZE 50 mm,35 mm" not in te
     assert b"REM kcw_tspl_bit0_prints" in te
+    assert te.count(b"PRINT 1,") == 1
+    assert b"PRINT 1,1" in te
 
 
 def test_price_stays_below_barcode_when_left_stack_is_short():
