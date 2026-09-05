@@ -1,6 +1,6 @@
 """5×3.5 cm product barcode stickers for TSC TE310 / TTP-244 Pro (TSPL).
 
-    14F-5-2.2 | HQ          [======= BARCODE =======]
+    14F-5-2.2 | HQ SYP      [======= BARCODE =======]
                                  12052328
     ชุดยางไฮปั๊มขาว
     F/6600
@@ -10,6 +10,7 @@
 
 Thai text is rasterized (TSC built-in fonts are ASCII-only) as BITMAP.
 Both printers are 2-across (SIZE 102×35 mm) and invert BITMAP polarity.
+Header is always location | HQ SYP. ชื่อย่อ (ACODE) is not printed.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 LABEL_WIDTH_MM = 50.0
 LABEL_HEIGHT_MM = 35.0
 LABEL_GAP_MM = 2.0
-# Top-right barcode; header (location | site) stays left of this.
+# Top-right barcode; header (location | HQ SYP) stays left of this.
 BARCODE_LEFT_MM = 27.0
 LABEL_PAD_MM = 2.2
 BODY_FONT_MM = 2.2
@@ -168,7 +169,6 @@ class StickerLabel:
             "location": self.location,
             "brand": self.brand,
             "unit": self.unit,
-            "abbreviation": self.abbreviation,
             "company": self.company,
             "model": self.model,
             "factory_no": self.factory_no,
@@ -264,11 +264,11 @@ def normalize_site(site: str | None) -> str:
 
 
 def format_header_line(location: str, site: str = "") -> str:
+    """Always ``{location} | HQ SYP``. ``site`` kept for call-site compat; unused."""
     loc = (location or "").strip()
-    site_key = normalize_site(site)
-    if loc and site_key:
-        return f"{loc} | {site_key}"
-    return loc or site_key
+    if loc:
+        return f"{loc} | HQ SYP"
+    return "HQ SYP"
 
 
 def format_meta_line(brand: str = "", unit: str = "", company: str = "") -> str:
@@ -297,7 +297,8 @@ def label_from_icmas(row: dict[str, Any], *, qty: int = 1, site: str = "") -> St
         location=location,
         brand=str(row.get("brand") or row.get("BRAND") or "").strip(),
         unit=str(row.get("unit") or row.get("ui1") or row.get("UI1") or "").strip(),
-        abbreviation=str(row.get("abbreviation") or row.get("acode") or row.get("ACODE") or "").strip(),
+        # ชื่อย่อ (ACODE) is intentionally omitted from stickers.
+        abbreviation="",
         company=str(row.get("company") or row.get("vendor") or row.get("VENDOR") or "").strip(),
         model=str(row.get("model") or row.get("MODEL") or "").strip(),
         factory_no=str(row.get("factory_no") or row.get("mcode") or row.get("MCODE") or "").strip(),

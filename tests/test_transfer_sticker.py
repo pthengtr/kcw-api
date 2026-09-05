@@ -44,7 +44,6 @@ SAMPLE = StickerLabel(
     location="14F-5-2.2",
     brand="นอกแท้",
     unit="ชุด",
-    abbreviation="ยฮปป",
     company="7MCP",
     model="F/6600",
     factory_no="SK0013",
@@ -81,7 +80,6 @@ def test_label_from_icmas_and_qty_merge():
         "LOCATION1": "14F-5-2.2",
         "BRAND": "นอกแท้",
         "UI1": "ชุด",
-        "ACODE": "ยฮปป",
         "VENDOR": "7MCP",
         "MODEL": "F/6600",
         "MCODE": "SK0013",
@@ -92,7 +90,7 @@ def test_label_from_icmas_and_qty_merge():
     label = label_from_icmas(row, qty=4, site="HQ")
     assert label.price_code == "OTSMXLTM"
     assert label.location == "14F-5-2.2"
-    assert label.abbreviation == "ยฮปป"
+    assert label.abbreviation == ""
     assert label.factory_no == "SK0013"
     assert label.genuine_no == "EDPN500B"
     assert label.site == "HQ"
@@ -139,7 +137,6 @@ SHOP_REF = StickerLabel(
     location="19P-1-3",
     brand="SAK",
     unit="ตนถ",
-    abbreviation="SMA",
     factory_no="SAK-03010",
     price_code="OPMXTM2605",
     qty=2,
@@ -157,9 +154,10 @@ def test_layout_line_helpers():
     assert normalize_site("hq") == "HQ"
     assert normalize_site("syp") == "SYP"
     assert normalize_site("other") == ""
-    assert format_header_line("14F-5-2.2", "HQ") == "14F-5-2.2 | HQ"
-    assert format_header_line("14F-5-2.2", "") == "14F-5-2.2"
-    assert format_header_line("", "syp") == "SYP"
+    assert format_header_line("14F-5-2.2", "HQ") == "14F-5-2.2 | HQ SYP"
+    assert format_header_line("14F-5-2.2", "") == "14F-5-2.2 | HQ SYP"
+    assert format_header_line("", "syp") == "HQ SYP"
+    assert format_header_line("19P-1-3", "SYP") == "19P-1-3 | HQ SYP"
     assert format_meta_line("นอกแท้", "ชุด", "7MCP") == "นอกแท้ • ชุด • 7MCP"
     assert format_meta_line("นอกแท้", "", "") == "นอกแท้"
     assert format_footer_line("SK0013", "EDPN500B", "OTSMXLTM") == "SK0013 | EDPN500B | OTSMXLTM"
@@ -246,7 +244,6 @@ def test_price_lives_in_footer_not_on_barcode():
         bcode="70010300",
         descr="เทิร์นแบตเก่า (300.-)",
         unit="ลูก",
-        abbreviation="กบภ",
         company="KCW1",
         model="N50 , DIN LN 3",
         price_code="ONMMMMMM",
@@ -344,7 +341,6 @@ def test_sticker_preview_and_download_api():
             "descr": "ชุดยางไฮปั๊มขาว",
             "brand": "นอกแท้",
             "ui1": "ชุด",
-            "acode": "ยฮปป",
             "vendor": "7MCP",
             "model": "F/6600",
             "location1": "14F-5-2.2",
