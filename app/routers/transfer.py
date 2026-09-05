@@ -873,7 +873,7 @@ def _sticker_labels_from_body(body: StickerPrintRequest):
         [str(ln.get("bcode") or "") for ln in body.lines],
         site=settings.site,
     )
-    return resolve_sticker_labels(body.lines, catalog)
+    return resolve_sticker_labels(body.lines, catalog, site=settings.site)
 
 
 @router.get("/api/stickers/config")
