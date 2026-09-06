@@ -1,7 +1,8 @@
 """5×3.5 cm product barcode stickers for TSC TE310 / TTP-244 Pro (TSPL).
 
-    14F-5-2.2 | HQ SYP      [======= BARCODE =======]
-                                 12052328
+    [=========== CODE 128 (full width) ===========]
+                      12052328
+                14F-5-2.2 | HQ
     ชุดยางไฮปั๊มขาว
     F/6600
     นอกแท้ • ชุด • 7MCP
@@ -10,7 +11,9 @@
 
 Thai text is rasterized (TSC built-in fonts are ASCII-only) as BITMAP.
 Both printers are 2-across (SIZE 102×35 mm) and invert BITMAP polarity.
-Header is always location | HQ SYP. ชื่อย่อ (ACODE) is not printed.
+Barcode is full-width (10 mm tall) for scanning; location | print-site
+branch (TRANSFER_SITE) sits under the human-readable BCODE.
+ชื่อย่อ (ACODE) is not printed. Location comes from that site's ICMAS.
 """
 
 from __future__ import annotations
@@ -31,17 +34,19 @@ logger = logging.getLogger(__name__)
 LABEL_WIDTH_MM = 50.0
 LABEL_HEIGHT_MM = 35.0
 LABEL_GAP_MM = 2.0
-# Top-right barcode; header (location | HQ SYP) stays left of this.
-BARCODE_LEFT_MM = 27.0
 LABEL_PAD_MM = 2.2
 BODY_FONT_MM = 2.2
 NAME_FONT_MM = 3.5
 MODEL_FONT_MM = 3.1
-LOC_FONT_MM = 2.6
+LOC_FONT_MM = 2.2
 FOOT_FONT_MM = 2.3
-BARCODE_HEIGHT_MM = 7.6
-# Human-readable BCODE + gap under the bars before the Thai name.
-NAME_GAP_AFTER_BARCODE_MM = 2.9
+# Full-width Code 128; taller bars for handheld scanners.
+BARCODE_HEIGHT_MM = 10.0
+BCODE_FONT_MM = 2.2
+# Gap under human-readable BCODE before location | branch.
+HEADER_GAP_AFTER_BCODE_MM = 0.35
+# Gap under location | branch before the Thai name.
+NAME_GAP_AFTER_HEADER_MM = 1.0
 FOOT_H_MM = 6.4
 TSPL_BIT0_PRINTS_MARK = "kcw_tspl_bit0_prints"
 MAX_QTY_PER_LINE = 200
@@ -264,11 +269,12 @@ def normalize_site(site: str | None) -> str:
 
 
 def format_header_line(location: str, site: str = "") -> str:
-    """Always ``{location} | HQ SYP``. ``site`` kept for call-site compat; unused."""
+    """``{location} | {HQ|SYP}`` for the box that prints the sticker (TRANSFER_SITE)."""
     loc = (location or "").strip()
-    if loc:
-        return f"{loc} | HQ SYP"
-    return "HQ SYP"
+    site_key = normalize_site(site)
+    if loc and site_key:
+        return f"{loc} | {site_key}"
+    return loc or site_key
 
 
 def format_meta_line(brand: str = "", unit: str = "", company: str = "") -> str:
@@ -484,42 +490,40 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
     draw = ImageDraw.Draw(img)
 
     pad = _mm(dots_mm, LABEL_PAD_MM)
-    barcode_left = _mm(dots_mm, BARCODE_LEFT_MM)
+    barcode_left = pad
     barcode_right = width - pad
     barcode_top = pad
     barcode_bottom = pad + _mm(dots_mm, BARCODE_HEIGHT_MM)
     full_w = width - pad * 2
-    header_w = barcode_left - pad - _mm(dots_mm, 0.6)
 
-    latin_head, thai_head = _load_font_pair(max(13, _mm(dots_mm, LOC_FONT_MM)), bold=True)
+    latin_head, thai_head = _load_font_pair(max(11, _mm(dots_mm, LOC_FONT_MM)), bold=True)
     latin_name, thai_name = _load_font_pair(max(16, _mm(dots_mm, NAME_FONT_MM)), bold=True)
     latin_model, thai_model = _load_font_pair(max(15, _mm(dots_mm, MODEL_FONT_MM)), bold=True)
     latin_meta, thai_meta = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
-    latin_bcode, thai_bcode = _load_font_pair(max(12, _mm(dots_mm, 2.4)), bold=True)
+    latin_bcode, thai_bcode = _load_font_pair(max(12, _mm(dots_mm, BCODE_FONT_MM)), bold=True)
     latin_foot, thai_foot = _load_font_pair(max(12, _mm(dots_mm, FOOT_FONT_MM)), bold=True)
 
     _draw_code128(draw, label.bcode, (barcode_left, barcode_top, barcode_right, barcode_bottom))
-    bcode = _fit_text(draw, label.bcode, latin_bcode, thai_bcode, barcode_right - barcode_left)
+    y = barcode_bottom + _mm(dots_mm, 0.15)
+    bcode = _fit_text(draw, label.bcode, latin_bcode, thai_bcode, full_w)
     if bcode:
         bw = _text_length(draw, bcode, latin_bcode, thai_bcode)
-        bx = barcode_left + max(0, (barcode_right - barcode_left - bw) / 2)
-        _draw_mixed(
-            draw,
-            (bx, barcode_bottom + _mm(dots_mm, 0.15)),
-            bcode,
-            latin_bcode,
-            thai_bcode,
-        )
+        bx = pad + max(0, (full_w - bw) / 2)
+        _draw_mixed(draw, (bx, y), bcode, latin_bcode, thai_bcode)
+        y += _mm(dots_mm, BCODE_FONT_MM) + _mm(dots_mm, HEADER_GAP_AFTER_BCODE_MM)
 
     header = _fit_text(
         draw,
         format_header_line(label.location, label.site),
         latin_head,
         thai_head,
-        header_w,
+        full_w,
     )
     if header:
-        _draw_mixed(draw, (pad, pad), header, latin_head, thai_head)
+        hw = _text_length(draw, header, latin_head, thai_head)
+        hx = pad + max(0, (full_w - hw) / 2)
+        _draw_mixed(draw, (hx, y), header, latin_head, thai_head)
+        y += _mm(dots_mm, LOC_FONT_MM) + _mm(dots_mm, NAME_GAP_AFTER_HEADER_MM)
 
     rule_y = height - _mm(dots_mm, FOOT_H_MM)
     draw.line(
@@ -543,7 +547,6 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
             thai_foot,
         )
 
-    y = barcode_bottom + _mm(dots_mm, NAME_GAP_AFTER_BARCODE_MM)
     name_step = _mm(dots_mm, NAME_FONT_MM) + _mm(dots_mm, 0.15)
     for line in sticker_name_lines(label.descr, printer_model=printer_model):
         if y + name_step > rule_y - _mm(dots_mm, 0.2):
