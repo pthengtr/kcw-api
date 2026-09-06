@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from src.transfer.sticker import (
     BARCODE_HEIGHT_MM,
-    BARCODE_LEFT_MM,
     FOOT_H_MM,
     LABEL_HEIGHT_MM,
     LABEL_PAD_MM,
@@ -94,6 +93,15 @@ def test_label_from_icmas_and_qty_merge():
     assert label.factory_no == "SK0013"
     assert label.genuine_no == "EDPN500B"
     assert label.site == "HQ"
+    assert format_header_line(label.location, label.site) == "14F-5-2.2 | HQ"
+    # LOCATION1 wins; LOCATION2 is fallback only when LOCATION1 is empty.
+    loc2_only = label_from_icmas(
+        {"BCODE": "1", "LOCATION1": "", "LOCATION2": "B-2"},
+        qty=1,
+        site="SYP",
+    )
+    assert loc2_only.location == "B-2"
+    assert format_header_line(loc2_only.location, loc2_only.site) == "B-2 | SYP"
     merged = resolve_sticker_labels(
         [
             {"bcode": "12052328", "qty": 2, "descr": "ชุดยางไฮปั๊มขาว"},
@@ -107,6 +115,7 @@ def test_label_from_icmas_and_qty_merge():
     assert merged[0].qty == 5
     assert merged[0].price_code == "OTSMXLTM"
     assert merged[0].site == "SYP"
+    assert format_header_line(merged[0].location, merged[0].site) == "14F-5-2.2 | SYP"
 
 
 def test_qty_caps_and_validate():
@@ -154,10 +163,10 @@ def test_layout_line_helpers():
     assert normalize_site("hq") == "HQ"
     assert normalize_site("syp") == "SYP"
     assert normalize_site("other") == ""
-    assert format_header_line("14F-5-2.2", "HQ") == "14F-5-2.2 | HQ SYP"
-    assert format_header_line("14F-5-2.2", "") == "14F-5-2.2 | HQ SYP"
-    assert format_header_line("", "syp") == "HQ SYP"
-    assert format_header_line("19P-1-3", "SYP") == "19P-1-3 | HQ SYP"
+    assert format_header_line("14F-5-2.2", "HQ") == "14F-5-2.2 | HQ"
+    assert format_header_line("14F-5-2.2", "") == "14F-5-2.2"
+    assert format_header_line("", "syp") == "SYP"
+    assert format_header_line("19P-1-3", "SYP") == "19P-1-3 | SYP"
     assert format_meta_line("นอกแท้", "ชุด", "7MCP") == "นอกแท้ • ชุด • 7MCP"
     assert format_meta_line("นอกแท้", "", "") == "นอกแท้"
     assert format_footer_line("SK0013", "EDPN500B", "OTSMXLTM") == "SK0013 | EDPN500B | OTSMXLTM"
@@ -179,11 +188,34 @@ def test_name_uses_full_width():
 def test_shop_reference_label_renders():
     img = render_label_image(SHOP_REF, printer_model="te310")
     assert img.size == (600, 420)
-    # Ink in the top-right barcode band and bottom-left factory code.
+    # Full-width barcode band near the top; footer ink near the bottom-left.
     px = img.load()
-    barcode_x = int(600 * BARCODE_LEFT_MM / LABEL_WIDTH_MM) + 8
-    assert any(px[x, y] == 0 for x in range(barcode_x, 580) for y in range(20, 140))
+    pad = int(round(LABEL_PAD_MM * 12))
+    barcode_bottom = pad + int(round(BARCODE_HEIGHT_MM * 12))
+    assert any(px[x, y] == 0 for x in range(pad, 580) for y in range(pad, barcode_bottom))
     assert any(px[x, y] == 0 for x in range(10, 140) for y in range(330, 415))
+
+
+def test_barcode_is_full_width_and_taller():
+    assert BARCODE_HEIGHT_MM == 10.0
+    img = render_label_image(SAMPLE, printer_model="te310")
+    dots_mm = 12
+    pad = int(round(LABEL_PAD_MM * dots_mm))
+    barcode_bottom = pad + int(round(BARCODE_HEIGHT_MM * dots_mm))
+    px = img.load()
+    # Quiet zones sit at the edges; ink should still span most of the die width.
+    left_ink = any(
+        px[x, y] == 0 for x in range(pad, pad + 120) for y in range(pad, barcode_bottom)
+    )
+    right_ink = any(
+        px[x, y] == 0
+        for x in range(img.width - pad - 120, img.width - pad)
+        for y in range(pad, barcode_bottom)
+    )
+    assert left_ink and right_ink
+    # Header (location | site) sits below the barcode band, not beside it.
+    mid_y = barcode_bottom + int(round(3.5 * dots_mm))
+    assert any(px[x, mid_y] == 0 for x in range(pad, img.width - pad))
 
 
 def test_tspl_job_uses_received_qty_and_label_size():
@@ -254,7 +286,7 @@ def test_price_lives_in_footer_not_on_barcode():
     dots_mm = 8
     barcode_top = int(round(LABEL_PAD_MM * dots_mm))
     barcode_bottom = barcode_top + int(round(BARCODE_HEIGHT_MM * dots_mm))
-    barcode_left = int(round(BARCODE_LEFT_MM * dots_mm))
+    barcode_left = int(round(LABEL_PAD_MM * dots_mm))
     footer_top = img.height - int(round(FOOT_H_MM * dots_mm))
     px = img.load()
     assert any(
