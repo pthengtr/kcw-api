@@ -2,6 +2,7 @@ from src.transfer.state import (
     can_action,
     derive_line_status,
     derive_request_status,
+    last_received_at,
     prep_recv_mismatch,
     qty_open_prepare,
     qty_open_receive,
@@ -88,6 +89,20 @@ def test_summarize_receive_caught_up_when_short_ship_fully_received():
     assert summary["receive_caught_up"] is True
     assert summary["qty_short_order_prepare"] == 5
     assert summary["prep_recv_mismatch"] is False
+
+
+def test_last_received_at_picks_latest_receipt():
+    ships = [{"shipment_id": "s1"}, {"shipment_id": "s2"}]
+    receipts = {
+        "s1": [{"created_at": "2026-09-05T02:00:00+00:00"}],
+        "s2": [
+            {"created_at": "2026-09-07T01:30:00+00:00"},
+            {"created_at": "2026-09-07T02:13:00+00:00"},
+        ],
+    }
+    assert last_received_at(ships, receipts) == "2026-09-07T02:13:00+00:00"
+    assert last_received_at(ships, {}) is None
+    assert last_received_at([], receipts) is None
 
 
 def test_request_status_partial_prepared_vs_order():

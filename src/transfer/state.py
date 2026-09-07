@@ -65,6 +65,26 @@ def derive_line_status(
     return "open"
 
 
+def last_received_at(
+    ships: list[dict[str, Any]],
+    receipts_by_shipment: dict[str, list[dict[str, Any]]],
+) -> str | None:
+    """Latest receipt created_at across shipments (ISO timestamp), or None."""
+    latest: str | None = None
+    for ship in ships:
+        sid = ship.get("shipment_id")
+        if not sid:
+            continue
+        for rc in receipts_by_shipment.get(sid) or []:
+            ts = rc.get("created_at")
+            if not ts:
+                continue
+            ts_s = str(ts)
+            if latest is None or ts_s > latest:
+                latest = ts_s
+    return latest
+
+
 def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
     """Order-centric progress + prep/receive mismatch flags for UI alerts."""
     active = [ln for ln in lines if not ln.get("cancelled_at")]

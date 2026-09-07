@@ -33,6 +33,7 @@ from src.transfer.db import (
     list_lines,
     list_lines_by_transfers,
     list_need,
+    list_receipts_by_shipments,
     list_receive_queue,
     list_requests,
     list_shipment_lines,
@@ -72,7 +73,12 @@ from src.transfer.sticker import (
     sticker_config_payload,
     validate_batch,
 )
-from src.transfer.state import can_action, shipment_lines_fully_received, summarize_request_progress
+from src.transfer.state import (
+    can_action,
+    last_received_at,
+    shipment_lines_fully_received,
+    summarize_request_progress,
+)
 from src.transfer.ui import APP, SESSION_COOKIE, page
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.transfer.writers.syp_iclow_stamp import (
@@ -433,6 +439,13 @@ def api_requests(
     transfer_ids = [req["transfer_id"] for req in items]
     lines_by = list_lines_by_transfers(client, transfer_ids)
     ships_by = list_shipments_by_transfers(client, transfer_ids)
+    ship_ids = [
+        s["shipment_id"]
+        for ships in ships_by.values()
+        for s in ships
+        if s.get("shipment_id")
+    ]
+    receipts_by_ship = list_receipts_by_shipments(client, ship_ids)
     out = []
     for req in items:
         tid = req["transfer_id"]
@@ -442,6 +455,7 @@ def api_requests(
         row["line_count"] = len(lines)
         row["shipment_count"] = len(ships)
         row["has_shipments"] = bool(ships)
+        row["last_received_at"] = last_received_at(ships, receipts_by_ship)
         row.update(summarize_request_progress(lines))
         fb = row.get("from_branch") or "HQ"
         tb = row.get("to_branch") or "SYP"
