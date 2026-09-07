@@ -449,6 +449,19 @@ function fmtModel(row){
   const m = (row && row.model || "").trim();
   return m ? `<div class="model">รุ่น ${m}</div>` : "";
 }
+function fmtBrand(row){
+  const b = (row && row.brand || "").trim();
+  return b ? `<div class="meta">ยี่ห้อ ${b}</div>` : "";
+}
+function fmtOemCodes(row){
+  const p = (row && row.pcode || "").trim();
+  const m = (row && row.mcode || "").trim();
+  if(!p && !m) return "";
+  const bits = [];
+  if(p) bits.push("เบอร์แท้ "+p);
+  if(m) bits.push("เบอร์โรงงาน "+m);
+  return `<div class="meta">${bits.join(" · ")}</div>`;
+}
 function fmtLocation(row){
   const hq = (row && row.location_hq || "").trim();
   const syp = (row && row.location_syp || "").trim();
@@ -462,7 +475,7 @@ function fmtLocation(row){
   return cur ? `<div class="meta">ที่เก็บ ${cur}</div>` : "";
 }
 function fmtDescr(row){
-  return `${(row && row.descr) || ""}${fmtModel(row)}${fmtLocation(row)}`;
+  return `${(row && row.descr) || ""}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}`;
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);
@@ -1072,7 +1085,7 @@ function printRequestBill(detail){
   const rows = lines.map((ln,i)=>`<tr>
     <td class="num">${i+1}</td>
     <td><code>${ln.bcode||""}</code></td>
-    <td>${(ln.descr||"").replace(/</g,"&lt;")}${ln.model?`<div class="meta">รุ่น ${String(ln.model).replace(/</g,"&lt;")}</div>`:""}${ln.location?`<div class="meta">ที่เก็บ ${String(ln.location).replace(/</g,"&lt;")}</div>`:(ln.location_hq||ln.location_syp)?`<div class="meta">ที่เก็บ สนญ ${String(ln.location_hq||"—").replace(/</g,"&lt;")} · สาขา ${String(ln.location_syp||"—").replace(/</g,"&lt;")}</div>`:""}</td>
+    <td>${(ln.descr||"").replace(/</g,"&lt;")}${ln.brand?`<div class="meta">ยี่ห้อ ${String(ln.brand).replace(/</g,"&lt;")}</div>`:""}${(ln.pcode||ln.mcode)?`<div class="meta">${[ln.pcode?`เบอร์แท้ ${String(ln.pcode).replace(/</g,"&lt;")}`:"",ln.mcode?`เบอร์โรงงาน ${String(ln.mcode).replace(/</g,"&lt;")}`:""].filter(Boolean).join(" · ")}</div>`:""}${ln.model?`<div class="meta">รุ่น ${String(ln.model).replace(/</g,"&lt;")}</div>`:""}${ln.location?`<div class="meta">ที่เก็บ ${String(ln.location).replace(/</g,"&lt;")}</div>`:(ln.location_hq||ln.location_syp)?`<div class="meta">ที่เก็บ สนญ ${String(ln.location_hq||"—").replace(/</g,"&lt;")} · สาขา ${String(ln.location_syp||"—").replace(/</g,"&lt;")}</div>`:""}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
     <td class="num">${fmtQty(ln.qty_prepared)}</td>
     <td class="num">${fmtQty(ln.qty_received)}</td>
@@ -1317,7 +1330,7 @@ function groupReceiveQueue(items){
   return [...map.values()];
 }
 function lineFilterText(ln){
-  return [ln.bcode, ln.descr, ln.model, ln.location, ln.location_hq, ln.location_syp]
+  return [ln.bcode, ln.descr, ln.brand, ln.pcode, ln.mcode, ln.model, ln.location, ln.location_hq, ln.location_syp]
     .map(v=>(v==null?"":String(v))).join(" ").trim();
 }
 function escapeAttr(s){
@@ -1446,7 +1459,10 @@ async function renderRequest(el, opts){
       const b = (r.bcode||"").toLowerCase();
       const d = (r.descr||"").toLowerCase();
       const m = (r.model||"").toLowerCase();
-      return b.includes(q) || d.includes(q) || m.includes(q);
+      const brand = (r.brand||"").toLowerCase();
+      const pcode = (r.pcode||"").toLowerCase();
+      const mcode = (r.mcode||"").toLowerCase();
+      return b.includes(q) || d.includes(q) || m.includes(q) || brand.includes(q) || pcode.includes(q) || mcode.includes(q);
     }) : suggestItems;
     const nPicked = pickedCount();
 
@@ -1455,7 +1471,7 @@ async function renderRequest(el, opts){
       <p class="meta" style="margin:0 0 .75rem">ติ๊กเลือกรายการ ปรับจำนวน แล้วกด <strong>เพิ่มที่เลือก</strong> — หน้าจอจะไม่กระโดดกลับด้านบน</p>
 
       <div class="search-bar">
-        <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / รุ่น)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
+        <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / ยี่ห้อ / เบอร์แท้ / เบอร์โรงงาน / รุ่น)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
       </div>
 
       <div class="tool-section">
@@ -1716,7 +1732,7 @@ async function renderRequest(el, opts){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b),{quiet:true});
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong>${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
+        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
       }catch(e){
         manualPreviewEl.style.display = "block";
         manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
@@ -1931,7 +1947,7 @@ async function renderReceive(el){
         ${receiveBillNoteHtml(ship.from_branch, ship.to_branch, ship.ship_billno)}
         <div class="search-bar" style="margin-top:.75rem">
           <input id="recvSearch" class="text-input" type="search" autocomplete="off"
-            placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / รุ่น / ที่เก็บ)" value="${filterVal}"/>
+            placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / ยี่ห้อ / เบอร์แท้ / เบอร์โรงงาน / รุ่น / ที่เก็บ)" value="${filterVal}"/>
         </div>
         <p id="recvFilterMeta" class="meta" style="margin:.35rem 0 0" hidden></p>
         ${dualView(

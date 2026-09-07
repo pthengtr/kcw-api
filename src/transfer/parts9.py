@@ -70,6 +70,9 @@ def _fetch_icmas_meta(
           LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS bcode,
           LTRIM(RTRIM(COALESCE(DESCR, ''))) AS descr,
           LTRIM(RTRIM(COALESCE(MODEL, ''))) AS model,
+          LTRIM(RTRIM(COALESCE(BRAND, ''))) AS brand,
+          LTRIM(RTRIM(COALESCE(PCODE, ''))) AS pcode,
+          LTRIM(RTRIM(COALESCE(MCODE, ''))) AS mcode,
           QTYOH2,
           QTYMIN,
           LTRIM(RTRIM(COALESCE(UI1, ''))) AS ui1,
@@ -100,6 +103,9 @@ def _fetch_icmas_meta(
                 "blocked": blocked,
                 "descr": (row["descr"] or "").strip(),
                 "model": (row["model"] or "").strip(),
+                "brand": (row["brand"] or "").strip(),
+                "pcode": (row["pcode"] or "").strip(),
+                "mcode": (row["mcode"] or "").strip(),
                 "ui1": (row["ui1"] or "").strip(),
                 "ui2": (row["ui2"] or "").strip(),
                 "mtp2": mtp2 if mtp2 > 0 else 1.0,
@@ -152,6 +158,9 @@ def _normalize_peer_icmas_items(items: dict[str, Any]) -> dict[str, dict[str, An
             "blocked": bool(meta.get("blocked")),
             "descr": (meta.get("descr") or "").strip(),
             "model": (meta.get("model") or "").strip(),
+            "brand": (meta.get("brand") or "").strip(),
+            "pcode": (meta.get("pcode") or "").strip(),
+            "mcode": (meta.get("mcode") or "").strip(),
             "ui1": (meta.get("ui1") or "").strip(),
             "ui2": (meta.get("ui2") or "").strip(),
             "mtp2": float(meta.get("mtp2") or 1.0) or 1.0,
@@ -314,6 +323,12 @@ def _enrich_suggest_item(
             item["descr"] = meta["descr"]
         if not item.get("model") and meta.get("model"):
             item["model"] = meta["model"]
+        if not item.get("brand") and meta.get("brand"):
+            item["brand"] = meta["brand"]
+        if not item.get("pcode") and meta.get("pcode"):
+            item["pcode"] = meta["pcode"]
+        if not item.get("mcode") and meta.get("mcode"):
+            item["mcode"] = meta["mcode"]
         if not item.get("ui1") and meta.get("ui1"):
             item["ui1"] = meta["ui1"]
         if not item.get("ui2") and meta.get("ui2"):
@@ -340,6 +355,9 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
           LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS bcode,
           LTRIM(RTRIM(COALESCE(DESCR, ''))) AS descr,
           LTRIM(RTRIM(COALESCE(MODEL, ''))) AS model,
+          LTRIM(RTRIM(COALESCE(BRAND, ''))) AS brand,
+          LTRIM(RTRIM(COALESCE(PCODE, ''))) AS pcode,
+          LTRIM(RTRIM(COALESCE(MCODE, ''))) AS mcode,
           QTYOH2,
           QTYMIN,
           QTYGET,
@@ -373,6 +391,9 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
             "bcode": bcode,
             "descr": (row["descr"] or "").strip(),
             "model": (row["model"] or "").strip(),
+            "brand": (row["brand"] or "").strip(),
+            "pcode": (row["pcode"] or "").strip(),
+            "mcode": (row["mcode"] or "").strip(),
             "suggest_qty": suggest,
             "qtyoh2": qtyoh2,
             "qtymin": qtymin,
@@ -411,6 +432,9 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
             "bcode": bcode,
             "descr": (row.get("descr") or "").strip(),
             "model": "",
+            "brand": "",
+            "pcode": "",
+            "mcode": "",
             "suggest_qty": qty,
             "qtyoh2": 0.0,
             "hq_qtyoh2": 0.0,
@@ -454,6 +478,9 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
             "bcode": bcode,
             "descr": row.get("descr") or "",
             "model": row.get("model") or "",
+            "brand": row.get("brand") or "",
+            "pcode": row.get("pcode") or "",
+            "mcode": row.get("mcode") or "",
             "suggest_qty": row.get("suggest_qty") or 1.0,
             "qtyoh2": row.get("qtyoh2") or 0.0,
             "hq_qtyoh2": 0.0,
@@ -482,6 +509,9 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
         return None
     descr = ""
     model = ""
+    brand = ""
+    pcode = ""
+    mcode = ""
     ui1 = ""
     ui2 = ""
     mtp2 = 1.0
@@ -492,6 +522,12 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
             descr = meta["descr"]
         if not model and meta.get("model"):
             model = meta["model"]
+        if not brand and meta.get("brand"):
+            brand = meta["brand"]
+        if not pcode and meta.get("pcode"):
+            pcode = meta["pcode"]
+        if not mcode and meta.get("mcode"):
+            mcode = meta["mcode"]
         if not ui1 and meta.get("ui1"):
             ui1 = meta["ui1"]
         if not ui2 and meta.get("ui2"):
@@ -505,6 +541,9 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
         "bcode": code,
         "descr": descr,
         "model": model,
+        "brand": brand,
+        "pcode": pcode,
+        "mcode": mcode,
         "hq_qtyoh2": float((hq_meta or {}).get("qtyoh2") or 0),
         "syp_qtyoh2": float((syp_meta or {}).get("qtyoh2") or 0),
         "hq_qtymin": float((hq_meta or {}).get("qtymin") or 0) if hq_meta else None,
@@ -578,6 +617,12 @@ def enrich_transfer_lines(
                 row["descr"] = meta["descr"]
             if not row.get("model") and meta.get("model"):
                 row["model"] = meta["model"]
+            if not row.get("brand") and meta.get("brand"):
+                row["brand"] = meta["brand"]
+            if not row.get("pcode") and meta.get("pcode"):
+                row["pcode"] = meta["pcode"]
+            if not row.get("mcode") and meta.get("mcode"):
+                row["mcode"] = meta["mcode"]
             if not row.get("ui1") and meta.get("ui1"):
                 row["ui1"] = meta["ui1"]
             if not row.get("ui2") and meta.get("ui2"):

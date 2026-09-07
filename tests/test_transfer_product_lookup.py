@@ -17,6 +17,9 @@ def test_lookup_transfer_product_merges_hq_and_syp():
                     "blocked": False,
                     "descr": "สะดือแหนบหน้า",
                     "model": "NP-200",
+                    "brand": "นอกแท้",
+                    "pcode": "EDPN500B",
+                    "mcode": "SK0013",
                     "ui1": "หน่วย",
                     "ui2": "",
                     "mtp2": 1.0,
@@ -32,6 +35,9 @@ def test_lookup_transfer_product_merges_hq_and_syp():
                 "blocked": False,
                 "descr": "สะดือแหนบหน้า",
                 "model": "NP-200",
+                "brand": "นอกแท้",
+                "pcode": "EDPN500B",
+                "mcode": "SK0013",
                 "ui1": "หน่วย",
                 "ui2": "",
                 "mtp2": 1.0,
@@ -55,6 +61,9 @@ def test_lookup_transfer_product_merges_hq_and_syp():
     assert product is not None
     assert product["descr"] == "สะดือแหนบหน้า"
     assert product["model"] == "NP-200"
+    assert product["brand"] == "นอกแท้"
+    assert product["pcode"] == "EDPN500B"
+    assert product["mcode"] == "SK0013"
     assert product["hq_qtyoh2"] == 3.0
     assert product["syp_qtyoh2"] == 1.0
     assert product["hq_no_stock"] is False
@@ -74,6 +83,9 @@ def test_enrich_transfer_lines_includes_shipper_location():
                     "qtymin": 1.0,
                     "blocked": False,
                     "descr": "Bolt",
+                    "brand": "SAK",
+                    "pcode": "P-BOLT",
+                    "mcode": "M-BOLT",
                     "ui1": "ชิ้น",
                     "ui2": "",
                     "mtp2": 1.0,
@@ -88,6 +100,9 @@ def test_enrich_transfer_lines_includes_shipper_location():
                 "qtymin": 1.0,
                 "blocked": False,
                 "descr": "Bolt",
+                "brand": "SAK",
+                "pcode": "P-BOLT",
+                "mcode": "M-BOLT",
                 "ui1": "ชิ้น",
                 "ui2": "",
                 "mtp2": 1.0,
@@ -113,6 +128,9 @@ def test_enrich_transfer_lines_includes_shipper_location():
     assert out[0]["location"] == "HQ-A / 1"
     assert out[0]["location1"] == "HQ-A"
     assert out[0]["location2"] == "1"
+    assert out[0]["brand"] == "SAK"
+    assert out[0]["pcode"] == "P-BOLT"
+    assert out[0]["mcode"] == "M-BOLT"
 
 
 def test_lookup_transfer_product_hq_l1_no_stock():

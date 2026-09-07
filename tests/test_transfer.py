@@ -135,6 +135,11 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
     assert "ไม่ดึง ICLOW รอสั่งซื้อ" in html
     assert "fmtDescr" in html
     assert "fmtLocation" in html
+    assert "fmtBrand" in html
+    assert "fmtOemCodes" in html
+    assert "ยี่ห้อ" in html
+    assert "เบอร์แท้" in html
+    assert "เบอร์โรงงาน" in html
     assert "ที่เก็บ" in html
     assert "printRequestBill" in html
     assert "พิมพ์ใบคำขอ" in html
