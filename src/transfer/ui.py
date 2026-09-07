@@ -569,16 +569,19 @@ function receiveBillNoteHtml(fromB, toB, shipBillno){
 function orderFlowText(){
   return OTHER_LABEL + " จัดส่ง → " + SITE_LABEL + " รับเข้า";
 }
-function badge(status, fromB, toB, hasMismatch){
+function badge(status, fromB, toB, hasMismatch, receiveCaughtUp){
   const m={draft:"b-requested",requested:"b-requested",partial_prepared:"b-await",awaiting_receive:"b-await",partial_received:"b-await",complete:"b-done",cancelled:"b-requested"};
   const fb = branchLabel(fromB||"HQ");
-  const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดไม่ครบตามขอ",awaiting_receive:"รอรับ",partial_received:"รับไม่ครบตามขอ",complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
-  const cls = hasMismatch ? "b-alert" : (m[status]||"b-requested");
+  const partialRecv = receiveCaughtUp ? "รับครบที่จัดแล้ว" : "รับไม่ครบตามขอ";
+  const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดไม่ครบตามขอ",awaiting_receive:"รอรับ",partial_received:partialRecv,complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
+  const waveDone = !!receiveCaughtUp && status==="partial_received";
+  const cls = hasMismatch ? "b-alert" : (waveDone ? "b-done" : (m[status]||"b-requested"));
   const label = hasMismatch ? "จัด≠รับ" : (t[status]||status||"-");
-  return `<span class="badge ${cls}" title="${hasMismatch ? "จำนวนจัดกับรับไม่ตรงกัน" : ""}">${label}</span>`;
+  const title = hasMismatch ? "จำนวนจัดกับรับไม่ตรงกัน" : (waveDone ? "รับครบตามที่จัดแล้ว — ยังค้างจัดตามคำขอได้" : "");
+  return `<span class="badge ${cls}" title="${title}">${label}</span>`;
 }
-function pipeline(status, hasMismatch){
-  const idx = status==="complete" ? 3 : status==="awaiting_receive"||status==="partial_received" ? 2 : status==="partial_prepared" ? 1 : 0;
+function pipeline(status, hasMismatch, receiveCaughtUp){
+  const idx = status==="complete" || receiveCaughtUp ? 3 : status==="awaiting_receive"||status==="partial_received" ? 2 : status==="partial_prepared" ? 1 : 0;
   const labels = ["ขอแล้ว","จัดแล้ว","รับแล้ว","เสร็จ"];
   const warn = hasMismatch ? `<span class="flag-mismatch" title="จัด≠รับ"> ⚠</span>` : "";
   return `<div class="pipeline">${labels.map((l,i)=>`<span class="pipe-dot ${i<idx?"done":i===idx?"on":""}"></span><span>${l}</span>`).join("")}${warn}</div>`;
@@ -1079,7 +1082,7 @@ function printRequestBill(detail){
     <h1 style="margin:0 0 .35rem;font-size:18pt">ใบคำขอโอนสินค้า</h1>
     <p style="margin:0 0 .75rem;font-size:12pt"><strong>TRF-${String(shortId).replace(/^TRF-/,"")}</strong>
       · ${dirLabel(fromB,toB)}
-      · สถานะ ${badge(detail.status||"", fromB, toB, detail.prep_recv_mismatch)}</p>
+      · สถานะ ${badge(detail.status||"", fromB, toB, detail.prep_recv_mismatch, detail.receive_caught_up)}</p>
     <p class="meta" style="margin:0 0 .75rem">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)} · พิมพ์โดย ${USER}</p>
     <p class="meta" style="margin:0 0 .75rem">AP จัดออก (${branchLabel(fromB)}): ${shipAp||"—"} · AP รับเข้า (${branchLabel(toB)}): ${recvAp||"—"}</p>
     <table><thead><tr><th class="num">#</th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th></tr></thead>
@@ -1153,7 +1156,7 @@ async function openRequestDetail(transferId){
   }).join("");
   const modal = showModal(`<h2>รายละเอียด · <code>${detail.short_id||transferId}</code></h2>
     <p class="dir">${dirLabel(fromB, toB)}</p>
-    <p style="margin:.35rem 0">${badge(status, fromB, toB, detail.prep_recv_mismatch)} ${pipeline(status, detail.prep_recv_mismatch)}</p>
+    <p style="margin:.35rem 0">${badge(status, fromB, toB, detail.prep_recv_mismatch, detail.receive_caught_up)} ${pipeline(status, detail.prep_recv_mismatch, detail.receive_caught_up)}</p>
     ${mismatchBanner(detail)}
     <p class="meta">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)}</p>
     <p class="meta">AP จัดออก: ${shipAp||"—"} · AP รับเข้า: ${recvAp||"—"}</p>
@@ -2036,14 +2039,14 @@ async function renderPrepare(el){
           ${items.map((r,i)=>`<tr class="row-clickable" data-prep-idx="${i}">
             <td><code>${r.short_id}</code></td>
             <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-            <td>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch)}</td>
+            <td>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch,!!r.receive_caught_up)}</td>
             <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
             <td class="num">${r.line_count||0}</td>
             <td><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></td>
           </tr>`).join("")}
         </tbody></table></div>`,
         itemCards(items.map((r,i)=>`<div class="item-card row-clickable" data-prep-idx="${i}">
-          <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch)}</div>
+          <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch,!!r.receive_caught_up)}</div>
           <div class="item-card-grid">
             <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
             <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.requested_at||r.created_at||"").slice(0,10)}</span></div>
@@ -2189,11 +2192,17 @@ async function openPrepareRequest(summary){
   setPrepareStep(2);
 }
 
+function isStatusDoneRow(r){
+  // Complete orders, or short-ship waves where everything prepared so far was received.
+  return r.status==="complete" || !!r.receive_caught_up;
+}
 async function renderStatus(el){
   const isDone = statusFilter === "done";
-  const data = await api("/transfer/api/requests" + (isDone ? "?status=complete" : ""));
+  // Always load full list so short-ship "receive caught up" rows can appear under Done.
+  const data = await api("/transfer/api/requests");
   let items = data.items||[];
-  if(!isDone) items = items.filter(r=>r.status!=="complete"&&r.status!=="cancelled");
+  if(isDone) items = items.filter(isStatusDoneRow);
+  else items = items.filter(r=>!isStatusDoneRow(r)&&r.status!=="cancelled");
   const drafts = isDone ? [] : items.filter(r=>r.status==="draft");
   const active = isDone ? items : items.filter(r=>r.status!=="draft");
   el.innerHTML = `
@@ -2238,10 +2247,11 @@ async function renderStatus(el){
     const activeTableRows = active.map(r=>{
       const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
       const mm = !!r.prep_recv_mismatch;
+      const caught = !!r.receive_caught_up;
       return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-        <td>${badge(r.status,r.from_branch,r.to_branch,mm)}</td>
-        <td>${pipeline(r.status,mm)}</td>
+        <td>${badge(r.status,r.from_branch,r.to_branch,mm,caught)}</td>
+        <td>${pipeline(r.status,mm,caught)}</td>
         <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
         <td class="row-actions" style="margin:0">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
@@ -2254,13 +2264,14 @@ async function renderStatus(el){
     const activeCardRows = active.map(r=>{
       const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
       const mm = !!r.prep_recv_mismatch;
+      const caught = !!r.receive_caught_up;
       return `<div class="item-card row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
-        <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,mm)}</div>
+        <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,mm,caught)}</div>
         <div class="item-card-grid">
           <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
           <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.requested_at||r.created_at||"").slice(0,10)}</span></div>
         </div>
-        ${pipeline(r.status,mm)}
+        ${pipeline(r.status,mm,caught)}
         <div class="item-card-actions">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
           <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>

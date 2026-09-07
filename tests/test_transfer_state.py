@@ -60,8 +60,34 @@ def test_summarize_request_progress_flags_mismatch():
     assert summary["qty_short_order_prepare"] == 4
     assert summary["qty_short_order_receive"] == 7
     assert summary["has_received"] is True
+    assert summary["receive_caught_up"] is False
     assert summary["qty_received_total"] == 3
     assert summary["received_line_count"] == 1
+
+
+def test_summarize_receive_caught_up_when_short_ship_fully_received():
+    """HQ short-shipped; SYP received everything prepared — wave done for barcodes/Done tab."""
+    lines = [
+        {
+            "bcode": "A",
+            "qty_requested": 77,
+            "qty_prepared": 77,
+            "qty_received": 77,
+            "cancelled_at": None,
+        },
+        {
+            "bcode": "B",
+            "qty_requested": 5,
+            "qty_prepared": 0,
+            "qty_received": 0,
+            "cancelled_at": None,
+        },
+    ]
+    summary = summarize_request_progress(lines)
+    assert summary["has_received"] is True
+    assert summary["receive_caught_up"] is True
+    assert summary["qty_short_order_prepare"] == 5
+    assert summary["prep_recv_mismatch"] is False
 
 
 def test_request_status_partial_prepared_vs_order():
