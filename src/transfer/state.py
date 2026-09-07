@@ -73,6 +73,7 @@ def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
     short_receive = 0.0
     qty_received_total = 0.0
     received_line_count = 0
+    any_open_recv = False
     for ln in active:
         req = float(ln.get("qty_requested") or 0)
         prep = float(ln.get("qty_prepared") or 0)
@@ -82,10 +83,16 @@ def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
         qty_received_total += max(recv, 0.0)
         if recv > 0:
             received_line_count += 1
+        if qty_open_receive(prep, recv) > 0:
+            any_open_recv = True
         if prep_recv_mismatch(prep, recv):
             bcode = str(ln.get("bcode") or "").strip()
             if bcode:
                 mismatch_lines.append(bcode)
+    has_received = received_line_count > 0
+    # Wave done: everything prepared so far has been received (short-ship OK).
+    # Still may have open prepare — HQ can ship the rest later.
+    receive_caught_up = has_received and not any_open_recv
     return {
         "prep_recv_mismatch": bool(mismatch_lines),
         "prep_recv_mismatch_count": len(mismatch_lines),
@@ -94,7 +101,8 @@ def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
         "qty_short_order_receive": short_receive,
         "qty_received_total": qty_received_total,
         "received_line_count": received_line_count,
-        "has_received": received_line_count > 0,
+        "has_received": has_received,
+        "receive_caught_up": receive_caught_up,
     }
 
 
