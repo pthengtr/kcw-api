@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from supabase import Client, create_client
 
 from src.pay_notes.config import get_pay_notes_settings
 
 PAY_NOTE_SCHEMA = "pay_note"
+ACCOUNT_TYPES = ("CHECKING", "SAVINGS", "OTHER")
+_BKK = ZoneInfo("Asia/Bangkok")
 
 
 @lru_cache
@@ -43,6 +47,45 @@ def list_vendor_banks(client: Client, acctno: str) -> list[dict[str, Any]]:
     return list(resp.data or [])
 
 
+def normalize_account_type(raw: str | None) -> str:
+    text = (raw or "").strip().upper()
+    if not text:
+        return "OTHER"
+    if text not in ACCOUNT_TYPES:
+        raise ValueError("account_type must be CHECKING, SAVINGS, or OTHER")
+    return text
+
+
+def vendor_bank_payload(
+    *,
+    acctno: str,
+    bank_name: str,
+    bank_account_name: str,
+    bank_account_number: str,
+    bank_branch: str | None = None,
+    account_type: str = "OTHER",
+    is_default: bool = False,
+) -> dict[str, Any]:
+    acct = (acctno or "").strip()
+    name = (bank_name or "").strip()
+    holder = (bank_account_name or "").strip()
+    number = (bank_account_number or "").strip()
+    if not acct:
+        raise ValueError("acctno required")
+    if not name or not holder or not number:
+        raise ValueError("bank name, account name, and account number are required")
+    return {
+        "acctno": acct,
+        "bank_name": name,
+        "bank_account_name": holder,
+        "bank_account_number": number,
+        "bank_branch": (bank_branch or "").strip() or None,
+        "account_type": normalize_account_type(account_type),
+        "is_default": bool(is_default),
+        "updated_at": datetime.now(_BKK).isoformat(),
+    }
+
+
 def insert_vendor_bank(client: Client, row: dict[str, Any]) -> dict[str, Any]:
     resp = _table(client, "vendor_bank").insert(row).select("*").execute()
     return _first_row(resp)
@@ -57,6 +100,22 @@ def update_vendor_bank(client: Client, bank_id: str, patch: dict[str, Any]) -> d
         .execute()
     )
     return _first_row(resp)
+
+
+def clear_other_default_banks(client: Client, acctno: str, keep_bank_id: str) -> None:
+    """Leave at most one default account for this AP."""
+    acct = (acctno or "").strip()
+    keep = (keep_bank_id or "").strip()
+    if not acct or not keep:
+        return
+    (
+        _table(client, "vendor_bank")
+        .update({"is_default": False, "updated_at": datetime.now(_BKK).isoformat()})
+        .eq("acctno", acct)
+        .eq("is_default", True)
+        .neq("bank_id", keep)
+        .execute()
+    )
 
 
 def get_vendor_bank(client: Client, bank_id: str) -> dict[str, Any] | None:

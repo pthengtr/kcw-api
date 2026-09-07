@@ -15,6 +15,7 @@ from src.pay_notes.ai_vision import (
 )
 from src.pay_notes.config import get_pay_notes_settings
 from src.pay_notes.db import (
+    clear_other_default_banks,
     delete_reminder,
     get_pay_notes_supabase_client,
     get_reminder,
@@ -24,6 +25,8 @@ from src.pay_notes.db import (
     list_reminders,
     list_vendor_banks,
     patch_reminder,
+    update_vendor_bank,
+    vendor_bank_payload,
 )
 from src.pay_notes.net import is_tailscale_cg_nat
 from src.pay_notes.baht_text import baht_text
@@ -169,6 +172,16 @@ def _require_api(request: Request):
 
 
 class BankCreate(BaseModel):
+    acctno: str
+    bank_name: str
+    bank_account_name: str
+    bank_account_number: str
+    bank_branch: str | None = None
+    account_type: str = "OTHER"
+    is_default: bool = False
+
+
+class BankUpdate(BaseModel):
     acctno: str
     bank_name: str
     bank_account_name: str
@@ -379,25 +392,60 @@ def api_company_pay_accounts(request: Request):
     return list_company_pay_accounts()
 
 
+def _bank_row_or_error(body: BankCreate | BankUpdate):
+    try:
+        return vendor_bank_payload(
+            acctno=body.acctno,
+            bank_name=body.bank_name,
+            bank_account_name=body.bank_account_name,
+            bank_account_number=body.bank_account_number,
+            bank_branch=body.bank_branch,
+            account_type=body.account_type,
+            is_default=body.is_default,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
 @router.post("/api/banks")
 def api_bank_create(request: Request, body: BankCreate):
     _, err = _require_api(request)
     if err:
         return err
+    row = _bank_row_or_error(body)
+    if isinstance(row, JSONResponse):
+        return row
     client = get_pay_notes_supabase_client()
-    row = insert_vendor_bank(
-        client,
-        {
-            "acctno": body.acctno.strip(),
-            "bank_name": body.bank_name.strip(),
-            "bank_account_name": body.bank_account_name.strip(),
-            "bank_account_number": body.bank_account_number.strip(),
-            "bank_branch": (body.bank_branch or "").strip() or None,
-            "account_type": body.account_type.strip() or "OTHER",
-            "is_default": body.is_default,
-        },
-    )
-    return row
+    saved = insert_vendor_bank(client, row)
+    bank_id = str(saved.get("bank_id") or "")
+    if row.get("is_default") and bank_id:
+        clear_other_default_banks(client, row["acctno"], bank_id)
+        saved["is_default"] = True
+    return saved
+
+
+@router.patch("/api/banks")
+def api_bank_patch(request: Request, body: BankUpdate, bank_id: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
+    bank_id = (bank_id or "").strip()
+    if not bank_id:
+        return JSONResponse({"error": "bank_id required"}, status_code=400)
+    row = _bank_row_or_error(body)
+    if isinstance(row, JSONResponse):
+        return row
+    client = get_pay_notes_supabase_client()
+    existing = get_vendor_bank(client, bank_id)
+    if not existing or (existing.get("acctno") or "").strip() != row["acctno"]:
+        return JSONResponse({"error": "invalid bank for vendor"}, status_code=400)
+    saved = update_vendor_bank(client, bank_id, row)
+    if not saved:
+        return JSONResponse({"error": "invalid bank for vendor"}, status_code=400)
+    if row.get("is_default"):
+        clear_other_default_banks(client, row["acctno"], bank_id)
+        saved["is_default"] = True
+    return saved
 
 
 @router.get("/api/pending")
