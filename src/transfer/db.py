@@ -127,6 +127,27 @@ def list_shipments_by_transfers(
     return by
 
 
+def list_receipts_by_shipments(
+    client: Client, shipment_ids: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    ids = [s for s in shipment_ids if s]
+    if not ids:
+        return {}
+    resp = (
+        _table(client, "receipts")
+        .select("*")
+        .in_("shipment_id", ids)
+        .order("created_at")
+        .execute()
+    )
+    by: dict[str, list[dict[str, Any]]] = {sid: [] for sid in ids}
+    for row in _rows(resp):
+        sid = row.get("shipment_id")
+        if sid:
+            by.setdefault(sid, []).append(row)
+    return by
+
+
 def list_shipment_lines_by_shipments(
     client: Client, shipment_ids: list[str]
 ) -> dict[str, list[dict[str, Any]]]:

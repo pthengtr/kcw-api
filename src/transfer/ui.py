@@ -2196,12 +2196,25 @@ function isStatusDoneRow(r){
   // Complete orders, or short-ship waves where everything prepared so far was received.
   return r.status==="complete" || !!r.receive_caught_up;
 }
+function dateOnly(iso){
+  return (iso||"").slice(0,10) || "—";
+}
+function sortDoneByReceived(items){
+  return items.slice().sort((a,b)=>{
+    const ar = a.last_received_at || "";
+    const br = b.last_received_at || "";
+    if(ar !== br) return br.localeCompare(ar); // newest receive first; empty last
+    const aq = a.requested_at || a.created_at || "";
+    const bq = b.requested_at || b.created_at || "";
+    return bq.localeCompare(aq);
+  });
+}
 async function renderStatus(el){
   const isDone = statusFilter === "done";
   // Always load full list so short-ship "receive caught up" rows can appear under Done.
   const data = await api("/transfer/api/requests");
   let items = data.items||[];
-  if(isDone) items = items.filter(isStatusDoneRow);
+  if(isDone) items = sortDoneByReceived(items.filter(isStatusDoneRow));
   else items = items.filter(r=>!isStatusDoneRow(r)&&r.status!=="cancelled");
   const drafts = isDone ? [] : items.filter(r=>r.status==="draft");
   const active = isDone ? items : items.filter(r=>r.status!=="draft");
@@ -2215,7 +2228,7 @@ async function renderStatus(el){
       <td><code>${r.short_id}</code></td>
       <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
       <td class="num">${r.line_count||0}</td>
-      <td>${(r.created_at||"").slice(0,10)}</td>
+      <td>${dateOnly(r.created_at)}</td>
       <td class="row-actions" style="margin:0">
         <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
         <button class="btn btn-ghost" data-edit="${r.transfer_id}">แก้ไข</button>
@@ -2226,7 +2239,7 @@ async function renderStatus(el){
       <div class="item-card-head"><code>${r.short_id}</code><span class="dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
       <div class="item-card-grid">
         <div class="item-field num"><span class="lbl">รายการ</span><span class="val">${r.line_count||0}</span></div>
-        <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.created_at||"").slice(0,10)}</span></div>
+        <div class="item-field"><span class="lbl">วันที่</span><span class="val">${dateOnly(r.created_at)}</span></div>
       </div>
       <div class="item-card-actions">
         <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
@@ -2244,15 +2257,21 @@ async function renderStatus(el){
   if(!active.length && !drafts.length){
     el.innerHTML += `<div class="card"><div class="empty">ไม่มีรายการ</div></div>`;
   } else if(active.length){
+    const dateHeads = isDone
+      ? `<th>วันขอ</th><th>วันรับ</th>`
+      : `<th>วันที่</th>`;
     const activeTableRows = active.map(r=>{
       const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
       const mm = !!r.prep_recv_mismatch;
       const caught = !!r.receive_caught_up;
+      const dateCells = isDone
+        ? `<td>${dateOnly(r.requested_at||r.created_at)}</td><td>${dateOnly(r.last_received_at)}</td>`
+        : `<td>${dateOnly(r.requested_at||r.created_at)}</td>`;
       return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
         <td>${badge(r.status,r.from_branch,r.to_branch,mm,caught)}</td>
         <td>${pipeline(r.status,mm,caught)}</td>
-        <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
+        ${dateCells}
         <td class="row-actions" style="margin:0">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
           <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>
@@ -2265,11 +2284,15 @@ async function renderStatus(el){
       const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
       const mm = !!r.prep_recv_mismatch;
       const caught = !!r.receive_caught_up;
+      const dateFields = isDone
+        ? `<div class="item-field"><span class="lbl">วันขอ</span><span class="val">${dateOnly(r.requested_at||r.created_at)}</span></div>
+           <div class="item-field"><span class="lbl">วันรับ</span><span class="val">${dateOnly(r.last_received_at)}</span></div>`
+        : `<div class="item-field"><span class="lbl">วันที่</span><span class="val">${dateOnly(r.requested_at||r.created_at)}</span></div>`;
       return `<div class="item-card row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
         <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,mm,caught)}</div>
         <div class="item-card-grid">
           <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
-          <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.requested_at||r.created_at||"").slice(0,10)}</span></div>
+          ${dateFields}
         </div>
         ${pipeline(r.status,mm,caught)}
         <div class="item-card-actions">
@@ -2281,7 +2304,7 @@ async function renderStatus(el){
       </div>`;
     }).join("");
     el.innerHTML += `<div class="card">${dualView(
-      `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>วันที่</th><th></th></tr></thead><tbody>${activeTableRows}</tbody></table></div>`,
+      `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>ความคืบหน้า</th>${dateHeads}<th></th></tr></thead><tbody>${activeTableRows}</tbody></table></div>`,
       itemCards(activeCardRows)
     )}</div>`;
   }
