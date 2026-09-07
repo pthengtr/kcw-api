@@ -260,6 +260,10 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .step h3 { margin:0 0 .55rem; font-size:.98rem; }
 .step h3 .sub { font-weight:400; color:var(--muted); font-size:.82rem; }
 .grid-3 { display:grid; grid-template-columns:repeat(3, 1fr); gap:.65rem; }
+.bank-editor { margin-top:.45rem; }
+.bank-actions { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.4rem; }
+.bank-form { margin-top:.5rem; padding:.65rem; border:1px solid var(--line); border-radius:10px; background:var(--card); }
+.bank-form h4 { margin:0 0 .45rem; font-size:.88rem; }
 .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:.65rem; }
 label.lbl { display:block; font-size:.78rem; color:var(--muted); margin:0 0 .25rem; }
 .inp, .area {
@@ -728,15 +732,38 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               </div>
             </div>
             <p class="date-hint">แตะวันที่เพื่อเปิดปฏิทิน · ใช้ปี ค.ศ. เช่น 2026</p>
-            <details style="margin-top:.35rem">
-              <summary class="muted">เพิ่มบัญชีใหม่</summary>
-              <div class="grid-3" style="margin-top:.45rem">
-                <div><label class="lbl">ธนาคาร</label><input class="inp" id="newBankName"/></div>
-                <div><label class="lbl">ชื่อบัญชี</label><input class="inp" id="newAcctName"/></div>
-                <div><label class="lbl">เลขบัญชี</label><input class="inp" id="newAcctNo"/></div>
+            <div class="bank-editor" id="createBankEditor">
+              <div class="bank-actions">
+                <button type="button" class="btn sm ghost" id="btnAddBank">เพิ่มบัญชี</button>
+                <button type="button" class="btn sm ghost" id="btnEditBank" disabled>แก้ไขบัญชีที่เลือก</button>
               </div>
-              <button type="button" class="btn sm" id="btnAddBank" style="margin-top:.45rem">บันทึกบัญชี</button>
-            </details>
+              <div class="bank-form hidden" id="createBankForm">
+                <h4 id="createBankFormTitle">เพิ่มบัญชี</h4>
+                <div class="grid-3">
+                  <div><label class="lbl" for="newBankName">ธนาคาร</label><input class="inp" id="newBankName" placeholder="เช่น กสิกรไทย"/></div>
+                  <div><label class="lbl" for="newAcctName">ชื่อบัญชี</label><input class="inp" id="newAcctName"/></div>
+                  <div><label class="lbl" for="newAcctNo">เลขบัญชี</label><input class="inp" id="newAcctNo"/></div>
+                  <div><label class="lbl" for="newBankBranch">สาขา</label><input class="inp" id="newBankBranch"/></div>
+                  <div>
+                    <label class="lbl" for="newAcctType">ประเภทบัญชี</label>
+                    <select class="inp" id="newAcctType">
+                      <option value="SAVINGS">ออมทรัพย์</option>
+                      <option value="CHECKING">กระแสรายวัน</option>
+                      <option value="OTHER">อื่นๆ</option>
+                    </select>
+                  </div>
+                  <label class="toggle" style="align-self:end">
+                    <input type="checkbox" id="newBankDefault"/>
+                    ตั้งเป็นค่าเริ่มต้น
+                  </label>
+                </div>
+                <p class="date-hint">เช่น กสิกรไทย, ไทยพาณิชย์, กรุงไทย, กรุงเทพ, กรุงศรีอยุธยา, ออมสิน</p>
+                <div class="bank-actions">
+                  <button type="button" class="btn sm" id="btnSaveBank">บันทึกบัญชี</button>
+                  <button type="button" class="btn sm ghost" id="btnCancelBank">ยกเลิก</button>
+                </div>
+              </div>
+            </div>
             <div class="remark-form" id="noteRemarkWrap" style="margin-top:.65rem">
               <label class="lbl">หมายเหตุ (optional)</label>
               <div class="grid-2" style="margin-bottom:.35rem">
@@ -867,6 +894,38 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <div>
           <label class="lbl" for="editBankSelect">บัญชีธนาคารปลายทาง</label>
           <select class="inp" id="editBankSelect"><option value="">— เลือกบัญชี —</option></select>
+          <div class="bank-editor" id="editBankEditor">
+            <div class="bank-actions">
+              <button type="button" class="btn sm ghost" id="btnEditAddBank">เพิ่มบัญชี</button>
+              <button type="button" class="btn sm ghost" id="btnEditEditBank" disabled>แก้ไขบัญชีที่เลือก</button>
+            </div>
+            <div class="bank-form hidden" id="editBankForm">
+              <h4 id="editBankFormTitle">เพิ่มบัญชี</h4>
+              <div class="grid-3">
+                <div><label class="lbl" for="editNewBankName">ธนาคาร</label><input class="inp" id="editNewBankName" placeholder="เช่น กสิกรไทย"/></div>
+                <div><label class="lbl" for="editNewAcctName">ชื่อบัญชี</label><input class="inp" id="editNewAcctName"/></div>
+                <div><label class="lbl" for="editNewAcctNo">เลขบัญชี</label><input class="inp" id="editNewAcctNo"/></div>
+                <div><label class="lbl" for="editNewBankBranch">สาขา</label><input class="inp" id="editNewBankBranch"/></div>
+                <div>
+                  <label class="lbl" for="editNewAcctType">ประเภทบัญชี</label>
+                  <select class="inp" id="editNewAcctType">
+                    <option value="SAVINGS">ออมทรัพย์</option>
+                    <option value="CHECKING">กระแสรายวัน</option>
+                    <option value="OTHER">อื่นๆ</option>
+                  </select>
+                </div>
+                <label class="toggle" style="align-self:end">
+                  <input type="checkbox" id="editNewBankDefault"/>
+                  ตั้งเป็นค่าเริ่มต้น
+                </label>
+              </div>
+              <p class="date-hint">เช่น กสิกรไทย, ไทยพาณิชย์, กรุงไทย, กรุงเทพ, กรุงศรีอยุธยา, ออมสิน</p>
+              <div class="bank-actions">
+                <button type="button" class="btn sm" id="btnEditSaveBank">บันทึกบัญชี</button>
+                <button type="button" class="btn sm ghost" id="btnEditCancelBank">ยกเลิก</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div>
           <label class="lbl" for="editKbizDatetime">เตือนโอน KBIZ (optional)</label>
@@ -2519,12 +2578,113 @@ async function pickVendor(acctno, acctname) {
   }
 }
 
-async function loadBanks() {
-  if (!picked) return;
-  const rows = await api('/banks?acctno=' + encodeURIComponent(picked.acctno));
-  $('bankSelect').innerHTML = (rows.length ? '' : '<option value="">— เพิ่มบัญชี —</option>') + rows.map(b =>
-    `<option value="${esc(b.bank_id)}">${esc(b.bank_name)} · ${esc(b.bank_account_number)}${b.is_default?' ★':''}</option>`
+let createBanks = [];
+let editBanks = [];
+let createBankMode = 'add';
+let editBankMode = 'add';
+
+function bankLabel(b) {
+  return `${b.bank_name || ''} — ${b.bank_account_name || ''} · ${b.bank_account_number || ''}${b.is_default ? ' ★' : ''}`;
+}
+function renderBankOptions(select, rows, selectedId) {
+  const list = rows || [];
+  if (!list.length) {
+    select.innerHTML = '<option value="">— เพิ่มบัญชี —</option>';
+    return '';
+  }
+  select.innerHTML = list.map(b =>
+    `<option value="${esc(b.bank_id)}">${esc(bankLabel(b))}</option>`
   ).join('');
+  const preferred = selectedId && list.some(b => String(b.bank_id) === String(selectedId))
+    ? selectedId
+    : (list.find(b => b.is_default) || list[0]).bank_id;
+  select.value = preferred;
+  return preferred || '';
+}
+function syncBankEditBtn(select, btn) {
+  if (!btn) return;
+  btn.disabled = !(select && select.value);
+}
+function openBankForm(prefix, mode, row) {
+  const form = $(prefix === 'edit' ? 'editBankForm' : 'createBankForm');
+  const title = $(prefix === 'edit' ? 'editBankFormTitle' : 'createBankFormTitle');
+  const name = $(prefix === 'edit' ? 'editNewBankName' : 'newBankName');
+  const holder = $(prefix === 'edit' ? 'editNewAcctName' : 'newAcctName');
+  const number = $(prefix === 'edit' ? 'editNewAcctNo' : 'newAcctNo');
+  const branch = $(prefix === 'edit' ? 'editNewBankBranch' : 'newBankBranch');
+  const type = $(prefix === 'edit' ? 'editNewAcctType' : 'newAcctType');
+  const def = $(prefix === 'edit' ? 'editNewBankDefault' : 'newBankDefault');
+  if (prefix === 'edit') editBankMode = mode; else createBankMode = mode;
+  title.textContent = mode === 'edit' ? 'แก้ไขบัญชีที่เลือก' : 'เพิ่มบัญชี';
+  name.value = row ? (row.bank_name || '') : '';
+  holder.value = row ? (row.bank_account_name || '') : '';
+  number.value = row ? (row.bank_account_number || '') : '';
+  branch.value = row ? (row.bank_branch || '') : '';
+  type.value = row && ['CHECKING','SAVINGS','OTHER'].includes(row.account_type) ? row.account_type : 'OTHER';
+  def.checked = !!(row && row.is_default);
+  form.classList.remove('hidden');
+  name.focus();
+}
+function closeBankForm(prefix) {
+  $(prefix === 'edit' ? 'editBankForm' : 'createBankForm').classList.add('hidden');
+}
+function readBankForm(prefix) {
+  const name = $(prefix === 'edit' ? 'editNewBankName' : 'newBankName').value.trim();
+  const holder = $(prefix === 'edit' ? 'editNewAcctName' : 'newAcctName').value.trim();
+  const number = $(prefix === 'edit' ? 'editNewAcctNo' : 'newAcctNo').value.trim();
+  if (!name || !holder || !number) {
+    alert('กรอกธนาคาร ชื่อบัญชี และเลขบัญชี');
+    return null;
+  }
+  return {
+    bank_name: name,
+    bank_account_name: holder,
+    bank_account_number: number,
+    bank_branch: $(prefix === 'edit' ? 'editNewBankBranch' : 'newBankBranch').value.trim(),
+    account_type: $(prefix === 'edit' ? 'editNewAcctType' : 'newAcctType').value,
+    is_default: $(prefix === 'edit' ? 'editNewBankDefault' : 'newBankDefault').checked,
+  };
+}
+async function saveBankForm(prefix) {
+  const acctno = prefix === 'edit' ? (editTarget && editTarget.acctno) : (picked && picked.acctno);
+  if (!acctno) { alert('เลือกเจ้าหนี้ก่อน'); return; }
+  const select = $(prefix === 'edit' ? 'editBankSelect' : 'bankSelect');
+  const mode = prefix === 'edit' ? editBankMode : createBankMode;
+  const fields = readBankForm(prefix);
+  if (!fields) return;
+  const payload = { acctno, ...fields };
+  let saved;
+  if (mode === 'edit') {
+    if (!select.value) { alert('เลือกบัญชีที่จะแก้ไข'); return; }
+    saved = await api('/banks?bank_id=' + encodeURIComponent(select.value), {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+  } else {
+    saved = await api('/banks', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+  }
+  const keep = (saved && saved.bank_id) || select.value;
+  if (prefix === 'edit') await loadEditBanks(keep);
+  else await loadBanks(keep);
+  closeBankForm(prefix);
+}
+
+async function loadBanks(selectedId) {
+  if (!picked) return;
+  createBanks = await api('/banks?acctno=' + encodeURIComponent(picked.acctno));
+  renderBankOptions($('bankSelect'), createBanks, selectedId);
+  syncBankEditBtn($('bankSelect'), $('btnEditBank'));
+}
+async function loadEditBanks(selectedId) {
+  if (!editTarget) return;
+  editBanks = await api('/banks?acctno=' + encodeURIComponent(editTarget.acctno));
+  renderBankOptions($('editBankSelect'), editBanks, selectedId);
+  syncBankEditBtn($('editBankSelect'), $('btnEditEditBank'));
 }
 
 async function loadBills() {
@@ -2863,21 +3023,23 @@ $('btnProofDone').onclick = () => {
 };
 
 $('btnRefreshBills').onclick = () => loadBills();
-$('btnAddBank').onclick = async () => {
+$('bankSelect').addEventListener('change', () => {
+  syncBankEditBtn($('bankSelect'), $('btnEditBank'));
+  if (createBankMode === 'edit') closeBankForm('create');
+});
+$('btnAddBank').onclick = () => {
   if (!picked) { alert('เลือกเจ้าหนี้ก่อน'); return; }
-  try {
-    await api('/banks', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        acctno: picked.acctno,
-        bank_name: $('newBankName').value.trim(),
-        bank_account_name: $('newAcctName').value.trim(),
-        bank_account_number: $('newAcctNo').value.trim(),
-      })
-    });
-    await loadBanks();
-  } catch (e) { alert(e.message); }
+  openBankForm('create', 'add', null);
 };
+$('btnEditBank').onclick = () => {
+  const row = createBanks.find(b => String(b.bank_id) === String($('bankSelect').value));
+  if (!row) return;
+  openBankForm('create', 'edit', row);
+};
+$('btnSaveBank').onclick = async () => {
+  try { await saveBankForm('create'); } catch (e) { alert(e.message); }
+};
+$('btnCancelBank').onclick = () => closeBankForm('create');
 
 async function uploadBillFiles(files) {
   const noteno = $('noteno').value.trim();
@@ -3004,11 +3166,8 @@ async function openEditNote(key, returnTab) {
   $('editMsg').innerHTML = '';
   $('editBillThumbs').innerHTML = '';
   if ($('btnCancelNote')) $('btnCancelNote').classList.toggle('hidden', !WRITE_ENABLED);
-  const banks = await api('/banks?acctno=' + encodeURIComponent(row.acctno));
-  $('editBankSelect').innerHTML = banks.map(b =>
-    `<option value="${esc(b.bank_id)}">${esc(b.bank_name)} · ${esc(b.bank_account_number)}</option>`
-  ).join('');
-  if (rem.bank_id) $('editBankSelect').value = rem.bank_id;
+  closeBankForm('edit');
+  await loadEditBanks(rem.bank_id);
   await loadEditBills();
   const det = await api(`/notes${noteQs(row.acctno, row.noteno)}`);
   $('editBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
@@ -3070,6 +3229,23 @@ $('editDiscModeAmount').onclick = () => setEditDiscMode('amount');
 $('editDiscModePercent').onclick = () => setEditDiscMode('percent');
 $('editDiscInput').addEventListener('input', syncEditDiscPreview);
 $('btnRefreshEditBills').onclick = () => loadEditBills();
+$('editBankSelect').addEventListener('change', () => {
+  syncBankEditBtn($('editBankSelect'), $('btnEditEditBank'));
+  if (editBankMode === 'edit') closeBankForm('edit');
+});
+$('btnEditAddBank').onclick = () => {
+  if (!editTarget) return;
+  openBankForm('edit', 'add', null);
+};
+$('btnEditEditBank').onclick = () => {
+  const row = editBanks.find(b => String(b.bank_id) === String($('editBankSelect').value));
+  if (!row) return;
+  openBankForm('edit', 'edit', row);
+};
+$('btnEditSaveBank').onclick = async () => {
+  try { await saveBankForm('edit'); } catch (e) { alert(e.message); }
+};
+$('btnEditCancelBank').onclick = () => closeBankForm('edit');
 async function uploadEditBillFiles(files) {
   if (!editTarget) return;
   for (const file of files) {

@@ -56,6 +56,10 @@ def test_pay_notes_page_renders():
     assert "<th>เลขที่บิล</th>" in html
     assert 'id="kbizDatetime"' in html
     assert 'id="editKbizDatetime"' in html
+    assert 'id="btnAddBank"' in html
+    assert 'id="btnEditBank"' in html
+    assert 'id="btnEditAddBank"' in html
+    assert 'id="btnEditEditBank"' in html
     assert 'id="noteBillMonth"' in html
     assert 'id="editBillMonth"' in html
     assert 'id="pfBillMonth"' in html
@@ -795,3 +799,128 @@ def test_compose_remark_month_only():
     fields2 = resolve_remark_fields("BRC", remark="BRC-บิลเดือน 7/2025")
     assert fields2["bill_month"] == "2025-07-01"
     assert fields2["remark"] == "BRC-บิลเดือน 7/2025"
+
+
+def _pay_notes_ident():
+    from src.stock_check.auth import StockCheckIdentity
+
+    return StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+
+
+def test_api_create_bank_with_branch_type_default():
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    saved = {
+        "bank_id": "bank-1",
+        "acctno": "7GP",
+        "bank_name": "กสิกรไทย",
+        "bank_account_name": "ร้านทดสอบ",
+        "bank_account_number": "123-4",
+        "bank_branch": "สาขาสยาม",
+        "account_type": "SAVINGS",
+        "is_default": True,
+    }
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(_pay_notes_ident(), None)),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=object()),
+        patch("app.routers.pay_notes.insert_vendor_bank", return_value=saved) as insert_m,
+        patch("app.routers.pay_notes.clear_other_default_banks") as clear_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/banks",
+            json={
+                "acctno": "7GP",
+                "bank_name": "กสิกรไทย",
+                "bank_account_name": "ร้านทดสอบ",
+                "bank_account_number": "123-4",
+                "bank_branch": "สาขาสยาม",
+                "account_type": "SAVINGS",
+                "is_default": True,
+            },
+        )
+    assert res.status_code == 200
+    assert res.json()["bank_id"] == "bank-1"
+    payload = insert_m.call_args[0][1]
+    assert payload["bank_branch"] == "สาขาสยาม"
+    assert payload["account_type"] == "SAVINGS"
+    assert payload["is_default"] is True
+    clear_m.assert_called_once()
+    assert clear_m.call_args[0][1:] == ("7GP", "bank-1")
+
+
+def test_api_patch_bank_updates_and_rejects_other_vendor():
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    existing = {"bank_id": "bank-1", "acctno": "7GP"}
+    saved = {**existing, "bank_name": "ไทยพาณิชย์", "bank_account_number": "999"}
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(_pay_notes_ident(), None)),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=object()),
+        patch("app.routers.pay_notes.get_vendor_bank", return_value=existing),
+        patch("app.routers.pay_notes.update_vendor_bank", return_value=saved) as update_m,
+        patch("app.routers.pay_notes.clear_other_default_banks") as clear_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.patch(
+            "/pay-notes/api/banks",
+            params={"bank_id": "bank-1"},
+            json={
+                "acctno": "7GP",
+                "bank_name": "ไทยพาณิชย์",
+                "bank_account_name": "ร้านทดสอบ",
+                "bank_account_number": "999",
+                "account_type": "CHECKING",
+                "is_default": False,
+            },
+        )
+        denied = client.patch(
+            "/pay-notes/api/banks",
+            params={"bank_id": "bank-1"},
+            json={
+                "acctno": "OTHER",
+                "bank_name": "ไทยพาณิชย์",
+                "bank_account_name": "ร้านทดสอบ",
+                "bank_account_number": "999",
+            },
+        )
+    assert res.status_code == 200
+    assert res.json()["bank_name"] == "ไทยพาณิชย์"
+    assert update_m.call_args[0][1] == "bank-1"
+    assert update_m.call_args[0][2]["account_type"] == "CHECKING"
+    clear_m.assert_not_called()
+    assert denied.status_code == 400
+    assert denied.json()["error"] == "invalid bank for vendor"
+
+
+def test_clear_other_default_banks_clears_siblings():
+    from unittest.mock import MagicMock
+
+    from src.pay_notes.db import clear_other_default_banks
+
+    query = MagicMock()
+    query.update.return_value = query
+    query.eq.return_value = query
+    query.neq.return_value = query
+    query.execute.return_value = MagicMock(data=[])
+    client = MagicMock()
+    client.schema.return_value.from_.return_value = query
+
+    clear_other_default_banks(client, "7GP", "bank-1")
+
+    payload = query.update.call_args[0][0]
+    assert payload["is_default"] is False
+    query.eq.assert_any_call("acctno", "7GP")
+    query.eq.assert_any_call("is_default", True)
+    query.neq.assert_called_with("bank_id", "bank-1")
+    client.schema.assert_called_with("pay_note")
