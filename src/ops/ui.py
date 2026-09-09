@@ -669,6 +669,28 @@ load();
 """
 
 
+def obsolete_page() -> str:
+    return """<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ใบสั่งซื้อถูกยกเลิกแล้ว</title>
+<style>
+body { font-family: Prompt, system-ui, sans-serif; margin: 2rem; color: #1b2430; }
+h1 { font-size: 1.4rem; }
+p { line-height: 1.5; }
+code { font-size: 1rem; }
+</style>
+</head>
+<body>
+<h1>สถานะใบสั่งซื้อถูกยกเลิกแล้ว</h1>
+<p>ใช้บริการ <strong>โอนสินค้า</strong> แทน — พิมพ์ <code>โอนสินค้า</code> ใน LINE หรือกดจากเมนูบริการ</p>
+</body>
+</html>
+"""
+
+
 def page(*, user_name: str, site: str, probes: dict) -> str:
     site_key = (site or "syp").strip().lower()
     if site_key not in ("hq", "syp"):

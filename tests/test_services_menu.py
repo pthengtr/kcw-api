@@ -13,3 +13,5 @@ def test_menu_has_transfer_button():
     texts = [c["action"]["text"] for c in body if c.get("type") == "button"]
     assert "โอนสินค้า" in labels
     assert "โอนสินค้า" in texts
+    assert "สถานะใบสั่งซื้อ" not in labels
+    assert "สถานะใบสั่งซื้อ" not in texts

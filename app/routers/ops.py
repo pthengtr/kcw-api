@@ -10,7 +10,7 @@ from src.ops.iclow import list_iclow
 from src.ops.pi import get_pi_detail
 from src.ops.po import get_po_lines, health_probes, list_purchase_orders
 from src.ops.tf_prepare import attach_header_prepare, attach_line_prepare
-from src.ops.ui import APP, SESSION_COOKIE, page
+from src.ops.ui import APP, obsolete_page, SESSION_COOKIE
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
 router = APIRouter(prefix="/ops", tags=["kcw-ops"])
@@ -98,7 +98,7 @@ def _require(request: Request):
     ident = _identity_from_request(request)
     if ident is False:
         return None, HTMLResponse(
-            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ สถานะใบสั่งซื้อ ในแชท</p>",
+            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ โอนสินค้า ในแชท</p>",
             status_code=401,
         )
     if ident is None:
@@ -108,7 +108,6 @@ def _require(request: Request):
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, t: str | None = None, site: str | None = None):
-    settings = _settings()
     ident, err = _require(request)
     if err and t:
         try:
@@ -121,11 +120,8 @@ def home(request: Request, t: str | None = None, site: str | None = None):
         err = None
     if err:
         return err
-    html = page(
-        user_name=ident.display_name,
-        site=(site or "syp").lower(),
-        probes=health_probes(),
-    )
+    _ = site
+    html = obsolete_page()
     if t:
         redir = RedirectResponse(url="/ops/", status_code=303)
         redir.headers["Cache-Control"] = "no-store"

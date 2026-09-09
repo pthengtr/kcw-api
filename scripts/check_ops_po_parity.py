@@ -12,7 +12,7 @@ Sign-off checklist (manual + this script):
   [ ] HQ pending_receive / partially_received rows include rcvdno enrichment fields
   [ ] Account lookup for a known ACCTNO returns source apmas or po_only
   [ ] PI resolve for a known RCVDNO returns header+lines or clean 404 path
-  [ ] Operators open via LINE สถานะใบสั่งซื้อ / Tailscale :8790 (kcw-v2 /po unchanged)
+  [ ] PO status UI is retired — operators use LINE โอนสินค้า / transfer :8792 (kcw-v2 /po and kcw-ops obsolete)
 """
 
 from __future__ import annotations

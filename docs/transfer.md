@@ -118,11 +118,11 @@ Migrations: `20260829120000_transfer_schema.sql`, `20260830120000_transfer_direc
 
 - Rich menu cell: **โอนสินค้า**
 - Text: `menu` / `เมนู` / `services` → Flex services menu card
-- Legacy PO status: `สถานะใบสั่งซื้อ` (kcw-ops)
+- Retired PO status: `สถานะใบสั่งซื้อ` / `ใบสั่งซื้อ` now open transfer (kcw-ops UI is obsolete)
 
-## Parallel with old `/po`
+## Replaces old `/po`
 
-When using this app, ICLOW is stamped on submit at SYP when `to_branch=SYP` (Phase 1b) so old ICLOW/PO UI does not double-order. Old path remains available by operator choice.
+kcw-v2 `/po` and kcw-ops (`สถานะใบสั่งซื้อ`) are retired. Operators use this transfer service instead. ICLOW is stamped on submit at SYP when `to_branch=SYP` so leftover PO/ICLOW rows are not double-ordered.
 
 ## ICLOW Stamping
 
