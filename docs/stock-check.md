@@ -63,13 +63,14 @@ Everyday **Take N** batch uses weighted ABC + risk pools (see below).
 1. Take N → leased pick list with LOCATION1/2 + pool badge → open product → count  
 2. Variance 0 → auto complete + audit mirror  
 3. Variance ≠ 0 → pending draft → **another operator** audits and posts SA/3SA (maker-checker: creator cannot approve own draft; owner can edit pending count)  
-4. If system qty changes between count and audit, drift review shows intervening bills + current stock; auditor can still approve using `counted − live`  
-5. **จบงาน** releases unfinished leases immediately  
-6. Form submits show a full-screen busy spinner (blocks double-click)
+4. Auditor **ปฏิเสธ** must enter a reason. The same draft returns to the original checker as **รอตรวจสอบใหม่** (`recheck`). They open the original item, recount, then **ส่งอนุมัติใหม่**. History stores who rejected, the reason, and when (`draft_rejections`). Owner **ยกเลิก** still withdraws the draft.  
+5. If system qty changes between count and audit, drift review shows intervening bills + current stock; auditor can still approve using `counted − live`  
+6. **จบงาน** releases unfinished leases immediately  
+7. Form submits show a full-screen busy spinner (blocks double-click)
 
 ### Audit (maker-checker)
 
-Any logged-in stock-check user can open the audit queue. You **cannot approve your own** pending draft; use **แก้ไข** to fix your count or **ยกเลิก** to withdraw. Another operator approves or rejects.
+Any logged-in stock-check user can open the audit queue. You **cannot approve your own** pending draft; use **แก้ไข** to fix your count or **ยกเลิก** to withdraw. Another operator approves, or rejects with a reason and sends it back for recount. After recount the item waits for approval again — the original checker still cannot approve their own draft.
 
 ### Work KPI (backend)
 

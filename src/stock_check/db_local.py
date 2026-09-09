@@ -97,6 +97,19 @@ CREATE TABLE IF NOT EXISTS work_events (
 CREATE INDEX IF NOT EXISTS work_events_user_created_idx
   ON work_events(line_user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS draft_rejections (
+  id TEXT PRIMARY KEY,
+  draft_id TEXT NOT NULL,
+  bcode TEXT NOT NULL,
+  rejected_by_line_user_id TEXT NOT NULL,
+  rejected_by_name TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  rejected_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS draft_rejections_draft_idx
+  ON draft_rejections(draft_id, rejected_at DESC);
+
 CREATE TABLE IF NOT EXISTS work_outbox (
   id TEXT PRIMARY KEY,
   payload_json TEXT NOT NULL,
@@ -442,15 +455,25 @@ class LocalStore:
             return {r["bcode"] for r in rows}
 
     def get_pending_draft_for_bcode(self, bcode: str) -> dict[str, Any] | None:
+        return self._get_draft_for_bcode(bcode, statuses=("pending",))
+
+    def get_open_draft_for_bcode(self, bcode: str) -> dict[str, Any] | None:
+        """Pending approval or sent back for recount — still owns the SKU."""
+        return self._get_draft_for_bcode(bcode, statuses=("pending", "recheck"))
+
+    def _get_draft_for_bcode(
+        self, bcode: str, *, statuses: tuple[str, ...]
+    ) -> dict[str, Any] | None:
+        placeholders = ",".join("?" for _ in statuses)
         with self.connect() as conn:
             row = conn.execute(
-                """
+                f"""
                 SELECT * FROM drafts
-                WHERE bcode = ? AND status = 'pending'
+                WHERE bcode = ? AND status IN ({placeholders})
                 ORDER BY created_at
                 LIMIT 1
                 """,
-                (bcode,),
+                (bcode, *statuses),
             ).fetchone()
             return dict(row) if row else None
 
@@ -470,15 +493,93 @@ class LocalStore:
             return dict(row) if row else None
 
     def list_pending_drafts(self) -> list[dict[str, Any]]:
+        return self._list_drafts_by_status("pending")
+
+    def list_recheck_drafts(
+        self, *, operator_line_user_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        return self._list_drafts_by_status(
+            "recheck", operator_line_user_id=operator_line_user_id
+        )
+
+    def open_bcodes(self) -> set[str]:
         with self.connect() as conn:
             rows = conn.execute(
-                """
-                SELECT * FROM drafts
-                WHERE status = 'pending'
-                ORDER BY created_at
-                """
+                "SELECT bcode FROM drafts WHERE status IN ('pending', 'recheck')"
             ).fetchall()
+            return {r["bcode"] for r in rows}
+
+    def _list_drafts_by_status(
+        self,
+        status: str,
+        *,
+        operator_line_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM drafts WHERE status = ?"
+        params: list[Any] = [status]
+        if operator_line_user_id:
+            sql += " AND operator_line_user_id = ?"
+            params.append(operator_line_user_id)
+        sql += " ORDER BY created_at"
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
+
+    def add_rejection(
+        self,
+        *,
+        draft_id: str,
+        bcode: str,
+        rejected_by_line_user_id: str,
+        rejected_by_name: str,
+        reason: str,
+        rejected_at: float | None = None,
+    ) -> str:
+        item_id = str(uuid.uuid4())
+        ts = rejected_at if rejected_at is not None else time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO draft_rejections (
+                  id, draft_id, bcode, rejected_by_line_user_id,
+                  rejected_by_name, reason, rejected_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item_id,
+                    draft_id,
+                    bcode,
+                    rejected_by_line_user_id,
+                    rejected_by_name,
+                    reason,
+                    ts,
+                ),
+            )
+        return item_id
+
+    def list_rejections(self, draft_id: str) -> list[dict[str, Any]]:
+        grouped = self.list_rejections_for_drafts([draft_id])
+        return grouped.get(draft_id, [])
+
+    def list_rejections_for_drafts(
+        self, draft_ids: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not draft_ids:
+            return {}
+        placeholders = ",".join("?" for _ in draft_ids)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM draft_rejections
+                WHERE draft_id IN ({placeholders})
+                ORDER BY rejected_at DESC
+                """,
+                draft_ids,
+            ).fetchall()
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            grouped.setdefault(row["draft_id"], []).append(dict(row))
+        return grouped
 
     def get_draft(self, draft_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
