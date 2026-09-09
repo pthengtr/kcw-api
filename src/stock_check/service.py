@@ -67,8 +67,7 @@ class StockCheckService:
         self.expire()
         count = max(1, min(int(count), 50))
         held = self.store.active_leased_bcodes()
-        pending = {d["bcode"] for d in self.store.list_pending_drafts()}
-        exclude = held | pending
+        exclude = held | self.store.open_bcodes()
         now = time.time()
         audits = self.store.get_local_audits()
         picked = pick_daily_products(
@@ -157,28 +156,44 @@ class StockCheckService:
             card["sales_days_90"] = lease["sales_days_90"]
 
     def _assert_can_submit(self, *, session_id: str, bcode: str) -> None:
-        if self.store.get_pending_draft_for_bcode(bcode):
+        open_draft = self.store.get_open_draft_for_bcode(bcode)
+        if open_draft:
+            if open_draft["status"] == "recheck":
+                raise ValueError("รายการนี้รอตรวจสอบใหม่ — เปิดจากหน้าแรกเพื่อตรวจซ้ำ")
             raise ValueError("สินค้านี้รออนุมัติอยู่แล้ว — รอผู้อนุมัติก่อน")
         lease = self.store.get_active_lease_for_bcode(bcode)
         if lease and lease["session_id"] != session_id:
             raise ValueError("มีพนักงานคนอื่นกำลังนับสินค้านี้อยู่")
 
     def _submission_flags(self, bcode: str, session_id: str | None) -> dict[str, Any]:
-        pending = self.store.get_pending_draft_for_bcode(bcode)
+        open_draft = self.store.get_open_draft_for_bcode(bcode)
         lease = self.store.get_active_lease_for_bcode(bcode)
         leased_elsewhere = bool(
             lease and session_id and lease["session_id"] != session_id
         )
-        has_pending = pending is not None
-        blocked = has_pending or leased_elsewhere
+        has_pending = bool(open_draft and open_draft["status"] == "pending")
+        has_recheck = bool(open_draft and open_draft["status"] == "recheck")
+        owner_id = str((open_draft or {}).get("operator_line_user_id") or "").strip()
+        session = self.store.get_session(session_id) if session_id else None
+        viewer_id = str((session or {}).get("line_user_id") or "").strip()
+        is_recheck_owner = has_recheck and viewer_id and viewer_id == owner_id
+        blocked = has_pending or has_recheck or leased_elsewhere
         reason = None
-        if has_pending:
+        recheck_href = None
+        if has_recheck and is_recheck_owner:
+            reason = "รายการนี้ถูกส่งกลับให้ตรวจใหม่ — เปิดรายการเดิมเพื่อตรวจซ้ำ"
+            recheck_href = f"/stock-check/draft/{open_draft['id']}/recheck"
+        elif has_recheck:
+            reason = "รอตรวจสอบใหม่โดยคนตรวจเดิม"
+        elif has_pending:
             reason = "สินค้านี้รออนุมัติอยู่แล้ว — รอผู้อนุมัติก่อน"
         elif leased_elsewhere:
             reason = "มีพนักงานคนอื่นกำลังนับสินค้านี้อยู่"
         return {
             "leased_elsewhere": leased_elsewhere,
-            "has_pending_draft": has_pending,
+            "has_pending_draft": has_pending or has_recheck,
+            "has_recheck_draft": has_recheck,
+            "recheck_href": recheck_href,
             "submit_blocked": blocked,
             "block_reason": reason,
         }
@@ -194,6 +209,14 @@ class StockCheckService:
             data["last_audited_by"] = None
             data["last_outcome"] = None
         return data
+
+    def attach_rejections(self, drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        grouped = self.store.list_rejections_for_drafts(
+            [str(d.get("id") or "") for d in drafts if d.get("id")]
+        )
+        for draft in drafts:
+            draft["rejections"] = grouped.get(str(draft.get("id") or ""), [])
+        return drafts
 
     def attach_product_model(self, drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         codes = {str(d.get("bcode") or "").strip() for d in drafts}
@@ -583,26 +606,135 @@ class StockCheckService:
             "new_qtyoh2": posted.new_qtyoh2,
         }
 
-    def reject_draft(self, *, draft_id: str, approver_session: dict[str, Any]) -> None:
+    def reject_draft(
+        self,
+        *,
+        draft_id: str,
+        approver_session: dict[str, Any],
+        reason: str | None = None,
+    ) -> dict[str, Any]:
         draft = self.store.get_draft(draft_id)
-        if not draft or draft["status"] != "pending":
-            raise ValueError("draft not pending")
+        if not draft:
+            raise ValueError("draft not found")
         is_owner = self._line_id(approver_session) == str(draft.get("operator_line_user_id") or "").strip()
-        if not is_owner:
-            self._assert_can_approve(draft, approver_session)
+        if is_owner:
+            self._withdraw_draft(draft, session=approver_session)
+            return {"ok": True, "status": "rejected"}
+        if draft["status"] != "pending":
+            raise ValueError("draft not pending")
 
+        self._assert_can_approve(draft, approver_session)
+        text = self._clean_reject_reason(reason)
+        now = time.time()
+        self.store.add_rejection(
+            draft_id=draft_id,
+            bcode=draft["bcode"],
+            rejected_by_line_user_id=self._line_id(approver_session),
+            rejected_by_name=str(approver_session.get("display_name") or ""),
+            reason=text,
+            rejected_at=now,
+        )
         self.store.update_draft(
             draft_id,
-            status="rejected",
+            status="recheck",
             approver_line_user_id=self._line_id(approver_session),
             approver_name=approver_session["display_name"],
-            completed_at=time.time(),
+            completed_at=None,
+            post_error=None,
         )
         self._record_work(
             approver_session,
             "audit_reject",
             bcode=draft["bcode"],
             draft_id=draft_id,
+            variance=float(draft.get("variance") or 0),
+            source=draft.get("source"),
+        )
+        return {"ok": True, "status": "recheck"}
+
+    def resubmit_recheck(
+        self,
+        *,
+        draft_id: str,
+        session: dict[str, Any],
+        counted_qty: float | None = None,
+        difference: float | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        draft = self.store.get_draft(draft_id)
+        if not draft:
+            raise ValueError("draft not found")
+        if draft["status"] != "recheck":
+            raise ValueError("draft not waiting for recheck")
+        if self._line_id(session) != str(draft.get("operator_line_user_id") or "").strip():
+            raise PermissionError("only original checker can recount")
+
+        product = get_product_by_bcode(draft["bcode"])
+        if not product:
+            raise ValueError("product not found")
+
+        live_qty = float(product.qtyoh2)
+        if difference is not None:
+            counted = live_qty + float(difference)
+        elif counted_qty is not None:
+            counted = float(counted_qty)
+        else:
+            raise ValueError("provide counted_qty or difference")
+
+        variance = counted - live_qty
+        self.store.update_draft(
+            draft_id,
+            counted_qty=counted,
+            variance=variance,
+            system_qty=live_qty,
+            notes=notes if notes is not None else draft.get("notes"),
+            status="pending",
+            post_error=None,
+            completed_at=None,
+        )
+        self._record_work(
+            session,
+            "count_recheck",
+            bcode=draft["bcode"],
+            draft_id=draft_id,
+            variance=variance,
+            source=draft.get("source"),
+        )
+        return {
+            "ok": True,
+            "status": "pending",
+            "draft_id": draft_id,
+            "counted_qty": counted,
+            "variance": variance,
+            "system_qty": live_qty,
+        }
+
+    @staticmethod
+    def _clean_reject_reason(reason: str | None) -> str:
+        text = str(reason or "").strip()
+        if not text:
+            raise ValueError("กรุณาใส่เหตุผลที่ปฏิเสธ")
+        if len(text) > 300:
+            raise ValueError("เหตุผลยาวเกินไป")
+        return text
+
+    def _withdraw_draft(self, draft: dict[str, Any], *, session: dict[str, Any]) -> None:
+        if draft["status"] not in {"pending", "recheck"}:
+            raise ValueError(f"draft status is {draft['status']}")
+        if self._line_id(session) != str(draft.get("operator_line_user_id") or "").strip():
+            raise PermissionError("only owner can withdraw draft")
+        self.store.update_draft(
+            draft["id"],
+            status="rejected",
+            approver_line_user_id=self._line_id(session),
+            approver_name=session["display_name"],
+            completed_at=time.time(),
+        )
+        self._record_work(
+            session,
+            "audit_reject",
+            bcode=draft["bcode"],
+            draft_id=draft["id"],
             variance=float(draft.get("variance") or 0),
             source=draft.get("source"),
         )

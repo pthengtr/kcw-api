@@ -534,6 +534,80 @@ def test_cross_user_approve_allowed(tmp_path: Path, monkeypatch):
     assert result["status"] == "posted"
 
 
+def test_auditor_reject_sends_back_for_recheck(tmp_path: Path):
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "recheck.sqlite3")
+    draft_id = store.create_draft(_pending_draft())
+    svc = StockCheckService(store=store)
+    checker = {"line_user_id": "U2", "display_name": "Bob", "id": "s2"}
+
+    with pytest.raises(ValueError, match="เหตุผล"):
+        svc.reject_draft(draft_id=draft_id, approver_session=checker, reason="  ")
+
+    result = svc.reject_draft(
+        draft_id=draft_id,
+        approver_session=checker,
+        reason="นับไม่ตรงชั้น",
+    )
+    assert result["status"] == "recheck"
+    draft = store.get_draft(draft_id)
+    assert draft["status"] == "recheck"
+    assert draft["operator_line_user_id"] == "U1"
+    assert draft["completed_at"] is None
+    assert store.open_bcodes() == {"P1"}
+    assert store.list_pending_drafts() == []
+    assert store.list_recheck_drafts(operator_line_user_id="U1")[0]["id"] == draft_id
+
+    history = store.list_rejections(draft_id)
+    assert len(history) == 1
+    assert history[0]["rejected_by_name"] == "Bob"
+    assert history[0]["reason"] == "นับไม่ตรงชั้น"
+    assert history[0]["rejected_at"]
+
+
+def test_recheck_resubmit_returns_to_approval(tmp_path: Path, monkeypatch):
+    from src.stock_check.parts9 import ProductRow
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "recheck2.sqlite3")
+    draft_id = store.create_draft(_pending_draft())
+    svc = StockCheckService(store=store)
+    checker = {"line_user_id": "U2", "display_name": "Bob", "id": "s2"}
+    owner = {"line_user_id": "U1", "display_name": "Alice", "id": "s1"}
+    other = {"line_user_id": "U3", "display_name": "Cara", "id": "s3"}
+    svc.reject_draft(draft_id=draft_id, approver_session=checker, reason="ของไม่ตรง")
+
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: ProductRow(
+            bcode="P1",
+            descr="Test",
+            pcode="",
+            mcode="",
+            location1="A1",
+            location2="",
+            qtyoh2=10.0,
+            ui1="",
+            mtp2=1.0,
+            canceled="N",
+        ),
+    )
+    with pytest.raises(PermissionError, match="original checker"):
+        svc.resubmit_recheck(draft_id=draft_id, session=other, counted_qty=9.0)
+
+    result = svc.resubmit_recheck(draft_id=draft_id, session=owner, counted_qty=7.0)
+    assert result["status"] == "pending"
+    assert result["variance"] == pytest.approx(-3.0)
+    updated = store.get_draft(draft_id)
+    assert updated["status"] == "pending"
+    assert updated["counted_qty"] == 7.0
+    assert store.list_rejections(draft_id)[0]["reason"] == "ของไม่ตรง"
+
+    with pytest.raises(PermissionError, match="own draft"):
+        svc.approve_draft(draft_id=draft_id, approver_session=owner)
+
+
 def test_owner_can_edit_pending_draft(tmp_path: Path, monkeypatch):
     from src.stock_check.parts9 import ProductRow
     from src.stock_check.service import StockCheckService

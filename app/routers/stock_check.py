@@ -131,10 +131,16 @@ def home(request: Request, t: str | None = None):
     flash = request.query_params.get("ok")
     error = request.query_params.get("err")
     items = service.leased_list(user["id"])
+    rechecks = service.attach_rejections(
+        service.store.list_recheck_drafts(
+            operator_line_user_id=str(user.get("line_user_id") or "").strip()
+        )
+    )
     return HTMLResponse(
         ui.home_page(
             user=user,
             items=items,
+            rechecks=rechecks,
             flash=flash,
             error=error,
             browser_entry_url=_browser_entry_url(user),
@@ -340,7 +346,9 @@ def approve_list(request: Request):
     user, err = _require_user(request, service)
     if err:
         return err
-    drafts = service.attach_product_model(service.store.list_pending_drafts())
+    drafts = service.attach_rejections(
+        service.attach_product_model(service.store.list_pending_drafts())
+    )
     return HTMLResponse(
         ui.approve_page(
             user=user,
@@ -407,17 +415,90 @@ def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
         return RedirectResponse(url=f"/stock-check/approve?err={_q(exc)}", status_code=303)
 
 
+def _parse_count_fields(
+    *,
+    counted_qty: str,
+    difference: str,
+    diff_amount: str,
+    diff_dir: str,
+) -> dict:
+    kwargs: dict = {}
+    counted_raw = counted_qty.strip().replace(",", ".")
+    amount_raw = diff_amount.strip().replace(",", ".")
+    diff_raw = difference.strip().replace(",", ".")
+    if counted_raw:
+        kwargs["counted_qty"] = float(counted_raw)
+    elif amount_raw:
+        abs_amt = abs(float(amount_raw))
+        sign = -1.0 if (diff_dir or "minus").lower() in {"minus", "-", "dec", "ลด"} else 1.0
+        kwargs["difference"] = sign * abs_amt
+    elif diff_raw:
+        kwargs["difference"] = float(diff_raw)
+    else:
+        raise ValueError("กรอกจำนวนนับหรือส่วนต่าง")
+    return kwargs
+
+
+@router.get("/reject/{draft_id}", response_class=HTMLResponse)
+def reject_page(request: Request, draft_id: str):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    draft = service.store.get_draft(draft_id)
+    if not draft or draft["status"] != "pending":
+        return RedirectResponse(
+            url=f"/stock-check/approve?err={_q('ไม่พบรายการรออนุมัติ')}",
+            status_code=303,
+        )
+    if str(draft.get("operator_line_user_id") or "").strip() == str(user.get("line_user_id") or "").strip():
+        return RedirectResponse(
+            url=f"/stock-check/approve?err={_q('ยกเลิกรายการของตัวเองได้จากคิวอนุมัติ')}",
+            status_code=303,
+        )
+    service.attach_rejections([draft])
+    service.attach_product_model([draft])
+    return HTMLResponse(
+        ui.reject_page(
+            user=user,
+            draft=draft,
+            flash=request.query_params.get("ok"),
+            error=request.query_params.get("err"),
+            browser_entry_url=_browser_entry_url(user),
+        )
+    )
+
+
 @router.post("/reject/{draft_id}")
-def reject_one(request: Request, draft_id: str):
+def reject_one(request: Request, draft_id: str, reason: str = Form("")):
     service = _service()
     user, err = _require_user(request, service)
     if err:
         return err
     try:
-        service.reject_draft(draft_id=draft_id, approver_session=user)
+        result = service.reject_draft(
+            draft_id=draft_id,
+            approver_session=user,
+            reason=reason,
+        )
         _flush_outboxes(service)
-        return RedirectResponse(url=f"/stock-check/approve?ok={_q('ปฏิเสธแล้ว')}", status_code=303)
+        if result.get("status") == "recheck":
+            msg = "ส่งกลับให้ตรวจใหม่แล้ว"
+            return RedirectResponse(url=f"/stock-check/approve?ok={_q(msg)}", status_code=303)
+        return RedirectResponse(url=f"/stock-check/?ok={_q('ยกเลิกแล้ว')}", status_code=303)
     except Exception as exc:  # noqa: BLE001
+        draft = service.store.get_draft(draft_id)
+        owner = str((draft or {}).get("operator_line_user_id") or "").strip()
+        if draft and draft.get("status") == "pending" and owner != str(user.get("line_user_id") or "").strip():
+            return RedirectResponse(
+                url=f"/stock-check/reject/{draft_id}?err={_q(exc)}",
+                status_code=303,
+            )
+        if draft and draft.get("status") == "recheck":
+            return RedirectResponse(
+                url=f"/stock-check/draft/{draft_id}/recheck?err={_q(exc)}",
+                status_code=303,
+            )
         return RedirectResponse(url=f"/stock-check/approve?err={_q(exc)}", status_code=303)
 
 
@@ -482,6 +563,69 @@ def edit_draft_submit(
     except Exception as exc:  # noqa: BLE001
         return RedirectResponse(
             url=f"/stock-check/draft/{draft_id}/edit?err={_q(exc)}",
+            status_code=303,
+        )
+
+
+@router.get("/draft/{draft_id}/recheck", response_class=HTMLResponse)
+def recheck_draft_page(request: Request, draft_id: str):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    draft = service.store.get_draft(draft_id)
+    if not draft or draft["status"] != "recheck":
+        return HTMLResponse("ไม่พบรายการหรือไม่อยู่ในสถานะรอตรวจสอบใหม่", status_code=404)
+    if str(draft.get("operator_line_user_id") or "").strip() != str(user.get("line_user_id") or "").strip():
+        return HTMLResponse("ตรวจใหม่ได้เฉพาะคนตรวจเดิม", status_code=403)
+    product = service.product_detail(draft["bcode"])
+    if not product:
+        return HTMLResponse("ไม่พบสินค้า", status_code=404)
+    service.attach_rejections([draft])
+    return HTMLResponse(
+        ui.recheck_page(
+            user=user,
+            draft=draft,
+            product=product,
+            flash=request.query_params.get("ok"),
+            error=request.query_params.get("err"),
+            browser_entry_url=_browser_entry_url(user),
+        )
+    )
+
+
+@router.post("/draft/{draft_id}/recheck")
+def recheck_draft_submit(
+    request: Request,
+    draft_id: str,
+    counted_qty: str = Form(""),
+    difference: str = Form(""),
+    diff_amount: str = Form(""),
+    diff_dir: str = Form(""),
+    notes: str = Form(""),
+):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    try:
+        kwargs = _parse_count_fields(
+            counted_qty=counted_qty,
+            difference=difference,
+            diff_amount=diff_amount,
+            diff_dir=diff_dir,
+        )
+        result = service.resubmit_recheck(
+            draft_id=draft_id,
+            session=user,
+            notes=notes or None,
+            **kwargs,
+        )
+        msg = f"ส่งอนุมัติใหม่แล้ว ต่าง {result['variance']:+.3g}"
+        return RedirectResponse(url=f"/stock-check/?ok={_q(msg)}", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(
+            url=f"/stock-check/draft/{draft_id}/recheck?err={_q(exc)}",
             status_code=303,
         )
 

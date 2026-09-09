@@ -266,9 +266,11 @@ def page(
       background: #1e293b; box-shadow: none;
     }}
     button.warn {{ background: var(--warn); box-shadow: none; }}
-    button.danger {{
+    button.danger, a.btn.danger {{
+      display: block;
       background: linear-gradient(180deg, #d92d20, var(--danger));
       box-shadow: none;
+      color: #fff; text-decoration: none; text-align: center;
     }}
     button.ghost {{
       background: #fff; color: var(--ink);
@@ -279,7 +281,7 @@ def page(
       display: block; font-size: .84rem; font-weight: 500;
       color: var(--muted); margin: 12px 0 6px;
     }}
-    input[type=text], input[type=number], input[type=search], input[type=file] {{
+    input[type=text], input[type=number], input[type=search], input[type=file], textarea {{
       width: 100%; padding: 14px 14px; border-radius: 14px;
       border: 1px solid var(--line); font-size: 1.05rem;
       background: #fff; font-family: inherit; color: var(--ink);
@@ -631,6 +633,22 @@ def page(
 </html>"""
 
 
+def _rejection_history_html(rejections: list[dict[str, Any]] | None) -> str:
+    rows = list(rejections or [])
+    if not rows:
+        return ""
+    bits = ["<div class='section-title' style='margin-top:12px'>ประวัติส่งกลับ</div>"]
+    for row in rows:
+        bits.append(
+            "<div class='flash err' style='margin-top:8px'>"
+            f"<div>{escape(row.get('reason') or '')}</div>"
+            f"<div class='muted' style='margin-top:4px'>"
+            f"{escape(row.get('rejected_by_name') or '')} · {_fmt_ts(row.get('rejected_at'))}"
+            "</div></div>"
+        )
+    return "".join(bits)
+
+
 def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> str:
     loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
     badge = _pool_badge_html(item)
@@ -678,6 +696,7 @@ def home_page(
     *,
     user: dict[str, Any],
     items: list[dict[str, Any]],
+    rechecks: list[dict[str, Any]] | None = None,
     flash: str | None = None,
     error: str | None = None,
     browser_entry_url: str | None = None,
@@ -708,7 +727,29 @@ def home_page(
         </div>
         """
     )
-    if not items:
+    waiting = list(rechecks or [])
+    if waiting:
+        bits.append(f"<div class='section-title'>รอตรวจสอบใหม่ · {len(waiting)}</div>")
+        for draft in waiting:
+            latest = (draft.get("rejections") or [None])[0] or {}
+            reason = latest.get("reason") or "ถูกส่งกลับให้ตรวจซ้ำ"
+            bits.append(
+                f"""
+                <a class="item card" href="/stock-check/draft/{escape(draft['id'])}/recheck">
+                  <div class="row">
+                    <span class="pill warn">รอตรวจสอบใหม่</span>
+                  </div>
+                  <div class="bcode" style="margin-top:8px">{escape(draft['bcode'])}</div>
+                  <div class="descr">{escape(draft.get('descr') or '')}</div>
+                  <div class="muted" style="margin-top:8px">{escape(reason)}</div>
+                  <div class="meta-row">
+                    <span>{escape(latest.get('rejected_by_name') or '')} · {_fmt_ts(latest.get('rejected_at'))}</span>
+                    <span>เปิดรายการเดิม →</span>
+                  </div>
+                </a>
+                """
+            )
+    if not items and not waiting:
         bits.append(
             """
             <div class="card empty">
@@ -717,7 +758,7 @@ def home_page(
             </div>
             """
         )
-    else:
+    elif items:
         bits.append(f"<div class='section-title'>คิวของฉัน · {len(items)} รายการ</div>")
     for item in items:
         bits.append(
@@ -750,7 +791,16 @@ def product_page(
     block_reason = item.get("block_reason") or ""
     block_banner = ""
     if blocked and block_reason:
-        block_banner = f"<div class='flash err' style='margin-bottom:12px'>{escape(block_reason)}</div>"
+        link = ""
+        href = item.get("recheck_href")
+        if href:
+            link = (
+                f"<a href='{escape(href)}' style='display:inline-block;margin-top:8px;"
+                f"font-weight:600'>เปิดรายการเดิม →</a>"
+            )
+        block_banner = (
+            f"<div class='flash err' style='margin-bottom:12px'>{escape(block_reason)}{link}</div>"
+        )
     disabled_attr = " disabled" if blocked else ""
     body = f"""
     <div class="card soft">
@@ -960,7 +1010,9 @@ def ondemand_page(
         bits.append("<div class='section-title'>ผลค้นหา</div>")
     for item in results or []:
         flags: list[str] = []
-        if item.get("has_pending_draft"):
+        if item.get("has_recheck_draft"):
+            flags.append("<span class='pill warn'>รอตรวจสอบใหม่</span>")
+        elif item.get("has_pending_draft"):
             flags.append("<span class='pill warn'>รออนุมัติ</span>")
         elif item.get("leased_elsewhere"):
             flags.append("<span class='pill warn'>มีคนถืออยู่</span>")
@@ -1007,10 +1059,12 @@ def approve_page(
         var_color = "var(--danger)" if var < 0 else "var(--ok)"
         is_own = uid == str(d.get("operator_line_user_id") or "").strip()
         card_class = "card own-draft" if is_own else "card"
+        history = _rejection_history_html(d.get("rejections"))
         actions = ""
         if is_own:
             actions = f"""
               <div class='muted' style='margin-top:10px'>รายการของคุณ — ต้องให้เพื่อนร่วมงานอนุมัติ</div>
+              {history}
               <div class="grid2" style="margin-top:12px">
                 <a class="secondary" href="/stock-check/draft/{escape(d['id'])}/edit" style="text-align:center;padding:12px;border-radius:12px;text-decoration:none">แก้ไข</a>
                 <form method="post" action="/stock-check/reject/{escape(d['id'])}">
@@ -1020,12 +1074,13 @@ def approve_page(
             """
         else:
             actions = f"""
-              <form method="post" action="/stock-check/approve/{escape(d['id'])}" style="margin-top:12px">
-                <div class="grid2">
+              {history}
+              <div class="grid2" style="margin-top:12px">
+                <form method="post" action="/stock-check/approve/{escape(d['id'])}">
                   <button type="submit">อนุมัติ SA</button>
-                  <button class="danger" formaction="/stock-check/reject/{escape(d['id'])}" type="submit">ปฏิเสธ</button>
-                </div>
-              </form>
+                </form>
+                <a class="btn danger" href="/stock-check/reject/{escape(d['id'])}">ปฏิเสธ</a>
+              </div>
             """
         bits.append(
             f"""
@@ -1051,6 +1106,113 @@ def approve_page(
         user=user,
         nav="/approve",
         eyebrow="Audit",
+        browser_entry_url=browser_entry_url,
+    )
+
+
+def reject_page(
+    *,
+    user: dict[str, Any],
+    draft: dict[str, Any],
+    flash: str | None = None,
+    error: str | None = None,
+    browser_entry_url: str | None = None,
+) -> str:
+    loc = " / ".join(x for x in [draft.get("location1"), draft.get("location2")] if x) or "-"
+    var = float(draft.get("variance") or 0)
+    var_color = "var(--danger)" if var < 0 else "var(--ok)"
+    bits: list[str] = []
+    if flash:
+        bits.append(f"<div class='flash'>{escape(flash)}</div>")
+    if error:
+        bits.append(f"<div class='flash err'>{escape(error)}</div>")
+    body = f"""
+    <div class="card">
+      <div class="loc">{escape(loc)}</div>
+      <div class="bcode" style="margin-top:8px">{escape(draft['bcode'])}</div>
+      <div class="descr">{escape(draft.get('descr') or '')}</div>
+      {_product_model_html(draft)}
+      <div class="stats">
+        <div class="stat"><b>{float(draft['system_qty']):.3g}</b><span>ระบบ</span></div>
+        <div class="stat"><b>{float(draft['counted_qty']):.3g}</b><span>นับได้</span></div>
+        <div class="stat"><b style="color:{var_color}">{var:+.3g}</b><span>ส่วนต่าง</span></div>
+      </div>
+      <div class="muted" style="margin-top:8px">โดย {escape(draft.get('operator_name') or '')}</div>
+      {_rejection_history_html(draft.get("rejections"))}
+      <form method="post" action="/stock-check/reject/{escape(draft['id'])}" style="margin-top:12px">
+        <label>เหตุผลที่ปฏิเสธ</label>
+        <textarea name="reason" maxlength="300" rows="4" required placeholder="เช่น นับไม่ตรงชั้น ของจริงไม่ตรงกับที่กรอก"></textarea>
+        <p class="hint">จะส่งกลับให้คนตรวจเดิม สถานะเป็นรอตรวจสอบใหม่</p>
+        <button class="danger" type="submit">ส่งกลับให้ตรวจใหม่</button>
+      </form>
+      <a href="/stock-check/approve" class="ghost" style="display:block;text-align:center;padding:10px;margin-top:8px">กลับคิวอนุมัติ</a>
+    </div>
+    """
+    return page(
+        "ปฏิเสธและส่งกลับ",
+        "".join(bits) + body,
+        user=user,
+        nav="/approve",
+        eyebrow="Reject",
+        browser_entry_url=browser_entry_url,
+    )
+
+
+def recheck_page(
+    *,
+    user: dict[str, Any],
+    draft: dict[str, Any],
+    product: dict[str, Any],
+    flash: str | None = None,
+    error: str | None = None,
+    browser_entry_url: str | None = None,
+) -> str:
+    loc = " / ".join(x for x in [product.get("location1"), product.get("location2")] if x) or "ไม่ระบุที่เก็บ"
+    qty = float(product.get("qtyoh2", 0) or 0)
+    counted = float(draft.get("counted_qty") or 0)
+    qty_disp = f"{qty:.3g}"
+    counted_disp = f"{counted:.3g}"
+    bits: list[str] = []
+    if flash:
+        bits.append(f"<div class='flash'>{escape(flash)}</div>")
+    if error:
+        bits.append(f"<div class='flash err'>{escape(error)}</div>")
+    body = f"""
+    <div class="card soft">
+      <span class="pill warn">รอตรวจสอบใหม่</span>
+      <div class="loc" style="margin-top:10px">{escape(loc)}</div>
+      <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(product['bcode'])}</div>
+      <div class="descr" style="-webkit-line-clamp:4">{escape(product.get('descr') or '')}</div>
+      {_product_model_html(product)}
+      <div class="stats">
+        <div class="stat"><b>{qty_disp}</b><span>ระบบตอนนี้</span></div>
+        <div class="stat"><b>{counted_disp}</b><span>นับรอบก่อน</span></div>
+      </div>
+      {_rejection_history_html(draft.get("rejections"))}
+    </div>
+    <div class="card" id="count-card" data-system-qty="{qty}">
+      <div class="section-title" style="margin:0 0 4px">ตรวจใหม่</div>
+      <form method="post" action="/stock-check/draft/{escape(draft['id'])}/recheck" id="count-form">
+        <label>นับได้กี่ชิ้น</label>
+        <input type="text" name="counted_qty" id="counted-qty"
+          inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*"
+          autocomplete="off" value="{escape(counted_disp)}"/>
+        <label>หมายเหตุ</label>
+        <input type="text" name="notes" maxlength="120" value="{escape(draft.get('notes') or '')}"/>
+        <div style="height:12px"></div>
+        <button type="submit">ส่งอนุมัติใหม่</button>
+      </form>
+      <form method="post" action="/stock-check/reject/{escape(draft['id'])}" style="margin-top:8px">
+        <button class="ghost" type="submit">ยกเลิกรายการ</button>
+      </form>
+    </div>
+    """
+    return page(
+        "ตรวจสอบใหม่",
+        "".join(bits) + body,
+        user=user,
+        nav="/",
+        eyebrow="Recheck",
         browser_entry_url=browser_entry_url,
     )
 
@@ -1172,6 +1334,7 @@ def drift_review_page(
         <input type="hidden" name="confirm_drift" value="1"/>
         <button type="submit">อนุมัติต่อ (ใช้สต็อกปัจจุบัน)</button>
       </form>
+      <a class="btn danger" href="/stock-check/reject/{escape(draft['id'])}" style="margin-top:8px">ปฏิเสธ ส่งกลับตรวจใหม่</a>
       <a href="/stock-check/approve" class="ghost" style="display:block;text-align:center;padding:10px;margin-top:8px">กลับ</a>
     </div>
     """
