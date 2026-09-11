@@ -144,20 +144,21 @@ def _fetch_hq_source_row(
         engine = get_engine("hq")
     except Exception:
         return None
+    # REMARKS is ntext on HQ ICMAS — RTRIM/COALESCE on ntext raises 8116.
     sql = text(
         """
         SELECT TOP 1
-          LTRIM(RTRIM(BCODE)) AS bcode,
-          LTRIM(RTRIM(COALESCE(DESCR,''))) AS descr,
-          LTRIM(RTRIM(COALESCE(REMARKS,''))) AS remarks,
-          UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) AS code1,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS bcode,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(DESCR, '')))) AS descr,
+          LTRIM(RTRIM(CONVERT(nvarchar(4000), COALESCE(CONVERT(nvarchar(4000), REMARKS), N'')))) AS remarks,
+          UPPER(LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(CODE1, ''))))) AS code1,
           LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE1), ''))) AS size1,
           LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE2), ''))) AS size2,
           LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE3), ''))) AS size3,
-          LTRIM(RTRIM(COALESCE(PCODE,''))) AS pcode,
-          LTRIM(RTRIM(COALESCE(MCODE,''))) AS mcode
+          LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE, '')))) AS pcode,
+          LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE, '')))) AS mcode
         FROM dbo.ICMAS WITH (NOLOCK)
-        WHERE LTRIM(RTRIM(BCODE)) = :bcode
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
         """
     )
     try:
