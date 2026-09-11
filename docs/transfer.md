@@ -70,6 +70,7 @@ Ship (SIMAS) and receive (PIMAS) bills set `ACCTNO`/`ACCTNAME` from APMAS like m
 
 - Cancel: requester (`to_branch`) while status is `requested` and no ship bill yet (`POST /transfer/api/requests/{id}/cancel`).
 - Print: **พิมพ์ใบคำขอ** on request detail / status list — browser print of TRF lines + AP labels.
+- Prepare pick sheet: **พิมพ์ใบจัด** on prepare steps 2–3 (after opening a TRF) — browser print of open lines only (ที่เก็บ, คงเหลือ ship-branch, ค้างจัด + tick boxes) so shippers can walk the warehouse before confirming TF.
 - Barcode stickers: after **ยืนยันรับเข้า**, or later from **ตรวจสอบสถานะ** (history) / request detail. Operators pick which received SKUs to print (one sticker per received unit). Primary output is a **TSPL `.prn` download** for shop TSC printers (TE310 / 244 Pro) — send the file raw to the printer (e.g. port 9100). Optional LAN send if `TRANSFER_STICKER_PRINTER_HOST` is set. Browser print is not used for stickers.
 - **เสร็จสิ้น (Done) tab** lists `complete` orders **and** short-ship waves where everything prepared so far has been received (`receive_caught_up`) — so receivers can print barcodes even when HQ still owes more qty on the same request. When HQ ships the remainder, the request returns to Active as `awaiting_receive`. Done rows show **วันขอ** + **วันรับ** (`last_received_at`) and sort by **วันรับ** (newest first).
 
