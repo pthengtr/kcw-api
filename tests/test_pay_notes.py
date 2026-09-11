@@ -7,7 +7,7 @@ from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, noteno_
 from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines, resolve_stored_noteno
 from src.pay_notes.baht_text import baht_text
 from src.pay_notes.storage import safe_storage_filename
-from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _workflow_meta
+from app.routers.pay_notes import _note_totals, _normalize_note_pay_method, _parse_kbiz_datetime, _workflow_meta
 
 
 def test_safe_storage_filename_strips_thai_spaces_and_plus():
@@ -82,6 +82,14 @@ def test_pay_notes_page_renders():
     assert 'id="noteBillMonth"' in html
     assert 'id="editBillMonth"' in html
     assert 'id="pfBillMonth"' in html
+    assert 'id="notePayTransfer"' in html
+    assert 'id="notePayCheque"' in html
+    assert 'id="editPayTransfer"' in html
+    assert 'id="editPayCheque"' in html
+    assert 'id="pfMethod"' in html
+    assert 'id="detPayMethodWrap"' in html
+    assert 'function setNotePayMethod' in html
+    assert 'settle_method: notePayMethod' in html
     assert 'formatRemarkShort' in html
 
 
@@ -137,6 +145,119 @@ def test_ui_initials():
     assert initials("peung") == "PE"
     assert initials("ทดสอบ") == "ทด"
     assert initials("") == "OP"
+
+
+def test_normalize_note_pay_method():
+    assert _normalize_note_pay_method(None) == "transfer"
+    assert _normalize_note_pay_method("") == "transfer"
+    assert _normalize_note_pay_method("CHEQUE") == "cheque"
+    assert _normalize_note_pay_method("transfer") == "transfer"
+    try:
+        _normalize_note_pay_method("cash")
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised
+
+
+def test_api_create_note_stores_cheque_pay_method():
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    settings = PayNotesSettings(pay_notes_write_enabled=True)
+    kss = {"acctno": "7GP", "noteno": "N-001", "billamt": 100.0, "billcnt": 1}
+    rem = {"acctno": "7GP", "noteno": "N-001", "settle_method": "cheque"}
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(_pay_notes_ident(), None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=object()),
+        patch("app.routers.pay_notes.get_vendor_bank", return_value={"acctno": "7GP", "bank_id": "b1"}),
+        patch("app.routers.pay_notes.list_folder", return_value=[{"path": "x.jpg"}]),
+        patch("app.routers.pay_notes.open_unvouchered_note_exists", return_value=False),
+        patch("app.routers.pay_notes.create_pay_note", return_value=kss),
+        patch("app.routers.pay_notes.insert_reminder", return_value=rem) as insert_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/notes",
+            json={
+                "acctno": "7GP",
+                "acctname": "Vendor",
+                "noteno": "N-001",
+                "due_date": "2026-09-30",
+                "bank_id": "b1",
+                "billnos": ["B1"],
+                "settle_method": "cheque",
+            },
+        )
+    assert res.status_code == 200
+    payload = insert_m.call_args[0][1]
+    assert payload["settle_method"] == "cheque"
+    assert "kbiz_datetime" not in payload
+
+
+def test_api_create_note_rejects_cash_pay_method():
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    settings = PayNotesSettings(pay_notes_write_enabled=True)
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(_pay_notes_ident(), None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes.create_pay_note") as create_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/notes",
+            json={
+                "acctno": "7GP",
+                "acctname": "Vendor",
+                "noteno": "N-001",
+                "due_date": "2026-09-30",
+                "bank_id": "b1",
+                "billnos": ["B1"],
+                "settle_method": "cash",
+            },
+        )
+    assert res.status_code == 400
+    assert res.json()["code"] == "validation"
+    create_m.assert_not_called()
+
+
+def test_api_update_note_patches_settle_method():
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    settings = PayNotesSettings(pay_notes_write_enabled=True)
+    rem = {"acctno": "7GP", "noteno": "N-001", "settle_method": "transfer", "discount_mode": "amount", "discount_input": 0}
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(_pay_notes_ident(), None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=object()),
+        patch("app.routers.pay_notes.get_reminder", return_value=rem),
+        patch("app.routers.pay_notes.get_note_header", return_value={"acctno": "7GP", "noteno": "N-001", "voucno": "", "VOUCED": "N", "BILLAMT": 100}),
+        patch("app.routers.pay_notes.update_pay_note", return_value={"acctno": "7GP", "noteno": "N-001", "billamt": 100}),
+        patch("app.routers.pay_notes.get_vendor_bank", return_value={"acctno": "7GP", "bank_id": "b1"}),
+        patch("app.routers.pay_notes.patch_reminder", return_value={**rem, "settle_method": "cheque"}) as patch_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.patch(
+            "/pay-notes/api/notes",
+            params={"acctno": "7GP", "noteno": "N-001"},
+            json={"billnos": ["B1"], "bank_id": "b1", "settle_method": "cheque"},
+        )
+    assert res.status_code == 200
+    assert patch_m.call_args[0][3]["settle_method"] == "cheque"
+    assert patch_m.call_args[0][3]["kbiz_datetime"] is None
 
 
 def test_infer_settle_method():

@@ -209,6 +209,8 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .b-soon { background:var(--soon-bg); color:var(--soon); }
 .b-wait { background:var(--proof-bg); color:var(--proof); }
 .b-done { background:var(--ok-bg); color:var(--ok); }
+.b-cheque { background:var(--soon-bg); color:var(--soon); }
+.b-transfer { background:var(--chip); color:var(--muted); }
 .note-reuse-badge {
   display:inline-flex; align-items:center; margin-left:.35rem;
   border-radius:999px; padding:.12rem .5rem; font-size:.68rem; font-weight:700;
@@ -385,6 +387,8 @@ dialog.dlg:not([open]) { display:none !important; }
 .sum-box .net .k, .sum-box .net .v { font-weight:700; }
 .sum-box .net .v { color:var(--acc); }
 .methods { display:grid; grid-template-columns:repeat(3, 1fr); gap:.45rem; margin:.25rem 0 .75rem; }
+.methods-2 { grid-template-columns:repeat(2, 1fr); max-width:22rem; }
+.grid-3 .methods-2 { max-width:none; }
 .method {
   border:1px solid var(--line); background:var(--card); border-radius:.65rem;
   padding:.65rem .4rem; color:var(--muted); display:flex; flex-direction:column; align-items:center; gap:.25rem;
@@ -520,6 +524,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   .create-head { margin-bottom:.45rem; gap:.45rem; }
   .create-head h2 { font-size:1rem; }
   .grid-3, .grid-2, .disc-layout, .sum-box, .methods { grid-template-columns:1fr; gap:.4rem; }
+  .methods.methods-2 { grid-template-columns:1fr 1fr; max-width:none; }
   .kpis { grid-template-columns:1fr 1fr; gap:.35rem; margin:.4rem 0; }
   .kpi { padding:.4rem .5rem; gap:.4rem; border-radius:.6rem; }
   .kpi .mark { width:1.55rem; height:1.55rem; border-radius:.45rem; font-size:.72rem; }
@@ -734,6 +739,14 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               </div>
             </div>
             <p class="date-hint">แตะวันที่เพื่อเปิดปฏิทิน · ใช้ปี ค.ศ. เช่น 2026</p>
+            <div style="margin:.55rem 0 .15rem">
+              <label class="lbl">วิธีชำระ</label>
+              <div class="methods methods-2" role="group" aria-label="วิธีชำระ">
+                <button type="button" class="method on" id="notePayTransfer" data-pay-method="transfer">🏦<span>โอนเงิน</span></button>
+                <button type="button" class="method" id="notePayCheque" data-pay-method="cheque">✎<span>เช็ค</span></button>
+              </div>
+              <p class="date-hint">บางเจ้าหนี้รับเฉพาะเช็ค ไม่ให้โอน</p>
+            </div>
             <div class="bank-editor" id="createBankEditor">
               <div class="bank-actions">
                 <button type="button" class="btn sm ghost" id="btnAddBank">เพิ่มบัญชี</button>
@@ -787,7 +800,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               </div>
               <p class="date-hint remark-preview" id="noteRemarkPreview">เก็บในระบบชำระเจ้าหนี้เท่านั้น · ไม่เขียนลง KSS</p>
             </div>
-            <div style="margin-top:.65rem">
+            <div style="margin-top:.65rem" id="noteKbizWrap">
               <label class="lbl" for="kbizDatetime">เตือนโอน KBIZ (optional)</label>
               <input class="inp" id="kbizDatetime" type="datetime-local" step="60"/>
               <p class="date-hint">วันเวลาที่ต้องการเตือนโอนผ่าน KBIZ · เก็บใน reminder เท่านั้น</p>
@@ -894,6 +907,13 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div class="grid-3" style="margin-bottom:.85rem">
         <div>
+          <label class="lbl">วิธีชำระ</label>
+          <div class="methods methods-2" role="group" aria-label="วิธีชำระ">
+            <button type="button" class="method on" id="editPayTransfer" data-pay-method="transfer">🏦<span>โอนเงิน</span></button>
+            <button type="button" class="method" id="editPayCheque" data-pay-method="cheque">✎<span>เช็ค</span></button>
+          </div>
+        </div>
+        <div>
           <label class="lbl" for="editBankSelect">บัญชีธนาคารปลายทาง</label>
           <select class="inp" id="editBankSelect"><option value="">— เลือกบัญชี —</option></select>
           <div class="bank-editor" id="editBankEditor">
@@ -929,7 +949,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
             </div>
           </div>
         </div>
-        <div>
+        <div id="editKbizWrap">
           <label class="lbl" for="editKbizDatetime">เตือนโอน KBIZ (optional)</label>
           <input class="inp" id="editKbizDatetime" type="datetime-local" step="60"/>
         </div>
@@ -1014,6 +1034,13 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <div class="field" style="min-width:9.5rem">
         <input id="pfBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
       </div>
+      <div class="field" style="min-width:9.5rem">
+        <select id="pfMethod" aria-label="วิธีชำระ">
+          <option value="">วิธีชำระ: ทั้งหมด</option>
+          <option value="transfer">โอนเงิน</option>
+          <option value="cheque">เช็ค</option>
+        </select>
+      </div>
       <button type="button" class="btn soft" id="btnRefreshPending">↻ รีเฟรช</button>
     </div>
     <div class="kpis">
@@ -1043,6 +1070,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>เลขใบวางบิล</th>
               <th class="num">ยอดที่ต้องจ่าย</th>
               <th>กำหนดชำระ</th>
+              <th>วิธีชำระ</th>
               <th>หมายเหตุ</th>
               <th>สถานะ</th>
               <th></th>
@@ -1277,6 +1305,10 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <button type="button" class="linkish hidden" id="detDueCancel">ยกเลิก</button>
       </div>
     </div>
+    <div id="detPayMethodWrap" style="margin-top:.55rem">
+      <label class="lbl">วิธีชำระ</label>
+      <div id="detPayMethodView">—</div>
+    </div>
     <div id="detKbizWrap" class="hidden" style="margin-top:.75rem">
       <label class="lbl">เตือนโอน KBIZ</label>
       <div id="detKbizView" class="muted"></div>
@@ -1333,6 +1365,8 @@ let payTarget = null;
 let discMode = 'amount';
 let editDiscMode = 'amount';
 let settleMethod = 'transfer';
+let notePayMethod = 'transfer';
+let editPayMethod = 'transfer';
 let pendingRows = [];
 let awaitProofRows = [];
 let voucherRows = [];
@@ -1439,6 +1473,19 @@ function pendingStatus(r) {
 }
 function settleLabel(m) {
   return m === 'cheque' ? 'เช็ค' : (m === 'cash' ? 'เงินสด' : (m === 'transfer' ? 'โอนเงิน' : '—'));
+}
+function noteSettleMethod(r) {
+  const rem = (r && r.reminder) || {};
+  const m = String((r && r.settle_method) || rem.settle_method || '').trim().toLowerCase();
+  if (m === 'cheque' || m === 'cash' || m === 'transfer') return m;
+  return 'transfer';
+}
+function settleBadge(m) {
+  const method = (m || '').trim().toLowerCase();
+  if (method === 'cheque') return `<span class="badge b-cheque">เช็ค</span>`;
+  if (method === 'cash') return `<span class="badge b-pending">เงินสด</span>`;
+  if (method === 'transfer') return `<span class="badge b-transfer">โอนเงิน</span>`;
+  return '—';
 }
 function keyOf(r) { return `${r.acctno}|${r.noteno}`; }
 function displayNoteno(stored) {
@@ -1626,12 +1673,12 @@ function slicePage(rows, page, size) {
 }
 
 async function loadPending() {
-  $('pendingBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
+  $('pendingBody').innerHTML = `<tr><td colspan="8" class="empty">กำลังโหลด…</td></tr>`;
   try {
     pendingRows = await api('/pending');
     renderPending();
   } catch (e) {
-    $('pendingBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
+    $('pendingBody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function pendingNet(r) {
@@ -1641,13 +1688,15 @@ function filteredPending() {
   const q = ($('pfQ').value || '').trim().toLowerCase();
   const due = ($('pfDue').value || '').trim();
   const billMonth = ($('pfBillMonth').value || '').trim();
+  const method = ($('pfMethod') && $('pfMethod').value) || '';
   let rows = pendingRows.filter(r => {
     const st = pendingStatus(r);
     if (pendingBucket !== 'all' && st.bucket !== pendingBucket) return false;
     if (due && remDue(r) !== due) return false;
     if (billMonth && remBillMonth(r) !== billMonth) return false;
+    if (method && noteSettleMethod(r) !== method) return false;
     if (q) {
-      const hay = [r.acctno, r.acctname, r.noteno, remDue(r), remarkSearchHay(r)].map(x => String(x||'').toLowerCase()).join(' ');
+      const hay = [r.acctno, r.acctname, r.noteno, remDue(r), remarkSearchHay(r), settleLabel(noteSettleMethod(r))].map(x => String(x||'').toLowerCase()).join(' ');
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1685,6 +1734,7 @@ function renderPending() {
       <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
       <td class="num" data-label="ยอดที่ต้องจ่าย">${fmtMoney(pendingNet(r))} บาท</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r))}</td>
+      <td data-label="วิธีชำระ">${settleBadge(noteSettleMethod(r))}</td>
       <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="td-actions" data-label=""><div class="row-actions">
@@ -1704,9 +1754,11 @@ document.querySelectorAll('.kpi[data-bucket]').forEach(btn => {
   btn.onclick = () => { pendingBucket = btn.dataset.bucket; pendingPage = 1; renderPending(); };
 });
 $('btnRefreshPending').onclick = loadPending;
-['pfQ','pfDue','pfBillMonth'].forEach(id => {
+['pfQ','pfDue','pfBillMonth','pfMethod'].forEach(id => {
   const el = $(id);
-  el.addEventListener(el.type === 'date' || el.type === 'month' ? 'change' : 'input', () => { pendingPage = 1; renderPending(); });
+  if (!el) return;
+  const ev = (el.type === 'date' || el.type === 'month' || el.tagName === 'SELECT') ? 'change' : 'input';
+  el.addEventListener(ev, () => { pendingPage = 1; renderPending(); });
 });
 $('pendingBody').addEventListener('click', (e) => {
   const edit = e.target.closest('[data-edit]');
@@ -2151,7 +2203,11 @@ function fillPrintSheet(det, row) {
   if (!bodyRows.length) {
     bodyRows.push('<tr><td colspan="5" style="text-align:center;color:#666">ไม่พบบิลซื้อ</td></tr>');
   }
-  const settle = (row && row.settle_method) || (payments[0] && payments[0].settle_method) || '';
+  const settle = (row && row.settle_method)
+    || ((row && row.reminder) || {}).settle_method
+    || (payments[0] && payments[0].settle_method)
+    || rem.settle_method
+    || '';
   const isCash = settle === 'cash';
   const isChequeOrTransfer = settle === 'cheque' || settle === 'transfer' || (!isCash && !!voucno);
   const payLines = payments.length ? payments : (voucno ? [{
@@ -2261,6 +2317,9 @@ async function openDetailByKey(key, opts) {
   $('detDueInput').classList.add('hidden');
   $('detDueSave').classList.add('hidden');
   $('detDueCancel').classList.add('hidden');
+  const payMethod = noteSettleMethod(row);
+  if ($('detPayMethodView')) $('detPayMethodView').innerHTML = settleBadge(payMethod);
+  if ($('detPayMethodWrap')) $('detPayMethodWrap').classList.remove('hidden');
   $('detPayBtn').classList.toggle('hidden', !(opts.canPay && canEditDue && WRITE_ENABLED));
   $('detCancelNoteBtn')?.classList.toggle('hidden', !(canEditDue && WRITE_ENABLED));
   $('detProofWrap').classList.toggle('hidden', !row.voucno);
@@ -2477,6 +2536,28 @@ $('settleCheque').onclick = () => setSettleMethod('cheque');
 $('settleCash').onclick = () => setSettleMethod('cash');
 $('payChkno').addEventListener('input', () => { $('payChkno').dataset.auto = '0'; });
 
+function setNotePayMethod(method, which) {
+  const target = which === 'edit' ? 'edit' : 'note';
+  const value = method === 'cheque' ? 'cheque' : 'transfer';
+  if (target === 'edit') editPayMethod = value;
+  else notePayMethod = value;
+  const prefix = target === 'edit' ? 'editPay' : 'notePay';
+  ['Transfer', 'Cheque'].forEach(name => {
+    const el = $(prefix + name);
+    if (el) el.classList.toggle('on', (name === 'Cheque' ? 'cheque' : 'transfer') === value);
+  });
+  const kbizWrap = $(target === 'edit' ? 'editKbizWrap' : 'noteKbizWrap');
+  if (kbizWrap) kbizWrap.classList.toggle('hidden', value === 'cheque');
+  if (value === 'cheque') {
+    const kbiz = $(target === 'edit' ? 'editKbizDatetime' : 'kbizDatetime');
+    if (kbiz) kbiz.value = '';
+  }
+}
+$('notePayTransfer')?.addEventListener('click', () => setNotePayMethod('transfer', 'note'));
+$('notePayCheque')?.addEventListener('click', () => setNotePayMethod('cheque', 'note'));
+$('editPayTransfer')?.addEventListener('click', () => setNotePayMethod('transfer', 'edit'));
+$('editPayCheque')?.addEventListener('click', () => setNotePayMethod('cheque', 'edit'));
+
 function openPay(acct, note, billamt, discount, bankname) {
   const bill = Number(billamt || 0);
   const disc = Number(discount || 0);
@@ -2493,7 +2574,10 @@ function openPay(acct, note, billamt, discount, bankname) {
   $('payBankSelect').value = DEFAULT_PAY_BANK;
   $('payMsg').innerHTML = '';
   $('payChkno').dataset.auto = '1';
-  setSettleMethod('transfer');
+  const row = pendingRows.find(r => r.acctno === acct && r.noteno === note)
+    || findRow(`${acct}|${note}`);
+  const intended = row ? noteSettleMethod(row) : 'transfer';
+  setSettleMethod(intended === 'cheque' ? 'cheque' : (intended === 'cash' ? 'cash' : 'transfer'));
   wireDatePickers($('dlgPay'));
   $('dlgPay').showModal();
 }
@@ -3121,7 +3205,8 @@ $('btnCreateNote').onclick = async () => {
         bank_id, billnos, discount_mode: discMode,
         discount_input: Number($('discInput').value || 0),
         ...readRemarkForm('note'),
-        kbiz_datetime: ($('kbizDatetime').value || '').trim() || null
+        kbiz_datetime: notePayMethod === 'cheque' ? null : (($('kbizDatetime').value || '').trim() || null),
+        settle_method: notePayMethod
       })
     });
     const rem = res.reminder || {};
@@ -3139,6 +3224,7 @@ $('btnCreateNote').onclick = async () => {
     $('discInput').value = '0.00';
     resetRemarkForm('note', picked?.acctno || '');
     $('kbizDatetime').value = '';
+    setNotePayMethod('transfer', 'note');
     setDiscMode('amount');
     await loadBills();
     setTimeout(() => { showTab('pending'); }, 600);
@@ -3163,6 +3249,7 @@ async function openEditNote(key, returnTab) {
   $('editDueDate').value = remDue(row);
   fillRemarkForm('edit', rem, row.acctno);
   $('editKbizDatetime').value = toDatetimeLocal(rem.kbiz_datetime);
+  setNotePayMethod(noteSettleMethod(row), 'edit');
   editDiscMode = rem.discount_mode === 'percent' ? 'percent' : 'amount';
   $('editDiscInput').value = rem.discount_input != null ? rem.discount_input : (rem.discount_amount || 0);
   setEditDiscMode(editDiscMode);
@@ -3281,7 +3368,8 @@ $('btnSaveEdit').onclick = async () => {
         due_date: $('editDueDate').value,
         bank_id: $('editBankSelect').value,
         ...readRemarkForm('edit'),
-        kbiz_datetime: ($('editKbizDatetime').value || '').trim() || null,
+        kbiz_datetime: editPayMethod === 'cheque' ? null : (($('editKbizDatetime').value || '').trim() || null),
+        settle_method: editPayMethod,
         discount_mode: editDiscMode,
         discount_input: Number($('editDiscInput').value || 0),
       })
@@ -3331,6 +3419,7 @@ $('btnCancelNote')?.addEventListener('click', () => {
 
 wireDatePickers(document);
 setDiscMode('amount');
+setNotePayMethod('transfer', 'note');
 $('billList').innerHTML = `<tr><td colspan="4" class="empty">เลือกเจ้าหนี้ก่อน</td></tr>`;
 try {
   const saved = localStorage.getItem('kcw.pay_notes.create_mode');
