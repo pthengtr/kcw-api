@@ -52,6 +52,7 @@ from src.pay_notes.storage import (
     public_url,
     relocate_bill_images,
     remove_paths,
+    safe_storage_filename,
     upload_bytes,
 )
 from src.pay_notes.ui import APP, SESSION_COOKIE, page
@@ -511,10 +512,13 @@ async def api_upload_bill_image(
     if not acct or not note:
         return JSONResponse({"error": "acctno and noteno required"}, status_code=400)
     prefix = bill_image_prefix(acct, note)
-    name = (file.filename or "upload.jpg").replace("/", "_").replace("\\", "_")
+    name = safe_storage_filename(file.filename, default="upload.jpg")
     path = f"{prefix}/{name}"
     client = get_pay_notes_supabase_client()
-    upload_bytes(client, path, data, content_type=file.content_type or "image/jpeg")
+    try:
+        upload_bytes(client, path, data, content_type=file.content_type or "image/jpeg")
+    except Exception as exc:
+        return JSONResponse({"error": "upload failed", "detail": str(exc)}, status_code=400)
     return {"path": path, "url": public_url(path)}
 
 
@@ -1042,10 +1046,13 @@ async def api_upload_payment_image(
     if not vo:
         return JSONResponse({"error": "voucno required"}, status_code=400)
     prefix = payment_image_prefix(vo)
-    name = (file.filename or "proof.jpg").replace("/", "_").replace("\\", "_")
+    name = safe_storage_filename(file.filename, default="proof.jpg")
     path = f"{prefix}/{name}"
     client = get_pay_notes_supabase_client()
-    upload_bytes(client, path, data, content_type=file.content_type or "image/jpeg")
+    try:
+        upload_bytes(client, path, data, content_type=file.content_type or "image/jpeg")
+    except Exception as exc:
+        return JSONResponse({"error": "upload failed", "detail": str(exc)}, status_code=400)
     return {"path": path, "url": public_url(path)}
 
 

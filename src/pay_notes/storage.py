@@ -1,8 +1,31 @@
 from __future__ import annotations
 
+import re
+from pathlib import PurePosixPath
 from typing import Any
 
 from src.pay_notes.config import get_pay_notes_settings
+
+# Supabase Storage rejects keys with spaces, "+", non-ASCII, etc. (InvalidKey).
+_UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def safe_storage_filename(filename: str | None, *, default: str = "upload.jpg") -> str:
+    """Normalize an upload filename into a Supabase-safe object key segment."""
+    raw = (filename or "").strip() or default
+    raw = raw.replace("\\", "/").rsplit("/", 1)[-1]
+    path = PurePosixPath(raw)
+    stem = path.stem
+    suffix = path.suffix.lower()
+    if not re.fullmatch(r"\.[A-Za-z0-9]{1,8}", suffix or ""):
+        suffix = PurePosixPath(default).suffix.lower() or ".jpg"
+    stem = _UNSAFE_KEY_CHARS.sub("_", stem)
+    stem = re.sub(r"_+", "_", stem).strip("._-")
+    if not stem:
+        stem = PurePosixPath(default).stem or "upload"
+    if len(stem) > 80:
+        stem = stem[:80].rstrip("._-") or "upload"
+    return f"{stem}{suffix}"
 
 
 def bill_image_prefix(acctno: str, noteno: str) -> str:

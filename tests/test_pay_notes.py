@@ -6,7 +6,26 @@ from src.pay_notes.config import PayNotesSettings
 from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, noteno_meta, parse_noteno_suffix
 from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines, resolve_stored_noteno
 from src.pay_notes.baht_text import baht_text
+from src.pay_notes.storage import safe_storage_filename
 from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _workflow_meta
+
+
+def test_safe_storage_filename_strips_thai_spaces_and_plus():
+    name = safe_storage_filename(
+        "LINE_ALBUM_วางบิลด.62569 NONVAT+VAT_260911_1.jpg"
+    )
+    assert name == "LINE_ALBUM_.62569_NONVAT_VAT_260911_1.jpg"
+    assert " " not in name
+    assert "+" not in name
+    assert all(ord(c) < 128 for c in name)
+
+
+def test_safe_storage_filename_defaults_and_paths():
+    assert safe_storage_filename(None) == "upload.jpg"
+    assert safe_storage_filename("") == "upload.jpg"
+    assert safe_storage_filename("โฟลเดอร์/สลิป.png", default="proof.jpg") == "proof.png"
+    assert safe_storage_filename("a\\b\\ok-file_01.JPEG") == "ok-file_01.jpeg"
+    assert safe_storage_filename("evil/../x.pdf") == "x.pdf"
 
 
 def test_pay_notes_commands():
