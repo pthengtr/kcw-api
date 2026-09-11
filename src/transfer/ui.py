@@ -474,8 +474,22 @@ function fmtLocation(row){
   const cur = (row && row.location || "").trim();
   return cur ? `<div class="meta">ที่เก็บ ${cur}</div>` : "";
 }
+function fmtSubsHint(row){
+  const peers = row && (Array.isArray(row.suggestions) ? row.suggestions
+    : (Array.isArray(row.substitutes) ? row.substitutes : []));
+  if(!peers.length) return "";
+  const bits = peers.slice(0, 6).map(p=>{
+    const src = (p.source_label || p.source || "").trim();
+    const badge = src ? `<span class="badge">${src}</span> ` : "";
+    const hq = p.hq_qtyoh2 != null ? p.hq_qtyoh2 : "—";
+    const syp = p.syp_qtyoh2 != null ? p.syp_qtyoh2 : "—";
+    const l1 = p.hq_l1 ? " L-1" : "";
+    return `${badge}${p.bcode} ${(p.descr||"").slice(0,28)} (สนญ ${hq} / สาขา ${syp}${l1})`;
+  });
+  return `<div class="meta" style="color:var(--accent,#c9a227)">แนะนำทดแทน: ${bits.join(" · ")}</div>`;
+}
 function fmtDescr(row){
-  return `${(row && row.descr) || ""}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}`;
+  return `${(row && row.descr) || ""}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}${fmtSubsHint(row)}`;
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);

@@ -30,6 +30,7 @@ from src.transfer.db import (
     get_request,
     get_shipment_by_token,
     get_transfer_supabase_client,
+    insert_event,
     list_lines,
     list_lines_by_transfers,
     list_need,
@@ -55,12 +56,15 @@ from src.transfer.direction import (
     should_stamp_iclow,
 )
 from src.transfer.parts9 import (
+    _fetch_dual_icmas,
     enrich_transfer_lines,
     fetch_local_icmas_meta,
     fetch_sticker_catalog,
     lookup_transfer_product,
     suggest_transfer_skus,
 )
+from src.substitutes.ship_as import resolve_ship_as
+from src.substitutes import db as substitutes_db
 from src.transfer.sticker import (
     PRINTER_PORT,
     build_batch_tspl,
@@ -629,6 +633,35 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             }
     lines = enrich_lines(list_lines(client, transfer_id))
     header_status = header.get("status") or "requested"
+    other_request_bcodes = {
+        str(ln.get("bcode") or "").strip()
+        for ln in lines
+        if str(ln.get("bcode") or "").strip()
+    }
+    # Resolve ส่งแทน (catalog-gated) before PARTS9 write
+    ship_codes = set()
+    for line in body.lines:
+        line_id = line.get("line_id")
+        line_info = next((ln for ln in lines if ln["line_id"] == line_id), None)
+        if line_info:
+            ship_codes.add(str(line_info.get("bcode") or "").strip())
+        alt = str(line.get("ship_as_bcode") or "").strip()
+        if alt:
+            ship_codes.add(alt)
+    hq_icmas, syp_icmas = _fetch_dual_icmas(
+        sorted(c for c in ship_codes if c), include_blocked=True
+    )
+    ship_icmas = hq_icmas if from_branch == "HQ" else syp_icmas
+
+    def _ship_meta(bcode: str):
+        return ship_icmas.get((bcode or "").strip())
+
+    try:
+        sub_client = substitutes_db.get_substitutes_supabase_client()
+    except Exception:
+        sub_client = None
+
+    resolved_lines: list[dict[str, Any]] = []
     for line in body.lines:
         line_id = line.get("line_id")
         qty_ship = float(line.get("qty_ship") or 0)
@@ -648,10 +681,28 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
         )
         if not check.allowed:
             return JSONResponse({"error": check.reason}, status_code=400)
-        if not line.get("bcode"):
-            line["bcode"] = line_info.get("bcode")
-        if not line.get("descr"):
-            line["descr"] = line_info.get("descr")
+        req_bcode = str(line_info.get("bcode") or "").strip()
+        others = other_request_bcodes - {req_bcode}
+        resolved = resolve_ship_as(
+            request_bcode=req_bcode,
+            ship_as_bcode=line.get("ship_as_bcode"),
+            other_request_bcodes=others,
+            get_by_bcode=(
+                (lambda b, _c=sub_client: substitutes_db.get_by_bcode(_c, b) if _c else None)
+            ),
+            ship_from_meta=_ship_meta,
+        )
+        if resolved.error:
+            return JSONResponse({"error": resolved.error}, status_code=400)
+        out_line = dict(line)
+        out_line["bcode"] = resolved.ship_bcode
+        out_line["descr"] = resolved.descr or line_info.get("descr") or line.get("descr")
+        out_line["line_id"] = line_id
+        out_line["qty_ship"] = qty_ship
+        if resolved.is_substitute:
+            out_line["requested_bcode"] = resolved.requested_bcode
+        resolved_lines.append(out_line)
+
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
     to_branch = (header.get("to_branch") or "SYP").upper()
     try:
@@ -660,7 +711,7 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             to_branch=to_branch,
             transfer_id=transfer_id,
             short_id=short_id,
-            lines=body.lines,
+            lines=resolved_lines,
             operator=ident.display_name,
             client_token=client_token,
         )
@@ -676,9 +727,22 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             )
             shipment_id = shipment["shipment_id"]
         if not shipment_has_lines(client, shipment_id):
-            add_shipment_lines(client, shipment_id=shipment_id, lines=body.lines)
-        for line in body.lines:
+            add_shipment_lines(client, shipment_id=shipment_id, lines=resolved_lines)
+        for line in resolved_lines:
             bump_line_prepared(client, line_id=line["line_id"], qty_ship=line["qty_ship"])
+            if line.get("requested_bcode") and line.get("requested_bcode") != line.get("bcode"):
+                insert_event(
+                    client,
+                    transfer_id=transfer_id,
+                    event_type="substitute_ship",
+                    actor=ident.display_name,
+                    payload={
+                        "line_id": line["line_id"],
+                        "from_bcode": line.get("requested_bcode"),
+                        "to_bcode": line.get("bcode"),
+                        "qty_ship": line.get("qty_ship"),
+                    },
+                )
         refresh_request_status(client, transfer_id)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(

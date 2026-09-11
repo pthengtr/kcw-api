@@ -482,13 +482,18 @@ def add_shipment_lines(client: Client, *, shipment_id: str, lines: list[dict[str
     """Add lines to a shipment."""
     rows = []
     for line in lines:
-        rows.append({
+        ship_bcode = str(line.get("bcode") or "").strip()
+        requested = str(line.get("requested_bcode") or "").strip() or None
+        row = {
             "shipment_line_id": str(uuid4()),
             "shipment_id": shipment_id,
             "line_id": line.get("line_id"),
-            "bcode": str(line.get("bcode") or "").strip(),
+            "bcode": ship_bcode,
             "qty_shipped": float(line.get("qty_ship") or line.get("qty_shipped") or 0),
-        })
+        }
+        if requested and requested != ship_bcode:
+            row["requested_bcode"] = requested
+        rows.append(row)
     if rows:
         client.schema(TRANSFER_SCHEMA).from_("shipment_lines").insert(rows).execute()
 

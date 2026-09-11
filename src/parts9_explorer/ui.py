@@ -766,7 +766,9 @@ function showP(i) {
     +"<div class='meta'>"+esc(p.ui1)+"/"+esc(p.ui2)+"</div>"
     +"<div class='prices'>"+fmtPrices(p.prices)+"</div><div class='photos'>"+photos+"</div>"
     +stockHtml
+    +"<div id='subPanel'></div>"
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
+  loadSubPanels(p.bcode);
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(d => {
       const m = d.movement || {};
@@ -779,6 +781,43 @@ function showP(i) {
         tbl("ประวัติการซื้อ", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
     }).catch(() => { $("more").innerHTML = ""; });
+}
+function peerLine(p, badge) {
+  const hq = p.hq_qtyoh2 != null ? p.hq_qtyoh2 : "—";
+  const syp = p.syp_qtyoh2 != null ? p.syp_qtyoh2 : "—";
+  const l1 = p.hq_l1 ? " <span class='badge'>L-1</span>" : "";
+  const src = badge || p.source_label || p.source || "";
+  const srcHtml = src ? " <span class='badge'>"+esc(src)+"</span>" : "";
+  return "<div class='meta'><button class='linkish' data-jump='product' data-q='"+esc(p.bcode)+"'>"+esc(p.bcode)+"</button>"
+    +srcHtml+" "+esc((p.descr||"").slice(0,40))+" · สนญ "+hq+" / สาขา "+syp+l1+"</div>";
+}
+function loadSubPanels(bcode) {
+  const el = $("subPanel");
+  if (!el) return;
+  el.innerHTML = "<p class='meta'>โหลดทดแทน…</p>";
+  Promise.all([
+    fetch("/parts9/api/substitutes/suggest/"+encodeURIComponent(bcode)).then(r=>r.json()).catch(()=>({suggestions:[]})),
+    fetch("/parts9/api/substitutes/by-bcode/"+encodeURIComponent(bcode)).then(r=>r.json()).catch(()=>({peers:[]})),
+  ]).then(([sug, cat]) => {
+    let html = "";
+    const suggestions = sug.suggestions || [];
+    if (suggestions.length) {
+      html += "<h3>แนะนำทดแทน (ยังไม่ยืนยัน)</h3>"
+        + suggestions.map(p => peerLine(p)).join("")
+        + "<p class='meta'><a href='/parts9/substitutes?bcode="+encodeURIComponent(bcode)+"'>ยืนยันเข้ากลุ่มทดแทน…</a></p>";
+    }
+    const peers = cat.peers || [];
+    if (peers.length) {
+      html += "<h3>ทดแทนในกลุ่ม (ยืนยันแล้ว)</h3>"
+        + peers.map(p => peerLine(p, "กลุ่ม")).join("")
+        + "<p class='meta'><a href='/parts9/substitutes?bcode="+encodeURIComponent(bcode)+"'>จัดการกลุ่ม</a></p>";
+    } else if (!suggestions.length) {
+      html += "<p class='meta'>ยังไม่มีแนะนำ/กลุ่มทดแทน · <a href='/parts9/substitutes?bcode="+encodeURIComponent(bcode)+"'>สร้างกลุ่ม</a></p>";
+    } else {
+      html += "<p class='meta'><a href='/parts9/substitutes?bcode="+encodeURIComponent(bcode)+"'>จัดการกลุ่มทดแทน</a></p>";
+    }
+    el.innerHTML = html;
+  }).catch(() => { el.innerHTML = ""; });
 }
 $("modes").addEventListener("click", (ev) => {
   const b = ev.target.closest("button[data-k]");
@@ -889,4 +928,199 @@ def page(*, user_name: str, site: str, probes: dict) -> str:
         .replace("__SYPBADGE__", "ok" if syp.get("ok") else "down")
         .replace("__HQSQL__", _sql_badge_text(hq))
         .replace("__SYPSQL__", _sql_badge_text(syp))
+    )
+
+
+_SUBS_MANAGE_HTML = """<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>กลุ่มทดแทน — PARTS9</title>
+<style>
+:root { --bg:#0c1014; --text:#e8eef4; --muted:#9aa7b5; --line:#243040; --chip:#1a2430; --acc:#3d8bfd; --on-acc:#fff; --inset:#141c26; }
+body { margin:0; font:15px/1.45 system-ui,sans-serif; background:var(--bg); color:var(--text); }
+header { padding:.75rem 1rem; border-bottom:1px solid var(--line); display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; }
+header a { color:var(--acc); text-decoration:none; }
+main { padding:1rem; max-width:52rem; margin:0 auto; }
+label { display:block; font-size:.8rem; color:var(--muted); margin-bottom:.25rem; }
+input, button, textarea { font:inherit; padding:.55rem .7rem; border-radius:.45rem; border:1px solid var(--line); background:var(--chip); color:var(--text); }
+button.primary { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:600; }
+.row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:end; margin-bottom:.75rem; }
+.row > * { flex:1; min-width:8rem; }
+.meta { color:var(--muted); font-size:.85rem; }
+.card { background:var(--inset); border:1px solid var(--line); border-radius:.55rem; padding:.75rem; margin:.75rem 0; }
+.badge { font-size:.72rem; padding:.1rem .4rem; border-radius:.35rem; background:var(--chip); color:var(--muted); }
+.member { display:flex; justify-content:space-between; gap:.5rem; padding:.4rem 0; border-bottom:1px solid var(--line); }
+.member:last-child { border-bottom:0; }
+.error { color:#f87171; }
+.ok { color:#4ade80; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/parts9/">← Explorer</a>
+  <strong>กลุ่มทดแทน</strong>
+  <span class="meta">__USER__</span>
+</header>
+<main>
+  <form id="loadForm" class="row">
+    <div>
+      <label for="bcode">รหัสสินค้า (BCODE)</label>
+      <input id="bcode" name="bcode" value="__BCODE__" autocomplete="off" required/>
+    </div>
+    <div style="flex:0">
+      <label>&nbsp;</label>
+      <button class="primary" type="submit">โหลด</button>
+    </div>
+  </form>
+  <p id="msg" class="meta"></p>
+  <div id="panel"></div>
+</main>
+<script>
+const API = "/parts9/api/substitutes";
+const BY_BCODE = "/parts9/api/substitutes/by-bcode/";
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function stockLine(m){
+  const hq = m.hq_qtyoh2 != null ? m.hq_qtyoh2 : "—";
+  const syp = m.syp_qtyoh2 != null ? m.syp_qtyoh2 : "—";
+  const l1 = m.hq_l1 ? " <span class='badge'>L-1</span>" : "";
+  return "สนญ "+hq+" / สาขา "+syp+l1;
+}
+async function loadSuggest(bcode){
+  const r = await fetch(API+"/suggest/"+encodeURIComponent(bcode));
+  if(!r.ok) return [];
+  const d = await r.json();
+  return d.suggestions || [];
+}
+async function loadByBcode(bcode){
+  const r = await fetch(BY_BCODE+encodeURIComponent(bcode));
+  if(!r.ok) throw new Error("โหลดไม่สำเร็จ");
+  return r.json();
+}
+function render(data, suggestions){
+  const bcode = ($("bcode").value||"").trim();
+  const group = data.group;
+  const peers = data.peers || [];
+  let html = "";
+  if(suggestions && suggestions.length){
+    html += "<div class='card'><h3 style='margin:.2rem 0'>แนะนำทดแทน (ยังไม่ยืนยัน)</h3>"
+      + suggestions.map(s => "<div class='member'><div><strong>"+esc(s.bcode)+"</strong> "
+        +"<span class='badge'>"+esc(s.source_label||s.source||"")+"</span><div class='meta'>"
+        +esc(s.descr||"")+" · "+stockLine(s)+"</div></div>"
+        +"<button type='button' data-promote='"+esc(s.bcode)+"'>เพิ่มเข้ากลุ่ม</button></div>").join("")
+      +"</div>";
+  }
+  if(!group){
+    html += "<div class='card'><p>ยังไม่มีกลุ่มทดแทนที่ยืนยันสำหรับ <strong>"+esc(bcode)+"</strong></p>"
+      +"<div class='row'><div><label>ชื่อกลุ่ม (ถ้ามี)</label><input id='newName'/></div>"
+      +"<div><label>หมายเหตุ</label><input id='newNote'/></div></div>"
+      +"<div class='row'><div><label>สมาชิกเริ่มต้น (คั่นด้วย comma)</label>"
+      +"<input id='newMembers' value='"+esc(bcode)+"'/></div></div>"
+      +"<button class='primary' type='button' id='createBtn'>สร้างกลุ่ม</button></div>";
+  } else {
+    const members = group.members || [];
+    html += "<div class='card'><div class='meta'>group "+esc(group.group_id)+"</div>"
+      +"<div class='row'><div><label>ชื่อ</label><input id='gName' value='"+esc(group.name||"")+"'/></div>"
+      +"<div><label>หมายเหตุ</label><input id='gNote' value='"+esc(group.note||"")+"'/></div>"
+      +"<div style='flex:0'><label>&nbsp;</label><button type='button' id='saveMeta'>บันทึก</button></div></div>"
+      +"<h3>สมาชิก</h3>"
+      + members.map(m => "<div class='member'><div><strong>"+esc(m.bcode)+"</strong> "
+        +"<div class='meta'>"+esc(m.descr||"")+" · "+stockLine(m)+"</div></div>"
+        +"<button type='button' data-remove='"+esc(m.bcode)+"'>ลบ</button></div>").join("")
+      +"<div class='row' style='margin-top:.75rem'><div><label>เพิ่ม BCODE</label>"
+      +"<input id='addBcode'/></div><div style='flex:0'><label>&nbsp;</label>"
+      +"<button class='primary' type='button' id='addBtn'>เพิ่ม</button></div></div>"
+      +"<p class='meta'><button type='button' id='delGroup' style='margin-top:.5rem'>ลบทั้งกลุ่ม</button></p></div>";
+  }
+  $("panel").innerHTML = html;
+  const createBtn = $("createBtn");
+  if(createBtn) createBtn.onclick = async () => {
+    const members = ($("newMembers").value||"").split(/[,\\s]+/).filter(Boolean).map(b=>({bcode:b}));
+    const r = await fetch(API+"/groups", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name:$("newName").value||null, note:$("newNote").value||null, members})});
+    const d = await r.json();
+    if(!r.ok){ $("msg").innerHTML = "<span class='error'>"+esc(d.detail||d.error||"สร้างไม่สำเร็จ")+"</span>"; return; }
+    $("msg").innerHTML = "<span class='ok'>สร้างกลุ่มแล้ว</span>";
+    refresh();
+  };
+  const saveMeta = $("saveMeta");
+  if(saveMeta) saveMeta.onclick = async () => {
+    const r = await fetch(API+"/groups/"+encodeURIComponent(group.group_id), {method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name:$("gName").value, note:$("gNote").value})});
+    if(!r.ok){ const d=await r.json(); $("msg").innerHTML="<span class='error'>"+esc(d.detail||"บันทึกไม่สำเร็จ")+"</span>"; return; }
+    $("msg").innerHTML = "<span class='ok'>บันทึกแล้ว</span>";
+  };
+  const addBtn = $("addBtn");
+  if(addBtn) addBtn.onclick = async () => {
+    const code = ($("addBcode").value||"").trim();
+    if(!code) return;
+    const r = await fetch(API+"/groups/"+encodeURIComponent(group.group_id)+"/members", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({bcode:code})});
+    const d = await r.json();
+    if(!r.ok){ $("msg").innerHTML="<span class='error'>"+esc(d.detail||d.error||"เพิ่มไม่สำเร็จ")+"</span>"; return; }
+    $("msg").innerHTML = "<span class='ok'>เพิ่ม "+esc(code)+" แล้ว</span>";
+    refresh();
+  };
+  document.querySelectorAll("[data-remove]").forEach(btn => {
+    btn.onclick = async () => {
+      const code = btn.getAttribute("data-remove");
+      const r = await fetch(API+"/groups/"+encodeURIComponent(group.group_id)+"/members/"+encodeURIComponent(code), {method:"DELETE"});
+      if(!r.ok){ const d=await r.json(); $("msg").innerHTML="<span class='error'>"+esc(d.detail||"ลบไม่สำเร็จ")+"</span>"; return; }
+      refresh();
+    };
+  });
+  document.querySelectorAll("[data-promote]").forEach(btn => {
+    btn.onclick = async () => {
+      const peer = btn.getAttribute("data-promote");
+      if(!group){
+        const r = await fetch(API+"/groups", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({members:[{bcode:bcode},{bcode:peer}], note:"from suggestion"})});
+        const d = await r.json();
+        if(!r.ok){ $("msg").innerHTML="<span class='error'>"+esc(d.detail||"สร้างไม่สำเร็จ")+"</span>"; return; }
+      } else {
+        const r = await fetch(API+"/groups/"+encodeURIComponent(group.group_id)+"/members", {method:"POST",
+          headers:{"Content-Type":"application/json"}, body: JSON.stringify({bcode:peer})});
+        const d = await r.json();
+        if(!r.ok){ $("msg").innerHTML="<span class='error'>"+esc(d.detail||"เพิ่มไม่สำเร็จ")+"</span>"; return; }
+      }
+      $("msg").innerHTML = "<span class='ok'>ยืนยัน "+esc(peer)+" เข้ากลุ่มแล้ว</span>";
+      refresh();
+    };
+  });
+  const delGroup = $("delGroup");
+  if(delGroup) delGroup.onclick = async () => {
+    if(!confirm("ลบทั้งกลุ่ม?")) return;
+    const r = await fetch(API+"/groups/"+encodeURIComponent(group.group_id), {method:"DELETE"});
+    if(!r.ok){ const d=await r.json(); $("msg").innerHTML="<span class='error'>"+esc(d.detail||"ลบไม่สำเร็จ")+"</span>"; return; }
+    $("msg").innerHTML = "<span class='ok'>ลบกลุ่มแล้ว</span>";
+    refresh();
+  };
+}
+async function refresh(){
+  const bcode = ($("bcode").value||"").trim();
+  if(!bcode) return;
+  $("msg").textContent = "กำลังโหลด…";
+  try {
+    const [data, suggestions] = await Promise.all([loadByBcode(bcode), loadSuggest(bcode)]);
+    $("msg").textContent = "";
+    render(data, suggestions);
+  } catch(e) {
+    $("msg").innerHTML = "<span class='error'>"+esc(e.message||e)+"</span>";
+  }
+}
+$("loadForm").addEventListener("submit", (ev) => { ev.preventDefault(); refresh(); });
+if(($("bcode").value||"").trim()) refresh();
+</script>
+</body>
+</html>
+"""
+
+
+def substitutes_manage_page(*, user_name: str, bcode: str = "") -> str:
+    return (
+        _SUBS_MANAGE_HTML.replace("__USER__", user_name or "")
+        .replace("__BCODE__", bcode or "")
     )

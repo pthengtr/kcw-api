@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from app.routers.parts9_explorer import router as explorer_router
+from app.routers.parts9_substitutes import router as substitutes_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,6 +17,7 @@ logging.basicConfig(
 
 app = FastAPI(title="KCW PARTS9 Explorer", docs_url="/docs", redoc_url=None)
 app.include_router(explorer_router)
+app.include_router(substitutes_router)
 
 
 @app.get("/")
