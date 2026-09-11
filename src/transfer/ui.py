@@ -1106,6 +1106,52 @@ function printRequestBill(detail){
     </div>`;
   window.print();
 }
+function printPrepareBill(req){
+  const fromB = req.from_branch;
+  const toB = req.to_branch;
+  const shipB = (fromB||SITE).toUpperCase();
+  const shipLabel = branchLabel(shipB);
+  const shortId = req.short_id || req.transfer_id || "";
+  const openLines = (req.lines||[]).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
+  const esc = s=>String(s||"").replace(/</g,"&lt;");
+  const shipLoc = ln=>{
+    const loc = shipB === "HQ"
+      ? ((ln.location_hq||ln.location||"").trim())
+      : ((ln.location_syp||ln.location||"").trim());
+    return loc || "—";
+  };
+  const shipStock = ln=>{
+    const qty = fmtQty(branchQtyoh2(ln, shipB));
+    if(shipB === "HQ" && isHqNoStock(ln)) return "ไม่สต็อก · "+qty;
+    return qty;
+  };
+  const rows = openLines.map((ln,i)=>{
+    const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
+    return `<tr>
+    <td style="text-align:center;width:1.6rem">□</td>
+    <td class="num">${i+1}</td>
+    <td><code>${esc(ln.bcode)}</code></td>
+    <td>${esc(ln.descr)}${ln.brand?`<div class="meta">ยี่ห้อ ${esc(ln.brand)}</div>`:""}${(ln.pcode||ln.mcode)?`<div class="meta">${[ln.pcode?`เบอร์แท้ ${esc(ln.pcode)}`:"",ln.mcode?`เบอร์โรงงาน ${esc(ln.mcode)}`:""].filter(Boolean).join(" · ")}</div>`:""}${ln.model?`<div class="meta">รุ่น ${esc(ln.model)}</div>`:""}</td>
+    <td>${esc(shipLoc(ln))}</td>
+    <td class="num">${shipStock(ln)}</td>
+    <td class="num"><strong>${fmtQty(remain)}</strong></td>
+  </tr>`;
+  }).join("");
+  $("printSheet").className = "";
+  $("printSheet").innerHTML = `
+    <h1 style="margin:0 0 .35rem;font-size:18pt">ใบจัดสินค้า</h1>
+    <p style="margin:0 0 .75rem;font-size:12pt"><strong>TRF-${String(shortId).replace(/^TRF-/,"")}</strong>
+      · ${dirLabel(fromB,toB)}
+      · จัดจาก ${shipLabel}</p>
+    <p class="meta" style="margin:0 0 .75rem">พิมพ์โดย ${USER} · ใช้ติ๊ก □ ตอนจัดของ · จำนวน = ค้างจัด (ยังไม่ออกใบ TF)</p>
+    <table><thead><tr><th>✓</th><th class="num">#</th><th>รหัส</th><th>รายละเอียด</th><th>ที่เก็บ</th><th class="num">คงเหลือ ${shipLabel}</th><th class="num">ค้างจัด</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7">ไม่มีรายการค้างจัด</td></tr>'}</tbody></table>
+    <div class="sig">
+      <div class="sig-box">ผู้จัด · ${shipLabel}<br/>ลายเซ็น / วันที่</div>
+      <div class="sig-box">ผู้ตรวจ · ${shipLabel}<br/>ลายเซ็น / วันที่</div>
+    </div>`;
+  window.print();
+}
 async function openRequestDetail(transferId){
   const detail = await api("/transfer/api/requests/"+transferId+"/lines");
   const lines = detail.items || detail.lines || [];
@@ -2136,10 +2182,12 @@ async function renderPrepare(el){
         ${shipBranch === "HQ" ? hqNoStockNoteHtml() : ""}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(1)">← เลือกคำขออื่น</button>
+          <button class="btn btn-ghost" id="btnPrepPrint2" type="button">พิมพ์ใบจัด</button>
           <button class="btn btn-primary" id="btnPrepNext2">ถัดไป → ตรวจสอบ</button>
         </div>
       </div>`;
     bindSyncedQtyInputs(el, ".prep-qty");
+    el.querySelector("#btnPrepPrint2").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnPrepNext2").onclick = ()=>{
       const {qtyMap, any} = collectPositiveQtyMap(el, ".prep-qty", "line");
       if(!any){alert("ระบุจำนวนที่จัด");return;}
@@ -2178,9 +2226,11 @@ async function renderPrepare(el){
         ${shipBranch === "HQ" ? hqNoStockNoteHtml() : ""}
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(2)">← แก้ไขจำนวน</button>
+          <button class="btn btn-ghost" id="btnPrepPrint3" type="button">พิมพ์ใบจัด</button>
           <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันส่งสินค้า (ออกใบ TF)</button>
         </div>
       </div>`;
+    el.querySelector("#btnPrepPrint3").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnConfirmPrepare").onclick = async()=>{
       try{
         const result = await submitPrepare(req, qtyMap);
