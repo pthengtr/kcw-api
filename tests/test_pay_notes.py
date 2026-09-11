@@ -85,6 +85,14 @@ def test_pay_notes_page_renders():
     assert 'formatRemarkShort' in html
 
 
+def test_print_sheet_includes_numeric_net_amount():
+    html = page(user_name="ทดสอบ", site="HQ", write_enabled=False)
+    assert '<div class="row"><span>จำนวนเงินรวม</span><span class="n">${fmtMoney(billamt)}</span></div>' in html
+    assert '<div class="row"><span>ส่วนลด</span><span class="n">${fmtMoney(disc)}</span></div>' in html
+    assert '<div class="row pv-net"><span>ยอดสุทธิ</span><span class="n">${fmtMoney(net)}</span></div>' in html
+    assert ".pv-tot .pv-net" in html
+
+
 def test_page_has_voucher_and_proof_tabs():
     html = page(user_name="Alice Doe", site="HQ", write_enabled=True)
     assert "ใบสำคัญจ่าย" in html

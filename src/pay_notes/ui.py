@@ -632,6 +632,8 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 .pv-tot { min-width:16rem; font-size:11pt; }
 .pv-tot .row { display:flex; justify-content:space-between; gap:1rem; padding:.12rem 0; }
 .pv-tot .n { font-variant-numeric:tabular-nums; }
+.pv-tot .pv-net { font-weight:800; border-top:1px solid #111; margin-top:.12rem; padding-top:.28rem; }
+.pv-tot .pv-net .n { color:#c41e3a; }
 .pv-pay { margin-top:.7rem; display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
 .pv-checks { font-size:11pt; }
 .pv-amt-red { color:#c41e3a; font-weight:800; font-size:13pt; font-variant-numeric:tabular-nums; }
@@ -2131,8 +2133,8 @@ function fillPrintSheet(det, row) {
   const docno = voucno || noteno;
   const month = billMonthLabel(bills);
   const disc = Number(totals.discount || 0);
-  const net = Number(totals.netamt != null ? totals.netamt : 0);
   const billamt = Number(totals.billamt != null ? totals.billamt : 0);
+  const net = Number(totals.netamt != null ? totals.netamt : Math.max(0, billamt - disc));
   const billcnt = totals.billcnt || bills.length;
   const words = totals.net_text || '';
   const remarkNote = String(rem.remark || '').trim();
@@ -2210,6 +2212,7 @@ function fillPrintSheet(det, row) {
         <div class="pv-tot">
           <div class="row"><span>จำนวนเงินรวม</span><span class="n">${fmtMoney(billamt)}</span></div>
           <div class="row"><span>ส่วนลด</span><span class="n">${fmtMoney(disc)}</span></div>
+          <div class="row pv-net"><span>ยอดสุทธิ</span><span class="n">${fmtMoney(net)}</span></div>
         </div>
       </div>
       <div class="pv-pay">
