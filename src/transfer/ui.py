@@ -254,6 +254,19 @@ tr.row-picked td{background:var(--acc-pick)}
 }
 .commit-bar .commit-meta{flex:1; min-width:8rem; font-size:.82rem; color:var(--muted)}
 .commit-bar .commit-meta strong{color:var(--text)}
+/* Request pick step: keep Continue on screen. Sticky-in-card was covered by รายการในคำขอ. */
+body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bottom,0px))}
+.request-dock{
+  position:fixed; left:0; right:0; bottom:0; z-index:18;
+  background:#fff; border-top:1px solid var(--line);
+  box-shadow:0 -4px 16px rgba(16,24,40,.10);
+  padding:.65rem 1rem calc(.65rem + env(safe-area-inset-bottom,0px));
+}
+.request-dock .commit-bar{
+  position:static; margin:0 auto; padding:0; border:0; box-shadow:none;
+  max-width:1200px; background:transparent;
+}
+.request-dock .btn-primary{min-width:9.5rem}
 @media (min-width:900px){
   main{padding:1.25rem 1.5rem}
   .table-wrap table{table-layout:auto}
@@ -308,6 +321,13 @@ tr.row-picked td{background:var(--acc-pick)}
   .modal-backdrop{padding:0;align-items:flex-end}
   .modal{border-radius:16px 16px 0 0;max-height:88vh;padding:.9rem .85rem calc(.9rem + env(safe-area-inset-bottom,0px))}
   .toast{bottom:calc(1rem + env(safe-area-inset-bottom,0px));font-size:.8rem}
+  body.request-picking .toast{bottom:calc(5.5rem + env(safe-area-inset-bottom,0px))}
+  body.request-picking main{padding-bottom:calc(7.25rem + env(safe-area-inset-bottom,0px))}
+  .request-dock{padding:.55rem .65rem calc(.55rem + env(safe-area-inset-bottom,0px))}
+  .request-dock .commit-bar{gap:.4rem}
+  .request-dock .commit-meta{flex:1 1 100%; min-width:0}
+  .request-dock .btn{flex:1 1 auto; min-width:0; text-align:center; padding:.5rem .65rem; font-size:.82rem}
+  .request-dock .btn-primary{flex:1 1 100%; min-width:0}
   .empty{padding:1.5rem .75rem}
   .bill-steps{padding-left:1rem}
   .sticker-preview{width:min(100%,10rem);height:auto}
@@ -394,11 +414,18 @@ function fmtQty(n){
   if(Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
   return x.toLocaleString("th-TH",{maximumFractionDigits:2});
 }
+function escText(s){
+  return String(s==null?"":s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
 function fmtQtyUi(qty, ui){
   const q = fmtQty(qty);
   const u = (ui || "").trim();
   if(q === "—") return q;
-  return u ? (q + " " + u) : q;
+  return u ? (q + " " + escText(u)) : q;
 }
 function unitChoices(row){
   const mtp2 = Number(row.mtp2) || 1;
@@ -447,19 +474,19 @@ function fmtHqStockPlain(row){
 }
 function fmtModel(row){
   const m = (row && row.model || "").trim();
-  return m ? `<div class="model">รุ่น ${m}</div>` : "";
+  return m ? `<div class="model">รุ่น ${escText(m)}</div>` : "";
 }
 function fmtBrand(row){
   const b = (row && row.brand || "").trim();
-  return b ? `<div class="meta">ยี่ห้อ ${b}</div>` : "";
+  return b ? `<div class="meta">ยี่ห้อ ${escText(b)}</div>` : "";
 }
 function fmtOemCodes(row){
   const p = (row && row.pcode || "").trim();
   const m = (row && row.mcode || "").trim();
   if(!p && !m) return "";
   const bits = [];
-  if(p) bits.push("เบอร์แท้ "+p);
-  if(m) bits.push("เบอร์โรงงาน "+m);
+  if(p) bits.push("เบอร์แท้ "+escText(p));
+  if(m) bits.push("เบอร์โรงงาน "+escText(m));
   return `<div class="meta">${bits.join(" · ")}</div>`;
 }
 function fmtLocation(row){
@@ -467,12 +494,12 @@ function fmtLocation(row){
   const syp = (row && row.location_syp || "").trim();
   if(hq || syp){
     const bits = [];
-    if(hq) bits.push("สนญ "+hq);
-    if(syp) bits.push("สาขา "+syp);
+    if(hq) bits.push("สนญ "+escText(hq));
+    if(syp) bits.push("สาขา "+escText(syp));
     return `<div class="meta">ที่เก็บ ${bits.join(" · ")}</div>`;
   }
   const cur = (row && row.location || "").trim();
-  return cur ? `<div class="meta">ที่เก็บ ${cur}</div>` : "";
+  return cur ? `<div class="meta">ที่เก็บ ${escText(cur)}</div>` : "";
 }
 function fmtSubsHint(row){
   const peers = row && (Array.isArray(row.suggestions) ? row.suggestions
@@ -480,16 +507,16 @@ function fmtSubsHint(row){
   if(!peers.length) return "";
   const bits = peers.slice(0, 6).map(p=>{
     const src = (p.source_label || p.source || "").trim();
-    const badge = src ? `<span class="badge">${src}</span> ` : "";
+    const badge = src ? `<span class="badge">${escText(src)}</span> ` : "";
     const hq = p.hq_qtyoh2 != null ? p.hq_qtyoh2 : "—";
     const syp = p.syp_qtyoh2 != null ? p.syp_qtyoh2 : "—";
     const l1 = p.hq_l1 ? " L-1" : "";
-    return `${badge}${p.bcode} ${(p.descr||"").slice(0,28)} (สนญ ${hq} / สาขา ${syp}${l1})`;
+    return `${badge}${escText(p.bcode)} ${escText(String(p.descr||"").slice(0,28))} (สนญ ${escText(hq)} / สาขา ${escText(syp)}${l1})`;
   });
   return `<div class="meta" style="color:var(--accent,#c9a227)">แนะนำทดแทน: ${bits.join(" · ")}</div>`;
 }
 function fmtDescr(row){
-  return `${(row && row.descr) || ""}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}${fmtSubsHint(row)}`;
+  return `${escText((row && row.descr) || "")}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}${fmtSubsHint(row)}`;
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);
@@ -1312,8 +1339,12 @@ function withScrollPreserved(fn){
     return v;
   });
 }
+function pickKey(rowOrBcode){
+  if(rowOrBcode && typeof rowOrBcode === "object") return String(rowOrBcode.bcode||"").trim();
+  return String(rowOrBcode||"").trim();
+}
 function readSuggestPick(row){
-  const b = row.bcode;
+  const b = pickKey(row);
   const entry = defaultEntryQty(row);
   const cur = suggestPick[b] || {};
   return {
@@ -1323,9 +1354,10 @@ function readSuggestPick(row){
   };
 }
 function writeSuggestPick(bcode, patch, row){
+  const key = pickKey(bcode);
   const entry = row ? defaultEntryQty(row) : {unit:"small", qty:1};
-  const cur = suggestPick[bcode] || {checked:false, unit:entry.unit, qty:entry.qty};
-  suggestPick[bcode] = {...cur, ...patch};
+  const cur = suggestPick[key] || {checked:false, unit:entry.unit, qty:entry.qty};
+  suggestPick[key] = {...cur, ...patch};
 }
 function pickedCount(){
   return Object.values(suggestPick).filter(p=>p && p.checked).length;
@@ -1528,7 +1560,7 @@ async function renderRequest(el, opts){
 
     let html = stepBar(2) + `<div class="card">
       <p style="margin:0 0 .75rem"><strong>ทิศทาง:</strong> ${OTHER_LABEL} → ${SITE_LABEL}</p>
-      <p class="meta" style="margin:0 0 .75rem">ติ๊กเลือกรายการ ปรับจำนวน แล้วกด <strong>เพิ่มที่เลือก</strong> — หน้าจอจะไม่กระโดดกลับด้านบน</p>
+      <p class="meta" style="margin:0 0 .75rem">ติ๊กเลือกรายการ ปรับจำนวน แล้วกด <strong>ถัดไป</strong> — หรือกดเพิ่มที่เลือกเพื่อเก็บไว้ในคำขอก่อน</p>
 
       <div class="search-bar">
         <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / ยี่ห้อ / เบอร์แท้ / เบอร์โรงงาน / รุ่น)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
@@ -1568,11 +1600,11 @@ async function renderRequest(el, opts){
         const idx = suggestItems.indexOf(r);
         const pick = readSuggestPick(r);
         const inCart = cartBcodes.has((r.bcode||"").trim());
-        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${c.label}</option>`).join("");
+        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${escText(c.label)}</option>`).join("");
         const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
         const srcTitle = src==="รอสั่ง" && Number(r.iclow_line_count||0)>1 ? ` title="รวม ${r.iclow_line_count} แถว ICLOW"` : "";
         return `<tr class="${pick.checked?"row-picked":""}"><td><input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""} ${inCart?"title=\"มีในคำขอแล้ว — ติ๊กแล้วเพิ่มซ้ำได้\"":""}/></td>
-          <td><code>${r.bcode}</code>${inCart?` <span class="meta">ในคำขอ</span>`:""}</td><td class="meta"${srcTitle}>${src}</td><td>${fmtDescr(r)}</td>
+          <td><code>${escText(r.bcode)}</code>${inCart?` <span class="meta">ในคำขอ</span>`:""}</td><td class="meta"${srcTitle}>${src}</td><td>${fmtDescr(r)}</td>
           <td class="num">${fmtHqStock(r)}</td><td class="num">${fmtStockDual(r.syp_qtyoh2,r)}</td>
           <td class="num">${fmtStockDual(r.suggest_qty,r)}</td>
           <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
@@ -1582,13 +1614,13 @@ async function renderRequest(el, opts){
         const idx = suggestItems.indexOf(r);
         const pick = readSuggestPick(r);
         const inCart = cartBcodes.has((r.bcode||"").trim());
-        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${c.label}</option>`).join("");
+        const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${escText(c.label)}</option>`).join("");
         const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
         return `<div class="item-card ${pick.checked?"row-picked":""}">
           <div class="item-card-head">
             <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer">
               <input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""}/>
-              <code>${r.bcode}</code>
+              <code>${escText(r.bcode)}</code>
             </label>
             <span class="meta">${src}${inCart?" · ในคำขอ":""}</span>
           </div>
@@ -1613,21 +1645,15 @@ async function renderRequest(el, opts){
       html += hqNoStockNoteHtml();
       if(q) html += `<p class="meta" style="margin:.5rem 1rem 0">แสดง ${filtered.length} จาก ${suggestItems.length} รายการ</p>`;
     }
-    html += `
-      <div class="commit-bar">
-        <div class="commit-meta">เลือกแล้ว <strong id="pickCountLabel">${nPicked}</strong> · ในคำขอ <strong>${cartItems.length}</strong></div>
-        <button class="btn btn-ghost" id="btnClearPick" ${nPicked?"":"disabled"}>ล้างที่เลือก</button>
-        <button class="btn btn-primary" id="btnCommitPick" ${nPicked?"":"disabled"}>เพิ่มที่เลือก (${nPicked})</button>
-      </div>
-    </div>`;
+    html += `</div>`;
 
     html += `<div class="card card-table"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
-    if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ — ติ๊กจากรายการแนะนำแล้วกดเพิ่มที่เลือก</div>`;
+    if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ — ติ๊กจากรายการแนะนำแล้วกดถัดไป</div>`;
     else {
-      const cartTableRows = cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td>
+      const cartTableRows = cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td>
         <td><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></td></tr>`).join("");
       const cartCardRows = cartItems.map(n=>`<div class="item-card">
-        <div class="item-card-head"><code>${n.bcode}</code><span class="num">${fmtQty(n.qty)}</span></div>
+        <div class="item-card-head"><code>${escText(n.bcode)}</code><span class="num">${fmtQty(n.qty)}</span></div>
         <div class="item-card-desc">${fmtDescr(n)}</div>
         <div class="item-card-actions"><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></div>
       </div>`).join("");
@@ -1636,11 +1662,18 @@ async function renderRequest(el, opts){
         itemCards(cartCardRows)
       );
     }
-    html += `<div class="row-actions">
-      <button class="btn btn-ghost" onclick="setRequestStep(1)">← ย้อนกลับ</button>
-      <button class="btn btn-primary" id="btnReqNext2" ${cartItems.length?"":"disabled"}>ถัดไป → ตรวจสอบ</button>
-    </div></div>`;
+    html += `</div>
+    <div class="request-dock" id="requestDock">
+      <div class="commit-bar">
+        <div class="commit-meta">เลือกแล้ว <strong id="pickCountLabel">${nPicked}</strong> · ในคำขอ <strong id="cartCountLabel">${cartItems.length}</strong></div>
+        <button class="btn btn-ghost" id="btnClearPick" ${nPicked?"":"disabled"}>ล้างที่เลือก</button>
+        <button class="btn btn-ghost" id="btnCommitPick" ${nPicked?"":"disabled"}>เพิ่มที่เลือก (${nPicked})</button>
+        <button class="btn btn-ghost" id="btnReqBack2">← ย้อนกลับ</button>
+        <button class="btn btn-primary" id="btnReqNext2" ${nPicked||cartItems.length?"":"disabled"}>ถัดไป → ตรวจสอบ</button>
+      </div>
+    </div>`;
     el.innerHTML = html;
+    document.body.classList.add("request-picking");
 
     function syncPickChrome(){
       const n = pickedCount();
@@ -1650,14 +1683,54 @@ async function renderRequest(el, opts){
       if(commit){ commit.disabled = n===0; commit.textContent = `เพิ่มที่เลือก (${n})`; }
       const clear = el.querySelector("#btnClearPick");
       if(clear) clear.disabled = n===0;
+      const next = el.querySelector("#btnReqNext2");
+      if(next) next.disabled = n===0 && !cartItems.length;
     }
     function livePickFromDom(idx, row){
       const fallback = readSuggestPick(row);
-      const qtyEl = el.querySelector(`[data-qty="${idx}"]`);
-      const unitEl = el.querySelector(`[data-unit="${idx}"]`);
+      const pane = visibleDualPane(el);
+      const qtyEl = pane.querySelector(`[data-qty="${idx}"]`) || el.querySelector(`[data-qty="${idx}"]`);
+      const unitEl = pane.querySelector(`[data-unit="${idx}"]`) || el.querySelector(`[data-unit="${idx}"]`);
       const qty = qtyEl != null ? Number(qtyEl.value||0) : fallback.qty;
       const unit = unitEl != null ? unitEl.value : fallback.unit;
       return {qty, unit};
+    }
+    function rowChecked(idx, row){
+      const pane = visibleDualPane(el);
+      const chk = pane.querySelector(`[data-pick="${idx}"]`) || el.querySelector(`[data-pick="${idx}"]`);
+      if(chk) return !!chk.checked;
+      return !!readSuggestPick(row).checked;
+    }
+    function collectPicks(){
+      const picks = [];
+      for(let idx=0; idx<suggestItems.length; idx++){
+        const row = suggestItems[idx];
+        if(!rowChecked(idx, row)) continue;
+        const live = livePickFromDom(idx, row);
+        writeSuggestPick(row.bcode, {qty: live.qty, unit: live.unit, checked: true}, row);
+        const qtySmall = qtyToSmall(live.qty, live.unit, row);
+        if(qtySmall <= 0) return {error: "จำนวนของ "+(row.bcode||"")+" ไม่ถูกต้อง"};
+        picks.push({row, qtySmall});
+      }
+      return {picks};
+    }
+    async function commitPicked(){
+      const collected = collectPicks();
+      if(collected.error){ alert(collected.error); return {ok:false, added:0}; }
+      const picks = collected.picks || [];
+      if(!picks.length) return {ok:true, added:0};
+      try{
+        await Promise.all(picks.map(p=>api("/transfer/api/need-list",{
+          method:"POST",
+          quiet:true,
+          body:JSON.stringify({
+            bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
+            descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
+          }),
+        })));
+        picks.forEach(p=>writeSuggestPick(p.row.bcode, {checked:false}));
+        return {ok:true, added:picks.length};
+      }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); return {ok:false, added:0}; }
     }
     function bindPickRow(idx){
       const row = suggestItems[idx];
@@ -1669,11 +1742,13 @@ async function renderRequest(el, opts){
         chk.onchange = ()=>{
           const live = livePickFromDom(idx, row);
           writeSuggestPick(row.bcode, {checked: chk.checked, qty: live.qty, unit: live.unit}, row);
-          checks.forEach(c=>{ c.checked = chk.checked; });
-          const tr = chk.closest("tr");
-          const card = chk.closest(".item-card");
-          if(tr) tr.classList.toggle("row-picked", chk.checked);
-          if(card) card.classList.toggle("row-picked", chk.checked);
+          checks.forEach(c=>{
+            c.checked = chk.checked;
+            const tr = c.closest("tr");
+            const card = c.closest(".item-card");
+            if(tr) tr.classList.toggle("row-picked", chk.checked);
+            if(card) card.classList.toggle("row-picked", chk.checked);
+          });
           syncPickChrome();
         };
       });
@@ -1724,36 +1799,18 @@ async function renderRequest(el, opts){
       };
     }
 
-    el.querySelector("#btnClearPick").onclick = ()=>{
+    const btnClearPick = el.querySelector("#btnClearPick");
+    if(btnClearPick) btnClearPick.onclick = ()=>{
       suggestPick = {};
       withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
     };
-    el.querySelector("#btnCommitPick").onclick = async()=>{
-      const picks = [];
-      for(const row of suggestItems){
-        const pick = suggestPick[row.bcode];
-        if(!pick || !pick.checked) continue;
-        const idx = suggestItems.indexOf(row);
-        const live = livePickFromDom(idx, row);
-        writeSuggestPick(row.bcode, {qty: live.qty, unit: live.unit, checked: true}, row);
-        const qtySmall = qtyToSmall(live.qty, live.unit, row);
-        if(qtySmall <= 0){ alert("จำนวนของ "+row.bcode+" ไม่ถูกต้อง"); return; }
-        picks.push({row, qtySmall});
-      }
-      if(!picks.length){ alert("ยังไม่ได้เลือกรายการ"); return; }
-      try{
-        await Promise.all(picks.map(p=>api("/transfer/api/need-list",{
-          method:"POST",
-          quiet:true,
-          body:JSON.stringify({
-            bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
-            descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
-          }),
-        })));
-        picks.forEach(p=>writeSuggestPick(p.row.bcode, {checked:false}));
-        showToast("เพิ่ม "+picks.length+" รายการแล้ว");
-        await withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
-      }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
+    const btnCommitPick = el.querySelector("#btnCommitPick");
+    if(btnCommitPick) btnCommitPick.onclick = async()=>{
+      const result = await commitPicked();
+      if(!result.ok) return;
+      if(!result.added){ alert("ยังไม่ได้เลือกรายการ"); return; }
+      showToast("เพิ่ม "+result.added+" รายการแล้ว");
+      await withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
     };
 
     el.querySelector("#btnManualAdd").onclick = async()=>{
@@ -1792,7 +1849,7 @@ async function renderRequest(el, opts){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b),{quiet:true});
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<strong>${p.descr||"—"}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
+        manualPreviewEl.innerHTML = `<strong>${escText(p.descr||"—")}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
       }catch(e){
         manualPreviewEl.style.display = "block";
         manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
@@ -1809,7 +1866,20 @@ async function renderRequest(el, opts){
       await api("/transfer/api/need-list/"+btn.dataset.del,{method:"DELETE"});
       await withScrollPreserved(()=>renderRequest(el));
     });
-    el.querySelector("#btnReqNext2").onclick = ()=>setRequestStep(3);
+    const btnReqBack2 = el.querySelector("#btnReqBack2");
+    if(btnReqBack2) btnReqBack2.onclick = ()=>setRequestStep(1);
+    const btnReqNext2 = el.querySelector("#btnReqNext2");
+    if(btnReqNext2) btnReqNext2.onclick = async()=>{
+      const result = await commitPicked();
+      if(!result.ok) return;
+      let items = cartItems;
+      if(result.added){
+        const cartNow = await api("/transfer/api/need-list",{quiet:true});
+        items = cartNow.items || [];
+      }
+      if(!items.length){ alert("ยังไม่ได้เลือกรายการ"); return; }
+      setRequestStep(3);
+    };
     return;
   }
 
@@ -1823,10 +1893,10 @@ async function renderRequest(el, opts){
         ${submitBillNoteHtml(OTHER, SITE)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
-            ${cartItems.map(n=>`<tr><td><code>${n.bcode}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
+            ${cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
           </tbody></table></div>`,
           itemCards(cartItems.map(n=>`<div class="item-card">
-            <div class="item-card-head"><code>${n.bcode}</code><span class="num">${fmtQty(n.qty)}</span></div>
+            <div class="item-card-head"><code>${escText(n.bcode)}</code><span class="num">${fmtQty(n.qty)}</span></div>
             <div class="item-card-desc">${fmtDescr(n)}</div>
           </div>`).join(""))
         )}
@@ -2410,6 +2480,7 @@ async function renderStatus(el){
 
 async function render(){
   updateHeader();
+  document.body.classList.remove("request-picking");
   const el = $("content");
   try{
     if(view==="home") await renderHome(el);

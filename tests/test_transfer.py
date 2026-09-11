@@ -154,6 +154,17 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
     assert "withScrollPreserved" in html
     assert "livePickFromDom" in html
     assert "defaultEntryQty(row)" in html
+    assert "request-dock" in html
+    assert "request-picking" in html
+    assert "commitPicked" in html
+    assert "collectPicks" in html
+    assert "visibleDualPane(el)" in html
+    assert "function escText" in html
+    assert "${nPicked||cartItems.length?\"\":\"disabled\"}" in html
+    assert "next.disabled = n===0 && !cartItems.length" in html
+    assert "escText((row && row.descr) || \"\")" in html or "escText((row && row.descr)" in html
+    # Ticking a product must enable Continue even when the cart is still empty
+    assert 'id="btnReqNext2" ${cartItems.length?"":"disabled"}' not in html
     # Tick without editing qty must not silently fall back to qty=1
     assert 'suggestPick[bcode] || {checked:false, unit:"small", qty:1}' not in html
     assert 'data-add="' not in html
