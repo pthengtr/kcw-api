@@ -1,0 +1,747 @@
+proposed_group_id,bcode,descr,evidence,confidence,hq_qtymin,hq_qtyoh2,syp_qtyoh2,notes
+G001,01050076,น็อตหัวเพลา,REMARKS on 01050082: ใช้รหัส 01050076 แทน; REMARKS on 09050639: ใช้รหัส 01050076 แทน; REMARKS on 09050964: ใช้รหัส 01050076 แทน,med,5,28,6,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G001,01050082,น็อตหัวเพลา,REMARKS on 01050082: ใช้รหัส 01050076 แทน; REMARKS on 09050639: ใช้รหัส 01050076 แทน; REMARKS on 09050964: ใช้รหัส 01050076 แทน,med,-1,3,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G001,09050639,สกรูหัวเพลา HINO,REMARKS on 01050082: ใช้รหัส 01050076 แทน; REMARKS on 09050639: ใช้รหัส 01050076 แทน; REMARKS on 09050964: ใช้รหัส 01050076 แทน,med,-1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G001,09050964,สกรูหัวเพลา HINO,REMARKS on 01050082: ใช้รหัส 01050076 แทน; REMARKS on 09050639: ใช้รหัส 01050076 แทน; REMARKS on 09050964: ใช้รหัส 01050076 แทน,med,-1,7,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G002,12052220,เก้าอี้เท้าแขน ดำ,REMARKS on 12053041: 12053041=12052220  2300.- 10แถม1ของหมด13/8/69ใช้รหัส12052220แทน; REMARKS on 12052220: 12053041=1 ใช้ TK104 แทนได้ 12053301; REMARKS on 12052719: ใช้ 12053301 แทนได้ เหมือนกันเลย,med,3,10,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G002,12052719,เก้าอี้เท้าแขน เหลือง,REMARKS on 12053041: 12053041=12052220  2300.- 10แถม1ของหมด13/8/69ใช้รหัส12052220แทน; REMARKS on 12052220: 12053041=1 ใช้ TK104 แทนได้ 12053301; REMARKS on 12052719: ใช้ 12053301 แทนได้ เหมือนกันเลย,med,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G002,12053041,เก้าอี้เท้าแขน ดำ,REMARKS on 12053041: 12053041=12052220  2300.- 10แถม1ของหมด13/8/69ใช้รหัส12052220แทน; REMARKS on 12052220: 12053041=1 ใช้ TK104 แทนได้ 12053301; REMARKS on 12052719: ใช้ 12053301 แทนได้ เหมือนกันเลย,med,-1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G002,12053301,เก้าอี้เท้าแขน ดำ จอนเดียร์,REMARKS on 12053041: 12053041=12052220  2300.- 10แถม1ของหมด13/8/69ใช้รหัส12052220แทน; REMARKS on 12052220: 12053041=1 ใช้ TK104 แทนได้ 12053301; REMARKS on 12052719: ใช้ 12053301 แทนได้ เหมือนกันเลย,med,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G005,08055531,ลูกรอก+ตัวดัน สพ.ไดชาร์ท,REMARKS on 08056897: ใช้รหัส08055531แทน; REMARKS on 08056245: ใช้รหัส08056897แทน,high,0,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G005,08056245,ลูกรอก+ตัวดัน สพ.ไดชาร์ท,REMARKS on 08056897: ใช้รหัส08055531แทน; REMARKS on 08056245: ใช้รหัส08056897แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G005,08056897,ลูกรอก+ตัวดัน สพ.ไดชาร์ท,REMARKS on 08056897: ใช้รหัส08055531แทน; REMARKS on 08056245: ใช้รหัส08056897แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G006,13051912,โอโตเมติกสตาร์ท,"REMARKS on 13051912: -ใช้แทน D-Max ได้ ใช้หัวเก่า 13052397,12052169; REMARKS on 13052397: -ใช้แทน D-Max ได้ ใช้หัวเก่า ใช้13052169",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G006,13052169,โอโตเมติกสตาร์ท,"REMARKS on 13051912: -ใช้แทน D-Max ได้ ใช้หัวเก่า 13052397,12052169; REMARKS on 13052397: -ใช้แทน D-Max ได้ ใช้หัวเก่า ใช้13052169",high,1,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G006,13052397,โอโตเมติกสตาร์ท,"REMARKS on 13051912: -ใช้แทน D-Max ได้ ใช้หัวเก่า 13052397,12052169; REMARKS on 13052397: -ใช้แทน D-Max ได้ ใช้หัวเก่า ใช้13052169",high,0,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G007,15014890,ลูกปืน,REMARKS on 15014892: ใช้รหัสแทน 15014890; REMARKS on 15014891: VP ขาย 93.-6/62 ใช้แทน15014892/7PK 110.01.-,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G007,15014891,ลูกปืน,REMARKS on 15014892: ใช้รหัสแทน 15014890; REMARKS on 15014891: VP ขาย 93.-6/62 ใช้แทน15014892/7PK 110.01.-,high,4,12,8,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G007,15014892,ลูกปืน ปลายเกียร์ M7040,REMARKS on 15014892: ใช้รหัสแทน 15014890; REMARKS on 15014891: VP ขาย 93.-6/62 ใช้แทน15014892/7PK 110.01.-,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G008,30010291,"คอนโทรลวาวล์ ก.3/4""",REMARKS on 30010291: ขต.33010545+33010612/ของขาดยาวใช้ 30010444แทน; REMARKS on 30010526: ขต.33010545+33010612/ของขาดยาวใช้ 30010444แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G008,30010444,"คอนโทรลวาวล์ ก.3/4""",REMARKS on 30010291: ขต.33010545+33010612/ของขาดยาวใช้ 30010444แทน; REMARKS on 30010526: ขต.33010545+33010612/ของขาดยาวใช้ 30010444แทน,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G008,30010526,"คอนโทรลวาวล์ ก.3/4"" 16NF",REMARKS on 30010291: ขต.33010545+33010612/ของขาดยาวใช้ 30010444แทน; REMARKS on 30010526: ขต.33010545+33010612/ของขาดยาวใช้ 30010444แทน,high,1,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G009,30010351,ชุดแปลงเก้าอี้+ยาง+สกรู,REMARKS on 30010351: ใช้ 30010476 แทน; REMARKS on 30010352: ใช้ 30010476 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G009,30010352,ชุดแปลงเก้าอี้+ยาง+สกรู,REMARKS on 30010351: ใช้ 30010476 แทน; REMARKS on 30010352: ใช้ 30010476 แทน,high,-1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G009,30010476,ชุดแปลงเก้าอี้,REMARKS on 30010351: ใช้ 30010476 แทน; REMARKS on 30010352: ใช้ 30010476 แทน,high,2,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G010,30050484,ซีลล้อหน้าคูโบต้า,REMARKS on 30050484: CRRK 80.- ใช้รหัสแทน 30052567; REMARKS on 30051577: 33740-80290 ศูนย์ 590.-ใช้รหัส30052567แทนได้,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G010,30051577,ซีลตูด PTO คูโบต้า,REMARKS on 30050484: CRRK 80.- ใช้รหัสแทน 30052567; REMARKS on 30051577: 33740-80290 ศูนย์ 590.-ใช้รหัส30052567แทนได้,high,1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G010,30052567,ซีลล้อหน้าคูโบต้า,REMARKS on 30050484: CRRK 80.- ใช้รหัสแทน 30052567; REMARKS on 30051577: 33740-80290 ศูนย์ 590.-ใช้รหัส30052567แทนได้,high,4,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G011,30051193,"สายไมล์ เกลียวรู 11,12 มิล",REMARKS on 30051196: ใช้รหัส 30051193 แทน; REMARKS on 30051611: ใช้รหัส 30051193 แทนค่ะ,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G011,30051196,"สายไมล์  เกลียวรู 11มิล,12มิล",REMARKS on 30051196: ใช้รหัส 30051193 แทน; REMARKS on 30051611: ใช้รหัส 30051193 แทนค่ะ,high,-1,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G011,30051611,สายไมล์ ยาว 104.5 ซม.,REMARKS on 30051196: ใช้รหัส 30051193 แทน; REMARKS on 30051611: ใช้รหัส 30051193 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G012,30051365,แหวนรองเพลาล้อหน้า,REMARKS on 30051365: เหมือน 30052066  ใช้แทน 30052067; REMARKS on 30052066: 5-07-112-06  ใช้แทนรหัส 30052067,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G012,30052066,แผ่นชิมรองเฟืองขับหน้า (0.60),REMARKS on 30051365: เหมือน 30052066  ใช้แทน 30052067; REMARKS on 30052066: 5-07-112-06  ใช้แทนรหัส 30052067,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G012,30052067,แผ่นชิมรองเฟืองขับหน้า (0.80),REMARKS on 30051365: เหมือน 30052066  ใช้แทน 30052067; REMARKS on 30052066: 5-07-112-06  ใช้แทนรหัส 30052067,high,3,11,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G013,30052110,ซีลล้อหลังคูโบต้า,REMARKS on 30052110: ใช้รหัส 30052485 แทนคะ; REMARKS on 30052876: TC403-27560 สั่งสวนมะลิ ของหมด30/7/69 ใช้รหัส30052485แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G013,30052485,ซีลล้อหลังคูโบต้า,REMARKS on 30052110: ใช้รหัส 30052485 แทนคะ; REMARKS on 30052876: TC403-27560 สั่งสวนมะลิ ของหมด30/7/69 ใช้รหัส30052485แทน,high,-1,10,6,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G013,30052876,ซีลล้อหลังคูโบต้า L-1 (22-24 แรง),REMARKS on 30052110: ใช้รหัส 30052485 แทนคะ; REMARKS on 30052876: TC403-27560 สั่งสวนมะลิ ของหมด30/7/69 ใช้รหัส30052485แทน,high,1,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G015,02051520,ไส้กรองโซล่า เหล็ก ก.16NF,REMARKS on 02051520: ใช้รหัส 02053453 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G015,02053453,ไส้กรองโซล่า เหล็ก ก.16NF,REMARKS on 02051520: ใช้รหัส 02053453 แทนค่ะ,high,2,4,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G016,03011921,ไส้กรองอากาศ แอร์,REMARKS on 03011921: ใช้รหัส03012099แทนครับ,high,-1,10,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G016,03012099,กรองแอร์ ISUZU,REMARKS on 03011921: ใช้รหัส03012099แทนครับ,high,4,8,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G017,03012840,"จานคลัช 8""x10Tx25.6m",REMARKS on 03012840: ใช้ 30050256 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G017,30050256,"จานคลัช 8""x10Tx25.6m มีปริง",REMARKS on 03012840: ใช้ 30050256 แทน,high,0,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G018,03052531,มูเลย์ข้อเหวี่ยงหน้า 3ร่อง,REMARKS on 03052532: พี่นกแจ้งว่าให้ใช้ 3ร่องใส่แทนได้เลย รหัส 03052531 ค่ะ,high,0,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G018,03052532,มูเลย์ข้อเหวี่ยงหน้า 2ร่อง,REMARKS on 03052532: พี่นกแจ้งว่าให้ใช้ 3ร่องใส่แทนได้เลย รหัส 03052531 ค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G019,03054211,ยางหูแหนบหลังผ้าใบ,REMARKS on 03054211: ใช้รหัส03054214แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G019,03054214,ยางหูแหนบหลังผ้าใบ,REMARKS on 03054211: ใช้รหัส03054214แทน,high,7,28,13,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G020,03056613,สายเพาเวอร์ ยาว 24 นิ้ว,REMARKS on 03056615: ใช่รหัสนี้แทน03056613,high,0,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G020,03056615,สายเพาเวอร์,REMARKS on 03056615: ใช่รหัสนี้แทน03056613,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G021,03056900,ปะเก็นฝาวาว,REMARKS on 03056903: ใช้รหัส 03056900 แทนค่ะ,high,1,4,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G021,03056903,ปะเก็นฝาวาว 4JA,REMARKS on 03056903: ใช้รหัส 03056900 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G022,04019890,กระจกมองข้าง ยาว,REMARKS on 04019890: ใช้รหัส 04019893 แทนค่ะ // SKM 185.-/SMA 180.-,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G022,04019893,กระจกมองข้าง ยาว,REMARKS on 04019890: ใช้รหัส 04019893 แทนค่ะ // SKM 185.-/SMA 180.-,high,1,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G025,05015200,กระจกมองข้าง ดำ,REMARKS on 05015200: ใช้รหัส 05015202 แทน,high,-1,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G025,05015202,กระจกมองข้าง ดำ,REMARKS on 05015200: ใช้รหัส 05015202 แทน,high,0,1,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G027,07010524,ไส้กรองเครื่อง เหล็ก ก. 1.5,REMARKS on 07010524: 1540061003  ใช้รหัสแทน 07018661,high,3,7,5,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G027,07018661,ไส้กรองเครื่อง เหล็ก ก. 1.5,REMARKS on 07010524: 1540061003  ใช้รหัสแทน 07018661,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G029,07017410,ไส้กรองโซล่า ก.มิล 1.5,REMARKS on 07017410: 1644499128 /ใช้รหัส 07017413 แทนค่ะ,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G029,07017413,ไส้กรองโซล่า ก.มิล 1.5,REMARKS on 07017410: 1644499128 /ใช้รหัส 07017413 แทนค่ะ,high,1,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G030,07051908,คอยล์เย็น,REMARKS on 07051908: ราคา 3 ให้เฉพาะช่างเท่านั้นค่ะ ใช้รหัส07052194แทนครับ,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G030,07052194,คอยล์เย็น,REMARKS on 07051908: ราคา 3 ให้เฉพาะช่างเท่านั้นค่ะ ใช้รหัส07052194แทนครับ,high,0,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G031,07051914,โบเวอร์/พัดลมแอร์,REMARKS on 07051914: ใช้รหัส 07052195แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G031,07052195,โบเวอร์/พัดลมแอร์,REMARKS on 07051914: ใช้รหัส 07052195แทน,high,0,1,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G032,08010030,เฟืองสตาร์ท แม่เหล็ก,REMARKS on 08010030: E58-510016 STKG 260.-/ใช้รหัส08014874แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G032,08014874,เฟืองสตาร์ท แม่เหล็ก,REMARKS on 08010030: E58-510016 STKG 260.-/ใช้รหัส08014874แทน,high,0,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G033,08010671,ลูกหมากคันชักสั้นT13 รู14m,REMARKS on 08010671: CKK  GMB  288- ใช้รหัส08014948แทน,high,-1,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G033,08014948,ลูกหมากคันชักสั้นT13 รู14m,REMARKS on 08010671: CKK  GMB  288- ใช้รหัส08014948แทน,high,0,2,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G034,08018280,ยางหูแหนบหลัง,REMARKS on 08018280: ใช้รหัส08018281แทน,high,-1,1,6,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G034,08018281,ยางหูแหนบหลัง,REMARKS on 08018280: ใช้รหัส08018281แทน,high,5,20,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G035,08054532,ลูกหมากปีกนกล่าง,REMARKS on 08054532: ใช้รหัส08056895แทน,high,-1,0,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G035,08056895,ลูกหมากปีกนกล่าง,REMARKS on 08054532: ใช้รหัส08056895แทน,high,1,2,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G036,08055323,ยางหูแหนบหลัง ล่าง สั้น,REMARKS on 08055323: ใช้รหัสแทน08056889,high,-1,10,6,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G036,08056889,ยางหูแหนบหลัง ล่าง สั้น,REMARKS on 08055323: ใช้รหัสแทน08056889,high,7,0,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G038,08056051,ปลั๊กท้ายราง,REMARKS on 08056051: ใช้รหัส 08056797 แทน,high,-1,0,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G038,08056797,ปลั๊กท้ายราง,REMARKS on 08056051: ใช้รหัส 08056797 แทน,high,1,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G039,08056076,สายเบรคมือ หน้า,REMARKS on 08056076: ใช้ 08056783 แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G039,08056783,สายเบรคมือ หน้า,REMARKS on 08056076: ใช้ 08056783 แทน,high,0,1,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G040,08056195,"แม่ปั้มเบรค 1""เสื้ออลูมิเนียม",REMARKS on 08056195: ใช้รหัส08056871แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G040,08056871,"แม่ปั้มเบรค 1"" เสื้อเหล็ก",REMARKS on 08056195: ใช้รหัส08056871แทน,high,1,2,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G041,11051619,แป๊บราวน้ำ/แป๊ปน้ำข้างเครื่อง,REMARKS on 11051619: MD370158 ยี่ห้อนี้ใส่ไม่เข้า ใช้รหัส 11052338 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G041,11052338,แป๊บราวน้ำ/แป๊ปน้ำข้างเครื่อง,REMARKS on 11051619: MD370158 ยี่ห้อนี้ใส่ไม่เข้า ใช้รหัส 11052338 แทน,high,0,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G042,12010120,ไดชาร์ท  12V,REMARKS on 12010120: F1 950.- SCG 1100.- STKG 950.- SCGของหมดแล้วใช้รหัส12010601แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G042,12010601,ไดชาร์ท  12V,REMARKS on 12010120: F1 950.- SCG 1100.- STKG 950.- SCGของหมดแล้วใช้รหัส12010601แทน,high,1,5,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G043,12010635,ชาพก้าน STD,REMARKS on 12010635: ใช้ 12010813 แทน,high,-1,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G043,12010813,ชาพก้าน STD,REMARKS on 12010635: ใช้ 12010813 แทน,high,0,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G044,12010738,แม่ปั้มคลัชบน (F028-1918),REMARKS on 12010738: TSP-F3496/      ตุรกี ของหมดค่ะ    ใช้12010815 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G044,12010815,แม่ปั้มคลัชบน (F028-1918),REMARKS on 12010738: TSP-F3496/      ตุรกี ของหมดค่ะ    ใช้12010815 แทน,high,1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G048,12051822,ยอยกากบาทเพลาหน้านิวฮอลแลนด์,REMARKS on 12052651: 5191547  KMP1250.- ใช้รหัสแทน 12051822,high,1,0,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G048,12052651,ยอยกากบาทเพลาหน้านิวฮอลแลนด์,REMARKS on 12052651: 5191547  KMP1250.- ใช้รหัสแทน 12051822,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G049,12052139,ปริ้นตัว R,REMARKS on 12052139: ใช้แทน 12053262,high,20,145,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G049,12053262,ปริ้นตัว R,REMARKS on 12052139: ใช้แทน 12053262,high,-1,10,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G053,12052288,สวิทน้ำมันเครื่อง,REMARKS on 12052288: SMF ขาย 160.- 12/64 สินค้าหมด ใช้รหัส 12053393 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G053,12053393,สวิทน้ำมันเครื่อง,REMARKS on 12052288: SMF ขาย 160.- 12/64 สินค้าหมด ใช้รหัส 12053393 แทน,high,1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G054,12052407,"จานไถพรวน 26"" คมนอก",REMARKS on 12052676: ใช้ 12052407 แทนได้,high,8,21,7,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G054,12052676,"จานไถพรวน 26""  (ใช้ 12052407)",REMARKS on 12052676: ใช้ 12052407 แทนได้,high,-1,0,7,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G055,12052873,ปลอกต่อเฟืองเพลากลาง,REMARKS on 12052873: PB 450.- ไม่มีน็อตแถมใช้รหัสนี้แทน12053279,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G055,12053279,ปลอกต่อเพลาทรานเฟอร์,REMARKS on 12052873: PB 450.- ไม่มีน็อตแถมใช้รหัสนี้แทน12053279,high,1,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G057,12053036,ชุดกรองโซล่า เดี่ยว,"REMARKS on 12053036: SKKS หมด/KCY,SAE,SMF,P.T ไม่มี/ใช้รหัส12053700แทน",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G057,12053700,ชุดกรองโซล่าเดี่ยว ประกอบเสร็จ,"REMARKS on 12053036: SKKS หมด/KCY,SAE,SMF,P.T ไม่มี/ใช้รหัส12053700แทน",high,0,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G058,12053061,จานคลัชจอนเดียร์ 4แฉก,REMARKS on 12053061: 4 แฉกของหมด ใช้รหัส 12053065 6 แฉกแทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G058,12053065,"จานคลัช 6แฉก 11""19Tx35MM. สปริง",REMARKS on 12053061: 4 แฉกของหมด ใช้รหัส 12053065 6 แฉกแทนค่ะ,high,-1,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G060,12053793,แผ่นรองเฟืองขับดุม (ฝาดุม),REMARKS on 12053793: SKKS 4700.- ใช้ 12053934 แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G060,12053934,ฝาปิดดุมล้อหน้า M16X50 ก.1.5,REMARKS on 12053793: SKKS 4700.- ใช้ 12053934 แทน,high,0,2,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G061,12053867,เฟืองบายสี+เดือยหมู 10x32,REMARKS on 12053867: CAR65704 ใช้ 12053933 แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G061,12053933,เฟืองบายสี+เดือยหมู 10x32,REMARKS on 12053867: CAR65704 ใช้ 12053933 แทน,high,0,1,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G062,12053886,ชุดซ่อมกระบอกช่วยยก UHS45,REMARKS on 30052305: ยางปากกระบอก+ยางลูกสูบ ใช้รหัส 12053886 แทน,high,1,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G062,30052305,ชุดซ่อมกระบอกใบมีดหน้า,REMARKS on 30052305: ยางปากกระบอก+ยางลูกสูบ ใช้รหัส 12053886 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G064,13010881,พลาสติกตูดกรองดักน้ำ,REMARKS on 13051289: 78882-90180/      S.PRY 80.-/SMA 70.-/PIT หมด 52.-ใช้รหัส13010881แทน,high,2,14,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G064,13051289,พลาสติกตูดกรองดักน้ำ,REMARKS on 13051289: 78882-90180/      S.PRY 80.-/SMA 70.-/PIT หมด 52.-ใช้รหัส13010881แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G065,13011852,ลูกดูดโอโต,REMARKS on 13013013: UNP 65.- ใช้รหัส13011852แทนครับ,high,1,3,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G065,13013013,ลูกดูดโอโต,REMARKS on 13013013: UNP 65.- ใช้รหัส13011852แทนครับ,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G066,13012649,ไดเออร์,REMARKS on 13012649: ใช้รหัส 13013195 เป็นตัว 2 น็อตแทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G066,13013195,ไดเออร์,REMARKS on 13012649: ใช้รหัส 13013195 เป็นตัว 2 น็อตแทน,high,0,5,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G067,13012658,สวิทเพรชเชอร์,REMARKS on 13012658: ใช้รหัส13013317แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G067,13013317,สวิทเพรชเชอร์,REMARKS on 13012658: ใช้รหัส13013317แทน,high,0,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G069,13013144,ปั้มติ๊ก BOSCH ขาตรง,REMARKS on 35010126: หมดไม่สั้่ง ใช้13013144 แทน,high,5,33,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G069,35010126,ปั้มติ๊ก / ปั้มน้ำมันเชื้อเพลิง,REMARKS on 35010126: หมดไม่สั้่ง ใช้13013144 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G070,13016842,สายพาน,REMARKS on 13016842: ใช้รหัส13016844แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G070,13016844,สายพาน,REMARKS on 13016842: ใช้รหัส13016844แทน,high,1,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G072,13034175,หลอดไฟฮาโลเจน แฉก,REMARKS on 13034175: ใช้รหัส13050415แทนครับ,high,-1,4,5,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G072,13050415,หลอดไฟฮาโลเจน,REMARKS on 13034175: ใช้รหัส13050415แทนครับ,high,10,25,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G073,13034844,ฟิวส์เมนเสียบใหญ่ ขาตรง,REMARKS on 13051315: ของส่วนตัว มีรูป/ใช้รหัส13034844แทน,high,2,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G073,13051315,ฟิวส์เมนขาแยก,REMARKS on 13051315: ของส่วนตัว มีรูป/ใช้รหัส13034844แทน,high,-1,4,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G074,13036006,หลอดไฟ H11,REMARKS on 13036006: ใช้ H8 แทนได้ รหัส 13052492,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G074,13052492,หลอดไฟฮาโลเจน,REMARKS on 13036006: ใช้ H8 แทนได้ รหัส 13052492,high,-1,4,4,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G075,13037532,หัวเทียนมอเตอร์ไซด์,REMARKS on 13037532: C7HSA (ใช้รหัส13037534แทน),high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G075,13037534,หัวเทียนมอเตอร์ไซด์,REMARKS on 13037532: C7HSA (ใช้รหัส13037534แทน),high,-1,11,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G076,13050686,คัทเอาท์ตะกร้อ ND 12V.,REMARKS on 13050686: ใช้รหัส 13052692 แทน,high,-1,1,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G076,13052692,คัทเอาท์ตะกร้อ ND 12V.,REMARKS on 13050686: ใช้รหัส 13052692 แทน,high,0,2,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G078,14010559,ใบหินเจียร์ 4นิ้ว,REMARKS on 14050087: SUG ไม่ได้จำหน่ายแล้ว ใช้รหัส 14010559 แทน,high,25,45,28,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G078,14050087,ใบหินเจียร์ 4นิ้ว,REMARKS on 14050087: SUG ไม่ได้จำหน่ายแล้ว ใช้รหัส 14010559 แทน,high,-1,-25,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G079,15010544,ลูกปืนคลัช 40m นูน,REMARKS on 15010544: SYB ขาย 230.-/VP 197.-/ใช้รหัสนี้แทน15017741,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G079,15017741,ลูกปืนคลัช 40m นูน,REMARKS on 15010544: SYB ขาย 230.-/VP 197.-/ใช้รหัสนี้แทน15017741,high,1,2,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G081,15010577,ลูกปืน,REMARKS on 15011555: ใช้รหัส 15010577 แทน,high,0,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G081,15011555,ลูกปืน 3307,REMARKS on 15011555: ใช้รหัส 15010577 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G083,15017442,ลูกปืนกันรุน (รับนน.M9540),REMARKS on 30050282: ใช้รหัส 15017442 แทน เบอร์51107 08401-51107,high,1,2,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G083,30050282,ลูกปืนรับน้ำหนัก/ลูกปืนกันรุนเพลาตั้ง,REMARKS on 30050282: ใช้รหัส 15017442 แทน เบอร์51107 08401-51107,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G084,15017643,ลูกปืนคลัช หน้าเรียบ,REMARKS on 15017643: SYB 245.-/KOYO 7VP 197.-/ใช้รหัส15017645แทน,high,-1,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G084,15017645,ลูกปืนคลัช หน้าเรียบ,REMARKS on 15017643: SYB 245.-/KOYO 7VP 197.-/ใช้รหัส15017645แทน,high,0,1,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G085,15050654,ลูกปืนกันรุน / เพลาตั้ง M105-108 / รับน้ำหนัก M9000,REMARKS on 30052577: 35533-43380 / ใช้รหัส 15050654 แทนค่ะ,high,1,0,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G085,30052577,ลูกปืนกันรุน / เพลาตั้ง M105-108 / รับน้ำหนัก M9000,REMARKS on 30052577: 35533-43380 / ใช้รหัส 15050654 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G087,16052746,ปลั๊กคอยล์,REMARKS on 16052746: ใช้รหัสนี้แทน16052747,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G087,16052747,ปลั๊กคอยล์,REMARKS on 16052746: ใช้รหัสนี้แทน16052747,high,1,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G088,22050149,หัวเชื้อล้างหัวฉีดดีเซล,REMARKS on 22050341: ใช้รหัส22050149แทน,high,5,8,8,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G088,22050341,หัวเชื้อล้างหัวฉีดดีเซล,REMARKS on 22050341: ใช้รหัส22050149แทน,high,-1,?,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G089,22050276,น้ำมันเบรค,REMARKS on 22050276: 30E27131616/SAE 730.-/NH610A ใช้ 22050318แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G089,22050318,น้ำมันเบรค สีดำ รถไถฟอร์ด,REMARKS on 22050276: 30E27131616/SAE 730.-/NH610A ใช้ 22050318แทน,high,1,0,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G090,25020100,ยางโอริง,REMARKS on 31050798: ใช้รหัส 25020100 แทน,high,1,5,4,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G090,31050798,ยางรอบเกียร์,REMARKS on 31050798: ใช้รหัส 25020100 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G091,30010045,ปั้มน้ำ+หน้าแปลน,REMARKS on 30010045: ใช้35010482แทนครับ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G091,35010482,ปั้มน้ำ C190,REMARKS on 30010045: ใช้35010482แทนครับ,high,1,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G095,30050026,จานกดคลัชคูโบต้า 11นิ้ว,REMARKS on 30050026: ใช้ 30052969 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G095,30052969,จานกดคลัชคูโบต้า 11 นิ้ว,REMARKS on 30050026: ใช้ 30052969 แทน,high,1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G097,30050181,"สลักแขนลาก 6x3""","REMARKS on 30050181: 20 แถม 1 จ๋าให้ -1 แล้วใช้ยาว 3.1/2"" รหัส 30053022 แทน",high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G097,30053022,"สลักแขนลาก 6x3.1/2""","REMARKS on 30050181: 20 แถม 1 จ๋าให้ -1 แล้วใช้ยาว 3.1/2"" รหัส 30053022 แทน",high,2,20,5,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G098,30050188,สลักตัวยูต่อโซ่+ปริ้นตัว R,REMARKS on 30050913: ใช้รหัส 30050188 แทนค่ะ,high,4,5,4,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G098,30050913,สลักตัวยูต่อโซ่คูโบต้า,REMARKS on 30050913: ใช้รหัส 30050188 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G100,30050283,ไส้กรองอากาศคูโบต้า,REMARKS on 30050283: ใช้รหัสนี้แทน 35010475; REMARKS on 35010475: ใช้แทนรหัส30050283 ใช้ด้วยกันได้,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G100,35010475,กรองอากาศอิเซกิ,REMARKS on 30050283: ใช้รหัสนี้แทน 35010475; REMARKS on 35010475: ใช้แทนรหัส30050283 ใช้ด้วยกันได้,high,2,5,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G101,30050350,แขนกลางคูโบต้า แป๊ปใหญ่,REMARKS on 30052467: ใช้รหัส 30050350 แทน หมดไม่สั่ง,high,4,5,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G101,30052467,แขนกลางคูโบต้า เล็ก,REMARKS on 30052467: ใช้รหัส 30050350 แทน หมดไม่สั่ง,high,-1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G103,30050595,ชาพก้าน STD,REMARKS on 30050595: ใช้กับรุ่น Kx191-3   ใช้รหัสแทน 30052531,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G103,30052531,ชาพก้าน STD,REMARKS on 30050595: ใช้กับรุ่น Kx191-3   ใช้รหัสแทน 30052531,high,5,12,4,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G105,30050659,ดุมล้อหน้า คูโบต้า,REMARKS on 30050659: .ใช้รหัสแทน 30052552,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G105,30052552,ดุมล้อหน้า คูโบต้า,REMARKS on 30050659: .ใช้รหัสแทน 30052552,high,1,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G106,30050720,ลูกปืนคลัชคูโบต้า,REMARKS on 30050720: TC650-26350 // VP ไม่มี มีแต่ของจีน // MKV 675.-/ใช้รหัส30053184แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G106,30053184,ลูกปืนคลัชคูโบต้า,REMARKS on 30050720: TC650-26350 // VP ไม่มี มีแต่ของจีน // MKV 675.-/ใช้รหัส30053184แทน,high,6,20,7,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G109,30051142,ชุดยอยเพลากลาง (13Tx14),REMARKS on 30051142: ใช้รหัส30052534แทนครับต่างกันที่หัวอัดจารบีแต่ใช้ได้,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G109,30052534,ชุดง่ามยอยเพลากลาง (13Tx14),REMARKS on 30051142: ใช้รหัส30052534แทนครับต่างกันที่หัวอัดจารบีแต่ใช้ได้,high,2,3,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G111,30051304,แหวนรองลูกปืน,REMARKS on 30051363: ใช้รหัสแทน 30051304,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G111,30051363,แผ่นชิมเพลาตั้ง,REMARKS on 30051363: ใช้รหัสแทน 30051304,high,2,6,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G112,30051563,ยางลูกสูบคลัช/โอริงเสื้อคลัช เล็ก,REMARKS on 30051625: ใช้รหัส 30051563 แทนค่ะ,high,1,5,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G112,30051625,ยางเหลี่ยมวาวคลัช/โอริงเสื้อคลัช เล็ก,REMARKS on 30051625: ใช้รหัส 30051563 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G113,30051675,ปั้มไฮโดรลิค (15T) เสื้อเหล็ก,"REMARKS on 30051675: -BM8000,PB8000.- SKKS7500- ใช้แทน 30051687",high,0,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G113,30051687,ปั้มไฮโดรลิค (15T) เสื้ออลู,"REMARKS on 30051675: -BM8000,PB8000.- SKKS7500- ใช้แทน 30051687",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G117,30052082,ซีลรูดฝุ่น,REMARKS on 30052082: ใช้รหัส 30052842 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G117,30052842,ซีลรูดฝุ่น,REMARKS on 30052082: ใช้รหัส 30052842 แทนค่ะ,high,0,0,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G120,30052735,ซีล/ปะเก็นลูกสูบกระบอกช่วยเลี้ยว,REMARKS on 30052735: 30052749 ใช้รหัสนี้แทน,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G120,30052749,ซีล/ปะเก็นลูกสูบกระบอกช่วยเลี้ยว,REMARKS on 30052735: 30052749 ใช้รหัสนี้แทน,high,0,4,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G124,32010118,กรองน้ำมันเครื่อง 12UNF-2B,REMARKS on 32010118: ใช้รหัส 32010122 แทนค่ะ,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G124,32010122,กรองน้ำมันเครื่อง 12UNF-2B,REMARKS on 32010118: ใช้รหัส 32010122 แทนค่ะ,high,1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G125,32050165,ไส้กรองอากาศ มีจาน,REMARKS on 32050165: ใช้รหัส 32050317 แทนค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G125,32050317,ไส้กรองอากาศ มีจาน,REMARKS on 32050165: ใช้รหัส 32050317 แทนค่ะ,high,0,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G126,32050209,ไส้กรองอากาศ มีใบพัด,REMARKS on 35010473: SMA 430.-ปี65 16546-05H10/ใช้รหัส32050209แทน,high,0,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G126,35010473,กรองอากาศอิเซกิ มีใบพัด,REMARKS on 35010473: SMA 430.-ปี65 16546-05H10/ใช้รหัส32050209แทน,high,-1,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G127,35010057,พลาสติก+ยางกระบอกไฮ,REMARKS on 35010061: ใช้แทน 35010057,high,1,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G127,35010061,พลาสติกกระบอกไฮ ตัวล่าง,REMARKS on 35010061: ใช้แทน 35010057,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G128,35010371,สกรูล้อหลัง(สตัท)ครบชุด,REMARKS on 35010371: CRRK ใช้ 35010536 แทน,high,-1,0,4,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G128,35010536,สกรูล้อหลัง(สตัท)ครบชุด,REMARKS on 35010371: CRRK ใช้ 35010536 แทน,high,4,6,4,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G129,35010403,หม้อน้ำ อลูมิเนียมทั้งใบ,"REMARKS on 35050248: 52623109/PB 3,500.- CRRK 3,000.-ใช้รหัส35010403แทน",high,1,4,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G129,35050248,"หม้อน้ำ YANMA พลาสติก (สูง 375cm,กว้าง 440cm)","REMARKS on 35050248: 52623109/PB 3,500.- CRRK 3,000.-ใช้รหัส35010403แทน",high,-1,4,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G004,03052283,แหวนลูกสูบ 86มิล,REMARKS on 03052283: แยกไปเป็นรหัส 35050089 แทน; REMARKS on 35050089: ราคาเก่า280.-   ใช้รหัส03053418แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G004,03053418,แหวนลูกสูบ 86M รุ่น4แหวน,REMARKS on 03052283: แยกไปเป็นรหัส 35050089 แทน; REMARKS on 35050089: ราคาเก่า280.-   ใช้รหัส03053418แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G004,35050089,แหวนลูกสูบ 86 มิล,REMARKS on 03052283: แยกไปเป็นรหัส 35050089 แทน; REMARKS on 35050089: ราคาเก่า280.-   ใช้รหัส03053418แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G026,05051441,แม่ปั้มเบรค,REMARKS on 05051934: ใช้รหัส05051441แทน,high,0,1,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G026,05051934,"แม่ปั้มเบรค 15/16""",REMARKS on 05051934: ใช้รหัส05051441แทน,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G037,08055684,กระบอกเบรคหลัง 11/16,REMARKS on 08056222: ลูกค้าสั่ง 1 ลูกค่ะ ใช้รหัสนี้แทนได้คะ (08055684),high,0,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G037,08056222,กระบอกเบรคหลังซ้าย 11/16,REMARKS on 08056222: ลูกค้าสั่ง 1 ลูกค่ะ ใช้รหัสนี้แทนได้คะ (08055684),high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G045,12050286,วาวมือโยก 4 แกน,REMARKS on 12050286: เคยขายให้สหกิจ 18200.- ช.อ๊อด ใช้ 12050300 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G045,12050300,วาวมือโยก 4 แกน 4P80,REMARKS on 12050286: เคยขายให้สหกิจ 18200.- ช.อ๊อด ใช้ 12050300 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G046,12050635,แหวนรองเฟืองทดหลัง ตัวใหญ่,REMARKS on 12050854: แทน (12050635),high,4,6,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G046,12050854,แหวนรองเฟืองทด ใหญ่ (ล้อหลัง),REMARKS on 12050854: แทน (12050635),high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G047,12051140,สปริงบายพาสวาว,REMARKS on 12051140: ใช้รหัส 12054195แทนครับ,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G047,12054195,สปริงบายพาสวาว,REMARKS on 12051140: ใช้รหัส 12054195แทนครับ,high,0,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G050,12052162,ปั้มไฮโดรลิค TD95,REMARKS on 12053270: ใช้รหัส 12052162 แทน และ ใช้ตัว4.5L 15F-5-14 ได้,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G050,12053270,ปั้มพวงมาลัย TD95,REMARKS on 12053270: ใช้รหัส 12052162 แทน และ ใช้ตัว4.5L 15F-5-14 ได้,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G051,12052171,"จานไถพรวน 24""",REMARKS on 12052171: 12052574 ใช้รหัสนี้แทนได้,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G051,12052574,"จานไถพรวน 24""",REMARKS on 12052171: 12052574 ใช้รหัสนี้แทนได้,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G052,12052173,"จานไถพรวน 24""",REMARKS on 12052757: 12052173 ใช้รหัสนี้แทนได้ รู53ใช้กับ55ได้,high,4,42,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G052,12052757,"จานไถพรวน 24""",REMARKS on 12052757: 12052173 ใช้รหัสนี้แทนได้ รู53ใช้กับ55ได้,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G056,12053009,เก้าอี้พับแขน ดำ (ที่เท้าแขนแยก),REMARKS on 12053059: ราคาใหม่ 3900.- ใช้แทน 12053009,high,2,6,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G056,12053059,เก้าอี้พับแขน ดำ (ระบบโช๊ดสปริงคู่),REMARKS on 12053059: ราคาใหม่ 3900.- ใช้แทน 12053009,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G063,12054174,ข้อต่อวาวคอนโทรล,REMARKS on 12054174: ใช้รหัส33010527แทน,high,-1,16,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G063,33010527,ข้อต่อกลาง เซาะร่องโอริง,REMARKS on 12054174: ใช้รหัส33010527แทน,high,4,9,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G071,13026933,สปริงคันเร่ง,REMARKS on 13026933: ใช้รหัส 13026955 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G071,13026955,สปริงคันเร่ง,REMARKS on 13026933: ใช้รหัส 13026955 แทน,high,2,27,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G077,13052543,"ยางนอกล้อหน้า ขอบ12"" ก้างปลา","REMARKS on 13052543: หน้ากว้าง 7 นิ้ว,F334PR 7.00-12.ใช้รหัส13052672แทนตรงรุ่น",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G077,13052672,"ยางนอกล้อหน้า ขอบ12"" ก้างปลา","REMARKS on 13052543: หน้ากว้าง 7 นิ้ว,F334PR 7.00-12.ใช้รหัส13052672แทนตรงรุ่น",high,1,2,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G080,15010557,ลูกปืนเข็มรูเกียร์ 3,REMARKS on 15020052: ใช้รหัส 15010557แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G080,15020052,ลูกปืนปลายเดือยหมู 35-80 หลุด,REMARKS on 15020052: ใช้รหัส 15010557แทน,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G086,16052535,ลูกหมากกันโครงหน้า,REMARKS on 16052535: ใช้รหัส 16052926 แทน,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G086,16052926,ลูกหมากกันโครงหน้า,REMARKS on 16052535: ใช้รหัส 16052926 แทน,high,0,5,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G092,30010252,ฝาสูบ 4 สูบ รุ่น  DI,"REMARKS on 30010252: ศูนย์ 21,000.- ใช้รหัส 30010283 แทน",high,0,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G092,30010283,ฝาสูบแท้ 4สูบ รุ่น DI,"REMARKS on 30010252: ศูนย์ 21,000.- ใช้รหัส 30010283 แทน",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G093,30010261,หัวฉีดน้ำมันเชื้อเพลิง,REMARKS on 30010261: ศูนย์1980.-   ใช้รหัสแทน 30010310,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G093,30010310,หัวฉีดน้ำมันเชื้อเพลิง,REMARKS on 30010261: ศูนย์1980.-   ใช้รหัสแทน 30010310,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G094,30010396,"กะทะล้อหน้า 6 รู คูโบต้า ขอบ 16""",REMARKS on 30051891: ใช้รหัสแทน  30010396,high,1,3,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G094,30051891,"กะทะล้อหน้า คูโบต้า ขอบ16"" 4WD",REMARKS on 30051891: ใช้รหัสแทน  30010396,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G108,30050867,ไส้กรองอากาศ,REMARKS on 30050867: 67-160/182-279/288/ของหมด ใช้กับรหัส32010035แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G108,32010035,ไส้กรองอากาศ นอก+ใน มีใบพัด,REMARKS on 30050867: 67-160/182-279/288/ของหมด ใช้กับรหัส32010035แทน,high,0,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G110,30051208,ปะเก็นเครื่อง ชุดล่าง,REMARKS on 30051208: ใช้ 30052991 แทน,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G110,30052991,ปะเก็นเครื่อง ชุดล่าง,REMARKS on 30051208: ใช้ 30052991 แทน,high,0,1,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G114,30051831,สลักเฟืองทดล้อหน้า,REMARKS on 30051831: ใช้รหัสแทน 30052493,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G114,30052493,สลักเฟืองทดล้อหน้า,REMARKS on 30051831: ใช้รหัสแทน 30052493,high,3,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G115,30051966,ชุดแขนเลื่อนเกียร์,REMARKS on 30052247: ศูนย์ขาย 660.- /ใช้รหัส 30051966 แทนค่ะ,high,0,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G115,30052247,ชุดแขนเลื่อนเกียร์,REMARKS on 30052247: ศูนย์ขาย 660.- /ใช้รหัส 30051966 แทนค่ะ,high,-1,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G116,30052029,"จานคลัช 11""x14T ผ้าทองแดง",REMARKS on 30052029: SKKS750.- SMF600.- M5000 ใช้ รห้ส 30052335 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G116,30052335,"จานคลัช 11""x14T",REMARKS on 30052029: SKKS750.- SMF600.- M5000 ใช้ รห้ส 30052335 แทน,high,1,3,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G119,30052108,"ปะเก็นฝาสูบเหล็ก L3608,L4018","REMARKS on 30052108: 1G750-03312 ใช้แทนรหัส 30052459  L3608,L4018",high,2,5,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G119,30052459,ปะเก็นฝาสูบ,"REMARKS on 30052108: 1G750-03312 ใช้แทนรหัส 30052459  L3608,L4018",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G121,31050277,ยางกันฝุ่นเกียร์สโล/ยางกันฝุ่นเกียร์,REMARKS on 31050282: หมด ใช้รหัส 31050277 หรือ 31050502 แทนได้ค่ะ,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G121,31050282,ยางกันฝุ่นเกียร์,REMARKS on 31050282: หมด ใช้รหัส 31050277 หรือ 31050502 แทนได้ค่ะ,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G123,31050884,"จานคลัช 12""x21Tx29mm","REMARKS on 31050941: KTC 1,800.-/ST หมด ใช้รหัส 31050884 แทน",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G123,31050941,"จานคลัช 12""x21Tx29mm","REMARKS on 31050941: KTC 1,800.-/ST หมด ใช้รหัส 31050884 แทน",high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G130,35010423,ชุดแกน+จานเดือยหมูหน้า,REMARKS on 35010551: ใช้รหัสนี้แทน35010423,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G130,35010551,ชุดแกน+จานเดือยหมูหน้า,REMARKS on 35010551: ใช้รหัสนี้แทน35010423,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G131,35050088,ปะเก็นฝาสูบ,REMARKS on 35050088: ใช้แทน 35050179,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G131,35050179,ปะเก็นฝาสูบ 88 มิล,REMARKS on 35050088: ใช้แทน 35050179,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G132,35050092,ซีล/ยางกันฝุ่นเบรค,REMARKS on 35050092: ยางครอบคันเกียร์ ใช้รหัส35050347แทน,high,-1,3,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G132,35050347,ยางครอบคันเกียร์ ตัวใน,REMARKS on 35050092: ยางครอบคันเกียร์ ใช้รหัส35050347แทน,high,1,4,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G133,35050142,แหวนลูกสูบ 92 มิล,REMARKS on 35050142: CRRK 450.-/BK 500.- หมด ใช้รหัส 35050301 แทน,high,-1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G133,35050301,แหวนลูกสูบ 92 มิล,REMARKS on 35050142: CRRK 450.-/BK 500.- หมด ใช้รหัส 35050301 แทน,high,2,4,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G003,32050058,โรลเลอร์,REMARKS on 32050058: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050152: ใช้ SK200 รหัส 32050058 แทนได้; REMARKS on 32050396: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050410: ใช้ PC200รหัส 32050152 แทนได้,med,3,6,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G003,32050152,โรลเลอร์,REMARKS on 32050058: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050152: ใช้ SK200 รหัส 32050058 แทนได้; REMARKS on 32050396: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050410: ใช้ PC200รหัส 32050152 แทนได้,med,1,6,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G003,32050396,,REMARKS on 32050058: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050152: ใช้ SK200 รหัส 32050058 แทนได้; REMARKS on 32050396: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050410: ใช้ PC200รหัส 32050152 แทนได้,med,0,?,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G003,32050410,โรลเลอร์,REMARKS on 32050058: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050152: ใช้ SK200 รหัส 32050058 แทนได้; REMARKS on 32050396: ใช้ PC200รหัส 32050152 แทนได้; REMARKS on 32050410: ใช้ PC200รหัส 32050152 แทนได้,med,2,7,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G014,02011258,คอยล์เย็น DEGA,REMARKS on 02011258: ราคา3ขายช่างเท่านั้น PACO 800.-12/63 52100-3062000 ใช้รหัส02011287แทน,high,0,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G014,02011287,คอยล์เย็น DEGA,REMARKS on 02011258: ราคา3ขายช่างเท่านั้น PACO 800.-12/63 52100-3062000 ใช้รหัส02011287แทน,high,0,?,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G024,05010871,ลูกหมากคันชัก สั้น นอก,REMARKS on 05020941: ใช้ตัวนี้แทน 05010871,high,1,4,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G024,05020941,ลูกหมากคันชัก สั้น,REMARKS on 05020941: ใช้ตัวนี้แทน 05010871,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G028,07011224,คอมแอร์,REMARKS on 07011224: ใช่รหัส07011364แทน,high,0,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G028,07011364,คอมแอร์,REMARKS on 07011224: ใช่รหัส07011364แทน,high,0,1,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G059,12053312,ข้อต่อวาวคอนโทรล,REMARKS on 12053312: เกลี่ยวไม่ดี ใช้ 33010545 แทน,high,2,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G059,33010545,ข้อต่อกลาง,REMARKS on 12053312: เกลี่ยวไม่ดี ใช้ 33010545 แทน,high,2,0,6,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G082,15012213,ลูกปืนคลัช 45x74x19mนูน,REMARKS on 15012213: PK 240.- TK45-4E /ใช้30050719แทนได้,high,1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G082,30050719,ลูกปืนคลัช EF453T,REMARKS on 15012213: PK 240.- TK45-4E /ใช้30050719แทนได้,high,2,6,6,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G096,30050158,ซีลล้อหน้า-หลัง MU4902,REMARKS on 30050205: 33750-43532    ใช้รหัสนี้แทนได้ 30050158,high,1,0,6,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G096,30050205,ซีลล้อหลังคูโบต้า MU4902,REMARKS on 30050205: 33750-43532    ใช้รหัสนี้แทนได้ 30050158,high,2,3,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G099,30050216,"เก้าอี้รถเกี่ยวคูโบต้า รุ่น L, รุ่น M","REMARKS on 30050216: ใช้ 30053032 แทน 20แถม2 ราคาทุนไม่หักแถม 1,400.-",high,4,15,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G099,30053032,"เก้าอี้ คูโบต้า รุ่น L, รุ่น M","REMARKS on 30050216: ใช้ 30053032 แทน 20แถม2 ราคาทุนไม่หักแถม 1,400.-",high,6,14,?,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G102,30050555,ชุดยางกระบอกไฮฯ KBT,REMARKS on 30050555: ใช้รหัส30052345แทน,high,0,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G102,30052345,ชุดยางกระบอกไฮฯ KBT,REMARKS on 30050555: ใช้รหัส30052345แทน,high,1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G104,30050604,วาวไอดี KBT,REMARKS on 30051211: ใช้รัสแทน 30050604,high,2,5,3,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G104,30051211,วาวไอดี KBT (หัวโต37.5xยาว101.5),REMARKS on 30051211: ใช้รัสแทน 30050604,high,3,6,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G107,30050833,ซีลล้อหน้า,"REMARKS on 30051632: 3C095-43780    ใช้แทน 30050833  M8540,M9540",high,5,17,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G107,30051632,ซีลล้อหน้า,"REMARKS on 30051632: 3C095-43780    ใช้แทน 30050833  M8540,M9540",high,2,5,2,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G118,30052106,ปะเก็นฝาสูบเหล็ก หนา1.3มิล,REMARKS on 30052106: ใช้แทน 30052107; REMARKS on 30052107: ของหมด ใช้รหัส 30052106 แทน,high,1,3,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G118,30052107,ปะเก็นฝาสูบเหล็ก หนา1.35มิล,REMARKS on 30052106: ใช้แทน 30052107; REMARKS on 30052107: ของหมด ใช้รหัส 30052106 แทน,high,2,0,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G122,31050867,ไส้กรองไฮ (เหล็ก) ก1.5,REMARKS on 31050867: ใช้รหัส 31050984 นี้แทนครับ,high,1,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G122,31050984,ไส้กรองไฮ (เหล็ก) ก1.5,REMARKS on 31050867: ใช้รหัส 31050984 นี้แทนครับ,high,1,2,1,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G023,04050497,ไดชาร์ท 24V 35A (ปั้มใหญ่),REMARKS on 04050695: หมด ใช้รหัส 04050497 แทน (ต่างกันตรงขนาดปั้ม),high,0,1,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G023,04050695,ไดชาร์ท 24V (ปั้มเล็ก),REMARKS on 04050695: หมด ใช้รหัส 04050497 แทน (ต่างกันตรงขนาดปั้ม),high,0,0,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G068,13012786,ไฟสปอตไลท์ LED,REMARKS on 13012786: ใช้ 13018297 แทน,high,1,2,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G068,13018297,"ไฟสปอร์ตไลท์ กลม 3""",REMARKS on 13012786: ใช้ 13018297 แทน,high,3,4,0,From ICMAS.REMARKS strong peer phrasing (HQ mirror).
+G134,02010676,ซีลล้อหลังใน,same PCODE=1096253500 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G134,02015580,ซีลล้อหลัง ใน,same PCODE=1096253500 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,3,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G134,02020020,ซีลล้อหลัง ใน,same PCODE=1096253500 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G134,02050190,ซีลล้อหลังใน    แพง,same PCODE=1096253500 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G134,02050279,ซีลล้อหลังใน,same PCODE=1096253500 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G134,80010327,SEAL OIL,same PCODE=1096253500 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G135,09011433,ปะเก็นฝาสูบ,same PCODE=111152190 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G135,09016500,ปะเก็นฝาสูบ,same PCODE=111152190 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G135,09016501,ปะเก็นฝาสูบเหล็ก 124-2m,same PCODE=111152190 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G135,09021670,ปะเก็นฝาสูบ,same PCODE=111152190 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G135,09051853,ปะเก็นฝาสูบ เหล็ก124-2m,same PCODE=111152190 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G135,09054540,ปะเก็นฝาสูบ 2m,same PCODE=111152190 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G136,12010437,"ยางนอกล้อหน้า ขอบ24"" ก้างปลา14บั้ง","same PCODE=12.4-24"" (6 distinct BCODEs); at least one HQ QTYMIN<0",med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G136,12010448,"ยางนอกล้อหน้า ขอบ24""ก้างปลา15บั้ง","same PCODE=12.4-24"" (6 distinct BCODEs); at least one HQ QTYMIN<0",med,2,4,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G136,12010549,"ยางนอกล้อหน้า ขอบ24"" ก้างปลา14บั้ง","same PCODE=12.4-24"" (6 distinct BCODEs); at least one HQ QTYMIN<0",med,1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G136,12010734,"ยางนอกล้อหน้า ขอบ24"" ก้างปลา14บั้ง","same PCODE=12.4-24"" (6 distinct BCODEs); at least one HQ QTYMIN<0",med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G136,30010204,"ยางนอกล้อหลัง ขอบ24"" ก้างปลา","same PCODE=12.4-24"" (6 distinct BCODEs); at least one HQ QTYMIN<0",med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G136,30010479,"ยางนอกล้อหลัง ขอบ24"" ก้างปลา","same PCODE=12.4-24"" (6 distinct BCODEs); at least one HQ QTYMIN<0",med,1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G137,15010200,ลูกปืนล้อหลัง นอก,same PCODE=32215 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G137,15050311,ลูกปืน,same PCODE=32215 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G137,15050425,ลูกปืน,same PCODE=32215 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G137,15050673,ลูกปืน,same PCODE=32215 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G137,15050745,ลูกปืน,same PCODE=32215 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G137,15050782,ลูกปืน,same PCODE=32215 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,5,16,3,PCODE twin/cluster — confirm not packaging variants before approve.
+G138,08011547,ลูกหมากปีกนกบน,same PCODE=4331009015 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G138,08051808,ลูกหมากปีกนกบน,same PCODE=4331009015 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G138,08054523,ลูกหมากปีกนกบน,same PCODE=4331009015 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,2,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G138,08054526,ลูกหมากปีกนกบน,same PCODE=4331009015 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G138,08056510,ลูกหมากปีกนกบน,same PCODE=4331009015 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,2,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G138,08056772,ลูกหมากปีกนกบน,same PCODE=4331009015 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,4,?,PCODE twin/cluster — confirm not packaging variants before approve.
+G139,13010832,หม้อลมเบรคติดปั้ม 1.5ชั้น,same PCODE=6-8cm (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G139,13011971,หม้อลมเบรค+แม้ปั้ม 1.5 ตอน,same PCODE=6-8cm (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G139,13015221,หม้อลมเบรค+แม่ปั้ม1.5ตอน,same PCODE=6-8cm (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G139,13034311,หม้อลมเบรค+แม่ปั้ม6-8cm.,same PCODE=6-8cm (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G139,13034313,หม้อลมเบรค1.5ตอน,same PCODE=6-8cm (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G139,13034315,หม้อลมเบรค+แม่ปั้ม1.5ตอน,same PCODE=6-8cm (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G140,12050611,ยอยกากบาทเพลาหน้าคาราโร่,same PCODE=81874740 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G140,12051904,ยอยกากบาทเพลาหน้าคาราโร่,same PCODE=81874740 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G140,12052146,ยอยกากบาทเพลาหน้าคาราโร่,same PCODE=81874740 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G140,12052331,ยอยกากบาทเพลาหน้าคาราโร่,same PCODE=81874740 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,4,7,3,PCODE twin/cluster — confirm not packaging variants before approve.
+G140,12052954,ยอยกากบาทเพลาหน้าคาราโร่,same PCODE=81874740 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,11,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G140,12053712,ยอยกากบาทเพลาหน้าคาราโร่,same PCODE=81874740 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G141,12052166,"จานคลัช 13"" ไม่มีสปริง",same PCODE=89973973 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G141,12053122,"จานคลัช 13"" ไม่มีสปริง",same PCODE=89973973 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G141,12053285,"จานคลัช 13"" 10Tx45mm.",same PCODE=89973973 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,5,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G141,12053384,"จานคลัช 13"" ไม่มีสปริง",same PCODE=89973973 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G141,12053977,"จานคลัช 13"" ไม่มีสปริง",same PCODE=89973973 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,?,PCODE twin/cluster — confirm not packaging variants before approve.
+G141,12054175,"จานคลัช 13"" 10Tx45mm.",same PCODE=89973973 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,?,?,PCODE twin/cluster — confirm not packaging variants before approve.
+G142,29011138,ฝาครอบไฟท้าย ชุบ,same PCODE=ALMERA (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G142,29011140,กันสาดประตู,same PCODE=ALMERA (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G142,29011596,ครอบฝาถังน้ำมัน ชุบขอบหยัก,same PCODE=ALMERA (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G142,29011599,ฝาครอบไฟหน้า ชุบ,same PCODE=ALMERA (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G142,29011600,ฝาครอบมือเปิดฝาท้าย,same PCODE=ALMERA (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G142,29011743,ครอบฝาถังน้ำมัน ชุบ,same PCODE=ALMERA (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G143,12050849,ซีลล้อหลัง O'SIZE,same PCODE=C5NN4969E (6 distinct BCODEs); at least one HQ QTYMIN<0,med,4,9,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G143,12051517,ซีลล้อหลัง ขอบยาง,same PCODE=C5NN4969E (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G143,12052102,ซีลล้อหลัง เดิม,same PCODE=C5NN4969E (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G143,12053217,ซีลล้อหลัง เดิม ขอบยาง,same PCODE=C5NN4969E (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G143,12053726,ซีลล้อหลัง เดิม ขอบยาง,same PCODE=C5NN4969E (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G143,12053803,ซีลล้อหลัง เดิม ขอบยาง,same PCODE=C5NN4969E (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,4,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G144,11010529,ไส้กรองอากาศ ก. คาบิว,same PCODE=MD603800 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G144,11012910,ไส้กรองอากาศ ก. คาบิว,same PCODE=MD603800 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G144,11015500,ไส้กรองอากาศ ก. คาบิว,same PCODE=MD603800 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G144,11050432,ไส้กรองอากาศ ก. คาบิว,same PCODE=MD603800 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G144,11051708,ไส้กรองอากาศ กลม,same PCODE=MD603800 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G144,11052183,ไส้กรองอากาศ กลม,same PCODE=MD603800 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G145,05010741,แหนบหลัง หู,same PCODE=MR353453 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G145,05010771,แหนบหลัง,same PCODE=MR353453 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G145,11011494,แหนบหลัง ตัวที่ 2,same PCODE=MR353453 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,3,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G145,11051914,แหนบหลัง ทั้งตับ,same PCODE=MR353453 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G145,11051922,แหนบหลัง รัด,same PCODE=MR353453 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,3,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G145,11051923,แหนบหลัง หู,same PCODE=MR353453 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G146,09010035,ปะเก็นชุดใหญ่,same PCODE=040100415 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G146,09010102,ปะเก็นชุดใหญ่ ฝาTOP,same PCODE=040100415 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G146,09011153,ปะเก็นชุดใหญ่ ไม่ฝา-ไม่ซีล,same PCODE=040100415 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G146,09011438,ปะเก็นชุดใหญ่,same PCODE=040100415 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G146,80010235,GASKET KIT ENGINE OVERHAUL,same PCODE=040100415 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G147,08055518,สวิทตูดปั้ม (SCV วาว),same PCODE=042260L010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G147,08055657,สวิทตูดปั้ม SCV,same PCODE=042260L010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G147,08055789,สวิทตูดปั้ม (SCV วาว),same PCODE=042260L010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G147,13010356,สวิทตูดปั้ม 20-30ย.50m+ปลอก+รอง,same PCODE=042260L010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G147,13050290,สวิทตูดปั้ม 19-33ย.50 KDH222,same PCODE=042260L010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G148,08055656,สวิทตูดปั้ม SCV,same PCODE=042260L020 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G148,08056691,สวิทตูดปั้ม SCV,same PCODE=042260L020 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,?,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G148,13050289,สวิทตูดปั้ม 20-30ย.50,same PCODE=042260L020 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G148,13050351,สวิทตูดปั้ม 20-30ย.50m,same PCODE=042260L020 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G148,13050352,สวิทตูดปั้ม 20-30ย.50m,same PCODE=042260L020 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G149,08010768,ยางดิสเบรคหน้า,same PCODE=0447940010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G149,08011085,ยางดิสเบรคหน้า,same PCODE=0447940010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G149,08011190,ยางดิสเบรคหน้า 62m,same PCODE=0447940010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G149,08014768,ยางดิสเบรคหน้า 62m,same PCODE=0447940010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,4,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G149,08054686,ยางดิสเบรคหน้า 62m,same PCODE=0447940010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G150,02011128,แหวนลูกสูบ* ร่องล.102m,same PCODE=1121211180 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G150,02017930,แหวนลูกสูบ ร่องล.102m,same PCODE=1121211180 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G150,02051370,แหวนลูกสูบร่องล.102m 2.5-3-5m,same PCODE=1121211180 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G150,04050480,แหวนลูกสูบ ร่องเหล็ก 102m,same PCODE=1121211180 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G150,04051750,แหวนลูกสูบ ร่องล.102m,same PCODE=1121211180 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G151,30050595,ชาพก้าน STD,same PCODE=17311-22310 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G151,30051721,ชาพก้าน 020,same PCODE=17311-22310 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G151,30052401,ชาพก้าน 030,same PCODE=17311-22310 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,6,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G151,30052402,ชาพก้าน 040,same PCODE=17311-22310 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,4,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G151,30052531,ชาพก้าน STD,same PCODE=17311-22310 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,5,12,4,PCODE twin/cluster — confirm not packaging variants before approve.
+G152,05010843,สายคันเร่งอย่างดี,same PCODE=1820187G00 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G152,05011748,สายคันเร่งอย่างดี,same PCODE=1820187G00 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G152,05011807,สายคันเร่งอย่างดี,same PCODE=1820187G00 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G152,05017860,สายคันเร่ง 122ซม.,same PCODE=1820187G00 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G152,05052170,สายคันเร่ง,same PCODE=1820187G00 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G153,31050119,แชมเปอร์วาวไฮ,same PCODE=1868435M3 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G153,31050221,แชมเปอร์วาวไฮ+วาว,same PCODE=1868435M3 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G153,31050326,แชมเปอร์วาวไฮ+วาว,same PCODE=1868435M3 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G153,31050766,แชมเปอร์วาวไฮ,same PCODE=1868435M3 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G153,31051000,แชมเปอร์วาวไฮ+วาว,same PCODE=1868435M3 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,0,?,PCODE twin/cluster — confirm not packaging variants before approve.
+G154,08065953,ไส้กรองโซล่า กระดาษ,same PCODE=23390YZZA1 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G154,08065955,ไส้กรองโซล่า กระดาษ,same PCODE=23390YZZA1 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G154,08065958,ไส้กรองโซล่า กระดาษ,same PCODE=23390YZZA1 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G154,08065959,ไส้กรองโซล่า กระดาษ,same PCODE=23390YZZA1 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G154,08065961,ไส้กรองโซล่า กระดาษหยาบ,same PCODE=23390YZZA1 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G155,08012317,มูเล่ย์ไดชาร์จ 7PK รู15 มิล,same PCODE=27415-0L030 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G155,08014843,มูเล่ย์ไดชาร์จ 7PK รู15 มิล,same PCODE=27415-0L030 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G155,08055218,มูเล่ย์ไดชาร์จ,same PCODE=27415-0L030 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G155,08056295,มูเล่ย์ไดชาร์จ,same PCODE=27415-0L030 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,1,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G155,08057081,มูเล่ย์ไดชาร์จ 7PK รู15 มิล,same PCODE=27415-0L030 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,0,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G156,30050208,ซีลล้อหลังคูโบต้า,same PCODE=3133944510 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G156,30050962,ซีลล้อหลังคูโบต้า,same PCODE=3133944510 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G156,30051085,ซีลล้อหลังคูโบต้า,same PCODE=3133944510 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,4,10,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G156,30051115,ซีลล้อหลังคูโบต้า,same PCODE=3133944510 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G156,30051229,ซีลล้อหลังคูโบต้า,same PCODE=3133944510 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G157,30051015,เฟืองดอกจอกหน้าใหญ่ตัวสั้น MU5501,same PCODE=3A121-43140 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G157,30052445,เฟืองดอกจอกหน้าใหญ่ตัวสั้น MU5501,same PCODE=3A121-43140 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G157,30052484,เฟืองดอกจอกหน้าใหญ่ตัวสั้น MU5501,same PCODE=3A121-43140 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G157,30052678,เฟืองดอกจอกหน้าใหญ่ตัวสั้น,same PCODE=3A121-43140 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G157,30052868,เฟืองดอกจอกหน้าตัวใหญ่ 14ฟัน,same PCODE=3A121-43140 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G158,05011005,กระบอกเบรคหลัง,same PCODE=4410008W22 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G158,05011044,กระบอกเบรคหลัง2สกรู,same PCODE=4410008W22 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G158,05011108,กระบอกเบรคหลัง2สกรู,same PCODE=4410008W22 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G158,05019690,กระบอกเบรคหลัง,same PCODE=4410008W22 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G158,05037090,กระบอกเบรคหลัง,same PCODE=4410008W22 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G159,08054549,"ลูกหมากแร็ค 14-15m-12.2""",same PCODE=4550309321 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,2,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G159,08054551,"ลูกหมากแร็ค 14-15m-12.2""",same PCODE=4550309321 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G159,08055221,"ลูกหมากแร็ค 14-15m-12.2""",same PCODE=4550309321 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G159,08056459,"ลูกหมากแร็ค 14-15m-12.2""",same PCODE=4550309321 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,4,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G159,08056773,"ลูกหมากแร็ค 14-15m-12.2""",same PCODE=4550309321 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,6,4,PCODE twin/cluster — confirm not packaging variants before approve.
+G160,08012004,"แม่ปั้มเบรค 1""",same PCODE=4720135790 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G160,08054747,"แม่ปั้มเบรค 1""",same PCODE=4720135790 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G160,08055686,"แม่ปั้มเบรค 1""",same PCODE=4720135790 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G160,08055719,"แม่ปั้มเบรค 1""",same PCODE=4720135790 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G160,08055822,"แม่ปั้มเบรค 1""",same PCODE=4720135790 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G161,08053881,แหนบหลัง+บู๊ช,same PCODE=482010K130 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G161,08054255,แหนบหลัง,same PCODE=482010K130 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G161,08054256,แหนบหลัง,same PCODE=482010K130 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G161,08054257,แหนบหลัง,same PCODE=482010K130 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G161,08054258,แหนบหลัง,same PCODE=482010K130 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G162,08025542,แหนบหลัง,same PCODE=48210356501 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G162,08031961,แหนบหลัง รัด 1 งอ,same PCODE=48210356501 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G162,08038080,"แหนบหลัง 20"" รัด",same PCODE=48210356501 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,3,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G162,08038090,"แหนบหลัง 34""",same PCODE=48210356501 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,3,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G162,08055586,แหนบหลัง ตัวที่ 2,same PCODE=48210356501 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G163,08014262,บู๊ชปีกนกล่าง ตัวเล็ก,same PCODE=486540K040 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G163,08054541,บู๊ชปีกนกล่าง ตัวเล็ก,same PCODE=486540K040 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,5,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G163,08054544,บู๊ชปีกนกล่าง ตัวเล็ก,same PCODE=486540K040 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G163,08055581,บู๊ชปีกนกล่าง ตัวเล็ก,same PCODE=486540K040 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G163,08056437,บู๊ชปีกนกล่าง ตัวเล็ก,same PCODE=486540K040 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G164,08010938,บู๊ชปีกนกล่าง ตัวใหญ่,same PCODE=486550K010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G164,08010941,บู๊ชปีกนกล่าง ตัวใหญ่,same PCODE=486550K010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,7,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G164,08010948,บู๊ชปีกนกล่าง ตัวใหญ่,same PCODE=486550K010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G164,08051811,บู๊ชปีกนกล่าง ตัวใหญ่,same PCODE=486550K010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G164,08052172,บู๊ชปีกนกล่าง ตัวใหญ่,same PCODE=486550K010 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G165,12050718,ฝาถังน้ำมันโซล่า,same PCODE=82012210 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G165,12050719,ฝาถังน้ำมันโซล่า ถังพลาสติก,same PCODE=82012210 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G165,12052562,ฝาถังน้ำมันโซล่า มีกุญแจ,same PCODE=82012210 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,1,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G165,12053253,ฝาถังน้ำมันโซล่า,same PCODE=82012210 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G165,12053714,ฝาถังน้ำมันโซล่า ถังพลาสติก,same PCODE=82012210 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,3,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G166,12051141,บายพาสวาล์ว,same PCODE=83909255 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G166,12051849,บายพาสวาว,same PCODE=83909255 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G166,12051850,บายพาสวาว,same PCODE=83909255 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G166,12051851,บายพาสวาว,same PCODE=83909255 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G166,12051852,บายพาสวาว,same PCODE=83909255 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G167,12050688,ซีลปลายเกียร์ 4,same PCODE=83924926 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G167,12051431,ซีลปลายเกียร์ 4,same PCODE=83924926 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G167,12051709,ซีลปลายเกียร์ 4,same PCODE=83924926 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G167,12052041,ซีลปลายเกียร์ 4,same PCODE=83924926 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G167,12052046,ซีลปลายเกียร์ 4  MIS25,same PCODE=83924926 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,6,2,PCODE twin/cluster — confirm not packaging variants before approve.
+G168,03010360,"แหนบหลัง 22""",same PCODE=894166859 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,5,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G168,03011110,แหนบหลัง,same PCODE=894166859 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G168,03013130,"แหนบหลัง รัด 34""",same PCODE=894166859 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,3,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G168,03017110,แหนบหลัง รัด,same PCODE=894166859 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G168,07011168,แหนบหลัง เสริมตรง,same PCODE=894166859 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,2,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G169,04016320,ไส้กรองเครื่อง เหล็ก ก.12NF,same PCODE=8970967770 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G169,04016890,ไส้กรองเครื่อง,same PCODE=8970967770 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G169,04050282,ไส้กรองเครื่อง เหล็ก ก.12NF,same PCODE=8970967770 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G169,04050693,ไส้กรองเครื่อง เหล็ก ก.12NF,same PCODE=8970967770 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G169,04050698,ไส้กรองเครื่อง เหล็ก ก.12NF,same PCODE=8970967770 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,2,4,PCODE twin/cluster — confirm not packaging variants before approve.
+G170,08052347,ไส้กรองเครื่อง เหล็ก ก.16NF,same PCODE=90915YZZD2 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G170,08054824,ไส้กรองเครื่อง เหล็ก ก.16NF,same PCODE=90915YZZD2 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G170,08055225,ไส้กรองเครื่อง เหล็ก ก.16NF,same PCODE=90915YZZD2 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G170,08056362,ไส้กรองเครื่อง เหล็ก ก.16NF,same PCODE=90915YZZD2 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G170,08056502,ไส้กรองเครื่อง เหล็ก ก.16NF,same PCODE=90915YZZD2 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G171,12050368,เฟืองเกียร์ 3ชั้น,same PCODE=C9NN7C094B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G171,12051038,เฟืองเกียร์สี่ชั้นเฟืองบาง,same PCODE=C9NN7C094B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G171,12052210,เฟืองเกียร์สี่ชั้นเฟืองบาง,same PCODE=C9NN7C094B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,3,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G171,12053261,เฟืองเกียร์สี่ชั้น เฟืองบาง,same PCODE=C9NN7C094B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G171,12053540,เฟืองเกียร์สี่ชั้นเฟืองบาง,same PCODE=C9NN7C094B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G172,12050696,ชุดยางไฮปั้มแดง,same PCODE=EDPN500B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G172,12050699,ชุดยางไฮปั้มขาว,same PCODE=EDPN500B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G172,12050774,ชุดยางไฮปั้มแดง,same PCODE=EDPN500B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G172,12051132,ชุดยางไฮปั้มขาว,same PCODE=EDPN500B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G172,12052328,ชุดยางไฮปั้มขาว,same PCODE=EDPN500B (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,3,1,PCODE twin/cluster — confirm not packaging variants before approve.
+G173,11010249,แม่ปั้มคลัชบน 5/8,same PCODE=MB012098 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G173,11010658,แม่ปั้มคลัชบน,same PCODE=MB012098 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G173,11019010,แม่ปั๊มคลัชบน 5/8,same PCODE=MB012098 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G173,11058670,แม่ปั้มคลัชบน,same PCODE=MB012098 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G173,11058674,แม่ปั้มคลัชบน,same PCODE=MB012098 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,PCODE twin/cluster — confirm not packaging variants before approve.
+G174,13012929,สายแอร์เล็ก (S),same MCODE=08-HB6 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G174,13012933,สายแอร์เล็ก (S),same MCODE=08-HB6 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G174,13012935,สายแอร์เล็ก (S),same MCODE=08-HB6 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G174,13012936,สายแอร์เล็ก (S),same MCODE=08-HB6 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G174,13012937,สายแอร์เล็ก (S),same MCODE=08-HB6 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G174,13012938,สายแอร์เล็ก (S),same MCODE=08-HB6 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G175,08011371,แหนบหลัง 2-4D,same MCODE=0K020 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G175,08055587,แหนบหลัง 2 หู,same MCODE=0K020 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G175,08055592,แหนบหลัง 2 งอ,same MCODE=0K020 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,3,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G175,08055593,แหนบหลัง 1 งอ,same MCODE=0K020 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G175,08055596,แหนบหลัง รัด,same MCODE=0K020 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,2,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G175,08055598,แหนบหลัง รัด,same MCODE=0K020 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G176,13050458,แหวนทองแดง หัวฉีด,same MCODE=10-08 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G176,13050459,แหวนทองแดง,same MCODE=10-08 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G176,13050460,แหวนทองแดง,same MCODE=10-08 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G176,13050463,แหวนทองแดง มีขอบ,same MCODE=10-08 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G176,13050464,แหวนทองแดง มีขอบ,same MCODE=10-08 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G176,13050465,แหวนทองแดง มีขอบ,same MCODE=10-08 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G177,15010318,ลูกปืนล้อหน้า,same MCODE=102949/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G177,15010319,ลูกปืนล้อหน้า นอก,same MCODE=102949/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G177,15010329,ลูกปืนล้อหน้า ใน,same MCODE=102949/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G177,15010970,ลูกปืนล้อหน้า นอก,same MCODE=102949/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,4,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G177,15011446,ลูกปืนล้อหน้า นอก,same MCODE=102949/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G177,15021310,ลูกปืนล้อหน้า นอก,same MCODE=102949/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G178,15010129,ลูกปืนล้อหน้า ใน,same MCODE=104948/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G178,15010321,ลูกปืนล้อหน้า ใน,same MCODE=104948/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G178,15010322,ลูกปืนล้อหน้า ใน,same MCODE=104948/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G178,15019510,ลูกปืนล้อหน้า ใน,same MCODE=104948/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G178,15019511,ลูกปืนล้อหน้า ใน,same MCODE=104948/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G178,15050302,ลูกปืนล้อหน้า-ใน,same MCODE=104948/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,4,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G179,07010487,สายพานพัดลม+ไดร์ชาร์ท,same MCODE=12.5x1100 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G179,07050784,สายพานพัดลม+ไดชาร์ท,same MCODE=12.5x1100 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G179,13010376,"สายพาน 43""",same MCODE=12.5x1100 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G179,13019350,"สายพาน 42.5""",same MCODE=12.5x1100 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,3,5,3,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G179,13019351,"สายพาน 42.5""",same MCODE=12.5x1100 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,?,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G179,13037000,"สายพาน 43""",same MCODE=12.5x1100 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G180,07050086,สายพานแอร์,same MCODE=12.5x975 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G180,07050087,สายพานแอร์,same MCODE=12.5x975 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G180,07050785,สายพานแอร์,same MCODE=12.5x975 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G180,13017610,"สายพาน 37.5""",same MCODE=12.5x975 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,6,4,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G180,13017631,"สายพาน 38"" ร่องฟัน",same MCODE=12.5x975 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G180,13036910,"สายพาน 38""",same MCODE=12.5x975 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G181,12010047,ลูกปืนล้อหน้า เล็ก,same MCODE=12649/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G181,15010058,ลูกปืนล้อหน้า นอก,same MCODE=12649/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G181,15010290,ลูกปืนล้อหน้า นอก,same MCODE=12649/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,-1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G181,15010917,ลูกปืนล้อหน้า นอก,same MCODE=12649/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G181,15011295,ลูกปืนล้อหน้า นอก all new 2wd,same MCODE=12649/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,4,35,7,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G181,15018280,ลูกปืนล้อหน้า นอก,same MCODE=12649/10 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G182,13021125,ฝาไฟสต๊อบแลมป์,same MCODE=21EPT-11/01R (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G182,13021126,ฝาไฟสต๊อบแลมป์,same MCODE=21EPT-11/01R (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G182,13021127,ฝาไฟสต๊อบแลมป์,same MCODE=21EPT-11/01R (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G182,13021128,ฝาไฟสต๊อบแลมป์,same MCODE=21EPT-11/01R (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G182,13021129,ฝาไฟสต๊อบแลมป์,same MCODE=21EPT-11/01R (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G182,13021131,ฝาไฟสต๊อบแลมป์,same MCODE=21EPT-11/01R (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G183,05017070,แหวนลูกสูบ 73m หนา,same MCODE=2343  2-2m (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G183,05028990,แหวนลูกสูบ 73m หนา,same MCODE=2343  2-2m (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G183,05030890,แหวนลูกสูบ 73m หนา,same MCODE=2343  2-2m (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G183,05034290,แหวนลูกสูบ 73m หนา,same MCODE=2343  2-2m (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G183,05034310,แหวนลูกสูบ 73m หนา,same MCODE=2343  2-2m (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G183,05034520,แหวนลูกสูบ 73m หนา,same MCODE=2343  2-2m (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G184,05016130,แม่ปั้มเบรค,same MCODE=25G00 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G184,05027110,แหนบหลัง รัด,same MCODE=25G00 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,2,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G184,05027111,แหนบหลัง,same MCODE=25G00 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G184,05027112,แหนบหลัง,same MCODE=25G00 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G184,05027113,แหนบหลัง,same MCODE=25G00 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G184,05027170,แหนบหลัง,same MCODE=25G00 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G185,15014780,ลูกปืนล้อหน้า นอก-ใน,same MCODE=300849/11 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G185,15014781,ลูกปืนล้อหลัง ใน,same MCODE=300849/11 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G185,15015600,ลูกปืนล้อหน้า นอก=ใน,same MCODE=300849/11 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G185,15015601,ลูกปืนล้อหน้า นอก=ใน,same MCODE=300849/11 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G185,15015603,ลูกปืนล้อหน้า นอก=ใน,same MCODE=300849/11 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G185,15020300,ลูกปืนล้อหน้า นอก-ใน,same MCODE=300849/11 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G186,02017891,แหวนรองลูกปืนล้อ,same MCODE=32218 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G186,02018810,แหวนรองลูกปืนล้อหลัง,same MCODE=32218 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G186,15016030,ลูกปืนล้อหลังใน,same MCODE=32218 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G186,15016031,ลูกปืนล้อหลังใน,same MCODE=32218 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,2,1,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G186,15017122,ลูกปืนล้อหลัง นอก,same MCODE=32218 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G186,15018061,ลูกปืนล้อหลังใน,same MCODE=32218 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G187,09010283,"แหนบหลัง ซูโม่,โ18",same MCODE=4240A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G187,09010284,"แหนบหลัง ซูโม่,F18",same MCODE=4240A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G187,09010285,"แหนบหลัง ซูโม่,F18",same MCODE=4240A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G187,09010286,"แหนบหลัง ซูโม่,F18",same MCODE=4240A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G187,09010287,"แหนบหลัง ซูโม่,F18",same MCODE=4240A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G187,09013930,"แหนบหลัง ซูโม่,F18",same MCODE=4240A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G188,09010297,แหนบหน้า,same MCODE=550208 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G188,09010298,แหนบหน้า,same MCODE=550208 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G188,09010299,แหนบหน้า,same MCODE=550208 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G188,09016260,แหนบหน้า,same MCODE=550208 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G188,09024950,แหนบหน้า,same MCODE=550208 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G188,09024951,แหนบหน้า,same MCODE=550208 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G189,08013323,สายพานพัดลม* Commuter,same MCODE=7PK-1473 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G189,08051656,สายพานพัดลม,same MCODE=7PK-1473 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G189,13010642,สายพาน,same MCODE=7PK-1473 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G189,13011359,สายพาน,same MCODE=7PK-1473 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G189,13011368,สายพาน,same MCODE=7PK-1473 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G189,13050556,สายพานพัดลม,same MCODE=7PK-1473 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,3,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G190,13011482,ไฟฟ๊อกแลมป์ เหลี่ยม,same MCODE=FX20 #305 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G190,13011483,ไฟฟ๊อกแลมป์ เหลี่ยม,same MCODE=FX20 #305 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G190,13011484,ไฟฟ๊อกแลมป์ เหลี่ยม,same MCODE=FX20 #305 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G190,13011485,ไฟฟ๊อกแลมป์ เหลี่ยม,same MCODE=FX20 #305 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G190,13011486,ไฟฟ๊อกแลมป์ เหลี่ยม,same MCODE=FX20 #305 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G190,13011487,ไฟฟ๊อกแลมป์ เหลี่ยม,same MCODE=FX20 #305 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G191,08013096,"จานดิสเบรคหน้า ช่องลม 11.2""",same MCODE=KDH222 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,2,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G191,08053798,ฝาปิดตะขอลากรถ เหลี่ยม,same MCODE=KDH222 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G191,08053799,ฝาปิดตะขอลากรถ เหลี่ยม,same MCODE=KDH222 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G191,08059772,ไฟหน้า เสื้อ หลังคาสูง,same MCODE=KDH222 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G191,08059775,PTขายึดใต้ไฟหน้า ไม่แยกขาย,same MCODE=KDH222 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G191,08059776,ไฟหน้า เสื้อ หลังคาสูง,same MCODE=KDH222 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G192,05010731,ชาพอก,same MCODE=M238K (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G192,05014000,ชาพอก,same MCODE=M238K (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G192,05014010,ชาพอก,same MCODE=M238K (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G192,05015910,ชาพอก,same MCODE=M238K (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G192,05035610,ชาพอก,same MCODE=M238K (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G192,05051794,ชาพอก,same MCODE=M238K (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G193,03010310,"ชาพก้าน 4JA1,4JH",same MCODE=R4650A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,2,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G193,03013210,ชาพก้าน 4JA1-4JH (STD),same MCODE=R4650A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,1,1,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G193,03014520,ชาพก้าน 4JA1-4JH,same MCODE=R4650A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G193,03022530,ชาพก้าน 4JA1-4JH,same MCODE=R4650A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G193,03052233,ชาพก้าน 4JA1-4JH,same MCODE=R4650A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G193,03052234,ชาพก้าน 4JA1-4JH,same MCODE=R4650A (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G194,13012026,หัวฉีดน้ำ,same MCODE=TR-710 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G194,13012029,หัวฉีดน้ำ,same MCODE=TR-710 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G194,13012039,หัวฉีดน้ำ,same MCODE=TR-710 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G194,13012041,หัวฉีดน้ำ,same MCODE=TR-710 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G194,13012042,หัวฉีดน้ำ,same MCODE=TR-710 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G194,13050014,หัวฉีดน้ำ,same MCODE=TR-710 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G195,06010790,แหนบหลัง ตัวยาว 1 ไม่ปาด,same MCODE=Z2011 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G195,06011030,"แหนบหลัง ตัว 10x19""",same MCODE=Z2011 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G195,06011040,"แหนบหลัง ตัว 8x28""",same MCODE=Z2011 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G195,06011041,แหนบหลัง ตัว 7รัด,same MCODE=Z2011 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G195,06011042,แหนบหลัง ตัว 9,same MCODE=Z2011 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G195,06012710,แหนบหลัง ตัวยาว 1 ปาด,same MCODE=Z2011 (6 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G196,13012950,สายแอร์กลาง (M),same MCODE=08-HB5 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G196,13012952,สายแอร์กลาง (M),same MCODE=08-HB5 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G196,13012953,สายแอร์กลาง (M),same MCODE=08-HB5 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G196,13012954,สายแอร์กลาง (M),same MCODE=08-HB5 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G196,13012955,สายแอร์กลาง (M),same MCODE=08-HB5 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,0,1,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G197,01013640,ดอกจอก+เสื้อ,same MCODE=10480 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G197,03014170,ลูกหมากปีกนกล่าง,same MCODE=10480 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G197,05024450,ไฟเลี้ยวมุมสีขาว,same MCODE=10480 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G197,08018270,เหล็กวัดน้ำมันเครื่อง,same MCODE=10480 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G197,09017020,ปะเก็นชุดใหญ่ มีซีล ไม่มีฝา,same MCODE=10480 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G198,08010491,ซีลข้อเหวี่ยงหลัง,same MCODE=105-85-10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G198,08011187,ซีลข้อเหวี่ยงหลัง,same MCODE=105-85-10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G198,08043141,ซีลข้อเหวี่ยงหลัง เหล็ก,same MCODE=105-85-10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G198,08051970,ซีลข้อเหวี่ยงหลัง ล.เขียว,same MCODE=105-85-10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G198,08053831,ซีลข้อเหวี่ยงหลัง ย.น้ำตาล,same MCODE=105-85-10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G199,30051183,แกน+จานเดือยหมูหน้า,"same MCODE=10Tx18T,23Tx20T (5 distinct BCODEs); at least one HQ QTYMIN<0",med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G199,30052263,แกน+จานเดือยหมูหน้า,"same MCODE=10Tx18T,23Tx20T (5 distinct BCODEs); at least one HQ QTYMIN<0",med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G199,30052297,แกน+จานเดือยหมูหน้า,"same MCODE=10Tx18T,23Tx20T (5 distinct BCODEs); at least one HQ QTYMIN<0",med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G199,30052420,แกน+จานเดือยหมูหน้า,"same MCODE=10Tx18T,23Tx20T (5 distinct BCODEs); at least one HQ QTYMIN<0",med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G199,30052928,แกน+จานเดือยหมูหน้า,"same MCODE=10Tx18T,23Tx20T (5 distinct BCODEs); at least one HQ QTYMIN<0",med,2,4,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G200,02010293,ซีลท้ายเกียร์ ฟูลเลอร์,same MCODE=114.3-95.25-12T (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G200,02014410,ซีลท้ายเกียร์ ฟูลเลอร์,same MCODE=114.3-95.25-12T (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G200,02043640,ซีลท้ายเกียร์ ฟูลเลอร์,same MCODE=114.3-95.25-12T (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G200,02050041,ซีลท้ายเกียร์ ฟูลเลอร์ 1K22560000,same MCODE=114.3-95.25-12T (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G200,09050235,ซีลท้ายเกียร์ ฟูลเลอร์,same MCODE=114.3-95.25-12T (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G201,15010192,ลูกปืนล้อหน้า นอก,same MCODE=11949/10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G201,15010560,ลูกปืนล้อหน้า นอก,same MCODE=11949/10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,4,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G201,15017630,ลูกปืนล้อหน้า นอก,same MCODE=11949/10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G201,15017780,ลูกปืนล้อหน้า นอก,same MCODE=11949/10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G201,15050018,ลูกปืนล้อหลัง นอก,same MCODE=11949/10 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G202,05010147,สายพานพัดลม,same MCODE=12.5x1025 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G202,07010112,สายพานแอร์,same MCODE=12.5x1025 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G202,13015840,"สายพาน 39.5""",same MCODE=12.5x1025 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,3,7,2,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G202,13015841,"สายพาน 40""",same MCODE=12.5x1025 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G202,13015855,"สายพาน 39.5""",same MCODE=12.5x1025 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,-1,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G203,05050102,สายพานแอร์,same MCODE=12.5x925 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G203,11010116,สายพานแอร์,same MCODE=12.5x925 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G203,13017600,"สายพาน 35.5""",same MCODE=12.5x925 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,2,4,4,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G203,13017601,"สายพาน 36""",same MCODE=12.5x925 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,-1,0,0,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+G203,13018060,"สายพานแอร์ 35.5""",same MCODE=12.5x925 (5 distinct BCODEs); at least one HQ QTYMIN<0,med,1,5,1,MCODE twin/cluster — confirm factory cross-ref is mutual substitute.
+ORPHAN-L1,19025007,หัวน็อต,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-2252,326,needs substitute — empty peer
+ORPHAN-L1,13013312,สายแอร์ กลาง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,99,needs substitute — empty peer
+ORPHAN-L1,13013313,สายแอร์ เล็ก,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,96,needs substitute — empty peer
+ORPHAN-L1,13013311,สายแอร์ ใหญ่,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,95.7,needs substitute — empty peer
+ORPHAN-L1,19035001,หัวน็อต,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-1748.5,90,needs substitute — empty peer
+ORPHAN-L1,19045115,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,46,75,needs substitute — empty peer
+ORPHAN-L1,13052638,หลอดไฟ1จุด เล็ก,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,71,needs substitute — empty peer
+ORPHAN-L1,24240000,อะไหล่เก่า,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-115,69,needs substitute — empty peer
+ORPHAN-L1,13050942,หัวเสียบปลั๊กไฟหน้า,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,49,needs substitute — empty peer
+ORPHAN-L1,19040001,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-3,36,needs substitute — empty peer
+ORPHAN-L1,29012846,หลอดไฟในเก๋ง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,30,needs substitute — empty peer
+ORPHAN-L1,19020005,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-42,27,needs substitute — empty peer
+ORPHAN-L1,25020016,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,24,needs substitute — empty peer
+ORPHAN-L1,25025017,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-1,24,needs substitute — empty peer
+ORPHAN-L1,17014002,หัวน็อตมิลดำ,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-134,22,needs substitute — empty peer
+ORPHAN-L1,18050440,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-21,22,needs substitute — empty peer
+ORPHAN-L1,19030002,หัวน็อตกิโล,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-213,22,needs substitute — empty peer
+ORPHAN-L1,13051931,เข็มขัดรัดท่อยาง-ลวด,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,11,20,needs substitute — empty peer
+ORPHAN-L1,18035001,หัวน็อต,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-208,20,needs substitute — empty peer
+ORPHAN-L1,13013631,ฟิวส์หลอดแก้ว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,56,18,needs substitute — empty peer
+ORPHAN-L1,13013453,หัวอัดจารบี ทองเหลือง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-1,17,needs substitute — empty peer
+ORPHAN-L1,14014657,ใบตัดไฟเบอร์,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,4,16,needs substitute — empty peer
+ORPHAN-L1,32050284,สกรูแทรค สี่เลี่ยม,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-64,16,needs substitute — empty peer
+ORPHAN-L1,18040115,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-15,14,needs substitute — empty peer
+ORPHAN-L1,12051921,ไส้กรองโซล่า (สั้น),HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,13,13,needs substitute — empty peer
+ORPHAN-L1,25040023,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,2,13,needs substitute — empty peer
+ORPHAN-L1,22010828,น.ม.ฮ. เชลล์,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,29,11,needs substitute — empty peer
+ORPHAN-L1,28045203,สกรูล้อหลังพ่วง LH,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,11,needs substitute — empty peer
+ORPHAN-L1,01010255,สกรูล้อหลัง สีเทา,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,04050738,สกรูล้อหลัง สีเทา,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,04050739,สกรูล้อหลัง สีเทา,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,13010015,ยางเบรคถ้วย,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,13013305,ข้อต่อตรงเสียบสายPVC,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,13031659,แหวนล็อคใน,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,10,10,needs substitute — empty peer
+ORPHAN-L1,13051768,เข็มขัดรัดท่อยาง-สแตนเลส,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,56,10,needs substitute — empty peer
+ORPHAN-L1,13051776,เข็มขัดรัดท่อยาง-เหล็กสีทอง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,30,10,needs substitute — empty peer
+ORPHAN-L1,14010823,ลวดเชื่อมสแตนเลส,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-25,10,needs substitute — empty peer
+ORPHAN-L1,14010904,ลวดเชื่อมเฟือง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-2,10,needs substitute — empty peer
+ORPHAN-L1,14010905,ลวดเชื่อมเฟือง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,3,10,needs substitute — empty peer
+ORPHAN-L1,19040036,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,33,10,needs substitute — empty peer
+ORPHAN-L1,19040056,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-10,10,needs substitute — empty peer
+ORPHAN-L1,19050223,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-15,10,needs substitute — empty peer
+ORPHAN-L1,19050226,แกนสกรู ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-11,10,needs substitute — empty peer
+ORPHAN-L1,25015071,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,2,10,needs substitute — empty peer
+ORPHAN-L1,25015130,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,25040015,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,3,10,needs substitute — empty peer
+ORPHAN-L1,25040036,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,7,10,needs substitute — empty peer
+ORPHAN-L1,25050030,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,10,10,needs substitute — empty peer
+ORPHAN-L1,25050183,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,28045200,สกรูล้อหลังพ่วง RH,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,10,needs substitute — empty peer
+ORPHAN-L1,13013306,ข้อต่อตรงเสียบสายPVC,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,9,needs substitute — empty peer
+ORPHAN-L1,13051784,เข็มขัดรัดท่อยาง-เหล็ก,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,31,9,needs substitute — empty peer
+ORPHAN-L1,13051936,เข็มขัดรัดท่อยาง-ลวด,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,41,9,needs substitute — empty peer
+ORPHAN-L1,13051938,เข็มขัดรัดท่อยาง-ลวด,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,8,9,needs substitute — empty peer
+ORPHAN-L1,17014052,แกนสกรูมิลดำ ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-44,9,needs substitute — empty peer
+ORPHAN-L1,25035060,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,22,9,needs substitute — empty peer
+ORPHAN-L1,02050536,ยางกันฝุ่นเบรค,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,4,8,needs substitute — empty peer
+ORPHAN-L1,02050656,น็อตหัวเพลา,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,3,8,needs substitute — empty peer
+ORPHAN-L1,02050667,สกรูล้อหลัง สีเทา RH 22x108,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,2,8,needs substitute — empty peer
+ORPHAN-L1,09011582,สกรูล้อหลัง สีเทา,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,6,8,needs substitute — empty peer
+ORPHAN-L1,13051394,หลอดไฟแท้,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,1,8,needs substitute — empty peer
+ORPHAN-L1,13051756,เข็มขัดรัดท่อยาง-ทะลุ,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,73,8,needs substitute — empty peer
+ORPHAN-L1,13051826,เข็มขัดรัดท่อยาง-สแตนเลส,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,24,8,needs substitute — empty peer
+ORPHAN-L1,13051926,เข็มขัดรัดท่อยาง-สแตนเลส,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,36,8,needs substitute — empty peer
+ORPHAN-L1,13051939,เข็มขัดรัดท่อยาง-ลวด,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,44,8,needs substitute — empty peer
+ORPHAN-L1,13051946,เข็มขัดรัดท่อยาง-ลวด,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,10,8,needs substitute — empty peer
+ORPHAN-L1,13051951,เข็มขัดรัดท่อยาง-ลวด,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,13,8,needs substitute — empty peer
+ORPHAN-L1,13052075,เข็มขัดรัดท่อยาง-สีทอง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,29,8,needs substitute — empty peer
+ORPHAN-L1,13052320,ฟิวส์เสียบ,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,20,8,needs substitute — empty peer
+ORPHAN-L1,17010007,แกนสกรูมิลดำ ไม่หัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-5,8,needs substitute — empty peer
+ORPHAN-L1,18040046,แกนสกรูไม่มีหัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-8,8,needs substitute — empty peer
+ORPHAN-L1,18040052,สกรู ไม่พร้อมหัว,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,-8,8,needs substitute — empty peer
+ORPHAN-L1,22010752,น.ม.ก. ptt,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,22,8,needs substitute — empty peer
+ORPHAN-L1,25025095,ยางโอริง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,8,8,needs substitute — empty peer
+ORPHAN-L1,30052983,ใบมีดตัดหญ้า งอ,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,8,needs substitute — empty peer
+ORPHAN-L1,16052452,สายพานแบน,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,7.1,needs substitute — empty peer
+ORPHAN-L1,02050698,สกรูล้อหลังดัดแปลง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,7,needs substitute — empty peer
+ORPHAN-L1,02050699,สกรูล้อหลังดัดแปลง,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,7,needs substitute — empty peer
+ORPHAN-L1,09010052,สกรูล้อหลัง รุ่นกล่องดำ,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,7,needs substitute — empty peer
+ORPHAN-L1,13041432,หัวเผา,HQ QTYMIN<0 + SYP QTYOH2>0; no peer found,low,-1,0,7,needs substitute — empty peer

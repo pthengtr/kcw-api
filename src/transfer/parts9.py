@@ -494,7 +494,15 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
         }
         out.append(_enrich_suggest_item(item, site_key=site_key, hq_icmas=hq_icmas, syp_icmas=syp_icmas))
 
-    return out
+    # Requester asks the other branch to ship — live suggestions when ship-from is weak/L-1.
+    ship_branch = "HQ" if site_key == "syp" else "SYP"
+    from src.substitutes.peers import attach_live_suggestions
+
+    return attach_live_suggestions(
+        out,
+        ship_branch=ship_branch,
+        need_qty_for=lambda row: row.get("suggest_qty"),
+    )
 
 
 def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
@@ -567,8 +575,11 @@ def enrich_transfer_lines(
     to_branch: str | None = None,
     hq_icmas: dict[str, dict[str, Any]] | None = None,
     syp_icmas: dict[str, dict[str, Any]] | None = None,
+    suggest_map_fn=None,
+    bulk_peers_fn=None,
 ) -> list[dict[str, Any]]:
-    """Fill descr and live ICMAS stock (QTYOH2) from PARTS9 for transfer line dicts."""
+    """Fill descr/stock from PARTS9; attach live substitute suggestions when ship-from is weak."""
+    _ = bulk_peers_fn  # legacy catalog hook — ignored (hints are live-only)
     codes = sorted({(ln.get("bcode") or "").strip() for ln in lines if (ln.get("bcode") or "").strip()})
     if not codes:
         return [dict(ln) for ln in lines]
@@ -588,6 +599,7 @@ def enrich_transfer_lines(
         row["hq_qtyoh2"] = float(hq_meta.get("qtyoh2") or 0)
         row["syp_qtyoh2"] = float(syp_meta.get("qtyoh2") or 0)
         row["hq_qtymin"] = float(hq_meta["qtymin"]) if hq_meta and "qtymin" in hq_meta else None
+        row["syp_qtymin"] = float(syp_meta["qtymin"]) if syp_meta and "qtymin" in syp_meta else None
         row["hq_no_stock"] = bool(hq_meta.get("blocked"))
         row["location_hq"] = (hq_meta.get("location") or "").strip()
         row["location_syp"] = (syp_meta.get("location") or "").strip()
@@ -630,6 +642,23 @@ def enrich_transfer_lines(
             if float(meta.get("mtp2") or 1.0) > 1.0:
                 row["mtp2"] = float(meta["mtp2"])
         out.append(row)
+
+    ship_branch = from_u if from_u in ("HQ", "SYP") else ""
+    if ship_branch:
+        from src.substitutes.peers import attach_live_suggestions
+
+        def _need(row: dict[str, Any]) -> float | None:
+            open_qty = float(row.get("qty_requested") or 0) - float(row.get("qty_prepared") or 0)
+            if open_qty > 0:
+                return open_qty
+            return row.get("suggest_qty")
+
+        return attach_live_suggestions(
+            out,
+            ship_branch=ship_branch,
+            need_qty_for=_need,
+            suggest_map_fn=suggest_map_fn,
+        )
     return out
 
 
