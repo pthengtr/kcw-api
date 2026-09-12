@@ -192,6 +192,9 @@ class BankUpdate(BaseModel):
     is_default: bool = False
 
 
+NOTE_PAY_METHODS = ("transfer", "cheque")
+
+
 class NoteCreate(BaseModel):
     acctno: str
     acctname: str
@@ -205,6 +208,7 @@ class NoteCreate(BaseModel):
     bill_month: str | None = None
     remark_extra: str | None = None
     kbiz_datetime: str | None = None
+    settle_method: str = "transfer"  # transfer | cheque — intended payout
 
 
 class NoteUpdate(BaseModel):
@@ -217,6 +221,7 @@ class NoteUpdate(BaseModel):
     discount_mode: str | None = None
     discount_input: float | None = None
     kbiz_datetime: str | None = None
+    settle_method: str | None = None
 
 
 class ReminderPatch(BaseModel):
@@ -226,6 +231,7 @@ class ReminderPatch(BaseModel):
     bill_month: str | None = None
     remark_extra: str | None = None
     kbiz_datetime: str | None = None
+    settle_method: str | None = None
 
 
 class VoucherCreate(BaseModel):
@@ -249,6 +255,15 @@ def _parse_due(raw: str) -> str:
     if "T" in text:
         text = text.split("T", 1)[0]
     return datetime.strptime(text[:10], "%Y-%m-%d").date().isoformat()
+
+
+def _normalize_note_pay_method(raw: str | None, *, default: str = "transfer") -> str:
+    """Intended payout on a billing note: transfer | cheque (cash is voucher-only)."""
+    text = (raw if raw is not None else default) or default
+    method = text.strip().lower()
+    if method not in NOTE_PAY_METHODS:
+        raise ValueError("settle_method must be transfer or cheque")
+    return method
 
 
 def _parse_kbiz_datetime(raw: str | None) -> str | None:
@@ -490,6 +505,14 @@ def api_reminder_patch(request: Request, acctno: str, noteno: str, body: Reminde
         patch.update(rem_fields)
     if body.kbiz_datetime is not None:
         patch["kbiz_datetime"] = _parse_kbiz_datetime(body.kbiz_datetime)
+    if body.settle_method is not None:
+        try:
+            method = _normalize_note_pay_method(body.settle_method)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        patch["settle_method"] = method
+        if method == "cheque" and body.kbiz_datetime is None:
+            patch["kbiz_datetime"] = None
     row = patch_reminder(client, acctno, noteno, patch)
     return row
 
@@ -545,6 +568,10 @@ def api_create_note(request: Request, body: NoteCreate):
         return JSONResponse({"error": "NOTENO max 15 chars"}, status_code=400)
     if not body.billnos:
         return JSONResponse({"error": "select at least one bill"}, status_code=400)
+    try:
+        settle_method = _normalize_note_pay_method(body.settle_method)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
 
     client = get_pay_notes_supabase_client()
     bank = get_vendor_bank(client, body.bank_id)
@@ -616,7 +643,7 @@ def api_create_note(request: Request, body: NoteCreate):
         remark_extra=body.remark_extra,
         remark=body.remark,
     )
-    kbiz_dt = _parse_kbiz_datetime(body.kbiz_datetime)
+    kbiz_dt = None if settle_method == "cheque" else _parse_kbiz_datetime(body.kbiz_datetime)
     rem_row: dict[str, Any] = {
         "acctno": acct,
         "noteno": note,
@@ -625,6 +652,7 @@ def api_create_note(request: Request, body: NoteCreate):
         "discount_mode": discount_mode,
         "discount_input": discount_input,
         "discount_amount": discount_amount,
+        "settle_method": settle_method,
         **rem_fields,
         "created_by": ident.line_user_id if ident else None,
     }
@@ -751,8 +779,20 @@ def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate
             existing=rem,
         )
         patch.update(rem_fields)
+    if body.settle_method is not None:
+        try:
+            method = _normalize_note_pay_method(body.settle_method)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+        patch["settle_method"] = method
+        if method == "cheque" and body.kbiz_datetime is None:
+            patch["kbiz_datetime"] = None
     if body.kbiz_datetime is not None:
         patch["kbiz_datetime"] = _parse_kbiz_datetime(body.kbiz_datetime)
+        if patch.get("settle_method") == "cheque" or (
+            "settle_method" not in patch and (rem.get("settle_method") or "") == "cheque"
+        ):
+            patch["kbiz_datetime"] = None
     if body.discount_mode is not None or body.discount_input is not None:
         mode = body.discount_mode if body.discount_mode is not None else rem.get("discount_mode", "amount")
         raw = body.discount_input if body.discount_input is not None else rem.get("discount_input", 0)

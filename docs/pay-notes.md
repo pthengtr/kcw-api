@@ -10,8 +10,8 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 
 | Tab | What you do | Editable? | KSS / Supabase |
 |-----|-------------|-----------|----------------|
-| 1. สร้าง | Create note (vendor, bills, discount, images) | yes (new) | `PVMAS` INSERT + `PIMAS` stamp; `pay_note.reminder` |
-| 2. รอชำระ | Pending payment board; edit note; **cancel mistaken note**; record payment | **yes** (bills, discount, due, bank, remark); cancel = soft | unvouchered `PVMAS` + reminder |
+| 1. สร้าง | Create note (vendor, bills, discount, **pay method โอนเงิน/เช็ค**, images) | yes (new) | `PVMAS` INSERT + `PIMAS` stamp; `pay_note.reminder` |
+| 2. รอชำระ | Pending payment board; edit note; **cancel mistaken note**; record payment | **yes** (bills, discount, due, bank, pay method, remark); cancel = soft | unvouchered `PVMAS` + reminder |
 | 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `PVMAS`; `payment/{VOUCNO}/` images |
 | 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view / **update** bill + proof images | proof images only (must keep ≥1) | vouchered `PVMAS` with proof |
 | 5. ค้นหาตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
@@ -27,6 +27,10 @@ After proof upload on tab 3, the row moves to tab 4 automatically (if AI payment
 
 AI assist scans vendor bill/statement images, extracts bill numbers + amounts per line, matches to KSS pickable bills (billno + amount scoring), and shows a line-by-line review with total compare (**ก่อนส่วนลด**). If scan fails, use **ข้ามไปเลือกบิลเอง**.
 
+### Pay method (วิธีชำระ)
+
+Chosen on **สร้างใบวางบิล** (and editable while รอชำระ): **โอนเงิน** (`transfer`, default) or **เช็ค** (`cheque`). Some vendors accept cheque only. Stored on `pay_note.reminder.settle_method`. KBIZ reminder is hidden for cheque. Recording payment pre-selects this method (operator can still switch, including เงินสด).
+
 ### AI APIs
 
 - `POST /api/ai/scan-bills` — `acctno` + 1–5 `files` → line match result (+ `usage` token stats)
@@ -38,7 +42,7 @@ Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key i
 
 - `GET /api/notes?acctno=&noteno=` — header, attached purchase bills with `PIDET` lines (qty / price / amount), voucher payments, reminder, images (`noteno` may contain `/`; use query params)
 - `GET /api/notes` — all service notes (optional `acctno` filter); includes `stage`, `workflow_status`, `is_editable`
-- `PATCH /api/notes?acctno=&noteno=` — edit pending note (bills, discount, reminder fields)
+- `PATCH /api/notes?acctno=&noteno=` — edit pending note (bills, discount, reminder fields including `settle_method`)
 - `DELETE /api/notes?acctno=&noteno=` — **cancel unpaid note only** (soft: `PVMAS.CANCELED='Y'`, clear `PIMAS` stamps, delete reminder, best-effort remove bill images). **409** if already vouchered (`code: already_vouchered`)
 - `GET /api/banks?acctno=` — AP payment accounts from `pay_note.vendor_bank` (not PARTS9)
 - `POST /api/banks` — add an AP account (`bank_branch`, `account_type`, `is_default`)
@@ -76,7 +80,7 @@ SQL grants for `python_writer` (run on HQ `PARTS9` as admin, e.g. WinRM + `sqlcm
 
 `scripts/sql/grant_pay_notes_writer.sql`
 
-Supabase: schema `pay_note` (vendor_bank, reminder) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`, `20260827140000_pay_note_reminder_discount.sql` (`discount_mode` / `discount_input` / `discount_amount` on reminder), `20260828120000_pay_note_reminder_kbiz_datetime.sql` (`kbiz_datetime` optional on reminder), `20260831120000_pay_note_remark_structured.sql` (`bill_month` + `remark_extra` on reminder), `20260908120000_pay_note_vendor_bank_from_party.sql` (one-time copy of `public.party_bank_info` into `pay_note.vendor_bank`).
+Supabase: schema `pay_note` (vendor_bank, reminder) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`, `20260827140000_pay_note_reminder_discount.sql` (`discount_mode` / `discount_input` / `discount_amount` on reminder), `20260828120000_pay_note_reminder_kbiz_datetime.sql` (`kbiz_datetime` optional on reminder), `20260831120000_pay_note_remark_structured.sql` (`bill_month` + `remark_extra` on reminder), `20260828100000_pay_note_reminder_settle.sql` + `20260911140000_pay_note_reminder_pay_method.sql` (`settle_method` intended at create: `transfer` | `cheque`; confirmed at voucher, may be `cash`), `20260908120000_pay_note_vendor_bank_from_party.sql` (one-time copy of `public.party_bank_info` into `pay_note.vendor_bank`).
 
 Vendor banks live in `pay_note.vendor_bank`. `public.party_bank_info` is a one-time source only — pay-notes does not read it at runtime. PARTS9 has no bank columns.
 
