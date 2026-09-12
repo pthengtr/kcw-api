@@ -3,10 +3,20 @@ name: SYP Linux deploy
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: [self-hosted, linux, syp]
     steps:
+      # Pull first so we exec the script from the new commit (avoids bash holding
+      # the old inode after `git reset` mid-script — which left SYP without a restart
+      # when pip was missing from the venv).
       - name: Pull and restart kcw-api units
-        run: bash "$HOME/projects/kcw-api/scripts/syp-linux-deploy.sh"
+        run: |
+          set -euo pipefail
+          REPO="${HOME}/projects/kcw-api"
+          cd "$REPO"
+          git fetch origin
+          git reset --hard origin/master
+          exec bash "$REPO/scripts/syp-linux-deploy.sh" --already-pulled
