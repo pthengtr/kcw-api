@@ -4,8 +4,12 @@ set -euo pipefail
 REPO="${SYP_KCW_API_DIR:-$HOME/projects/kcw-api}"
 PY="${REPO}/.venv/bin/python"
 cd "$REPO"
-git fetch origin
-git reset --hard origin/master
+
+if [[ "${1:-}" != "--already-pulled" ]]; then
+  git fetch origin
+  git reset --hard origin/master
+fi
+
 DOCS="${SYP_KCW_DOCS_DIR:-$HOME/projects/kcw-docs}"
 if [[ -d "$DOCS/.git" ]]; then
   cd "$DOCS"
@@ -14,13 +18,29 @@ if [[ -d "$DOCS/.git" ]]; then
   echo "kcw-docs at $(git rev-parse --short HEAD)"
   cd "$REPO"
 fi
-if [[ -x "$PY" ]]; then
+
+_install_reqs() {
+  if ! [[ -x "$PY" ]]; then
+    echo "WARNING: missing venv python at $PY; skipping requirements" >&2
+    return 0
+  fi
   if command -v uv >/dev/null 2>&1; then
     uv pip install --python "$PY" -r requirements.txt
-  else
-    "$PY" -m pip install -r requirements.txt
+    return
   fi
+  if ! "$PY" -m pip --version >/dev/null 2>&1; then
+    echo "venv pip missing — bootstrapping with ensurepip"
+    "$PY" -m ensurepip --upgrade
+    "$PY" -m pip install -U pip
+  fi
+  "$PY" -m pip install -r requirements.txt
+}
+
+# Code pull already succeeded; don't block service bounce on a broken pip.
+if ! _install_reqs; then
+  echo "WARNING: requirements install failed; continuing with service restart" >&2
 fi
+
 _units=(kcw-stock-check kcw-parts9-explorer kcw-ops)
 if systemctl --user cat kcw-transfer.service &>/dev/null; then
   _units+=(kcw-transfer)
