@@ -495,13 +495,15 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
         out.append(_enrich_suggest_item(item, site_key=site_key, hq_icmas=hq_icmas, syp_icmas=syp_icmas))
 
     # Requester asks the other branch to ship — live suggestions when ship-from is weak/L-1.
+    # Cap lookups: each SKU can take several ICMAS round-trips (see ntext fix making these succeed).
     ship_branch = "HQ" if site_key == "syp" else "SYP"
-    from src.substitutes.peers import attach_live_suggestions
+    from src.substitutes.peers import DEFAULT_SUGGEST_HINT_CAP, attach_live_suggestions
 
     return attach_live_suggestions(
         out,
         ship_branch=ship_branch,
         need_qty_for=lambda row: row.get("suggest_qty"),
+        max_codes=DEFAULT_SUGGEST_HINT_CAP,
     )
 
 

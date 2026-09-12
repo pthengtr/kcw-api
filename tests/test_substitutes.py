@@ -423,6 +423,51 @@ def test_attach_substitute_hints_for_l1(monkeypatch):
     assert out[1]["suggestions"] == []
 
 
+def test_attach_live_suggestions_respects_max_codes():
+    from src.substitutes.peers import attach_live_suggestions
+
+    items = [
+        {
+            "bcode": "WEAK1",
+            "hq_qtyoh2": 0,
+            "hq_qtymin": 1,
+            "suggest_qty": 5,
+        },
+        {
+            "bcode": "L1FIRST",
+            "hq_no_stock": True,
+            "hq_qtyoh2": 0,
+            "hq_qtymin": -1,
+            "suggest_qty": 2,
+        },
+        {
+            "bcode": "WEAK2",
+            "hq_qtyoh2": 1,
+            "hq_qtymin": 1,
+            "suggest_qty": 4,
+        },
+    ]
+    seen: list[str] = []
+
+    def fake_map(bcodes):
+        seen.extend(bcodes)
+        return {b: [{"bcode": f"P-{b}", "source": "pcode"}] for b in bcodes}
+
+    out = attach_live_suggestions(
+        items,
+        ship_branch="HQ",
+        need_qty_for=lambda r: r.get("suggest_qty"),
+        suggest_map_fn=fake_map,
+        max_codes=1,
+    )
+    assert seen == ["L1FIRST"]
+    by = {r["bcode"]: r for r in out}
+    assert by["L1FIRST"]["suggestions"]
+    assert by["WEAK1"]["suggestions"] == []
+    assert by["WEAK2"]["suggestions"] == []
+
+
+
 def test_enrich_transfer_lines_attaches_substitutes():
     from unittest.mock import patch
 
