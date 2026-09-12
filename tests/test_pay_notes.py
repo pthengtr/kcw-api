@@ -422,6 +422,7 @@ def test_page_has_ai_create_mode_elements():
     assert "btnModeAssist" in html
     assert "wizardNav" in html
     assert "dropScan" in html
+    assert "หลายหน้าจะอ่านทีละหน้าแล้วรวมรายการ" in html
     assert "aiLineMatch" in html
     assert "billMatchAck" in html
     assert "detProofVerify" in html

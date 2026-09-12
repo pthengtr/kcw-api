@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from src.ai.openai_client import (
@@ -17,6 +18,7 @@ logger = logging.getLogger("kcw.pay_notes.ai_vision")
 
 AMOUNT_TOLERANCE = 0.01
 AUTO_ASSIGN_SCORE = 70
+MAX_PARALLEL_PAGES = 5
 
 BILL_LINES_SYSTEM_PROMPT = """
 You extract purchase bill / invoice rows from images for a Thai auto-parts AP clerk.
@@ -30,12 +32,22 @@ Schema:
   "warnings": [string]
 }
 
+These photos are usually Thai ใบวางบิล / ใบแจ้งหนี้ / vendor statements. One photo is
+one page. A page lists MANY purchase invoices in a table — never treat the whole
+page as a single bill.
+
 Rules:
-- One object per bill/invoice row on the document (not product line items inside a bill).
-- "billno" = invoice/bill number as printed (preserve Thai/alphanumeric).
-- "amount" = amount for that bill row (after tax if that's what is shown).
-- "total_amount" = document grand total if visible (ยอดรวม / จำนวนเงินรวม).
-- If multiple pages/images are provided, extract rows from all pages.
+- One object per TABLE ROW (invoice / ใบส่งของ), not product line items inside a bill,
+  and not one object per page/photo.
+- "billno" = the invoice number in the table: เลขที่ใบส่งของ / เลขที่บิล / Invoice No
+  (examples: IVE6932639, INV-2401/001). Preserve Thai/alphanumeric exactly.
+- Do NOT use the document header number as a line (เลขที่ ใบวางบิล / statement no /
+  BO…). That header identifies the statement, not a payable invoice.
+- Do NOT emit the footer ยอดรวม / รวมเงินทั้งสิ้น as a line. Put it in total_amount only.
+- "amount" = outstanding for that row. Prefer เงินคงค้าง / คงเหลือ; else จำนวนเงิน /
+  ยอดสุทธิ after tax. Ignore ชำระแล้ว unless it is the only amount shown.
+- "total_amount" = this page's grand total if visible (ยอดรวม / รวมเงินทั้งสิ้น).
+- Extract every readable table row on THIS page. Do not summarize, skip, or collapse.
 - Do not invent rows. Skip unreadable rows and add a warning.
 - If no bill table found: {"lines": [], "total_amount": 0, "warnings": ["no bills detected"]}
 """.strip()
@@ -125,6 +137,121 @@ def dedupe_extracted_lines(
 
 def amounts_match(a: float, b: float, *, tolerance: float = AMOUNT_TOLERANCE) -> bool:
     return abs(round(float(a or 0) - float(b or 0), 2)) <= tolerance
+
+
+def drop_statement_total_rows(
+    lines: list[dict[str, Any]],
+    page_total: float,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Drop a header/footer row whose amount equals the page total.
+
+    Single-row pages are kept: one invoice that equals the page total is valid.
+    """
+    if len(lines) < 2 or page_total <= 0:
+        return list(lines or []), []
+
+    kept = [ln for ln in lines if not amounts_match(ln.get("amount") or 0, page_total)]
+    dropped = len(lines) - len(kept)
+    if not kept or dropped == 0:
+        return list(lines), []
+    return kept, [f"dropped {dropped} header/total row(s) matching page total"]
+
+
+def _as_amount(value: Any) -> float:
+    try:
+        return round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _coerce_lines(raw_lines: Any) -> list[dict[str, Any]]:
+    lines: list[dict[str, Any]] = []
+    for raw in raw_lines or []:
+        if not isinstance(raw, dict):
+            continue
+        billno = str(raw.get("billno") or "").strip()
+        amount = _as_amount(raw.get("amount"))
+        if billno or amount > 0:
+            lines.append({"billno": billno, "amount": amount})
+    return lines
+
+
+def _sum_usage(usages: list[dict[str, Any]]) -> dict[str, int]:
+    total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    any_usage = False
+    for usage in usages:
+        if not usage:
+            continue
+        any_usage = True
+        total["input_tokens"] += int(usage.get("input_tokens") or 0)
+        total["output_tokens"] += int(usage.get("output_tokens") or 0)
+        total["total_tokens"] += int(usage.get("total_tokens") or 0)
+    if any_usage and not total["total_tokens"]:
+        total["total_tokens"] = total["input_tokens"] + total["output_tokens"]
+    return total if any_usage else {}
+
+
+def normalize_extracted_page(
+    parsed: dict[str, Any],
+    *,
+    page_label: str | None = None,
+) -> dict[str, Any]:
+    """Turn one page of model JSON into lines / total / warnings."""
+    raw_lines = _coerce_lines(parsed.get("lines"))
+    lines, dedupe_warnings = dedupe_extracted_lines(raw_lines)
+    total_amount = _as_amount(parsed.get("total_amount"))
+    if not total_amount and lines:
+        total_amount = round(sum(float(ln["amount"]) for ln in lines), 2)
+
+    lines, total_warnings = drop_statement_total_rows(lines, total_amount)
+    if not total_amount and lines:
+        total_amount = round(sum(float(ln["amount"]) for ln in lines), 2)
+
+    warnings = [str(w).strip() for w in (parsed.get("warnings") or []) if str(w).strip()]
+    warnings.extend(dedupe_warnings)
+    warnings.extend(total_warnings)
+    if page_label:
+        warnings = [f"{page_label}: {w}" for w in warnings]
+    return {
+        "lines": lines,
+        "total_amount": total_amount,
+        "warnings": warnings,
+        "usage": parsed.get("usage") or {},
+    }
+
+
+def merge_page_extractions(page_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Combine per-page extractions: concat rows, sum page totals, sum tokens."""
+    raw_lines: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    page_totals: list[float] = []
+    usages: list[dict[str, Any]] = []
+
+    for i, page in enumerate(page_results or [], start=1):
+        label = f"page {i}"
+        lines = _coerce_lines(page.get("lines"))
+        raw_lines.extend(lines)
+        page_totals.append(_as_amount(page.get("total_amount")))
+        usages.append(page.get("usage") or {})
+        for warning in page.get("warnings") or []:
+            text = str(warning).strip()
+            if not text:
+                continue
+            warnings.append(text if text.lower().startswith("page ") else f"{label}: {text}")
+
+    lines, dedupe_warnings = dedupe_extracted_lines(raw_lines)
+    warnings.extend(dedupe_warnings)
+
+    total_amount = round(sum(page_totals), 2)
+    if not total_amount and lines:
+        total_amount = round(sum(float(ln["amount"]) for ln in lines), 2)
+
+    return {
+        "lines": lines,
+        "total_amount": total_amount,
+        "warnings": warnings,
+        "usage": _sum_usage(usages),
+    }
 
 
 def compare_payment_amounts(extracted: float, expected: float) -> dict[str, Any]:
@@ -345,22 +472,33 @@ def _vision_extract(
     return parsed
 
 
+def _page_user_text(*, page_index: int | None = None, page_count: int | None = None) -> str:
+    hint = ""
+    if page_index and page_count and page_count > 1:
+        hint = (
+            f"This is page {page_index} of {page_count} of the same vendor's "
+            "ใบวางบิล set. Extract every invoice table row on THIS page only. "
+            "Do not collapse the page into one header + total row. "
+        )
+    return (
+        f"{hint}"
+        "Extract every invoice/ใบส่งของ table row from this vendor document. "
+        "One object per table row (billno + outstanding amount). "
+        "Ignore the ใบวางบิล header number. Return JSON only."
+    )
+
+
 def extract_bill_lines_from_images(
     images: list[tuple[bytes, str | None]],
     *,
     model: str | None = None,
     timeout: float = 45.0,
 ) -> dict[str, Any]:
-    """
-    Extract bill lines from multiple image files.
-    
-    Args:
-        images: List of tuples (image_bytes, content_type)
-        model: OpenAI model to use
-        timeout: Request timeout
-        
-    Returns:
-        Dictionary with extracted lines and usage statistics
+    """Extract bill lines from one or more page photos.
+
+    Each page is scanned on its own (the single-page path is accurate). Results
+    are merged. Sending every page in one vision call made the model return
+    statement headers (BO… + page totals) instead of invoice rows.
     """
     if not images:
         return {
@@ -370,94 +508,55 @@ def extract_bill_lines_from_images(
             "usage": {},
         }
 
-    # For a single image, use the original function
     if len(images) == 1:
         return extract_bill_lines_from_image(
-            images[0][0], images[0][1], model=model, timeout=timeout
+            images[0][0],
+            images[0][1],
+            model=model,
+            timeout=timeout,
         )
 
-    # Multi-image processing - combine all images into one vision call
-    client = get_openai_client()
+    page_count = len(images)
 
-    # Create input_image blocks for each image
-    image_blocks = []
-    for image_bytes, content_type in images:
+    def _scan_page(idx_image: tuple[int, tuple[bytes, str | None]]) -> tuple[int, dict[str, Any]]:
+        idx, (image_bytes, content_type) = idx_image
         if not image_bytes:
-            continue
-            
-        mime = (content_type or "image/jpeg").split(";")[0].strip() or "image/jpeg"
-        b64 = base64.b64encode(image_bytes).decode("ascii")
-        image_url = f"data:{mime};base64,{b64}"
-        image_blocks.append({"type": "input_image", "image_url": image_url})
-    
-    if not image_blocks:
-        return {
-            "lines": [],
-            "total_amount": 0.0,
-            "warnings": ["No valid images provided"],
-            "usage": {},
-        }
-        
-    # Combine all images in the user prompt
-    resp = client.responses.create(
-        model=(model or os.getenv("PAY_NOTES_AI_MODEL") or "gpt-4o-mini").strip(),
-        input=[
-            {"role": "system", "content": [{"type": "input_text", "text": BILL_LINES_SYSTEM_PROMPT}]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": (
-                        "Extract bill/invoice rows from all vendor documents combined. "
-                        "One row per bill with billno and amount. Return JSON only. "
-                        "If multiple pages are provided, extract rows from all pages."
-                    )},
-                    *image_blocks,
-                ],
-            },
-        ],
-        timeout=timeout,
-    )
-    
-    raw_text = extract_text_from_response(resp)
-    parsed = _safe_parse_json(raw_text)
-    parsed["usage"] = extract_usage_from_response(resp)
-    
-    if parsed.get("error"):
-        return {
-            "lines": [],
-            "total_amount": 0.0,
-            "warnings": list(parsed.get("warnings") or [str(parsed.get("error"))]),
-            "usage": parsed.get("usage") or {},
-        }
-
-    raw_lines: list[dict[str, Any]] = []
-    for raw in parsed.get("lines") or []:
-        if not isinstance(raw, dict):
-            continue
-        billno = str(raw.get("billno") or "").strip()
+            return idx, {
+                "lines": [],
+                "total_amount": 0.0,
+                "warnings": ["Image is empty"],
+                "usage": {},
+            }
         try:
-            amount = round(float(raw.get("amount") or 0), 2)
-        except (TypeError, ValueError):
-            amount = 0.0
-        raw_lines.append({"billno": billno, "amount": amount})
+            return idx, extract_bill_lines_from_image(
+                image_bytes,
+                content_type,
+                model=model,
+                timeout=timeout,
+                page_index=idx + 1,
+                page_count=page_count,
+            )
+        except Exception as exc:
+            logger.exception("ai_vision_page_failed page=%s", idx + 1)
+            return idx, {
+                "lines": [],
+                "total_amount": 0.0,
+                "warnings": [f"scan failed: {exc}"],
+                "usage": {},
+            }
 
-    lines, dedupe_warnings = dedupe_extracted_lines(raw_lines)
+    results: list[dict[str, Any] | None] = [None] * page_count
+    workers = min(MAX_PARALLEL_PAGES, page_count)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for idx, page in pool.map(_scan_page, enumerate(images)):
+            results[idx] = page
 
-    try:
-        total_amount = round(float(parsed.get("total_amount") or 0), 2)
-    except (TypeError, ValueError):
-        total_amount = 0.0
-    if not total_amount and lines:
-        total_amount = round(sum(ln["amount"] for ln in lines), 2)
-
-    warnings = [str(w).strip() for w in (parsed.get("warnings") or []) if str(w).strip()]
-    warnings.extend(dedupe_warnings)
-    return {
-        "lines": lines,
-        "total_amount": total_amount,
-        "warnings": warnings,
-        "usage": parsed.get("usage") or {},
-    }
+    page_results = [page or {"lines": [], "total_amount": 0.0, "warnings": [], "usage": {}} for page in results]
+    merged = merge_page_extractions(page_results)
+    if not merged["lines"] and not any(page.get("lines") for page in page_results):
+        if not merged["warnings"]:
+            merged["warnings"] = ["No valid images provided"]
+    return merged
 
 
 def extract_bill_lines_from_image(
@@ -466,15 +565,14 @@ def extract_bill_lines_from_image(
     *,
     model: str | None = None,
     timeout: float = 45.0,
+    page_index: int | None = None,
+    page_count: int | None = None,
 ) -> dict[str, Any]:
     data = _vision_extract(
         image_bytes=image_bytes,
         content_type=content_type,
         system_prompt=BILL_LINES_SYSTEM_PROMPT,
-        user_text=(
-            "Extract bill/invoice rows from this vendor document. "
-            "One row per bill with billno and amount. Return JSON only."
-        ),
+        user_text=_page_user_text(page_index=page_index, page_count=page_count),
         model=(model or os.getenv("PAY_NOTES_AI_MODEL") or "gpt-4o-mini").strip(),
         timeout=timeout,
     )
@@ -486,31 +584,7 @@ def extract_bill_lines_from_image(
             "usage": data.get("usage") or {},
         }
 
-    lines: list[dict[str, Any]] = []
-    for raw in data.get("lines") or []:
-        if not isinstance(raw, dict):
-            continue
-        billno = str(raw.get("billno") or "").strip()
-        try:
-            amount = round(float(raw.get("amount") or 0), 2)
-        except (TypeError, ValueError):
-            amount = 0.0
-        lines.append({"billno": billno, "amount": amount})
-
-    try:
-        total_amount = round(float(data.get("total_amount") or 0), 2)
-    except (TypeError, ValueError):
-        total_amount = 0.0
-    if not total_amount and lines:
-        total_amount = round(sum(ln["amount"] for ln in lines), 2)
-
-    warnings = [str(w).strip() for w in (data.get("warnings") or []) if str(w).strip()]
-    return {
-        "lines": lines,
-        "total_amount": total_amount,
-        "warnings": warnings,
-        "usage": data.get("usage") or {},
-    }
+    return normalize_extracted_page(data)
 
 
 def verify_payment_from_image(

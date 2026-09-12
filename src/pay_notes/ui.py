@@ -702,7 +702,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <div class="step-num">2</div>
           <div class="step-body">
             <h3>สแกนเอกสารจากเจ้าหนี้</h3>
-            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement · ไฟล์นี้จะเป็นเอกสารอ้างอิงและอัปโหลดอัตโนมัติเมื่อบันทึก</p>
+            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement · หลายหน้าจะอ่านทีละหน้าแล้วรวมรายการ · ไฟล์นี้จะเป็นเอกสารอ้างอิงและอัปโหลดอัตโนมัติเมื่อบันทึก</p>
             <div class="drop" id="dropScan" tabindex="0">
               <div style="font-size:1.4rem;margin-bottom:.25rem">📄</div>
               <div>คลิกหรือลากเอกสารมาวางที่นี่</div>
@@ -2868,7 +2868,9 @@ async function scanBillDocument(files) {
     }
   }
   
-  $('scanStatus').textContent = 'กำลังอ่านรายการบิล…';
+  $('scanStatus').textContent = files.length > 1
+    ? `กำลังอ่านรายการบิลทีละหน้า (${files.length} หน้า)…`
+    : 'กำลังอ่านรายการบิล…';
   $('btnScanSkip').classList.add('hidden');
   const fd = new FormData();
   fd.append('acctno', picked.acctno);
