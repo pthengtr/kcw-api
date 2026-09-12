@@ -20,6 +20,8 @@ from src.transfer.db import (
     bump_shipment_line_received,
     cancel_request,
     clear_need_list,
+    count_prepare_open,
+    count_receive_open,
     create_draft,
     create_receipt,
     create_shipment,
@@ -38,6 +40,7 @@ from src.transfer.db import (
     list_receive_queue,
     list_requests,
     list_shipment_lines,
+    list_shipment_lines_by_shipments,
     list_shipments,
     list_shipments_by_transfers,
     refresh_request_status,
@@ -46,6 +49,7 @@ from src.transfer.db import (
     shipment_has_lines,
     submit_request,
     upsert_need,
+    upsert_need_many,
 )
 from src.transfer.direction import (
     branches_for_direction,
@@ -57,6 +61,7 @@ from src.transfer.direction import (
 )
 from src.transfer.parts9 import (
     _fetch_dual_icmas,
+    attach_suggest_hints,
     enrich_transfer_lines,
     fetch_local_icmas_meta,
     fetch_sticker_catalog,
@@ -111,6 +116,14 @@ class NeedCreate(BaseModel):
 
 class NeedReplace(BaseModel):
     lines: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class NeedBulk(BaseModel):
+    lines: list[NeedCreate] = Field(default_factory=list)
+
+
+class SuggestHintsBody(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DraftCreate(BaseModel):
@@ -303,6 +316,20 @@ def home(request: Request, t: str | None = None):
     return resp
 
 
+@router.get("/api/counts")
+def api_counts(request: Request):
+    """Lightweight badge counts for the home screen (no line dumps / PARTS9)."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    client = get_transfer_supabase_client()
+    return {
+        "prepare": count_prepare_open(client, site=settings.site),
+        "receive": count_receive_open(client, site=settings.site),
+    }
+
+
 @router.get("/api/suggest")
 def api_suggest(request: Request):
     _, err = _require_api(request)
@@ -310,10 +337,34 @@ def api_suggest(request: Request):
         return err
     settings = _settings()
     try:
-        items = suggest_transfer_skus(site=settings.site)
+        # Hints load async via /api/suggest/hints so the pick table paints sooner.
+        items = suggest_transfer_skus(site=settings.site, include_suggestions=False)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=503)
     return {"items": items}
+
+
+@router.post("/api/suggest/hints")
+def api_suggest_hints(body: SuggestHintsBody, request: Request):
+    """Attach capped substitute hints to an already-fetched suggest list."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    try:
+        out = attach_suggest_hints(body.items or [], site=settings.site)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    hinted = [
+        {
+            "bcode": r.get("bcode"),
+            "suggestions": r.get("suggestions") or [],
+            "substitutes": r.get("substitutes") or [],
+        }
+        for r in out
+        if (r.get("suggestions") or r.get("substitutes"))
+    ]
+    return {"items": hinted}
 
 
 @router.get("/api/product")
@@ -353,12 +404,16 @@ def api_local_icmas(request: Request, bcodes: str = "", include_blocked: str = "
 
 
 @router.get("/api/need-list")
-def api_need_list(request: Request):
+def api_need_list(request: Request, enrich: str = "none"):
     _, err = _require_api(request)
     if err:
         return err
-    items = enrich_transfer_lines(list_need(get_transfer_supabase_client()))
-    return {"items": items}
+    rows = list_need(get_transfer_supabase_client())
+    mode = (enrich or "none").strip().lower()
+    if mode in ("0", "false", "no", "none"):
+        return {"items": rows}
+    # Stock/descr only — cart UI does not need substitute discovery.
+    return {"items": enrich_transfer_lines(rows, include_suggestions=False)}
 
 
 @router.post("/api/need-list")
@@ -387,6 +442,29 @@ def api_need_create(body: NeedCreate, request: Request):
     return row
 
 
+@router.post("/api/need-list/bulk")
+def api_need_bulk(body: NeedBulk, request: Request):
+    """Upsert many cart picks in one request (used when committing checked suggest rows)."""
+    ident, err = _require_api(request)
+    if err:
+        return err
+    rows_in = [
+        {
+            "bcode": ln.bcode.strip(),
+            "qty": ln.qty,
+            "descr": (ln.descr or "").strip() or None,
+            "suggest_qty": ln.suggest_qty or ln.qty,
+            "hq_qtyoh2": ln.hq_qtyoh2,
+        }
+        for ln in (body.lines or [])
+        if (ln.bcode or "").strip()
+    ]
+    rows = upsert_need_many(
+        get_transfer_supabase_client(), rows_in, actor=ident.display_name
+    )
+    return {"items": rows}
+
+
 @router.delete("/api/need-list")
 def api_need_clear(request: Request):
     _, err = _require_api(request)
@@ -406,7 +484,7 @@ def api_need_replace(body: NeedReplace, request: Request):
         body.lines or [],
         actor=ident.display_name,
     )
-    return {"items": enrich_transfer_lines(rows)}
+    return {"items": rows}
 
 
 @router.delete("/api/need-list/{need_id}")
@@ -433,6 +511,7 @@ def api_requests(
     request: Request,
     status: str | None = None,
     role: str | None = None,
+    scope: str | None = None,
 ):
     _, err = _require_api(request)
     if err:
@@ -440,6 +519,21 @@ def api_requests(
     settings = _settings()
     client = get_transfer_supabase_client()
     items = list_requests(client, status=status, role=role, site=settings.site)
+    scope_l = (scope or "").strip().lower()
+    if scope_l == "active":
+        # Drop terminal history early; receive_caught_up short-ships stay (not complete yet).
+        items = [
+            r
+            for r in items
+            if (r.get("status") or "").lower() not in ("complete", "cancelled")
+        ]
+    elif scope_l == "done":
+        # Need completes + short-ship caught-up (still non-complete until remainder ships).
+        items = [
+            r
+            for r in items
+            if (r.get("status") or "").lower() != "cancelled"
+        ]
     transfer_ids = [req["transfer_id"] for req in items]
     lines_by = list_lines_by_transfers(client, transfer_ids)
     ships_by = list_shipments_by_transfers(client, transfer_ids)
@@ -464,12 +558,22 @@ def api_requests(
         fb = row.get("from_branch") or "HQ"
         tb = row.get("to_branch") or "SYP"
         row["direction_label"] = direction_label(fb, tb)
+        if scope_l == "active" and row.get("receive_caught_up"):
+            continue
+        if scope_l == "done" and not (
+            (row.get("status") or "").lower() == "complete" or row.get("receive_caught_up")
+        ):
+            continue
         out.append(row)
     return {"items": out}
 
 
 @router.get("/api/requests/{transfer_id}/lines")
-def api_request_lines(transfer_id: str, request: Request):
+def api_request_lines(
+    transfer_id: str,
+    request: Request,
+    enrich: str = "full",
+):
     _, err = _require_api(request)
     if err:
         return err
@@ -477,14 +581,28 @@ def api_request_lines(transfer_id: str, request: Request):
     header = get_request(client, transfer_id)
     if not header:
         return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
-    lines = enrich_transfer_lines(
-        enrich_lines(list_lines(client, transfer_id)),
-        from_branch=header.get("from_branch"),
-        to_branch=header.get("to_branch"),
-    )
+    raw_lines = enrich_lines(list_lines(client, transfer_id))
+    mode = (enrich or "full").strip().lower()
+    if mode in ("0", "false", "no", "none"):
+        lines = raw_lines
+    elif mode in ("stock", "stock_only"):
+        lines = enrich_transfer_lines(
+            raw_lines,
+            from_branch=header.get("from_branch"),
+            to_branch=header.get("to_branch"),
+            include_suggestions=False,
+        )
+    else:
+        lines = enrich_transfer_lines(
+            raw_lines,
+            from_branch=header.get("from_branch"),
+            to_branch=header.get("to_branch"),
+        )
     shipments = list_shipments(client, transfer_id=transfer_id)
+    ship_ids = [s["shipment_id"] for s in shipments if s.get("shipment_id")]
+    ship_lines_by = list_shipment_lines_by_shipments(client, ship_ids)
     for ship in shipments:
-        ship["lines"] = list_shipment_lines(client, shipment_id=ship["shipment_id"])
+        ship["lines"] = ship_lines_by.get(ship["shipment_id"]) or []
         ship["fully_received"] = shipment_lines_fully_received(ship["lines"])
     progress = summarize_request_progress(lines)
     return {

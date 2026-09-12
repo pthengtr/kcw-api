@@ -92,7 +92,13 @@ def test_transfer_page_renders():
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
     assert "info-toggle" in html
     assert "ยังไม่ออกใบ TF" in html
+    assert "/transfer/api/counts" in html
     assert "receive-lines" in html
+    assert "need-list/bulk" in html
+    assert "suggest/hints" in html
+    assert "scope=" in html
+    assert 'data-count="receive"' in html
+    assert 'data-count="prepare"' in html
     assert "receiveStepBar" in html or "เลือกคำขอ" in html
     assert "recvSearch" in html
     assert "bindLineSearch" in html
