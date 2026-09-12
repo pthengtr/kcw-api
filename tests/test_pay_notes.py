@@ -101,6 +101,8 @@ def test_page_has_voucher_and_proof_tabs():
     assert "/vouchers" in html
     assert "/vouchered" in html
     assert "248-0-44244-6" in html
+    assert "248-6-00618-4" in html
+    assert "248-6-00138-7" in html
     assert "141-1-72355-7" in html
     assert "payBankSelect" in html
     assert "openEditNote" in html
