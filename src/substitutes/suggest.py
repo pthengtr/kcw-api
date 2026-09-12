@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
 
 from sqlalchemy import text
@@ -29,6 +32,10 @@ SOURCE_LABELS = {
 }
 
 _PEER_CAP = 8
+_SUGGEST_WORKERS = 6
+_SUGGEST_CACHE_TTL_SEC = 45.0
+_suggest_cache: dict[tuple[str, str, int], tuple[float, list[dict[str, Any]]]] = {}
+_suggest_cache_lock = threading.Lock()
 
 STRONG_LINK_RE = re.compile(
     r"(?:ใช้รหัส|ใช่รหัส|ใช้\s*รหัส|รหัส)\s*[:=]?\s*(\d{8})\s*แทน"
@@ -412,6 +419,28 @@ def suggest_for_bcode(
     return out
 
 
+def _cache_get(key: tuple[str, str, int]) -> list[dict[str, Any]] | None:
+    now = time.monotonic()
+    with _suggest_cache_lock:
+        hit = _suggest_cache.get(key)
+        if not hit:
+            return None
+        ts, payload = hit
+        if (now - ts) > _SUGGEST_CACHE_TTL_SEC:
+            _suggest_cache.pop(key, None)
+            return None
+        return [dict(row) for row in payload]
+
+
+def _cache_put(key: tuple[str, str, int], rows: list[dict[str, Any]]) -> None:
+    with _suggest_cache_lock:
+        _suggest_cache[key] = (time.monotonic(), [dict(row) for row in rows])
+        if len(_suggest_cache) > 256:
+            oldest = sorted(_suggest_cache.items(), key=lambda kv: kv[1][0])[:64]
+            for k, _ in oldest:
+                _suggest_cache.pop(k, None)
+
+
 def suggest_for_bcodes(
     bcodes: list[str],
     *,
@@ -423,14 +452,29 @@ def suggest_for_bcodes(
     ship_branch: str | None = None,
     cap: int = _PEER_CAP,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Map bcode → live suggestion list."""
-    out: dict[str, list[dict[str, Any]]] = {}
+    """Map bcode → live suggestion list (parallel + short TTL cache)."""
+    branch = (ship_branch or "").strip().upper()
+    codes: list[str] = []
+    seen: set[str] = set()
     for raw in bcodes:
         code = (raw or "").strip()
-        if not code or code in out:
+        if not code or code in seen:
             continue
+        seen.add(code)
+        codes.append(code)
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    missing: list[str] = []
+    for code in codes:
+        cached = _cache_get((code, branch, int(cap)))
+        if cached is not None:
+            out[code] = cached
+        else:
+            missing.append(code)
+
+    def _one(code: str) -> tuple[str, list[dict[str, Any]]]:
         try:
-            out[code] = suggest_for_bcode(
+            rows = suggest_for_bcode(
                 code,
                 fetch_source=fetch_source,
                 find_code_size=find_code_size,
@@ -442,5 +486,21 @@ def suggest_for_bcodes(
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("suggest_for_bcode %s failed: %s", code, exc)
-            out[code] = []
+            rows = []
+        _cache_put((code, branch, int(cap)), rows)
+        return code, rows
+
+    if not missing:
+        return out
+    if len(missing) == 1:
+        code, rows = _one(missing[0])
+        out[code] = rows
+        return out
+
+    workers = min(_SUGGEST_WORKERS, len(missing))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = [pool.submit(_one, code) for code in missing]
+        for fut in as_completed(futs):
+            code, rows = fut.result()
+            out[code] = rows
     return out
