@@ -405,11 +405,16 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
     return out
 
 
-def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]]:
+def suggest_transfer_skus(
+    *, site: str, limit: int = 200, include_suggestions: bool = False
+) -> list[dict[str, Any]]:
     """Suggest pick list for transfer request.
 
     SYP: ICLOW รอสั่งซื้อ (same as /po) + ICMAS low-stock extras.
     HQ: ICMAS low-stock only — HQ ICLOW is for supplier PO, not branch transfer.
+
+    Substitute hints are off by default so the pick table can paint quickly; use
+    ``include_suggestions=True`` or ``attach_suggest_hints`` after first paint.
     """
     site_key = (site or "hq").strip().lower()
     lim = max(1, min(int(limit or 200), 200))
@@ -494,13 +499,24 @@ def suggest_transfer_skus(*, site: str, limit: int = 200) -> list[dict[str, Any]
         }
         out.append(_enrich_suggest_item(item, site_key=site_key, hq_icmas=hq_icmas, syp_icmas=syp_icmas))
 
-    # Requester asks the other branch to ship — live suggestions when ship-from is weak/L-1.
-    # Cap lookups: each SKU can take several ICMAS round-trips (see ntext fix making these succeed).
+    if not include_suggestions:
+        for row in out:
+            row.setdefault("suggestions", [])
+            row.setdefault("substitutes", [])
+        return out
+    return attach_suggest_hints(out, site=site_key)
+
+
+def attach_suggest_hints(
+    items: list[dict[str, Any]], *, site: str
+) -> list[dict[str, Any]]:
+    """Attach capped live substitute hints for a suggest pick list (post-paint)."""
+    site_key = (site or "hq").strip().lower()
     ship_branch = "HQ" if site_key == "syp" else "SYP"
     from src.substitutes.peers import DEFAULT_SUGGEST_HINT_CAP, attach_live_suggestions
 
     return attach_live_suggestions(
-        out,
+        items,
         ship_branch=ship_branch,
         need_qty_for=lambda row: row.get("suggest_qty"),
         max_codes=DEFAULT_SUGGEST_HINT_CAP,
@@ -579,8 +595,9 @@ def enrich_transfer_lines(
     syp_icmas: dict[str, dict[str, Any]] | None = None,
     suggest_map_fn=None,
     bulk_peers_fn=None,
+    include_suggestions: bool = True,
 ) -> list[dict[str, Any]]:
-    """Fill descr/stock from PARTS9; attach live substitute suggestions when ship-from is weak."""
+    """Fill descr/stock from PARTS9; optionally attach live substitute suggestions."""
     _ = bulk_peers_fn  # legacy catalog hook — ignored (hints are live-only)
     codes = sorted({(ln.get("bcode") or "").strip() for ln in lines if (ln.get("bcode") or "").strip()})
     if not codes:
@@ -646,7 +663,7 @@ def enrich_transfer_lines(
         out.append(row)
 
     ship_branch = from_u if from_u in ("HQ", "SYP") else ""
-    if ship_branch:
+    if include_suggestions and ship_branch:
         from src.substitutes.peers import attach_live_suggestions
 
         def _need(row: dict[str, Any]) -> float | None:

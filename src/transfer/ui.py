@@ -391,6 +391,7 @@ let prepareStep = 1;
 let prepareRequest = null;
 let suggestItems = [];
 let suggestFilter = "";
+let suggestHintsLoaded = false;
 /** Local picks on suggest list: bcode → {checked, unit, qty} — survives soft re-renders. */
 let suggestPick = {};
 let receiveFilter = "";
@@ -854,7 +855,7 @@ function leaveStickerPrint(){
   render();
 }
 async function openStickerPrintFromTransfer(transferId, {selectAll}={}){
-  const detail = await api("/transfer/api/requests/"+transferId+"/lines");
+  const detail = await api("/transfer/api/requests/"+transferId+"/lines?enrich=stock");
   const job = stickerLinesFromDetail(detail, {selected: selectAll === true});
   if(!job.lines.length) throw new Error("ยังไม่มีสินค้าที่รับเข้าสำหรับพิมพ์บาร์โค้ด");
   openStickerPrint({...job, selectAll: selectAll === true, returnView: "status"});
@@ -1468,16 +1469,25 @@ function bindLineSearch(root, {inputId, rowSelector, metaId, total}){
 
 async function fetchCounts(){
   try{
-    const [prep, recv] = await Promise.all([
-      api("/transfer/api/requests?role=prepare",{quiet:true}),
-      api("/transfer/api/receive-lines",{quiet:true}),
-    ]);
-    return {prepare:(prep.items||[]).length, receive:(recv.items||[]).length};
+    const data = await api("/transfer/api/counts",{quiet:true});
+    return {prepare:Number(data.prepare||0), receive:Number(data.receive||0)};
   }catch(e){ return {prepare:0, receive:0}; }
 }
 
+function applyHomeCounts(el, counts){
+  const recv = el.querySelector("[data-count=receive]");
+  const prep = el.querySelector("[data-count=prepare]");
+  if(recv){
+    if(counts.receive) recv.innerHTML = `<span class="count">${counts.receive} รายการรอรับ</span>`;
+    else recv.innerHTML = "";
+  }
+  if(prep){
+    if(counts.prepare) prep.innerHTML = `<span class="count">${counts.prepare} รายการรอจัด</span>`;
+    else prep.innerHTML = "";
+  }
+}
+
 async function renderHome(el){
-  const counts = await fetchCounts();
   el.innerHTML = `
     ${billTimelineHtml(OTHER, SITE)}
     <div class="action-grid">
@@ -1489,14 +1499,14 @@ async function renderHome(el){
         </button>
         <button class="action-card" data-go="receive">
           <p class="title">📦 รับสินค้าจาก ${OTHER_LABEL}</p>
-          <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
+          <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ<span data-count="receive"></span></p>
         </button>
       </div>
       <div class="action-group">
         <p class="action-group-label">ของออก</p>
         <button class="action-card" data-go="prepare">
           <p class="title">📤 ส่งสินค้าไป ${OTHER_LABEL}</p>
-          <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
+          <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก<span data-count="prepare"></span></p>
         </button>
       </div>
       <div class="action-group">
@@ -1508,6 +1518,11 @@ async function renderHome(el){
       </div>
     </div>`;
   el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>goView(b.dataset.go));
+  // Badges after first paint — counts API is cheap vs full prepare/receive lists.
+  fetchCounts().then(counts=>{
+    if(view!=="home") return;
+    applyHomeCounts(el, counts);
+  }).catch(()=>{});
 }
 
 async function renderRequest(el, opts){
@@ -1542,6 +1557,7 @@ async function renderRequest(el, opts){
         api("/transfer/api/need-list",{quiet:true}),
       ]);
       suggestItems = rows.items || [];
+      suggestHintsLoaded = false;
       cart = cartResp;
     }
     const cartItems = cart.items || [];
@@ -1720,14 +1736,16 @@ async function renderRequest(el, opts){
       const picks = collected.picks || [];
       if(!picks.length) return {ok:true, added:0};
       try{
-        await Promise.all(picks.map(p=>api("/transfer/api/need-list",{
+        await api("/transfer/api/need-list/bulk",{
           method:"POST",
           quiet:true,
           body:JSON.stringify({
-            bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
-            descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
+            lines: picks.map(p=>({
+              bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
+              descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
+            })),
           }),
-        })));
+        });
         picks.forEach(p=>writeSuggestPick(p.row.bcode, {checked:false}));
         return {ok:true, added:picks.length};
       }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); return {ok:false, added:0}; }
@@ -1780,6 +1798,33 @@ async function renderRequest(el, opts){
       });
     }
     filtered.forEach(r=>bindPickRow(suggestItems.indexOf(r)));
+
+    // Paint first; substitute hints fill in without blocking the table.
+    if(!suggestHintsLoaded && suggestItems.length){
+      window._suggestHintGen = (window._suggestHintGen || 0) + 1;
+      const hintGen = window._suggestHintGen;
+      api("/transfer/api/suggest/hints",{
+        method:"POST",
+        quiet:true,
+        body:JSON.stringify({items: suggestItems}),
+      }).then(resp=>{
+        if(hintGen !== window._suggestHintGen) return;
+        if(view!=="request" || requestStep!==2) return;
+        const by = {};
+        (resp.items||[]).forEach(h=>{ if(h && h.bcode) by[h.bcode] = h; });
+        if(!Object.keys(by).length){ suggestHintsLoaded = true; return; }
+        suggestItems = suggestItems.map(r=>{
+          const h = by[r.bcode];
+          if(!h) return r;
+          return Object.assign({}, r, {
+            suggestions: h.suggestions||[],
+            substitutes: h.substitutes||[],
+          });
+        });
+        suggestHintsLoaded = true;
+        withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
+      }).catch(()=>{ suggestHintsLoaded = true; });
+    }
 
     const searchEl = el.querySelector("#suggestSearch");
     if(searchEl){
@@ -1884,7 +1929,7 @@ async function renderRequest(el, opts){
   }
 
   if(requestStep === 3){
-    const cart = await api("/transfer/api/need-list");
+    const cart = await api("/transfer/api/need-list?enrich=stock");
     const cartItems = cart.items || [];
     el.innerHTML = `${stepBar(3)}
       <div class="card">
@@ -2361,8 +2406,8 @@ function sortDoneByReceived(items){
 }
 async function renderStatus(el){
   const isDone = statusFilter === "done";
-  // Always load full list so short-ship "receive caught up" rows can appear under Done.
-  const data = await api("/transfer/api/requests");
+  const scope = isDone ? "done" : "active";
+  const data = await api("/transfer/api/requests?scope="+scope);
   let items = data.items||[];
   if(isDone) items = sortDoneByReceived(items.filter(isStatusDoneRow));
   else items = items.filter(r=>!isStatusDoneRow(r)&&r.status!=="cancelled");
