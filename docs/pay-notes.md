@@ -27,6 +27,8 @@ After proof upload on tab 3, the row moves to tab 4 automatically (if AI payment
 
 AI assist scans vendor bill/statement images, extracts bill numbers + amounts per line, matches to KSS pickable bills (billno + amount scoring), and shows a line-by-line review with total compare (**ก่อนส่วนลด**). If scan fails, use **ข้ามไปเลือกบิลเอง**.
 
+Multi-page scans read **each photo on its own** (same path as a single ใบวางบิล) and then merge rows. Sending every page in one vision call made the model return statement headers (`BO…` + page totals) instead of the invoice table (`IVE…`). Page totals are summed; duplicate rows across pages are dropped.
+
 ### AI APIs
 
 - `POST /api/ai/scan-bills` — `acctno` + 1–5 `files` → line match result (+ `usage` token stats)
