@@ -831,6 +831,16 @@ def test_live_suggest_remarks_code_size_pcode_mcode_merge():
     assert merged[0]["source"] == "remarks"
     assert set(merged[0]["sources"]) == {"remarks", "pcode"}
 
+    # code_size flood must not starve OEM (pcode) peers under cap
+    flooded = [{"bcode": f"CS{i:02d}", "source": "code_size", "evidence": "size"} for i in range(12)]
+    flooded.append({"bcode": "OEMPEER", "source": "pcode", "evidence": "PCODE=ABC-1"})
+    flooded.append({"bcode": "FACPEER", "source": "mcode", "evidence": "MCODE=FAC-1"})
+    mixed = merge_suggestion_hits(flooded, cap=8)
+    codes = {h["bcode"] for h in mixed}
+    assert "OEMPEER" in codes
+    assert "FACPEER" in codes
+    assert len(mixed) == 8
+
     def fake_source(b):
         return source if b == "10000001" else None
 

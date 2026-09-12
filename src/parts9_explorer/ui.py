@@ -782,14 +782,25 @@ function showP(i) {
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
     }).catch(() => { $("more").innerHTML = ""; });
 }
+function fmtSuggestEvidence(p) {
+  const raw = (p && p.evidence || "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/\bPCODE=/gi, "แท้ ")
+    .replace(/\bMCODE=/gi, "โรงงาน ")
+    .replace(/\bCODE1=/gi, "รหัส ")
+    .replace(/\bSIZE=/gi, "ขนาด ");
+}
 function peerLine(p, badge) {
   const hq = p.hq_qtyoh2 != null ? p.hq_qtyoh2 : "—";
   const syp = p.syp_qtyoh2 != null ? p.syp_qtyoh2 : "—";
   const l1 = p.hq_l1 ? " <span class='badge'>L-1</span>" : "";
   const src = badge || p.source_label || p.source || "";
   const srcHtml = src ? " <span class='badge'>"+esc(src)+"</span>" : "";
+  const evid = fmtSuggestEvidence(p);
+  const evidHtml = evid ? " · "+esc(evid) : "";
   return "<div class='meta'><button class='linkish' data-jump='product' data-q='"+esc(p.bcode)+"'>"+esc(p.bcode)+"</button>"
-    +srcHtml+" "+esc((p.descr||"").slice(0,40))+" · สนญ "+hq+" / สาขา "+syp+l1+"</div>";
+    +srcHtml+" "+esc((p.descr||"").slice(0,40))+evidHtml+" · สนญ "+hq+" / สาขา "+syp+l1+"</div>";
 }
 function loadSubPanels(bcode) {
   const el = $("subPanel");
@@ -1006,10 +1017,17 @@ function render(data, suggestions){
   let html = "";
   if(suggestions && suggestions.length){
     html += "<div class='card'><h3 style='margin:.2rem 0'>แนะนำทดแทน (ยังไม่ยืนยัน)</h3>"
-      + suggestions.map(s => "<div class='member'><div><strong>"+esc(s.bcode)+"</strong> "
-        +"<span class='badge'>"+esc(s.source_label||s.source||"")+"</span><div class='meta'>"
-        +esc(s.descr||"")+" · "+stockLine(s)+"</div></div>"
-        +"<button type='button' data-promote='"+esc(s.bcode)+"'>เพิ่มเข้ากลุ่ม</button></div>").join("")
+      + suggestions.map(s => {
+          const evid = (s.evidence||"").trim()
+            .replace(/\bPCODE=/gi, "แท้ ")
+            .replace(/\bMCODE=/gi, "โรงงาน ")
+            .replace(/\bCODE1=/gi, "รหัส ")
+            .replace(/\bSIZE=/gi, "ขนาด ");
+          return "<div class='member'><div><strong>"+esc(s.bcode)+"</strong> "
+            +"<span class='badge'>"+esc(s.source_label||s.source||"")+"</span><div class='meta'>"
+            +esc(s.descr||"")+(evid ? " · "+esc(evid) : "")+" · "+stockLine(s)+"</div></div>"
+            +"<button type='button' data-promote='"+esc(s.bcode)+"'>เพิ่มเข้ากลุ่ม</button></div>";
+        }).join("")
       +"</div>";
   }
   if(!group){
