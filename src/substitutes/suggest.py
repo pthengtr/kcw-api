@@ -104,7 +104,11 @@ def merge_suggestion_hits(
     *,
     cap: int = _PEER_CAP,
 ) -> list[dict[str, Any]]:
-    """Union by bcode; primary source = highest priority; keep sources[]."""
+    """Union by bcode; primary source = highest priority; keep sources[].
+
+    Cap uses round-robin by primary source so a flood of code_size peers cannot
+    drop every PCODE/MCODE (OEM / factory) match.
+    """
     by: dict[str, dict[str, Any]] = {}
     for hit in hits:
         code = str(hit.get("bcode") or "").strip()
@@ -135,8 +139,21 @@ def merge_suggestion_hits(
         if hit.get("descr") and not cur.get("descr"):
             cur["descr"] = hit["descr"]
     out = list(by.values())
-    out.sort(key=lambda r: (_source_rank(str(r.get("source") or "")), str(r.get("bcode") or "")))
-    return out[: max(1, int(cap))]
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for row in out:
+        src = str(row.get("source") or "unknown")
+        buckets.setdefault(src, []).append(row)
+    for rows in buckets.values():
+        rows.sort(key=lambda r: str(r.get("bcode") or ""))
+    ranked: list[tuple[int, int, str, dict[str, Any]]] = []
+    for src, rows in buckets.items():
+        for i, row in enumerate(rows):
+            ranked.append(
+                (i, _source_rank(src), str(row.get("bcode") or ""), row)
+            )
+    ranked.sort()
+    limit = max(1, int(cap))
+    return [row for _, _, _, row in ranked[:limit]]
 
 
 def _fetch_hq_source_row(
