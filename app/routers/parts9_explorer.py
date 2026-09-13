@@ -14,6 +14,7 @@ from src.parts9_explorer.search import (
     recent_for_product,
     search_products,
 )
+from src.parts9_explorer.insights import lookup_insight
 from src.parts9_explorer.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
@@ -200,7 +201,23 @@ def api_product(request: Request, bcode: str, site: str = "hq"):
     other = "syp" if site.lower() == "hq" else "hq"
     other_p, _ = get_product(bcode, site=other)
     movement = recent_for_product(bcode, site=site)
-    return {"product": product, "other_site": other_p, "movement": movement, "error": errp}
+    insight = lookup_insight(site, bcode)
+    return {
+        "product": product,
+        "other_site": other_p,
+        "movement": movement,
+        "insight": insight,
+        "error": errp,
+    }
+
+
+@router.get("/api/insight/{bcode}")
+def api_insight(request: Request, bcode: str, site: str = "hq"):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    return lookup_insight(site, bcode)
 
 
 @router.get("/api/health")
