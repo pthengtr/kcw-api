@@ -803,16 +803,30 @@ function renderInsight(ins) {
   if (i.trend_label) body += "<p class='meta'><b>Trend:</b> "+esc(String(i.trend_label))+"</p>";
   if (i.sales_trend) body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(i.sales_trend)+"</p>";
   if (i.channel_mix) body += "<p class='meta'><b>ช่องทาง:</b> "+esc(i.channel_mix)+"</p>";
-  // Holding policy numbers (v1.1) — stored in insight_json, must show explicitly
-  const holdParts = [];
-  if (i.safe_holding_qty != null && i.safe_holding_qty !== "")
-    holdParts.push("safe hold "+esc(String(i.safe_holding_qty)));
-  if (i.typical_monthly_qty != null && i.typical_monthly_qty !== "")
-    holdParts.push("≈"+esc(String(i.typical_monthly_qty))+"/เดือน");
-  if (i.suggested_cover_weeks != null && i.suggested_cover_weeks !== "")
-    holdParts.push("cover "+esc(String(i.suggested_cover_weeks))+" สัปดาห์");
-  if (holdParts.length)
-    body += "<p class='meta'><b>สต็อกปลอดภัย:</b> "+holdParts.join(" · ")+"</p>";
+  // Holding policy — models often set safe_holding = monthly * weeks (wrong units).
+  // Prefer coherent: hold ≈ monthly × (weeks / 4.345).
+  function numOrNull(v) {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  function fmtQty(n) {
+    if (n == null) return "";
+    return (Math.abs(n - Math.round(n)) < 0.05) ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
+  }
+  const monthly = numOrNull(i.typical_monthly_qty);
+  const weeks = numOrNull(i.suggested_cover_weeks);
+  let hold = numOrNull(i.safe_holding_qty);
+  if (monthly != null && weeks != null && weeks > 0) {
+    hold = monthly * (weeks / 4.345);
+  }
+  if (hold != null || monthly != null || weeks != null) {
+    const bits = [];
+    if (hold != null) bits.push("≈"+fmtQty(hold)+" หน่วย");
+    if (monthly != null) bits.push("เฉลี่ย ≈"+fmtQty(monthly)+"/เดือน");
+    if (weeks != null) bits.push("คุ้มครอง "+fmtQty(weeks)+" สัปดาห์");
+    body += "<p class='meta'><b>สต็อกปลอดภัย:</b> "+bits.join(" · ")+"</p>";
+  }
   if (i.demand_hint) body += "<p class='meta'><b>อุปสงค์:</b> "+esc(i.demand_hint)+"</p>";
   if (i.dead_stock) body += "<p class='meta'><b>Dead stock:</b> "+esc(String(i.dead_stock))
     +(i.dead_stock_reason ? " — "+esc(i.dead_stock_reason) : "")+"</p>";
