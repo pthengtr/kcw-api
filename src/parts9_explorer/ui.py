@@ -799,10 +799,22 @@ function renderInsight(ins) {
     return;
   }
   const i = ins.insight || {};
-  let body = "<p>"+esc(ins.summary || i.summary || "")+"</p>";
+  // Display labels only (prompt/facts still use internal channel ids)
+  function channelFriendly(s) {
+    return String(s == null ? "" : s)
+      .replace(/\bhq_store\b/g, "HQ")
+      .replace(/\bsyp_store\b/g, "SYP")
+      .replace(/\bexcluded\b/g, "JOURMODE=0")
+      .replace(/\bonline\b/g, "Online")
+      .replace(/\btransfer\b/g, "Transfer");
+  }
+  let body = "<p>"+esc(channelFriendly(ins.summary || i.summary || ""))+"</p>";
   if (i.trend_label) body += "<p class='meta'><b>Trend:</b> "+esc(String(i.trend_label))+"</p>";
-  if (i.sales_trend) body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(i.sales_trend)+"</p>";
-  if (i.channel_mix) body += "<p class='meta'><b>ช่องทาง:</b> "+esc(i.channel_mix)+"</p>";
+  if (i.sales_trend) body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(channelFriendly(i.sales_trend))+"</p>";
+  if (i.channel_mix) {
+    body += "<p class='meta'><b>ช่องทาง:</b> "+esc(channelFriendly(i.channel_mix))+"</p>";
+    body += "<p class='meta'>HQ = หน้าร้าน HQ · SYP = สาขา · Online = TAD/CNTAD · Transfer = TF/TFV · JOURMODE=0 = ไม่นับเป็นยอดขาย</p>";
+  }
   // Holding policy — models often set safe_holding = monthly * weeks (wrong units).
   // Prefer coherent: hold ≈ monthly × (weeks / 4.345).
   function numOrNull(v) {
@@ -827,13 +839,13 @@ function renderInsight(ins) {
     if (weeks != null) bits.push("คุ้มครอง "+fmtQty(weeks)+" สัปดาห์");
     body += "<p class='meta'><b>สต็อกปลอดภัย:</b> "+bits.join(" · ")+"</p>";
   }
-  if (i.demand_hint) body += "<p class='meta'><b>อุปสงค์:</b> "+esc(i.demand_hint)+"</p>";
+  if (i.demand_hint) body += "<p class='meta'><b>อุปสงค์:</b> "+esc(channelFriendly(i.demand_hint))+"</p>";
   if (i.dead_stock) body += "<p class='meta'><b>Dead stock:</b> "+esc(String(i.dead_stock))
-    +(i.dead_stock_reason ? " — "+esc(i.dead_stock_reason) : "")+"</p>";
+    +(i.dead_stock_reason ? " — "+esc(channelFriendly(i.dead_stock_reason)) : "")+"</p>";
   const anoms = i.anomalies || [];
   if (anoms.length) {
     body += "<p class='meta'><b>ความผิดปกติ:</b></p><ul class='meta'>"
-      + anoms.map(a => "<li>"+esc(String(a))+"</li>").join("") + "</ul>";
+      + anoms.map(a => "<li>"+esc(channelFriendly(a))+"</li>").join("") + "</ul>";
   }
   body += "<p class='meta'>generated "+esc(ins.generated_at||"—")
     +" · facts_as_of "+esc(ins.facts_as_of||"—")
