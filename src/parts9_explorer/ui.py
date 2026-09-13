@@ -800,18 +800,30 @@ function renderInsight(ins) {
   }
   const i = ins.insight || {};
   let body = "<p>"+esc(ins.summary || i.summary || "")+"</p>";
+  if (i.trend_label) body += "<p class='meta'><b>Trend:</b> "+esc(String(i.trend_label))+"</p>";
   if (i.sales_trend) body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(i.sales_trend)+"</p>";
   if (i.channel_mix) body += "<p class='meta'><b>ช่องทาง:</b> "+esc(i.channel_mix)+"</p>";
-  if (i.demand_hint) body += "<p class='meta'><b>ดีมานด์:</b> "+esc(i.demand_hint)+"</p>";
+  // Holding policy numbers (v1.1) — stored in insight_json, must show explicitly
+  const holdParts = [];
+  if (i.safe_holding_qty != null && i.safe_holding_qty !== "")
+    holdParts.push("safe hold "+esc(String(i.safe_holding_qty)));
+  if (i.typical_monthly_qty != null && i.typical_monthly_qty !== "")
+    holdParts.push("≈"+esc(String(i.typical_monthly_qty))+"/เดือน");
+  if (i.suggested_cover_weeks != null && i.suggested_cover_weeks !== "")
+    holdParts.push("cover "+esc(String(i.suggested_cover_weeks))+" สัปดาห์");
+  if (holdParts.length)
+    body += "<p class='meta'><b>สต็อกปลอดภัย:</b> "+holdParts.join(" · ")+"</p>";
+  if (i.demand_hint) body += "<p class='meta'><b>อุปสงค์:</b> "+esc(i.demand_hint)+"</p>";
   if (i.dead_stock) body += "<p class='meta'><b>Dead stock:</b> "+esc(String(i.dead_stock))
     +(i.dead_stock_reason ? " — "+esc(i.dead_stock_reason) : "")+"</p>";
   const anoms = i.anomalies || [];
   if (anoms.length) {
-    body += "<p class='meta'><b>Anomalies:</b></p><ul class='meta'>"
+    body += "<p class='meta'><b>ความผิดปกติ:</b></p><ul class='meta'>"
       + anoms.map(a => "<li>"+esc(String(a))+"</li>").join("") + "</ul>";
   }
   body += "<p class='meta'>generated "+esc(ins.generated_at||"—")
-    +" · facts_as_of "+esc(ins.facts_as_of||"—")+"</p>";
+    +" · facts_as_of "+esc(ins.facts_as_of||"—")
+    +(ins.model_id ? " · "+esc(ins.model_id) : "")+"</p>";
   el.innerHTML = "<h3>Insight</h3>"+body;
 }
 function loadInsightPanel(bcode) {
