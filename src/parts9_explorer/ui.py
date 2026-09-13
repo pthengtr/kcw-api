@@ -766,8 +766,10 @@ function showP(i) {
     +"<div class='meta'>"+esc(p.ui1)+"/"+esc(p.ui2)+"</div>"
     +"<div class='prices'>"+fmtPrices(p.prices)+"</div><div class='photos'>"+photos+"</div>"
     +stockHtml
+    +"<div id='insightPanel'></div>"
     +"<div id='subPanel'></div>"
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
+  loadInsightPanel(p.bcode);
   loadSubPanels(p.bcode);
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(d => {
@@ -780,7 +782,45 @@ function showP(i) {
         tbl("ประวัติการขาย", m.sales, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ประวัติการซื้อ", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
+      if (d.insight) renderInsight(d.insight);
     }).catch(() => { $("more").innerHTML = ""; });
+}
+function renderInsight(ins) {
+  const el = $("insightPanel");
+  if (!el || !ins) return;
+  const st = ins.status || "no_movement";
+  if (st === "working") {
+    el.innerHTML = "<h3>Insight</h3><p class='meta'>กำลังสร้าง insight…</p>"
+      +(ins.facts_as_of ? "<p class='meta'>snap "+esc(ins.facts_as_of)+"</p>" : "");
+    return;
+  }
+  if (st === "no_movement") {
+    el.innerHTML = "<h3>Insight</h3><p class='meta'>ไม่มีการเคลื่อนไหวใน 5 ปี</p>";
+    return;
+  }
+  const i = ins.insight || {};
+  let body = "<p>"+esc(ins.summary || i.summary || "")+"</p>";
+  if (i.sales_trend) body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(i.sales_trend)+"</p>";
+  if (i.channel_mix) body += "<p class='meta'><b>ช่องทาง:</b> "+esc(i.channel_mix)+"</p>";
+  if (i.demand_hint) body += "<p class='meta'><b>ดีมานด์:</b> "+esc(i.demand_hint)+"</p>";
+  if (i.dead_stock) body += "<p class='meta'><b>Dead stock:</b> "+esc(String(i.dead_stock))
+    +(i.dead_stock_reason ? " — "+esc(i.dead_stock_reason) : "")+"</p>";
+  const anoms = i.anomalies || [];
+  if (anoms.length) {
+    body += "<p class='meta'><b>Anomalies:</b></p><ul class='meta'>"
+      + anoms.map(a => "<li>"+esc(String(a))+"</li>").join("") + "</ul>";
+  }
+  body += "<p class='meta'>generated "+esc(ins.generated_at||"—")
+    +" · facts_as_of "+esc(ins.facts_as_of||"—")+"</p>";
+  el.innerHTML = "<h3>Insight</h3>"+body;
+}
+function loadInsightPanel(bcode) {
+  const el = $("insightPanel");
+  if (!el) return;
+  el.innerHTML = "<p class='meta'>โหลด insight…</p>";
+  fetch("/parts9/api/insight/"+encodeURIComponent(bcode)+"?site="+encodeURIComponent($("site").value))
+    .then(r => r.json()).then(renderInsight)
+    .catch(() => { el.innerHTML = ""; });
 }
 function fmtSuggestEvidence(p) {
   const raw = (p && p.evidence || "").trim();
