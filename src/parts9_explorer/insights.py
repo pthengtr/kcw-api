@@ -79,13 +79,18 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
             FROM insight_queue
             WHERE site = ? AND bcode = ?
             ORDER BY
-              CASE status WHEN 'pending' THEN 0 WHEN 'done' THEN 1 ELSE 2 END,
+              CASE status
+                WHEN 'running' THEN 0
+                WHEN 'pending' THEN 1
+                WHEN 'done' THEN 2
+                ELSE 3
+              END,
               updated_at DESC
             LIMIT 1
             """,
             (site_l, code),
         ).fetchone()
-        if q and (q["status"] or "") == "pending":
+        if q and (q["status"] or "") in ("pending", "running"):
             return {
                 "status": "working",
                 "site": site_l,
