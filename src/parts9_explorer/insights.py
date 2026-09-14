@@ -33,6 +33,7 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
         "generated_at": None,
         "facts_as_of": None,
         "insight": None,
+        "policy": None,
     }
     if not path or not path.is_file() or not code:
         return empty
@@ -46,10 +47,64 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
         return empty
 
     try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(product_insights)")}
+        select_cols = [
+            "site",
+            "bcode",
+            "generated_at",
+            "facts_as_of",
+            "prompt_version",
+            "model_id",
+            "summary",
+            "insight_json",
+        ]
+        policy_cols = [
+            "typical_monthly_qty",
+            "suggested_cover_weeks",
+            "safe_holding_qty",
+            "safe_holding_reason",
+            "order_ok",
+            "order_ok_reason",
+            "dead_stock",
+            "dead_stock_reason",
+            "suggested_order_qty",
+            "suggested_order_qty_large",
+            "order_unit",
+            "order_unit_large",
+            "last_supplier",
+            "last_buy_price",
+            "last_buy_date",
+            "rec_qtymin",
+            "rec_qtymin_reason",
+            "check_stock",
+            "stock_anomaly",
+            "qtyoh_hq",
+            "qtyoh_syp",
+            "qtymin_hq",
+            "qtymin_syp",
+            "rec_transfer_qty_to_syp",
+            "rec_transfer_reason",
+            "sales_qty_30d",
+            "sales_qty_90d",
+            "sales_qty_12m",
+            "trend_30d",
+            "trend_90d",
+            "trend_12m",
+            "trend_label",
+            "margin_pct_list",
+            "margin_pct_12m",
+            "margin_pct_prior_12m",
+            "margin_delta_pp",
+            "margin_flag",
+            "cost_change_pct_12m",
+            "price_change_pct_12m",
+        ]
+        for c in policy_cols:
+            if c in cols:
+                select_cols.append(c)
         row = conn.execute(
-            """
-            SELECT site, bcode, generated_at, facts_as_of, prompt_version,
-                   model_id, summary, insight_json
+            f"""
+            SELECT {", ".join(select_cols)}
             FROM product_insights
             WHERE site = ? AND bcode = ?
             """,
@@ -61,6 +116,7 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
                 insight = json.loads(row["insight_json"] or "{}")
             except Exception:
                 insight = {"raw": row["insight_json"]}
+            policy = {c: row[c] for c in policy_cols if c in row.keys()}
             return {
                 "status": "ready",
                 "site": row["site"],
@@ -71,6 +127,7 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
                 "model_id": row["model_id"],
                 "summary": row["summary"],
                 "insight": insight,
+                "policy": policy,
             }
 
         q = conn.execute(
@@ -99,6 +156,7 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
                 "generated_at": None,
                 "facts_as_of": q["facts_as_of"],
                 "insight": None,
+                "policy": None,
                 "queue": dict(q),
             }
         return empty
