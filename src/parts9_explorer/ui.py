@@ -832,9 +832,10 @@ function renderInsight(ins) {
   if (monthly != null && weeks != null && weeks > 0) {
     hold = monthly * (weeks / 4.345);
   }
+  body += "<p class='meta'>นโยบาย 14–30 วัน · เทียบกับ QTYOH2 สดในหน้านี้เมื่อจะสั่ง/โอน — ไม่ใช่คำสั่งซื้อ ณ วัน snap</p>";
   if (hold != null || monthly != null || weeks != null) {
     const bits = [];
-    if (hold != null) bits.push("≈"+fmtQty(hold)+" หน่วย");
+    if (hold != null) bits.push("เป้า ≈"+fmtQty(hold)+" หน่วย");
     if (monthly != null) bits.push("เฉลี่ย ≈"+fmtQty(monthly)+"/เดือน");
     if (weeks != null) bits.push("คุ้มครอง "+fmtQty(weeks)+" สัปดาห์");
     body += "<p class='meta'><b>สต็อกปลอดภัย:</b> "+bits.join(" · ")+"</p>";
@@ -842,6 +843,50 @@ function renderInsight(ins) {
   if (i.demand_hint) body += "<p class='meta'><b>อุปสงค์:</b> "+esc(channelFriendly(i.demand_hint))+"</p>";
   if (i.dead_stock) body += "<p class='meta'><b>Dead stock:</b> "+esc(String(i.dead_stock))
     +(i.dead_stock_reason ? " — "+esc(channelFriendly(i.dead_stock_reason)) : "")+"</p>";
+  const purch = i.purchase || {};
+  if (purch.order_ok || i.safe_holding_qty != null || purch.suggested_order_qty != null) {
+    body += "<p class='meta'><b>สั่งซื้อ:</b> "+esc(String(purch.order_ok || "—"))
+      +(purch.order_ok_reason ? " — "+esc(channelFriendly(purch.order_ok_reason)) : "")+"</p>";
+    if (purch.suggested_order_qty != null) {
+      body += "<p class='meta'>เมื่อของสด ≤ QTYMIN เติม "+esc(fmtQty(Number(purch.suggested_order_qty)))+" "
+        +esc(purch.order_unit || "หน่วย")
+        +(purch.suggested_order_qty_large != null
+          ? " (≈"+esc(fmtQty(Number(purch.suggested_order_qty_large)))+" "+esc(purch.order_unit_large || "ลัง")+")"
+          : "")+"</p>";
+    }
+    if (purch.last_supplier) {
+      body += "<p class='meta'>ซัพพลายเออร์ล่าสุด "+esc(purch.last_supplier)
+        +(purch.last_buy_price != null ? " · ราคา "+esc(String(purch.last_buy_price)) : "")
+        +(purch.last_buy_date ? " · "+esc(purch.last_buy_date) : "")+"</p>";
+    }
+    if (purch.safe_holding_reason) {
+      body += "<p class='meta'>"+esc(channelFriendly(purch.safe_holding_reason))+"</p>";
+    }
+  }
+  const ic = i.icmas || {};
+  if (ic.rec_qtymin != null || ic.check_stock || ic.stock_anomaly) {
+    body += "<p class='meta'><b>ICMAS:</b> QTYMIN แนะนำ "+esc(ic.rec_qtymin != null ? fmtQty(Number(ic.rec_qtymin)) : "—")
+      +" · ตรวจสต็อก "+esc(String(ic.check_stock || "—"))
+      +(ic.stock_anomaly && ic.stock_anomaly !== "none" ? " · "+esc(String(ic.stock_anomaly)) : "")+"</p>";
+    if (ic.rec_qtymin_reason) body += "<p class='meta'>"+esc(channelFriendly(ic.rec_qtymin_reason))+"</p>";
+  }
+  const xfer = i.transfer || {};
+  if (xfer.qty != null || xfer.reason) {
+    body += "<p class='meta'><b>โอน SYP:</b> เป้า/ล็อต ≈ "+esc(xfer.qty != null ? fmtQty(Number(xfer.qty))+" หน่วย" : "—")
+      +(xfer.reason ? " — "+esc(channelFriendly(xfer.reason)) : "")+"</p>";
+  }
+  const tr = i.trends || {};
+  if (tr.d30 || tr.d90 || tr.m12) {
+    body += "<p class='meta'><b>Trend 30/90/12m:</b> "
+      +esc(String(tr.d30||"—"))+" / "+esc(String(tr.d90||"—"))+" / "+esc(String(tr.m12||"—"))+"</p>";
+  }
+  const mg = i.margin || {};
+  if (mg.flag || mg.list_pct != null) {
+    body += "<p class='meta'><b>มาร์จิ้น:</b> "+esc(String(mg.flag || "—"))
+      +(mg.list_pct != null ? " · list "+esc(String(mg.list_pct))+"%" : "")
+      +(mg.delta_pp != null ? " · Δ "+esc(String(mg.delta_pp))+" pp" : "")+"</p>";
+    if (mg.note) body += "<p class='meta'>"+esc(channelFriendly(mg.note))+"</p>";
+  }
   const anoms = i.anomalies || [];
   if (anoms.length) {
     body += "<p class='meta'><b>ความผิดปกติ:</b></p><ul class='meta'>"
