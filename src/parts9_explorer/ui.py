@@ -160,6 +160,24 @@ label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align
 .kpi .l { font-size:.72rem; color:var(--muted); margin-top:.1rem; }
 .kpi.warn .n { color:var(--pend); }
 .kpi.ok .n { color:var(--ok); }
+.insight-dash { margin:.35rem 0 .6rem; }
+.insight-dash .sec { margin:.55rem 0 .35rem; }
+.insight-dash .sec-h { font-size:.78rem; font-weight:650; color:var(--heading); margin:0 0 .28rem; letter-spacing:.01em; }
+.insight-dash .kv { display:flex; flex-wrap:wrap; gap:.3rem .85rem; font-size:.84rem; line-height:1.45; }
+.insight-dash .kv .cell { min-width:4.5rem; }
+.insight-dash .kv .lbl { display:block; font-size:.7rem; color:var(--muted); }
+.insight-dash .kv .val { font-weight:600; }
+.insight-dash .party { font-size:.82rem; margin:.15rem 0; color:var(--text); }
+.insight-dash .party .sub { color:var(--muted); font-weight:400; }
+.insight-dash .ai { font-size:.9rem; margin:.35rem 0 .15rem; line-height:1.45; }
+.insight-dash .status-pill {
+  display:inline-block; font-size:.78rem; font-weight:650; padding:.22rem .55rem;
+  border-radius:.45rem; background:var(--chip); margin:.15rem .35rem .15rem 0;
+}
+.insight-dash .status-pill.ok { background:var(--st-ok-bg); color:var(--ok); }
+.insight-dash .status-pill.warn { background:var(--st-pend-bg); color:var(--pend); }
+.insight-dash .status-pill.bad { background:var(--st-no-bg); color:var(--down); }
+.insight-dash .status-pill.order { background:var(--st-wait-bg); color:var(--acc); }
 .linkish { color:var(--acc); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; }
 h2 { font-size:1.15rem; margin:.15rem 0 .4rem; }
 h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
@@ -790,25 +808,20 @@ function renderInsight(ins, live) {
   if (!el || !ins) return;
   const st = ins.status || "no_movement";
   if (st === "working") {
-    el.innerHTML = "<h3>Insight (นโยบาย)</h3><p class='meta'>กำลังสร้าง insight…</p>"
+    el.innerHTML = "<h3>Insight</h3><p class='meta'>กำลังสร้าง insight…</p>"
       +(ins.facts_as_of ? "<p class='meta'>snap "+esc(ins.facts_as_of)+"</p>" : "");
     return;
   }
   if (st === "no_movement") {
-    el.innerHTML = "<h3>Insight (นโยบาย)</h3><p class='meta'>ไม่มีการเคลื่อนไหวใน 5 ปี</p>";
+    el.innerHTML = "<h3>Insight</h3><p class='meta'>ไม่มีการเคลื่อนไหวใน 5 ปี</p>";
     return;
   }
   const i = ins.insight || {};
   const pol = ins.policy || {};
+  const der = i.derived || {};
+  const dash = i.dashboard || der.dashboard || {};
   live = live || {};
-  function channelFriendly(s) {
-    return String(s == null ? "" : s)
-      .replace(/\bhq_store\b/g, "HQ")
-      .replace(/\bsyp_store\b/g, "SYP")
-      .replace(/\bexcluded\b/g, "JOURMODE=0")
-      .replace(/\bonline\b/g, "Online")
-      .replace(/\btransfer\b/g, "Transfer");
-  }
+
   function numOrNull(v) {
     if (v == null || v === "") return null;
     const n = Number(v);
@@ -818,6 +831,15 @@ function renderInsight(ins, live) {
     if (n == null) return "—";
     return (Math.abs(n - Math.round(n)) < 0.05) ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
   }
+  function fmtPct(n) {
+    if (n == null) return "—";
+    const x = Math.round(n * 10) / 10;
+    return (x > 0 ? "+" : "") + x + "%";
+  }
+  function fmtMoney(n) {
+    if (n == null) return "—";
+    return String(Math.round(n * 100) / 100);
+  }
   function pick() {
     for (let k = 0; k < arguments.length; k++) {
       const v = arguments[k];
@@ -825,163 +847,190 @@ function renderInsight(ins, live) {
     }
     return null;
   }
-  const orderMap = { yes: "สั่งได้", caution: "ระวัง", no: "ไม่สั่ง" };
-  const deadMap = { yes: "ใช่", no: "ไม่ใช่", maybe: "อาจจะ" };
+  function cell(lbl, val) {
+    return "<span class='cell'><span class='lbl'>"+esc(lbl)+"</span><span class='val'>"+val+"</span></span>";
+  }
+
   const trendMap = {
     hot: "ร้อน", growing: "เติบโต", flat: "คงที่", declining: "ลดลง",
     dead: "ตาย", lumpy: "กระจุก", seasonal: "ตามฤดูกาล", unknown: "ไม่ชัด"
   };
-  const marginMap = {
-    healthy: "ดี", thin: "บาง", weak: "อ่อน", negative: "ติดลบ",
-    cost_up_price_lag: "ต้นทุนขึ้น ราคายังไม่ตาม", unknown: "ไม่ชัด"
+  const marginTrendMap = {
+    improving: "ดีขึ้น", stable: "คงที่", worsening: "แย่ลง", unknown: "ไม่ชัด"
   };
-  const anomMap = {
-    none: "ปกติ", negative: "สต็อกติดลบ", do_not_restock: "ไม่สั่งซ้ำ (L-1)", other: "อื่น"
+  const statusMap = {
+    no_order_needed: { th: "ยังไม่ต้องสั่ง", cls: "ok" },
+    should_order: { th: "ควรสั่ง", cls: "order" },
+    caution: { th: "ระวัง", cls: "warn" },
+    dead_stock: { th: "Dead Stock", cls: "bad" }
   };
-  function enumTh(map, v) {
-    if (v == null || v === "") return "—";
-    const k = String(v).toLowerCase();
-    return map[k] ? map[k]+" ("+k+")" : String(v);
-  }
+
+  const sales = dash.sales || {};
+  const ch = dash.channels_12m || {};
+  const pm = dash.price_margin || {};
+  const stk = dash.stock || {};
   const purch = i.purchase || {};
   const ic = i.icmas || {};
-  const xfer = i.transfer || {};
   const tr = i.trends || {};
   const mg = i.margin || {};
+  const fl = der.flags || {};
+  const dem = der.demand || {};
+  const holdBlk = der.holding || {};
+  const od = der.order || {};
+  const stBlk = der.stock || {};
+  const mgDer = der.margin || {};
+  const td = der.trend || {};
 
-  const monthly = numOrNull(pick(i.typical_monthly_qty, pol.typical_monthly_qty));
-  const weeks = numOrNull(pick(i.suggested_cover_weeks, pol.suggested_cover_weeks));
-  let hold = numOrNull(pick(i.safe_holding_qty, pol.safe_holding_qty));
-  if (monthly != null && weeks != null && weeks > 0) hold = monthly * (weeks / 4.345);
-  const orderOk = pick(purch.order_ok, pol.order_ok);
-  const orderReason = pick(purch.order_ok_reason, pol.order_ok_reason);
-  const dead = pick(i.dead_stock, pol.dead_stock);
-  const deadReason = pick(i.dead_stock_reason, pol.dead_stock_reason);
-  const poQty = numOrNull(pick(purch.suggested_order_qty, pol.suggested_order_qty));
-  const poLarge = numOrNull(pick(purch.suggested_order_qty_large, pol.suggested_order_qty_large));
-  const poUnit = pick(purch.order_unit, pol.order_unit, live.ui1, "หน่วย");
-  const poUnitL = pick(purch.order_unit_large, pol.order_unit_large, "ลัง");
-  const supplier = pick(purch.last_supplier, pol.last_supplier);
-  const buyPrice = pick(purch.last_buy_price, pol.last_buy_price);
-  const buyDate = pick(purch.last_buy_date, pol.last_buy_date);
-  const holdReason = pick(purch.safe_holding_reason, pol.safe_holding_reason);
-  const recMin = numOrNull(pick(ic.rec_qtymin, pol.rec_qtymin));
-  const recMinReason = pick(ic.rec_qtymin_reason, pol.rec_qtymin_reason);
-  const checkStock = pick(ic.check_stock, pol.check_stock);
-  const stockAnom = pick(ic.stock_anomaly, pol.stock_anomaly);
-  const xferQty = numOrNull(pick(xfer.qty, pol.rec_transfer_qty_to_syp));
-  const xferReason = pick(xfer.reason, pol.rec_transfer_reason);
-  const t30 = pick(tr.d30, pol.trend_30d);
-  const t90 = pick(tr.d90, pol.trend_90d);
-  const t12 = pick(tr.m12, pol.trend_12m, i.trend_label, pol.trend_label);
-  const mFlag = pick(mg.flag, pol.margin_flag);
-  const mList = numOrNull(pick(mg.list_pct, pol.margin_pct_list));
-  const m12 = numOrNull(pol.margin_pct_12m);
-  const mDelta = numOrNull(pick(mg.delta_pp, pol.margin_delta_pp));
-  const mNote = mg.note;
+  const latestMo = numOrNull(pick(sales.latest_month, dem.qty_30d, pol.sales_qty_30d));
+  const avg3 = numOrNull(pick(sales.avg_3m, dem.monthly_from_90d));
+  const avg12 = numOrNull(pick(sales.avg_12m, dem.monthly_from_12m, i.typical_monthly_qty, pol.typical_monthly_qty));
+  const tot12 = numOrNull(pick(sales.total_12m, dem.qty_12m, pol.sales_qty_12m));
+  const trend = pick(sales.trend, tr.m12, i.trend_label, pol.trend_12m, td["12m"]);
+
+  const chHq = numOrNull(pick(ch.hq, (dem.by_channel_12m || {}).hq_store));
+  const chSyp = numOrNull(pick(ch.syp, (dem.by_channel_12m || {}).syp_store));
+  const chOn = numOrNull(pick(ch.online, (dem.by_channel_12m || {}).online));
+  const chSum = (chHq || 0) + (chSyp || 0) + (chOn || 0);
+  const chHqPct = numOrNull(pick(ch.hq_pct, chSum ? (chHq || 0) / chSum * 100 : null));
+  const chSypPct = numOrNull(pick(ch.syp_pct, chSum ? (chSyp || 0) / chSum * 100 : null));
+  const chOnPct = numOrNull(pick(ch.online_pct, chSum ? (chOn || 0) / chSum * 100 : null));
+
+  const avgBuy = numOrNull(pick(pm.avg_buy, mgDer.avg_buy_12m));
+  const avgSell = numOrNull(pick(pm.avg_sell, mgDer.avg_sell_12m));
+  const changePct = numOrNull(pick(pm.change_pct, mgDer.price_change_pct_12m, pol.price_change_pct_12m));
+  const marginPct = numOrNull(pick(pm.margin_pct, mgDer.realized_pct_12m, pol.margin_pct_12m, mg.list_pct, pol.margin_pct_list));
+  const marginTrend = pick(pm.margin_trend, pm.margin_flag, mg.flag, pol.margin_flag, mgDer.flag);
+
   const qtyLiveHq = numOrNull(live.qtyHq);
   const qtyLiveSyp = numOrNull(live.qtySyp);
   const companyLive = (qtyLiveHq != null || qtyLiveSyp != null)
     ? (qtyLiveHq || 0) + (qtyLiveSyp || 0) : null;
+  const qtyHq = numOrNull(pick(qtyLiveHq, stk.hq, stBlk.qtyoh_hq, pol.qtyoh_hq));
+  const qtySyp = numOrNull(pick(qtyLiveSyp, stk.syp, stBlk.qtyoh_syp, pol.qtyoh_syp));
+  const qtyTotal = numOrNull(pick(companyLive, stk.total, stBlk.company_qtyoh,
+    (qtyHq != null || qtySyp != null) ? (qtyHq || 0) + (qtySyp || 0) : null));
+  const target = numOrNull(pick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
+  const reorder = numOrNull(pick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
+  const lot = numOrNull(pick(stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
+  const qtyminHq = numOrNull(pick(stk.qtymin_hq, stBlk.qtymin_hq, pol.qtymin_hq));
+  const qtyminSyp = numOrNull(pick(stk.qtymin_syp, stBlk.qtymin_syp, pol.qtymin_syp));
+  const unit = pick(stk.unit, purch.order_unit, pol.order_unit, live.ui1, od.ui1, "");
 
-  let body = "<p class='meta'>นโยบาย 14–30 วัน · เทียบกับคงเหลือสดด้านบนเมื่อจะสั่ง/โอน"
+  const dead = pick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
+  const orderOk = pick(purch.order_ok, pol.order_ok, fl.order_ok);
+  let orderStatus = pick(dash.order_status, i.order_status, fl.order_status);
+  // Recompute from live stock so status matches on-hand above.
+  if (dead === "yes") orderStatus = "dead_stock";
+  else if (qtyTotal != null && target != null && qtyTotal >= target) orderStatus = "no_order_needed";
+  else if (qtyTotal != null && reorder != null && qtyTotal <= reorder) orderStatus = "should_order";
+  else if (orderOk === "caution" || dead === "maybe") orderStatus = "caution";
+  else if (orderOk === "no") orderStatus = "caution";
+  else if (qtyTotal != null && target != null && qtyTotal < target) orderStatus = "should_order";
+  else if (!orderStatus) orderStatus = (orderOk === "yes" ? "no_order_needed" : "caution");
+  if (live.doNotRestock && orderStatus !== "dead_stock") orderStatus = "caution";
+
+  const suppliers = (dash.suppliers || der.suppliers_12m || []).slice(0, 3);
+  const customers = (dash.customers || der.customers_12m || []).slice(0, 3);
+  const ai = pick(i.ai_action, ins.summary, i.summary, "");
+
+  function trendTh(v) {
+    if (v == null || v === "") return "—";
+    const k = String(v).toLowerCase();
+    return trendMap[k] || String(v);
+  }
+  function marginTrendTh(v) {
+    if (v == null || v === "") return "—";
+    const k = String(v).toLowerCase();
+    if (marginTrendMap[k]) return marginTrendMap[k];
+    const flagMap = {
+      healthy: "ดี", thin: "บาง", weak: "อ่อน", negative: "ติดลบ",
+      cost_up_price_lag: "ต้นทุนขึ้นราคายังไม่ตาม", unknown: "ไม่ชัด"
+    };
+    return flagMap[k] || String(v);
+  }
+
+  const stInfo = statusMap[orderStatus] || { th: String(orderStatus || "—"), cls: "warn" };
+  let body = "<div class='insight-dash'>";
+  body += "<p class='meta'>Dashboard · นโยบาย 14–30 วัน · เทียบของสดด้านบน"
     +(ins.prompt_version ? " · "+esc(ins.prompt_version) : "")+"</p>";
-  body += "<p>"+esc(channelFriendly(ins.summary || i.summary || ""))+"</p>";
 
-  // Live vs policy
-  if (companyLive != null || hold != null || recMin != null) {
-    const bits = [];
-    if (companyLive != null) bits.push("สดรวม "+fmtQty(companyLive));
-    if (qtyLiveHq != null || qtyLiveSyp != null) {
-      bits.push("สนญ "+fmtQty(qtyLiveHq)+" / สาขา "+fmtQty(qtyLiveSyp));
-    }
-    if (hold != null) bits.push("เป้า "+fmtQty(hold));
-    if (recMin != null) bits.push("จุดสั่ง "+fmtQty(recMin));
-    body += "<p class='meta'><b>เทียบของสด:</b> "+bits.join(" · ")+"</p>";
-    if (live.doNotRestock) {
-      body += "<p class='meta'>สาขานี้ตั้งไม่สั่งซ้ำ (L-1) — นโยบายสั่งซื้อควรเป็นไม่สั่ง</p>";
-    } else if (companyLive != null && recMin != null) {
-      if (companyLive <= recMin) {
-        body += "<p class='meta'><b>สถานะ:</b> ของสด ≤ จุดสั่ง → พิจารณาเติมตามล็อตด้านล่าง</p>";
-      } else if (hold != null && companyLive >= hold) {
-        body += "<p class='meta'><b>สถานะ:</b> ของสดถึง/เกินเป้าแล้ว → ยังไม่จำเป็นต้องเติม</p>";
-      } else {
-        body += "<p class='meta'><b>สถานะ:</b> ของสดอยู่ระหว่างจุดสั่งกับเป้า</p>";
-      }
-    }
-  }
+  body += "<div class='sec'><div class='sec-h'>ยอดขาย</div><div class='kv'>"
+    +cell("เดือนล่าสุด", esc(fmtQty(latestMo)))
+    +cell("เฉลี่ย 3 เดือน", esc(fmtQty(avg3)))
+    +cell("เฉลี่ย 12 เดือน", esc(fmtQty(avg12)))
+    +cell("รวม 12 เดือน", esc(fmtQty(tot12)))
+    +cell("Trend", esc(trendTh(trend)))
+    +"</div></div>";
 
-  if (t12 || i.sales_trend) {
-    body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(enumTh(trendMap, t12))
-      +(t30 || t90 ? " · 30/90/12m "+esc(enumTh(trendMap, t30))+" / "+esc(enumTh(trendMap, t90))+" / "+esc(enumTh(trendMap, t12)) : "")
-      +"</p>";
-  }
-  if (i.sales_trend) body += "<p class='meta'>"+esc(channelFriendly(i.sales_trend))+"</p>";
-  if (i.channel_mix) {
-    body += "<p class='meta'><b>ช่องทาง:</b> "+esc(channelFriendly(i.channel_mix))+"</p>";
-    body += "<p class='meta'>HQ = หน้าร้าน · SYP = สาขา · Online = TAD/CNTAD · Transfer ไม่นับเป็นอุปสงค์</p>";
-  }
-  if (hold != null || monthly != null || weeks != null) {
-    const bits = [];
-    if (hold != null) bits.push("เป้า ≈"+fmtQty(hold)+" "+esc(poUnit));
-    if (monthly != null) bits.push("เฉลี่ย ≈"+fmtQty(monthly)+"/เดือน");
-    if (weeks != null) bits.push("คุ้มครอง "+fmtQty(weeks)+" สัปดาห์");
-    body += "<p class='meta'><b>สต็อกปลอดภัย:</b> "+bits.join(" · ")+"</p>";
-  }
-  if (i.demand_hint) body += "<p class='meta'><b>อุปสงค์:</b> "+esc(channelFriendly(i.demand_hint))+"</p>";
-  if (holdReason) body += "<p class='meta'>"+esc(channelFriendly(holdReason))+"</p>";
+  body += "<div class='sec'><div class='sec-h'>ช่องทางขาย 12 เดือน</div><div class='kv'>"
+    +cell("HQ", esc(fmtQty(chHq))+(chHqPct != null ? " <span class='meta'>("+esc(fmtQty(chHqPct))+"%)</span>" : ""))
+    +cell("SYP", esc(fmtQty(chSyp))+(chSypPct != null ? " <span class='meta'>("+esc(fmtQty(chSypPct))+"%)</span>" : ""))
+    +cell("Online", esc(fmtQty(chOn))+(chOnPct != null ? " <span class='meta'>("+esc(fmtQty(chOnPct))+"%)</span>" : ""))
+    +"</div></div>";
 
-  body += "<p class='meta'><b>1) สั่งซื้อ / dead stock:</b> "+esc(enumTh(orderMap, orderOk))
-    +" · dead "+esc(enumTh(deadMap, dead))+"</p>";
-  if (orderReason) body += "<p class='meta'>"+esc(channelFriendly(orderReason))+"</p>";
-  if (deadReason) body += "<p class='meta'>"+esc(channelFriendly(deadReason))+"</p>";
-  if (poQty != null) {
-    body += "<p class='meta'>เมื่อของสด ≤ จุดสั่ง เติม "+esc(fmtQty(poQty))+" "+esc(poUnit)
-      +(poLarge != null ? " (≈"+esc(fmtQty(poLarge))+" "+esc(poUnitL)+")" : "")+"</p>";
-  }
-  if (supplier) {
-    body += "<p class='meta'>ซัพพลายเออร์ล่าสุด "+esc(supplier)
-      +(buyPrice != null ? " · ราคา "+esc(String(buyPrice)) : "")
-      +(buyDate ? " · "+esc(buyDate) : "")+"</p>";
-  }
+  body += "<div class='sec'><div class='sec-h'>ราคา &amp; Margin</div><div class='kv'>"
+    +cell("ราคาซื้อเฉลี่ย", esc(fmtMoney(avgBuy)))
+    +cell("ราคาขายเฉลี่ย", esc(fmtMoney(avgSell)))
+    +cell("% เปลี่ยน", esc(fmtPct(changePct)))
+    +cell("Margin %", marginPct != null ? esc(fmtQty(marginPct))+"%" : "—")
+    +cell("แนวโน้ม Margin", esc(marginTrendTh(marginTrend)))
+    +"</div></div>";
 
-  body += "<p class='meta'><b>2) ICMAS:</b> QTYMIN แนะนำ "+esc(fmtQty(recMin))
-    +" · ตรวจสต็อก "+esc(checkStock === "yes" ? "ควรตรวจ" : (checkStock === "no" ? "ไม่จำเป็น" : "—"))
-    +(stockAnom && stockAnom !== "none" ? " · "+esc(enumTh(anomMap, stockAnom)) : "")+"</p>";
-  if (recMinReason) body += "<p class='meta'>"+esc(channelFriendly(recMinReason))+"</p>";
+  body += "<div class='sec'><div class='sec-h'>สต็อก</div><div class='kv'>"
+    +cell("รวม", esc(fmtQty(qtyTotal))+(unit ? " "+esc(unit) : ""))
+    +cell("HQ", esc(fmtQty(qtyHq)))
+    +cell("SYP", esc(fmtQty(qtySyp)))
+    +cell("เป้าสต็อก", esc(fmtQty(target)))
+    +cell("จุดสั่ง", esc(fmtQty(reorder)))
+    +cell("ล็อตแนะนำ", esc(fmtQty(lot)))
+    +cell("QTYMIN", "HQ "+esc(fmtQty(qtyminHq))+" · SYP "+esc(fmtQty(qtyminSyp)))
+    +"</div></div>";
 
-  body += "<p class='meta'><b>3) โอน SYP:</b> เป้า/ล็อต ≈ "+esc(fmtQty(xferQty))+" "+esc(poUnit)+"</p>";
-  if (xferReason) body += "<p class='meta'>"+esc(channelFriendly(xferReason))+"</p>";
-  if (qtyLiveSyp != null && xferQty != null && xferQty > 0) {
-    if (qtyLiveSyp < xferQty) {
-      body += "<p class='meta'>สาขาสด "+fmtQty(qtyLiveSyp)+" &lt; เป้า/ล็อต → พิจารณาโอน</p>";
-    } else {
-      body += "<p class='meta'>สาขาสด "+fmtQty(qtyLiveSyp)+" ถึง/เกินเป้าแล้ว</p>";
-    }
+  body += "<div class='sec'><div class='sec-h'>สถานะการสั่งซื้อ</div>"
+    +"<span class='status-pill "+stInfo.cls+"'>"+esc(stInfo.th)+"</span>"
+    +(dead === "yes" && orderStatus !== "dead_stock" ? "<span class='status-pill bad'>Dead Stock</span>" : "")
+    +"</div>";
+
+  body += "<div class='sec'><div class='sec-h'>Supplier หลัก</div>";
+  if (suppliers.length) {
+    body += suppliers.map(s => {
+      const nm = s.name || s.acctno || "—";
+      const q = numOrNull(s.qty);
+      const ap = numOrNull(s.avg_price);
+      return "<div class='party'>"+esc(nm)
+        +" <span class='sub'>· ซื้อ "+esc(fmtQty(q))
+        +(ap != null ? " · เฉลี่ย "+esc(fmtMoney(ap)) : "")
+        +"</span></div>";
+    }).join("");
+  } else {
+    body += "<p class='meta'>—</p>";
   }
+  body += "</div>";
 
-  body += "<p class='meta'><b>4) Trend 30/90/12m:</b> "
-    +esc(enumTh(trendMap, t30))+" / "+esc(enumTh(trendMap, t90))+" / "+esc(enumTh(trendMap, t12))+"</p>";
-  if (pol.sales_qty_30d != null || pol.sales_qty_90d != null || pol.sales_qty_12m != null) {
-    body += "<p class='meta'>ยอดลูกค้า 30/90/12m: "
-      +esc(fmtQty(pol.sales_qty_30d))+" / "+esc(fmtQty(pol.sales_qty_90d))+" / "+esc(fmtQty(pol.sales_qty_12m))+"</p>";
+  body += "<div class='sec'><div class='sec-h'>Customer หลัก</div>";
+  if (customers.length) {
+    body += customers.map(c => {
+      const nm = c.name || c.acctno || "—";
+      const q = numOrNull(c.qty);
+      const pct = numOrNull(c.pct_of_sales);
+      return "<div class='party'>"+esc(nm)
+        +" <span class='sub'>· "+esc(fmtQty(q))
+        +(pct != null ? " · "+esc(fmtQty(pct))+"%" : "")
+        +"</span></div>";
+    }).join("");
+  } else {
+    body += "<p class='meta'>—</p>";
   }
+  body += "</div>";
 
-  body += "<p class='meta'><b>5) มาร์จิ้น:</b> "+esc(enumTh(marginMap, mFlag))
-    +(m12 != null ? " · 12m "+esc(fmtQty(m12))+"%" : "")
-    +(mList != null ? " · list "+esc(fmtQty(mList))+"%" : "")
-    +(mDelta != null ? " · Δ "+esc(fmtQty(mDelta))+" pp" : "")+"</p>";
-  if (mNote) body += "<p class='meta'>"+esc(channelFriendly(mNote))+"</p>";
+  body += "<div class='sec'><div class='sec-h'>AI แนะนำ</div>"
+    +"<p class='ai'>"+esc(ai || "—")+"</p></div>";
 
-  const anoms = i.anomalies || [];
-  if (anoms.length) {
-    body += "<p class='meta'><b>ความผิดปกติ:</b></p><ul class='meta'>"
-      + anoms.map(a => "<li>"+esc(channelFriendly(a))+"</li>").join("") + "</ul>";
-  }
   body += "<p class='meta'>generated "+esc(ins.generated_at||"—")
     +" · facts_as_of "+esc(ins.facts_as_of||"—")
     +(ins.model_id ? " · "+esc(ins.model_id) : "")+"</p>";
-  el.innerHTML = "<h3>Insight (นโยบาย)</h3>"+body;
+  body += "</div>";
+  el.innerHTML = "<h3>Insight</h3>"+body;
 }
 function loadInsightPanel(bcode, live) {
   const el = $("insightPanel");
