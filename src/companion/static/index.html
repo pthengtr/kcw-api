@@ -281,6 +281,7 @@
       cursor: not-allowed;
     }
     .btn-send { background: var(--accent); color: var(--on-accent); }
+    .btn-qr { background: var(--request); color: #f4f8fc; }
     .btn-cancel { background: var(--danger); color: var(--btn-cancel-text); }
     .btn-refresh, .btn-theme { background: var(--btn-secondary); color: var(--text); min-width: var(--touch); }
     .btn-link {
@@ -343,11 +344,11 @@
     }
     .bill-card-meta strong { color: var(--text); font-weight: 600; }
     .bill-card-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      flex-wrap: wrap;
       gap: 0.5rem;
     }
-    .bill-card-actions button { width: 100%; }
+    .bill-card-actions button { flex: 1 1 calc(50% - 0.25rem); }
     @media (max-width: 720px) {
       .desktop-table { display: none; }
       .mobile-cards { display: block; }
@@ -486,6 +487,40 @@
       min-width: 6.5rem;
       font-size: 1rem;
     }
+    dialog.qr-dialog {
+      max-width: min(420px, calc(100vw - 2rem));
+    }
+    .qr-dialog-image-wrap {
+      display: flex;
+      justify-content: center;
+      margin: 0.85rem 0 0.5rem;
+      padding: 0.75rem;
+      background: #ffffff;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+    }
+    .qr-dialog-image-wrap img {
+      width: min(260px, 70vw);
+      height: auto;
+      image-rendering: pixelated;
+    }
+    .qr-dialog-amount {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--amount);
+      margin: 0.25rem 0 0.15rem;
+    }
+    .qr-dialog-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 0 1.25rem 1.15rem;
+    }
+    .btn-dialog-secondary {
+      background: var(--btn-secondary);
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
@@ -499,13 +534,30 @@
       <button type="button" class="btn-dialog-ok" id="alertDialogOk">ตกลง</button>
     </div>
   </dialog>
+  <dialog class="alert-dialog qr-dialog" id="qrDialog" aria-labelledby="qrDialogTitle">
+    <div class="alert-dialog-inner">
+      <div class="alert-dialog-icon info" id="qrDialogIcon" aria-hidden="true"></div>
+      <h3 id="qrDialogTitle">สแกน QR เพื่อชำระ</h3>
+      <p id="qrDialogBill"></p>
+      <div class="qr-dialog-amount" id="qrDialogAmount"></div>
+      <div class="qr-dialog-image-wrap" id="qrDialogImageWrap">
+        <img id="qrDialogImage" alt="QR ชำระเงิน" />
+      </div>
+      <p id="qrDialogHint">ให้ลูกค้าสแกนด้วยแอปธนาคาร (KBank) ระบบจะยืนยันอัตโนมัติเมื่อชำระสำเร็จ</p>
+      <p id="qrDialogStatus"></p>
+    </div>
+    <div class="qr-dialog-actions">
+      <button type="button" class="btn-cancel" id="qrDialogCancel">ยกเลิกการชำระ</button>
+      <button type="button" class="btn-dialog-secondary" id="qrDialogClose">ปิด</button>
+    </div>
+  </dialog>
   <header>
     <div>
       <h1>
         <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
         KCW Tiger Pay Companion
       </h1>
-      <div class="muted">บิลเงินสด POS → เครื่อง Tiger Pay</div>
+      <div class="muted">บิลเงินสด POS → เครื่อง Tiger Pay / QR KBank</div>
     </div>
     <div class="header-actions">
       <button class="btn-theme" id="themeBtn" type="button" aria-label="สลับธีม">ธีม</button>
@@ -591,12 +643,14 @@
   <script>
     const STORAGE_KEY = "kcw.companion.ui.v6";
     const STATUS_FILTER_KEYS = ["unsent", "pending", "success", "cancelled"];
-    const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested"]);
+    const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested", "confirm_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
       "create_failed",
       "cancel_api_response",
       "cancel_api_failed",
+      "confirm_api_response",
+      "confirm_api_failed",
     ]);
     const CAT_LABEL = {
       request: "Request",
@@ -612,6 +666,7 @@
       refresh: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>`,
       spinner: `<svg class="icon icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
       send: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>`,
+      qr: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3"/><path d="M21 14h-1"/><path d="M14 21h7"/><path d="M14 17h3"/></svg>`,
       cancel: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>`,
       chevronDown: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`,
       chevronUp: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>`,
@@ -755,8 +810,20 @@
       bills: [],
       selectedBillId: null,
       selectedAttemptId: null,
-      actionInFlight: null, // { type: 'send'|'cancel', billId, attemptId }
+      actionInFlight: null, // { type: 'send'|'cancel', billId, attemptId, paymentType }
       pollTimer: null,
+      refreshing: false,
+      mode: prefs.mode,
+      limit: prefs.limit,
+      theme: prefs.theme,
+      statusFilters: prefs.statusFilters,
+      timelineFilters: prefs.timelineFilters,
+      events: [],
+      expandedPayload: new Set(),
+      statusByBillId: {},
+      statusSnapshotReady: false,
+      qrByAttemptId: {},
+      openQrAttemptId: null,
       refreshing: false,
       mode: prefs.mode,
       limit: prefs.limit,
@@ -853,18 +920,21 @@
       const chosen = transitions.find((t) => t.bill.id === state.selectedBillId) || transitions[0];
       const billNo = chosen.bill.bill_number;
       if (chosen.status === "success") {
+        closeQrDialog();
         showAlertDialog({
           type: "success",
           title: "ชำระเงินสำเร็จ",
           message: `บิล ${billNo} ชำระผ่าน Tiger Pay เรียบร้อยแล้ว`,
         });
       } else if (chosen.status === "cancelled") {
+        closeQrDialog();
         showAlertDialog({
           type: "info",
           title: "ยกเลิกรายการแล้ว",
           message: `บิล ${billNo} ถูกยกเลิกเรียบร้อยแล้ว`,
         });
       } else {
+        closeQrDialog();
         showAlertDialog({
           type: "error",
           title: "รายการล้มเหลว",
@@ -906,8 +976,12 @@
       }).format(date);
     }
 
-    function isSendLoading(billId) {
-      return state.actionInFlight?.type === "send" && state.actionInFlight.billId === billId;
+    function isSendLoading(billId, paymentType) {
+      return (
+        state.actionInFlight?.type === "send" &&
+        state.actionInFlight.billId === billId &&
+        (!paymentType || state.actionInFlight.paymentType === paymentType)
+      );
     }
 
     function isCancelLoading(attemptId) {
@@ -937,6 +1011,9 @@
         cancellation_requested: "ส่งคำขอยกเลิก",
         cancel_api_response: "ตอบกลับการยกเลิก",
         cancel_api_failed: "ยกเลิกล้มเหลว",
+        confirm_requested: "ยืนยันการชำระ QR",
+        confirm_api_response: "ยืนยัน QR สำเร็จ",
+        confirm_api_failed: "ยืนยัน QR ล้มเหลว",
         webhook_update: "อัปเดตจาก Webhook",
         polling_update: "อัปเดตจากโพลลิ่ง",
       };
@@ -998,19 +1075,110 @@
       return state.bills.filter((b) => !!state.statusFilters[billStatusBucket(b)]);
     }
 
+    function cacheQr(attemptId, qr) {
+      if (!attemptId || !qr) return;
+      state.qrByAttemptId[attemptId] = qr;
+    }
+
+    function closeQrDialog() {
+      const dialog = document.getElementById("qrDialog");
+      state.openQrAttemptId = null;
+      if (dialog?.open) dialog.close();
+    }
+
+    function qrStatusLabel(qr, bill) {
+      const raw = String(qr?.status || "").toUpperCase();
+      if (bill?.tiger_payment_status === "success") return "ชำระสำเร็จแล้ว";
+      if (raw === "C") return "ธนาคารรับชำระแล้ว — กำลังยืนยัน";
+      return "รอสแกนชำระ";
+    }
+
+    function syncQrDialog() {
+      if (!state.openQrAttemptId) return;
+      const bill = state.bills.find((b) => b.payment_attempt_id === state.openQrAttemptId);
+      const qr = state.qrByAttemptId[state.openQrAttemptId];
+      const statusEl = document.getElementById("qrDialogStatus");
+      const img = document.getElementById("qrDialogImage");
+      const wrap = document.getElementById("qrDialogImageWrap");
+      if (statusEl) statusEl.textContent = qrStatusLabel(qr, bill);
+      if (qr?.image && img) {
+        img.src = qr.image;
+        wrap.style.display = "";
+      }
+      const cancelBtn = document.getElementById("qrDialogCancel");
+      if (cancelBtn) {
+        const active = !!(bill && bill.payment_attempt_active);
+        cancelBtn.disabled = !active || !!state.actionInFlight;
+      }
+    }
+
+    async function showQrDialog({ bill, attemptId, qr }) {
+      if (qr) cacheQr(attemptId, qr);
+      let resolved = state.qrByAttemptId[attemptId] || qr;
+      if (!resolved?.image && attemptId) {
+        try {
+          const data = await api(`/companion/payments/${attemptId}`);
+          if (data.qr) {
+            cacheQr(attemptId, data.qr);
+            resolved = data.qr;
+          }
+        } catch (_) {
+          /* keep dialog even if refresh fails */
+        }
+      }
+      const dialog = document.getElementById("qrDialog");
+      document.getElementById("qrDialogIcon").innerHTML = ICONS.qr;
+      document.getElementById("qrDialogBill").textContent = `บิล ${bill.bill_number}`;
+      document.getElementById("qrDialogAmount").textContent = `฿${formatAmount(bill.amount)}`;
+      const img = document.getElementById("qrDialogImage");
+      const wrap = document.getElementById("qrDialogImageWrap");
+      const hint = document.getElementById("qrDialogHint");
+      if (resolved?.image) {
+        img.src = resolved.image;
+        wrap.style.display = "";
+        hint.textContent = "ให้ลูกค้าสแกนด้วยแอปธนาคาร (KBank) ระบบจะยืนยันอัตโนมัติเมื่อชำระสำเร็จ";
+      } else {
+        img.removeAttribute("src");
+        wrap.style.display = "none";
+        hint.textContent = "สร้างรายการ QR แล้ว แต่ยังไม่มีรูป QR — ให้ลูกค้าสแกนที่หน้าเครื่อง Tiger Pay";
+      }
+      document.getElementById("qrDialogStatus").textContent = qrStatusLabel(resolved, bill);
+      state.openQrAttemptId = attemptId;
+      const cancelBtn = document.getElementById("qrDialogCancel");
+      cancelBtn.dataset.attempt = attemptId || "";
+      cancelBtn.dataset.billId = bill.id;
+      cancelBtn.disabled = !bill.payment_attempt_active && !attemptId;
+      closeAlertDialog();
+      if (typeof dialog.showModal === "function") {
+        if (!dialog.open) dialog.showModal();
+      }
+      syncQrDialog();
+    }
+
     function buttonHtml(bill) {
-      const sendLoading = isSendLoading(bill.id);
+      const cashLoading = isSendLoading(bill.id, "cash");
+      const qrLoading = isSendLoading(bill.id, "qr");
       const cancelLoading = isCancelLoading(bill.payment_attempt_id);
       const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight;
       const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight;
-      const sendLabel = sendLoading
+      const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
+      const cashLabel = cashLoading
         ? `${ICONS.spinner} กำลังส่ง…`
-        : `${ICONS.send} ส่งชำระ`;
+        : `${ICONS.send} ส่งเงินสด`;
+      const qrLabel = qrLoading
+        ? `${ICONS.spinner} กำลังส่ง QR…`
+        : showQr && bill.payment_attempt_active
+          ? `${ICONS.qr} ดู QR`
+          : `${ICONS.qr} ส่ง QR`;
+      const qrDisabled = showQr && bill.payment_attempt_active
+        ? !!state.actionInFlight
+        : sendDisabled;
       const cancelLabel = cancelLoading
         ? `${ICONS.spinner} กำลังยกเลิก…`
         : `${ICONS.cancel} ยกเลิก`;
       return `
-        <button class="btn-send" type="button" data-action="send" data-id="${bill.id}" ${sendDisabled ? "disabled" : ""}>${sendLabel}</button>
+        <button class="btn-send" type="button" data-action="send-cash" data-id="${bill.id}" ${sendDisabled ? "disabled" : ""}>${cashLabel}</button>
+        <button class="btn-qr" type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
         <button class="btn-cancel" type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
       `;
     }
@@ -1021,18 +1189,44 @@
           event.stopPropagation();
           const action = btn.getAttribute("data-action");
           try {
-            if (action === "send") {
-              state.actionInFlight = { type: "send", billId: bill.id };
+            if (action === "send-cash" || action === "send-qr") {
+              const paymentType = action === "send-qr" ? "qr" : "cash";
+              const viewingQr = paymentType === "qr" && bill.payment_type === "qr" && bill.payment_attempt_active;
+              if (viewingQr) {
+                await showQrDialog({
+                  bill,
+                  attemptId: bill.payment_attempt_id,
+                  qr: state.qrByAttemptId[bill.payment_attempt_id],
+                });
+                return;
+              }
+              state.actionInFlight = { type: "send", billId: bill.id, paymentType };
               renderBills();
-              setMessage(`กำลังส่งบิล ${bill.bill_number} ไปยัง Tiger Pay...`);
-              const result = await api(`/companion/bills/${bill.id}/pay`, { method: "POST" });
+              setMessage(
+                paymentType === "qr"
+                  ? `กำลังสร้าง QR สำหรับบิล ${bill.bill_number}...`
+                  : `กำลังส่งบิล ${bill.bill_number} ไปยัง Tiger Pay...`
+              );
+              const result = await api(`/companion/bills/${bill.id}/pay`, {
+                method: "POST",
+                body: JSON.stringify({ payment_type: paymentType }),
+              });
               state.selectedBillId = bill.id;
               state.selectedAttemptId = result.attempt && result.attempt.id;
-              showAlertDialog({
-                type: "success",
-                title: "ส่งชำระสำเร็จ",
-                message: `ส่งบิล ${bill.bill_number} ไปยังเครื่อง Tiger Pay แล้ว\nรอลูกค้าชำระที่เครื่อง`,
-              });
+              if (result.qr) cacheQr(state.selectedAttemptId, result.qr);
+              if (paymentType === "qr") {
+                await showQrDialog({
+                  bill: { ...bill, payment_attempt_active: true, payment_type: "qr" },
+                  attemptId: state.selectedAttemptId,
+                  qr: result.qr,
+                });
+              } else {
+                showAlertDialog({
+                  type: "success",
+                  title: "ส่งชำระสำเร็จ",
+                  message: `ส่งบิล ${bill.bill_number} ไปยังเครื่อง Tiger Pay แล้ว\nรอลูกค้าชำระที่เครื่อง`,
+                });
+              }
             } else if (action === "cancel") {
               const attemptId = btn.getAttribute("data-attempt");
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
@@ -1040,6 +1234,7 @@
               setMessage("กำลังขอยกเลิก...");
               await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
               state.selectedAttemptId = attemptId;
+              closeQrDialog();
               showAlertDialog({
                 type: "info",
                 title: "ส่งคำขอยกเลิกแล้ว",
@@ -1069,7 +1264,7 @@
       else {
         state.events = [];
         document.getElementById("timeline").innerHTML =
-          `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งชำระ」</li>`;
+          `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด」หรือ「ส่ง QR」</li>`;
       }
     }
 
@@ -1214,7 +1409,9 @@
       try {
         const data = await api(`/companion/payments/${attemptId}`);
         state.events = data.events || [];
+        if (data.qr) cacheQr(attemptId, data.qr);
         renderTimeline();
+        syncQrDialog();
       } catch (err) {
         setMessage(err.message || String(err));
       }
@@ -1286,6 +1483,39 @@
       // Allow Esc to close; default dialog behavior already closes it.
       event.stopPropagation();
     });
+    document.getElementById("qrDialogClose").onclick = () => closeQrDialog();
+    document.getElementById("qrDialog").addEventListener("cancel", (event) => {
+      event.stopPropagation();
+      state.openQrAttemptId = null;
+    });
+    document.getElementById("qrDialogCancel").onclick = async () => {
+      const btn = document.getElementById("qrDialogCancel");
+      const attemptId = btn.dataset.attempt;
+      const billId = btn.dataset.billId;
+      const bill = state.bills.find((b) => b.id === billId);
+      if (!attemptId) return;
+      try {
+        state.actionInFlight = { type: "cancel", billId, attemptId };
+        renderBills();
+        setMessage("กำลังขอยกเลิก...");
+        await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
+        closeQrDialog();
+        showAlertDialog({
+          type: "info",
+          title: "ส่งคำขอยกเลิกแล้ว",
+          message: `ส่งคำขอยกเลิกบิล ${bill?.bill_number || ""} แล้ว\nรอการยืนยันจาก Tiger Pay`,
+        });
+      } catch (err) {
+        showAlertDialog({
+          type: "error",
+          title: "ไม่สามารถดำเนินการได้",
+          message: friendlyErrorMessage(err),
+        });
+      } finally {
+        state.actionInFlight = null;
+        await loadBills();
+      }
+    };
 
     applyTheme(state.theme);
     syncToolbar();

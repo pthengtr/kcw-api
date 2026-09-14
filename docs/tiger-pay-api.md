@@ -192,7 +192,7 @@ Marks payment `success` after QR/cash completion (samples show QR and mixed).
 | Cancel payment | `POST /companion/payments/{attempt_id}/cancel` |
 | Webhook ingest | `POST /webhooks/tiger-pay` |
 | List / categories / cash / change_status | Not exposed |
-| Create/cancel QR, Confirm | Not exposed |
+| Create/cancel QR, Confirm | Companion QR send + poller confirm (`KBANK`) |
 
 ---
 

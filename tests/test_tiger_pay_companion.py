@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timezone
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import jwt
@@ -6,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from src.companion.bills import PosBill
 from src.tiger_pay.digest import compute_body_sha256
 from src.tiger_pay.open_api import TigerPayOpenApiClient, TigerPayOpenApiError, build_open_api_authorization
 from src.tiger_pay.payment_service import (
@@ -15,6 +18,15 @@ from src.tiger_pay.payment_service import (
     send_payment_for_bill,
 )
 from src.tiger_pay.status import is_active_status, is_terminal_status, normalize_status
+
+MOCK_OPEN_BILL = PosBill(
+    id="bill-1001",
+    bill_number="B2607140001",
+    amount=Decimal("250.00"),
+    created_at=datetime(2026, 7, 14, 9, 15, tzinfo=timezone.utc),
+    pos_status="N",
+    salesperson="mock.user",
+)
 
 
 def test_normalize_status_aliases_and_unknown():
@@ -139,9 +151,15 @@ def test_open_api_error_on_create_failure(monkeypatch):
 
 def test_send_payment_rejects_when_bill_has_active_attempt():
     engine = MagicMock()
-    with patch(
-        "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
-        return_value={"id": "x", "status": "pending"},
+    with (
+        patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
+            return_value={"id": "x", "status": "pending"},
+        ),
     ):
         with pytest.raises(PaymentServiceError) as exc:
             send_payment_for_bill(engine, "bill-1001")
@@ -152,9 +170,15 @@ def test_send_payment_rejects_when_tiger_busy():
     engine = MagicMock()
     open_api = MagicMock()
     open_api.get_current.return_value = {"id": 1, "status": "pending"}
-    with patch(
-        "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
-        return_value=None,
+    with (
+        patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
+            return_value=None,
+        ),
     ):
         with pytest.raises(PaymentServiceError) as exc:
             send_payment_for_bill(engine, "bill-1001", open_api=open_api)
@@ -191,6 +215,10 @@ def test_send_payment_happy_path():
 
     with (
         patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
             return_value=None,
         ),
@@ -219,6 +247,7 @@ def test_send_payment_happy_path():
     assert kwargs["ref_no_2"] == attempt_id
     assert len(kwargs["ref_no_2"]) <= 20
     assert kwargs["payment_type"] == "cash"
+    assert "payment_gateway" not in kwargs
 
 
 def test_new_payment_attempt_id_fits_tiger_refno2():
@@ -318,7 +347,9 @@ def test_companion_ui_and_bills_route():
         assert ui.status_code == 200
         assert "Tiger Pay Companion" in ui.text
         assert 'lang="th"' in ui.text
-        assert "ส่งชำระ" in ui.text
+        assert "ส่งเงินสด" in ui.text
+        assert "ส่ง QR" in ui.text
+        assert 'id="qrDialog"' in ui.text
         assert "Request" in ui.text
         assert 'id="statusChips"' in ui.text
         assert "ยังไม่ส่ง" in ui.text
@@ -357,6 +388,29 @@ def test_companion_pay_conflict():
         response = client.post("/companion/bills/bill-1001/pay")
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "tiger_busy"
+
+
+def test_companion_pay_qr_passes_type():
+    with (
+        patch("app.routers.companion.get_engine", return_value=MagicMock()),
+        patch(
+            "app.routers.companion.send_payment_for_bill",
+            return_value={
+                "attempt": {"id": "att-1", "status": "pending"},
+                "qr": {"image": "data:image/png;base64,xx", "status": "I"},
+                "payment_type": "qr",
+            },
+        ) as send,
+    ):
+        client = TestClient(app)
+        response = client.post(
+            "/companion/bills/bill-1001/pay",
+            json={"payment_type": "qr"},
+        )
+    assert response.status_code == 200
+    assert response.json()["payment_type"] == "qr"
+    assert response.json()["qr"]["image"].startswith("data:image")
+    assert send.call_args.kwargs["payment_type"] == "qr"
 
 
 def test_webhook_still_succeeds_when_reconcile_errors():

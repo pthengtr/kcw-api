@@ -38,6 +38,8 @@ def _http_error(exc: PaymentServiceError) -> HTTPException:
         status = 404
     elif exc.code in {"active_attempt_exists", "tiger_busy", "not_active"}:
         status = 409
+    elif exc.code == "invalid_payment_type":
+        status = 400
     detail: dict = {"message": exc.message, "code": exc.code}
     if exc.details:
         detail["details"] = exc.details
@@ -158,9 +160,22 @@ async def companion_bills(
 @router.post("/bills/{pos_bill_id}/pay")
 async def companion_pay_bill(request: Request, pos_bill_id: str) -> dict:
     _require_companion_user(request)
+    payment_type = "cash"
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "application/json" in content_type:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and payload.get("payment_type") is not None:
+            payment_type = str(payload.get("payment_type") or "").strip().lower()
     engine = get_engine()
     try:
-        result = send_payment_for_bill(engine, pos_bill_id)
+        result = send_payment_for_bill(
+            engine,
+            pos_bill_id,
+            payment_type=payment_type,
+        )
     except PaymentServiceError as exc:
         raise _http_error(exc) from exc
     return result
