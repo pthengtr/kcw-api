@@ -142,6 +142,7 @@ body.busy #busy{display:flex}
 .dir{font-size:.75rem;color:var(--muted)}
 .qty-input{width:5rem;padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
 .text-input{flex:1;min-width:0;padding:.5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
+.prep-ship-as{width:7.5rem;max-width:100%;padding:.35rem .5rem;font-size:.82rem}
 .search-bar{display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem}
 .search-bar .text-input{flex:1}
 .tool-section{border:1px solid var(--line);border-radius:12px;padding:.75rem;background:#f8fafc;margin-bottom:.75rem}
@@ -697,6 +698,26 @@ function collectPositiveQtyMap(root, selector, dataProp){
     any = true;
   });
   return {qtyMap, any};
+}
+/** Optional ส่งแทน codes from visible pane; same-as-request BCODE is ignored. */
+function collectShipAsMap(root, selector, dataProp, lines){
+  const byLine = {};
+  (lines||[]).forEach(ln=>{ byLine[ln.line_id] = String(ln.bcode||"").trim(); });
+  const shipAsMap = {};
+  visibleDualPane(root).querySelectorAll(selector).forEach(inp=>{
+    const key = inp.dataset[dataProp];
+    if(!key) return;
+    const alt = String(inp.value||"").trim();
+    if(!alt) return;
+    if(alt === (byLine[key]||"")) return;
+    shipAsMap[key] = alt;
+  });
+  return shipAsMap;
+}
+function fmtShipAsConfirm(lineId, shipAsMap){
+  const alt = shipAsMap && shipAsMap[lineId];
+  if(!alt) return "";
+  return `<div class="meta" style="color:var(--accent,#c9a227)">ส่งแทน: <code>${escText(alt)}</code> · ตัดสต็อกรหัสนี้</div>`;
 }
 function bindDetailRows(container){
   container.querySelectorAll(".row-clickable[data-detail]").forEach(row=>{
@@ -1979,10 +2000,14 @@ async function renderRequest(el, opts){
   }
 }
 
-async function submitPrepare(request, qtyByLineId){
+async function submitPrepare(request, qtyByLineId, shipAsByLineId){
+  const shipAs = shipAsByLineId || request._shipAsDraft || {};
   const shipLines = (request.lines||[]).map(ln=>{
     const q = Number(qtyByLineId[ln.line_id]||0);
-    return {line_id: ln.line_id, bcode: ln.bcode, qty_ship: q};
+    const alt = String(shipAs[ln.line_id]||"").trim();
+    const row = {line_id: ln.line_id, bcode: ln.bcode, qty_ship: q};
+    if(alt && alt !== String(ln.bcode||"").trim()) row.ship_as_bcode = alt;
+    return row;
   }).filter(l=>l.qty_ship>0);
   if(!shipLines.length) throw new Error("ระบุจำนวนที่จัด");
   if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) throw new Error("ยกเลิก");
@@ -2277,14 +2302,22 @@ async function renderPrepare(el){
   if(prepareStep === 2){
     const shipBranch = (req.from_branch||SITE).toUpperCase();
     const shipBranchLabel = branchLabel(shipBranch);
+    const qtyDraft = req._qtyDraft||{};
+    const shipAsDraft = req._shipAsDraft||{};
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
+      const qtyVal = qtyDraft[ln.line_id] != null ? qtyDraft[ln.line_id] : remain;
+      const shipAsVal = shipAsDraft[ln.line_id] || "";
       return `<tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
-        <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
-          data-line="${ln.line_id}"/></td></tr>`;
+        <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${escapeAttr(String(qtyVal))}"
+          data-line="${ln.line_id}"/></td>
+        <td><input class="text-input prep-ship-as" type="text" inputmode="numeric" autocomplete="off"
+          placeholder="ว่าง=รหัสขอ" value="${escapeAttr(shipAsVal)}" data-line="${ln.line_id}"/></td></tr>`;
     }).join("");
     const cardRows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
+      const qtyVal = qtyDraft[ln.line_id] != null ? qtyDraft[ln.line_id] : remain;
+      const shipAsVal = shipAsDraft[ln.line_id] || "";
       return `<div class="item-card">
         <div class="item-card-head"><code>${ln.bcode}</code></div>
         <div class="item-card-desc">${fmtDescr(ln)}</div>
@@ -2293,9 +2326,12 @@ async function renderPrepare(el){
           <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
           <div class="item-field num"><span class="lbl">จัดแล้ว</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
         </div>
-        <div class="item-card-actions">
-          <label class="meta" style="margin-right:auto">จัดครั้งนี้</label>
-          <input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}" data-line="${ln.line_id}"/>
+        <div class="item-card-actions" style="flex-wrap:wrap;gap:.5rem">
+          <label class="meta">รหัสส่งแทน</label>
+          <input class="text-input prep-ship-as" type="text" inputmode="numeric" autocomplete="off"
+            placeholder="ว่าง=รหัสขอ" value="${escapeAttr(shipAsVal)}" data-line="${ln.line_id}"/>
+          <label class="meta" style="margin-left:auto">จัดครั้งนี้</label>
+          <input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${escapeAttr(String(qtyVal))}" data-line="${ln.line_id}"/>
         </div>
       </div>`;
     }).join("");
@@ -2303,9 +2339,10 @@ async function renderPrepare(el){
       <div class="card">
         <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
         <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้ · คงเหลือ ${shipBranchLabel} อ่านจาก PARTS9 สด</p>
+        <p class="meta">รหัสส่งแทน (ถ้ามี) ต้องอยู่ในกลุ่มทดแทนเดียวกับรหัสคำขอ — ระบบจะตัดสต็อกรหัสที่กรอก</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
         ${dualView(
-          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th><th>รหัสส่งแทน</th></tr></thead><tbody>${rows}</tbody></table></div>`,
           itemCards(cardRows)
         )}
         ${shipBranch === "HQ" ? hqNoStockNoteHtml() : ""}
@@ -2316,11 +2353,13 @@ async function renderPrepare(el){
         </div>
       </div>`;
     bindSyncedQtyInputs(el, ".prep-qty");
+    bindSyncedQtyInputs(el, ".prep-ship-as");
     el.querySelector("#btnPrepPrint2").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnPrepNext2").onclick = ()=>{
       const {qtyMap, any} = collectPositiveQtyMap(el, ".prep-qty", "line");
       if(!any){alert("ระบุจำนวนที่จัด");return;}
       req._qtyDraft = qtyMap;
+      req._shipAsDraft = collectShipAsMap(el, ".prep-ship-as", "line", openLines);
       setPrepareStep(3);
     };
     return;
@@ -2328,14 +2367,15 @@ async function renderPrepare(el){
 
   if(prepareStep === 3){
     const qtyMap = req._qtyDraft||{};
+    const shipAsMap = req._shipAsDraft||{};
     const shipBranch = (req.from_branch||SITE).toUpperCase();
     const shipBranchLabel = branchLabel(shipBranch);
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
+      <tr><td><code>${ln.bcode}</code>${fmtShipAsConfirm(ln.line_id, shipAsMap)}</td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
     `).join("");
     const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`<div class="item-card">
       <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.line_id])}</strong></div>
-      <div class="item-card-desc">${fmtDescr(ln)}</div>
+      <div class="item-card-desc">${fmtDescr(ln)}${fmtShipAsConfirm(ln.line_id, shipAsMap)}</div>
       <div class="item-card-grid">
         <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>
         <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
@@ -2362,7 +2402,7 @@ async function renderPrepare(el){
     el.querySelector("#btnPrepPrint3").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnConfirmPrepare").onclick = async()=>{
       try{
-        const result = await submitPrepare(req, qtyMap);
+        const result = await submitPrepare(req, qtyMap, shipAsMap);
         const bill = result.ship_billno || result.tf_billno || "";
         showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");
         prepareRequest = null;

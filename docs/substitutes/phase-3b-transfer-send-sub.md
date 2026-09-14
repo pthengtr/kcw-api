@@ -46,7 +46,7 @@ End-to-end: prepare can choose a group peer, TF ships that peer’s `BCODE`, req
    - Store `requested_bcode` on shipment line **or** rely on `line_id` + event payload — prefer explicit column if migration is cheap
    - Event `substitute_ship` `{line_id, from_bcode, to_bcode, qty}`
 4. **Writer:** SIDET/TF uses shipped BCODE + descr from that SKU.
-5. **UI prepare:** peer picker (from Phase 3a list) → sets `ship_as_bcode`; show “ส่งแทน: {bcode}” before confirm.
+5. **UI prepare:** text input **รหัสส่งแทน** → sets `ship_as_bcode`; show “ส่งแทน: {bcode}” before confirm (ต้องเป็น catalog peer — live hint อย่างเดียวไม่พอ).
 6. **Receive/stickers:** confirm they use shipment line bcode; add UI note when substituted.
 7. **Tests:** validation (not in group → 400); writer called with alt bcode; clash reject; non-substitute prepare unchanged.
 
@@ -74,7 +74,7 @@ Manual / staged check:
 | Prepare API | `api_prepare` resolves `ship_as_bcode` → writer `bcode` + `requested_bcode` |
 | Persist | `add_shipment_lines` writes `requested_bcode`; event `substitute_ship` |
 | Writer | unchanged — uses resolved `lines[].bcode` (alt SKU) |
-| UI prepare | peer `<select>` + confirm “ส่งแทน: …” |
+| UI prepare | text input **รหัสส่งแทน** → `ship_as_bcode` + confirm “ส่งแทน: …” |
 | UI receive | `substituted` / `requested_bcode` note via `fmtSubstitutedRecv` |
 
 ## Stop here
@@ -100,9 +100,8 @@ Next: [phase-4-docs-ops.md](phase-4-docs-ops.md).
 ### Operator steps (ส่งแทน)
 
 1. Seed peer group in Explorer (`/parts9/substitutes`).
-2. On prepare (ship-from), open a line that shows **ทดแทนแนะนำ**.
-3. Choose **ส่งแทน {peer}** in the dropdown; set qty; confirm — UI shows **ส่งแทน: {peer}**.
-4. TF/SIDET deducts peer stock; request line `qty_prepared` increases.
-5. Receive sees shipped peer BCODE with note “ส่งแทนจากคำขอ …”.
+2. On prepare (ship-from), open a line; optionally type peer BCODE in **รหัสส่งแทน** (must be same catalog group); set qty; confirm — UI shows **ส่งแทน: {peer}**.
+3. TF/SIDET deducts peer stock; request line `qty_prepared` increases.
+4. Receive sees shipped peer BCODE with note “ส่งแทนจากคำขอ …”.
 
 Apply migration before staging E2E.
