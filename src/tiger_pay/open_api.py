@@ -179,18 +179,21 @@ class TigerPayOpenApiClient:
         ref_no_2: str,
         note: str,
         payment_type: str = "cash",
+        payment_gateway: str | None = None,
     ) -> dict[str, Any]:
         # Tiger Postman examples use whole numbers; keep floats only when needed.
         if isinstance(amount, float) and amount.is_integer():
             amount = int(amount)
 
-        body = {
+        body: dict[str, Any] = {
             "type": payment_type,
             "amount": amount,
             "note": note,
             "refNo1": ref_no_1,
             "refNo2": ref_no_2,
         }
+        if payment_gateway:
+            body["paymentGateway"] = payment_gateway
         status_code, payload = self._request(
             "POST",
             "api/open/v2/payment",
@@ -234,6 +237,45 @@ class TigerPayOpenApiClient:
         if status_code >= 400:
             raise TigerPayOpenApiError(
                 _tiger_error_message(payload, "Failed to cancel payment"),
+                status_code=status_code,
+                payload=payload,
+            )
+        data = _parse_envelope(payload)
+        return {"data": data, "message": payload.get("message"), "raw": payload}
+
+    def create_qr(
+        self,
+        tiger_payment_id: int | str,
+        *,
+        payment_gateway: str = "KBANK",
+    ) -> dict[str, Any]:
+        body = {"paymentGateway": payment_gateway}
+        status_code, payload = self._request(
+            "POST",
+            f"api/open/v2/payment/{tiger_payment_id}/qr/create",
+            json_body=body,
+            include_digest=True,
+        )
+        if status_code >= 400:
+            raise TigerPayOpenApiError(
+                _tiger_error_message(payload, "Failed to create QR"),
+                status_code=status_code,
+                payload=payload,
+            )
+        data = _parse_envelope(payload)
+        return {"data": data, "message": payload.get("message"), "raw": payload}
+
+    def confirm_payment(
+        self,
+        tiger_payment_id: int | str,
+    ) -> dict[str, Any]:
+        status_code, payload = self._request(
+            "PUT",
+            f"api/open/v2/payment/{tiger_payment_id}/confirm",
+        )
+        if status_code >= 400:
+            raise TigerPayOpenApiError(
+                _tiger_error_message(payload, "Failed to confirm payment"),
                 status_code=status_code,
                 payload=payload,
             )

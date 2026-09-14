@@ -9,13 +9,24 @@ from sqlalchemy.engine import Engine
 
 from src.companion.bills import get_open_bill, list_open_bills
 from src.tiger_pay import repos
+from src.tiger_pay.config import get_tiger_pay_settings
 from src.tiger_pay.open_api import TigerPayOpenApiClient, TigerPayOpenApiError, get_open_api_client
+from src.tiger_pay.payload import omit_qr_images
+from src.tiger_pay.qr import (
+    companion_qr_from_attempt,
+    extract_companion_qr,
+    has_displayable_qr,
+    merge_qr_payload_into_payment,
+    payment_type_from_attempt,
+    should_confirm_qr_payment,
+)
 from src.tiger_pay.status import is_active_status, normalize_status
 
 logger = logging.getLogger("kcw.tiger_pay.payment_service")
 
 # Tiger Open API: RefNo2 max length is 20.
 TIGER_REF_NO2_MAX_LEN = 20
+ALLOWED_PAYMENT_TYPES = frozenset({"cash", "qr"})
 
 
 def new_payment_attempt_id() -> str:
@@ -59,6 +70,7 @@ def list_bills_with_payment_status(
         item["payment_attempt_active"] = bool(
             attempt and is_active_status(str(attempt["status"]))
         )
+        item["payment_type"] = payment_type_from_attempt(attempt) if attempt else None
         results.append(item)
     return results
 
@@ -68,15 +80,32 @@ def get_attempt_detail(engine: Engine, attempt_id: str) -> dict[str, Any]:
     if not attempt:
         raise PaymentServiceError("Payment attempt not found", code="not_found")
     events = repos.list_payment_events(engine, attempt_id)
-    return {"attempt": attempt, "events": events}
+    qr = companion_qr_from_attempt(attempt)
+    attempt_out = dict(attempt)
+    if attempt_out.get("raw_create_response") is not None:
+        attempt_out["raw_create_response"] = omit_qr_images(attempt_out["raw_create_response"])
+    return {
+        "attempt": attempt_out,
+        "events": events,
+        "qr": qr,
+        "payment_type": payment_type_from_attempt(attempt),
+    }
 
 
 def send_payment_for_bill(
     engine: Engine,
     pos_bill_id: str,
     *,
+    payment_type: str = "cash",
     open_api: TigerPayOpenApiClient | None = None,
 ) -> dict[str, Any]:
+    cleaned_type = str(payment_type or "cash").strip().lower()
+    if cleaned_type not in ALLOWED_PAYMENT_TYPES:
+        raise PaymentServiceError(
+            "payment_type must be cash or qr",
+            code="invalid_payment_type",
+        )
+
     bill = get_open_bill(pos_bill_id)
     if bill is None:
         raise PaymentServiceError("POS bill not found", code="bill_not_found")
@@ -139,7 +168,12 @@ def send_payment_for_bill(
             ref_no_1=bill.bill_number,
             ref_no_2=str(attempt_id),
             note=note,
-            payment_type="cash",
+            payment_type=cleaned_type,
+        )
+        create_result = _ensure_qr_on_create(
+            client,
+            create_result,
+            payment_type=cleaned_type,
         )
     except TigerPayOpenApiError as exc:
         repos.update_payment_attempt(
@@ -196,12 +230,21 @@ def send_payment_for_bill(
         status=status,
         payload={
             "action": "api_response_received",
-            "create_response": create_result.get("raw") or create_result,
+            "create_response": omit_qr_images(create_result.get("raw") or create_result),
+            "payment_type": cleaned_type,
         },
         event_key=f"api:create_response:{attempt_id}:{raw_status}",
     )
 
-    return {"attempt": updated or attempt, "create_response": create_result}
+    attempt_out = dict(updated or attempt)
+    if attempt_out.get("raw_create_response") is not None:
+        attempt_out["raw_create_response"] = omit_qr_images(attempt_out["raw_create_response"])
+    return {
+        "attempt": attempt_out,
+        "create_response": omit_qr_images(create_result),
+        "qr": extract_companion_qr(create_result.get("raw") or create_result),
+        "payment_type": cleaned_type,
+    }
 
 
 def cancel_payment_attempt(
@@ -373,7 +416,7 @@ def reconcile_from_tiger_payment(
         attempt_id=str(attempt["id"]),
         raw_status=raw_status,
         source=source,
-        payload={"action": f"{source}_update", "payment": payment},
+        payload={"action": f"{source}_update", "payment": omit_qr_images(payment)},
         event_key=key,
         tiger_payment_id=tiger_payment_id,
         tiger_payment_no=str(payment_no) if payment_no is not None else None,
@@ -401,6 +444,124 @@ def reconcile_from_webhook_transaction(
         source="webhook",
         event_key=event_key,
     )
+
+
+def _ensure_qr_on_create(
+    client: TigerPayOpenApiClient,
+    create_result: dict[str, Any],
+    *,
+    payment_type: str,
+) -> dict[str, Any]:
+    if payment_type != "qr":
+        return create_result
+    data = create_result.get("data") or {}
+    if not isinstance(data, dict):
+        data = {}
+    if has_displayable_qr(data) or has_displayable_qr(create_result.get("raw") or create_result):
+        return create_result
+
+    tiger_payment_id = data.get("id")
+    if tiger_payment_id is None:
+        return create_result
+
+    settings = get_tiger_pay_settings()
+    try:
+        qr_result = client.create_qr(
+            tiger_payment_id,
+            payment_gateway=settings.tiger_pay_qr_gateway,
+        )
+    except TigerPayOpenApiError as exc:
+        logger.warning(
+            "QR create fallback failed tiger_payment_id=%s error=%s",
+            tiger_payment_id,
+            exc.message,
+        )
+        return create_result
+    merged = merge_qr_payload_into_payment(data, qr_result)
+    updated = dict(create_result)
+    updated["data"] = merged
+    raw = create_result.get("raw")
+    if isinstance(raw, dict):
+        updated_raw = dict(raw)
+        updated_raw["data"] = merged
+        updated["raw"] = updated_raw
+    else:
+        updated["raw"] = {"data": merged, "message": qr_result.get("message")}
+    return updated
+
+
+def _confirm_qr_if_paid(
+    engine: Engine,
+    *,
+    attempt: dict[str, Any],
+    payment: dict[str, Any],
+    client: TigerPayOpenApiClient,
+) -> dict[str, Any]:
+    if not should_confirm_qr_payment(payment):
+        return payment
+
+    tiger_payment_id = attempt.get("tiger_payment_id") or payment.get("id")
+    if tiger_payment_id is None:
+        return payment
+
+    attempt_id = str(attempt["id"])
+    repos.insert_payment_event(
+        engine,
+        payment_attempt_id=attempt_id,
+        source="api",
+        status=str(attempt.get("status") or "pending"),
+        payload={"action": "confirm_requested", "tiger_payment_id": tiger_payment_id},
+        event_key=f"api:confirm_requested:{attempt_id}",
+    )
+    try:
+        confirm_result = client.confirm_payment(tiger_payment_id)
+    except TigerPayOpenApiError as exc:
+        logger.warning(
+            "QR confirm failed attempt_id=%s tiger_payment_id=%s error=%s",
+            attempt_id,
+            tiger_payment_id,
+            exc.message,
+        )
+        repos.insert_payment_event(
+            engine,
+            payment_attempt_id=attempt_id,
+            source="api",
+            status=str(attempt.get("status") or "pending"),
+            payload={
+                "action": "confirm_api_failed",
+                "error": exc.message,
+                "status_code": exc.status_code,
+                "payload": omit_qr_images(exc.payload),
+            },
+            event_key=f"api:confirm_failed:{attempt_id}:{exc.status_code}",
+        )
+        repos.update_payment_attempt(
+            engine,
+            attempt_id,
+            error_message=exc.message,
+            touch_last_polled=True,
+        )
+        return payment
+
+    repos.insert_payment_event(
+        engine,
+        payment_attempt_id=attempt_id,
+        source="api",
+        status=normalize_status(str((confirm_result.get("data") or {}).get("status") or "pending")),
+        payload={
+            "action": "confirm_api_response",
+            "confirm_response": omit_qr_images(confirm_result.get("raw") or confirm_result),
+        },
+        event_key=f"api:confirm_response:{attempt_id}",
+    )
+
+    confirmed = confirm_result.get("data")
+    if isinstance(confirmed, dict) and (confirmed.get("status") or confirmed.get("id")):
+        return confirmed
+    try:
+        return client.get_payment(tiger_payment_id)
+    except TigerPayOpenApiError:
+        return payment
 
 
 def poll_attempt_once(
@@ -431,6 +592,12 @@ def poll_attempt_once(
         )
         return None
 
+    payment = _confirm_qr_if_paid(
+        engine,
+        attempt=attempt,
+        payment=payment,
+        client=client,
+    )
     return reconcile_from_tiger_payment(
         engine,
         payment,
