@@ -769,7 +769,7 @@ function showP(i) {
     +"<div id='insightPanel'></div>"
     +"<div id='subPanel'></div>"
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
-  loadInsightPanel(p.bcode);
+  loadInsightPanel(p.bcode, { qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock });
   loadSubPanels(p.bcode);
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(d => {
@@ -782,24 +782,25 @@ function showP(i) {
         tbl("ประวัติการขาย", m.sales, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ประวัติการซื้อ", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
-      if (d.insight) renderInsight(d.insight);
+      if (d.insight) renderInsight(d.insight, { qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock });
     }).catch(() => { $("more").innerHTML = ""; });
 }
-function renderInsight(ins) {
+function renderInsight(ins, live) {
   const el = $("insightPanel");
   if (!el || !ins) return;
   const st = ins.status || "no_movement";
   if (st === "working") {
-    el.innerHTML = "<h3>Insight</h3><p class='meta'>กำลังสร้าง insight…</p>"
+    el.innerHTML = "<h3>Insight (นโยบาย)</h3><p class='meta'>กำลังสร้าง insight…</p>"
       +(ins.facts_as_of ? "<p class='meta'>snap "+esc(ins.facts_as_of)+"</p>" : "");
     return;
   }
   if (st === "no_movement") {
-    el.innerHTML = "<h3>Insight</h3><p class='meta'>ไม่มีการเคลื่อนไหวใน 5 ปี</p>";
+    el.innerHTML = "<h3>Insight (นโยบาย)</h3><p class='meta'>ไม่มีการเคลื่อนไหวใน 5 ปี</p>";
     return;
   }
   const i = ins.insight || {};
-  // Display labels only (prompt/facts still use internal channel ids)
+  const pol = ins.policy || {};
+  live = live || {};
   function channelFriendly(s) {
     return String(s == null ? "" : s)
       .replace(/\bhq_store\b/g, "HQ")
@@ -808,85 +809,170 @@ function renderInsight(ins) {
       .replace(/\bonline\b/g, "Online")
       .replace(/\btransfer\b/g, "Transfer");
   }
-  let body = "<p>"+esc(channelFriendly(ins.summary || i.summary || ""))+"</p>";
-  if (i.trend_label) body += "<p class='meta'><b>Trend:</b> "+esc(String(i.trend_label))+"</p>";
-  if (i.sales_trend) body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(channelFriendly(i.sales_trend))+"</p>";
-  if (i.channel_mix) {
-    body += "<p class='meta'><b>ช่องทาง:</b> "+esc(channelFriendly(i.channel_mix))+"</p>";
-    body += "<p class='meta'>HQ = หน้าร้าน HQ · SYP = สาขา · Online = TAD/CNTAD · Transfer = TF/TFV · JOURMODE=0 = ไม่นับเป็นยอดขาย</p>";
-  }
-  // Holding policy — models often set safe_holding = monthly * weeks (wrong units).
-  // Prefer coherent: hold ≈ monthly × (weeks / 4.345).
   function numOrNull(v) {
     if (v == null || v === "") return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
   function fmtQty(n) {
-    if (n == null) return "";
+    if (n == null) return "—";
     return (Math.abs(n - Math.round(n)) < 0.05) ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
   }
-  const monthly = numOrNull(i.typical_monthly_qty);
-  const weeks = numOrNull(i.suggested_cover_weeks);
-  let hold = numOrNull(i.safe_holding_qty);
-  if (monthly != null && weeks != null && weeks > 0) {
-    hold = monthly * (weeks / 4.345);
+  function pick() {
+    for (let k = 0; k < arguments.length; k++) {
+      const v = arguments[k];
+      if (v != null && v !== "") return v;
+    }
+    return null;
   }
-  body += "<p class='meta'>นโยบาย 14–30 วัน · เทียบกับ QTYOH2 สดในหน้านี้เมื่อจะสั่ง/โอน — ไม่ใช่คำสั่งซื้อ ณ วัน snap</p>";
+  const orderMap = { yes: "สั่งได้", caution: "ระวัง", no: "ไม่สั่ง" };
+  const deadMap = { yes: "ใช่", no: "ไม่ใช่", maybe: "อาจจะ" };
+  const trendMap = {
+    hot: "ร้อน", growing: "เติบโต", flat: "คงที่", declining: "ลดลง",
+    dead: "ตาย", lumpy: "กระจุก", seasonal: "ตามฤดูกาล", unknown: "ไม่ชัด"
+  };
+  const marginMap = {
+    healthy: "ดี", thin: "บาง", weak: "อ่อน", negative: "ติดลบ",
+    cost_up_price_lag: "ต้นทุนขึ้น ราคายังไม่ตาม", unknown: "ไม่ชัด"
+  };
+  const anomMap = {
+    none: "ปกติ", negative: "สต็อกติดลบ", do_not_restock: "ไม่สั่งซ้ำ (L-1)", other: "อื่น"
+  };
+  function enumTh(map, v) {
+    if (v == null || v === "") return "—";
+    const k = String(v).toLowerCase();
+    return map[k] ? map[k]+" ("+k+")" : String(v);
+  }
+  const purch = i.purchase || {};
+  const ic = i.icmas || {};
+  const xfer = i.transfer || {};
+  const tr = i.trends || {};
+  const mg = i.margin || {};
+
+  const monthly = numOrNull(pick(i.typical_monthly_qty, pol.typical_monthly_qty));
+  const weeks = numOrNull(pick(i.suggested_cover_weeks, pol.suggested_cover_weeks));
+  let hold = numOrNull(pick(i.safe_holding_qty, pol.safe_holding_qty));
+  if (monthly != null && weeks != null && weeks > 0) hold = monthly * (weeks / 4.345);
+  const orderOk = pick(purch.order_ok, pol.order_ok);
+  const orderReason = pick(purch.order_ok_reason, pol.order_ok_reason);
+  const dead = pick(i.dead_stock, pol.dead_stock);
+  const deadReason = pick(i.dead_stock_reason, pol.dead_stock_reason);
+  const poQty = numOrNull(pick(purch.suggested_order_qty, pol.suggested_order_qty));
+  const poLarge = numOrNull(pick(purch.suggested_order_qty_large, pol.suggested_order_qty_large));
+  const poUnit = pick(purch.order_unit, pol.order_unit, live.ui1, "หน่วย");
+  const poUnitL = pick(purch.order_unit_large, pol.order_unit_large, "ลัง");
+  const supplier = pick(purch.last_supplier, pol.last_supplier);
+  const buyPrice = pick(purch.last_buy_price, pol.last_buy_price);
+  const buyDate = pick(purch.last_buy_date, pol.last_buy_date);
+  const holdReason = pick(purch.safe_holding_reason, pol.safe_holding_reason);
+  const recMin = numOrNull(pick(ic.rec_qtymin, pol.rec_qtymin));
+  const recMinReason = pick(ic.rec_qtymin_reason, pol.rec_qtymin_reason);
+  const checkStock = pick(ic.check_stock, pol.check_stock);
+  const stockAnom = pick(ic.stock_anomaly, pol.stock_anomaly);
+  const xferQty = numOrNull(pick(xfer.qty, pol.rec_transfer_qty_to_syp));
+  const xferReason = pick(xfer.reason, pol.rec_transfer_reason);
+  const t30 = pick(tr.d30, pol.trend_30d);
+  const t90 = pick(tr.d90, pol.trend_90d);
+  const t12 = pick(tr.m12, pol.trend_12m, i.trend_label, pol.trend_label);
+  const mFlag = pick(mg.flag, pol.margin_flag);
+  const mList = numOrNull(pick(mg.list_pct, pol.margin_pct_list));
+  const m12 = numOrNull(pol.margin_pct_12m);
+  const mDelta = numOrNull(pick(mg.delta_pp, pol.margin_delta_pp));
+  const mNote = mg.note;
+  const qtyLiveHq = numOrNull(live.qtyHq);
+  const qtyLiveSyp = numOrNull(live.qtySyp);
+  const companyLive = (qtyLiveHq != null || qtyLiveSyp != null)
+    ? (qtyLiveHq || 0) + (qtyLiveSyp || 0) : null;
+
+  let body = "<p class='meta'>นโยบาย 14–30 วัน · เทียบกับคงเหลือสดด้านบนเมื่อจะสั่ง/โอน"
+    +(ins.prompt_version ? " · "+esc(ins.prompt_version) : "")+"</p>";
+  body += "<p>"+esc(channelFriendly(ins.summary || i.summary || ""))+"</p>";
+
+  // Live vs policy
+  if (companyLive != null || hold != null || recMin != null) {
+    const bits = [];
+    if (companyLive != null) bits.push("สดรวม "+fmtQty(companyLive));
+    if (qtyLiveHq != null || qtyLiveSyp != null) {
+      bits.push("สนญ "+fmtQty(qtyLiveHq)+" / สาขา "+fmtQty(qtyLiveSyp));
+    }
+    if (hold != null) bits.push("เป้า "+fmtQty(hold));
+    if (recMin != null) bits.push("จุดสั่ง "+fmtQty(recMin));
+    body += "<p class='meta'><b>เทียบของสด:</b> "+bits.join(" · ")+"</p>";
+    if (live.doNotRestock) {
+      body += "<p class='meta'>สาขานี้ตั้งไม่สั่งซ้ำ (L-1) — นโยบายสั่งซื้อควรเป็นไม่สั่ง</p>";
+    } else if (companyLive != null && recMin != null) {
+      if (companyLive <= recMin) {
+        body += "<p class='meta'><b>สถานะ:</b> ของสด ≤ จุดสั่ง → พิจารณาเติมตามล็อตด้านล่าง</p>";
+      } else if (hold != null && companyLive >= hold) {
+        body += "<p class='meta'><b>สถานะ:</b> ของสดถึง/เกินเป้าแล้ว → ยังไม่จำเป็นต้องเติม</p>";
+      } else {
+        body += "<p class='meta'><b>สถานะ:</b> ของสดอยู่ระหว่างจุดสั่งกับเป้า</p>";
+      }
+    }
+  }
+
+  if (t12 || i.sales_trend) {
+    body += "<p class='meta'><b>แนวโน้ม:</b> "+esc(enumTh(trendMap, t12))
+      +(t30 || t90 ? " · 30/90/12m "+esc(enumTh(trendMap, t30))+" / "+esc(enumTh(trendMap, t90))+" / "+esc(enumTh(trendMap, t12)) : "")
+      +"</p>";
+  }
+  if (i.sales_trend) body += "<p class='meta'>"+esc(channelFriendly(i.sales_trend))+"</p>";
+  if (i.channel_mix) {
+    body += "<p class='meta'><b>ช่องทาง:</b> "+esc(channelFriendly(i.channel_mix))+"</p>";
+    body += "<p class='meta'>HQ = หน้าร้าน · SYP = สาขา · Online = TAD/CNTAD · Transfer ไม่นับเป็นอุปสงค์</p>";
+  }
   if (hold != null || monthly != null || weeks != null) {
     const bits = [];
-    if (hold != null) bits.push("เป้า ≈"+fmtQty(hold)+" หน่วย");
+    if (hold != null) bits.push("เป้า ≈"+fmtQty(hold)+" "+esc(poUnit));
     if (monthly != null) bits.push("เฉลี่ย ≈"+fmtQty(monthly)+"/เดือน");
     if (weeks != null) bits.push("คุ้มครอง "+fmtQty(weeks)+" สัปดาห์");
     body += "<p class='meta'><b>สต็อกปลอดภัย:</b> "+bits.join(" · ")+"</p>";
   }
   if (i.demand_hint) body += "<p class='meta'><b>อุปสงค์:</b> "+esc(channelFriendly(i.demand_hint))+"</p>";
-  if (i.dead_stock) body += "<p class='meta'><b>Dead stock:</b> "+esc(String(i.dead_stock))
-    +(i.dead_stock_reason ? " — "+esc(channelFriendly(i.dead_stock_reason)) : "")+"</p>";
-  const purch = i.purchase || {};
-  if (purch.order_ok || i.safe_holding_qty != null || purch.suggested_order_qty != null) {
-    body += "<p class='meta'><b>สั่งซื้อ:</b> "+esc(String(purch.order_ok || "—"))
-      +(purch.order_ok_reason ? " — "+esc(channelFriendly(purch.order_ok_reason)) : "")+"</p>";
-    if (purch.suggested_order_qty != null) {
-      body += "<p class='meta'>เมื่อของสด ≤ QTYMIN เติม "+esc(fmtQty(Number(purch.suggested_order_qty)))+" "
-        +esc(purch.order_unit || "หน่วย")
-        +(purch.suggested_order_qty_large != null
-          ? " (≈"+esc(fmtQty(Number(purch.suggested_order_qty_large)))+" "+esc(purch.order_unit_large || "ลัง")+")"
-          : "")+"</p>";
+  if (holdReason) body += "<p class='meta'>"+esc(channelFriendly(holdReason))+"</p>";
+
+  body += "<p class='meta'><b>1) สั่งซื้อ / dead stock:</b> "+esc(enumTh(orderMap, orderOk))
+    +" · dead "+esc(enumTh(deadMap, dead))+"</p>";
+  if (orderReason) body += "<p class='meta'>"+esc(channelFriendly(orderReason))+"</p>";
+  if (deadReason) body += "<p class='meta'>"+esc(channelFriendly(deadReason))+"</p>";
+  if (poQty != null) {
+    body += "<p class='meta'>เมื่อของสด ≤ จุดสั่ง เติม "+esc(fmtQty(poQty))+" "+esc(poUnit)
+      +(poLarge != null ? " (≈"+esc(fmtQty(poLarge))+" "+esc(poUnitL)+")" : "")+"</p>";
+  }
+  if (supplier) {
+    body += "<p class='meta'>ซัพพลายเออร์ล่าสุด "+esc(supplier)
+      +(buyPrice != null ? " · ราคา "+esc(String(buyPrice)) : "")
+      +(buyDate ? " · "+esc(buyDate) : "")+"</p>";
+  }
+
+  body += "<p class='meta'><b>2) ICMAS:</b> QTYMIN แนะนำ "+esc(fmtQty(recMin))
+    +" · ตรวจสต็อก "+esc(checkStock === "yes" ? "ควรตรวจ" : (checkStock === "no" ? "ไม่จำเป็น" : "—"))
+    +(stockAnom && stockAnom !== "none" ? " · "+esc(enumTh(anomMap, stockAnom)) : "")+"</p>";
+  if (recMinReason) body += "<p class='meta'>"+esc(channelFriendly(recMinReason))+"</p>";
+
+  body += "<p class='meta'><b>3) โอน SYP:</b> เป้า/ล็อต ≈ "+esc(fmtQty(xferQty))+" "+esc(poUnit)+"</p>";
+  if (xferReason) body += "<p class='meta'>"+esc(channelFriendly(xferReason))+"</p>";
+  if (qtyLiveSyp != null && xferQty != null && xferQty > 0) {
+    if (qtyLiveSyp < xferQty) {
+      body += "<p class='meta'>สาขาสด "+fmtQty(qtyLiveSyp)+" &lt; เป้า/ล็อต → พิจารณาโอน</p>";
+    } else {
+      body += "<p class='meta'>สาขาสด "+fmtQty(qtyLiveSyp)+" ถึง/เกินเป้าแล้ว</p>";
     }
-    if (purch.last_supplier) {
-      body += "<p class='meta'>ซัพพลายเออร์ล่าสุด "+esc(purch.last_supplier)
-        +(purch.last_buy_price != null ? " · ราคา "+esc(String(purch.last_buy_price)) : "")
-        +(purch.last_buy_date ? " · "+esc(purch.last_buy_date) : "")+"</p>";
-    }
-    if (purch.safe_holding_reason) {
-      body += "<p class='meta'>"+esc(channelFriendly(purch.safe_holding_reason))+"</p>";
-    }
   }
-  const ic = i.icmas || {};
-  if (ic.rec_qtymin != null || ic.check_stock || ic.stock_anomaly) {
-    body += "<p class='meta'><b>ICMAS:</b> QTYMIN แนะนำ "+esc(ic.rec_qtymin != null ? fmtQty(Number(ic.rec_qtymin)) : "—")
-      +" · ตรวจสต็อก "+esc(String(ic.check_stock || "—"))
-      +(ic.stock_anomaly && ic.stock_anomaly !== "none" ? " · "+esc(String(ic.stock_anomaly)) : "")+"</p>";
-    if (ic.rec_qtymin_reason) body += "<p class='meta'>"+esc(channelFriendly(ic.rec_qtymin_reason))+"</p>";
+
+  body += "<p class='meta'><b>4) Trend 30/90/12m:</b> "
+    +esc(enumTh(trendMap, t30))+" / "+esc(enumTh(trendMap, t90))+" / "+esc(enumTh(trendMap, t12))+"</p>";
+  if (pol.sales_qty_30d != null || pol.sales_qty_90d != null || pol.sales_qty_12m != null) {
+    body += "<p class='meta'>ยอดลูกค้า 30/90/12m: "
+      +esc(fmtQty(pol.sales_qty_30d))+" / "+esc(fmtQty(pol.sales_qty_90d))+" / "+esc(fmtQty(pol.sales_qty_12m))+"</p>";
   }
-  const xfer = i.transfer || {};
-  if (xfer.qty != null || xfer.reason) {
-    body += "<p class='meta'><b>โอน SYP:</b> เป้า/ล็อต ≈ "+esc(xfer.qty != null ? fmtQty(Number(xfer.qty))+" หน่วย" : "—")
-      +(xfer.reason ? " — "+esc(channelFriendly(xfer.reason)) : "")+"</p>";
-  }
-  const tr = i.trends || {};
-  if (tr.d30 || tr.d90 || tr.m12) {
-    body += "<p class='meta'><b>Trend 30/90/12m:</b> "
-      +esc(String(tr.d30||"—"))+" / "+esc(String(tr.d90||"—"))+" / "+esc(String(tr.m12||"—"))+"</p>";
-  }
-  const mg = i.margin || {};
-  if (mg.flag || mg.list_pct != null) {
-    body += "<p class='meta'><b>มาร์จิ้น:</b> "+esc(String(mg.flag || "—"))
-      +(mg.list_pct != null ? " · list "+esc(String(mg.list_pct))+"%" : "")
-      +(mg.delta_pp != null ? " · Δ "+esc(String(mg.delta_pp))+" pp" : "")+"</p>";
-    if (mg.note) body += "<p class='meta'>"+esc(channelFriendly(mg.note))+"</p>";
-  }
+
+  body += "<p class='meta'><b>5) มาร์จิ้น:</b> "+esc(enumTh(marginMap, mFlag))
+    +(m12 != null ? " · 12m "+esc(fmtQty(m12))+"%" : "")
+    +(mList != null ? " · list "+esc(fmtQty(mList))+"%" : "")
+    +(mDelta != null ? " · Δ "+esc(fmtQty(mDelta))+" pp" : "")+"</p>";
+  if (mNote) body += "<p class='meta'>"+esc(channelFriendly(mNote))+"</p>";
+
   const anoms = i.anomalies || [];
   if (anoms.length) {
     body += "<p class='meta'><b>ความผิดปกติ:</b></p><ul class='meta'>"
@@ -895,14 +981,14 @@ function renderInsight(ins) {
   body += "<p class='meta'>generated "+esc(ins.generated_at||"—")
     +" · facts_as_of "+esc(ins.facts_as_of||"—")
     +(ins.model_id ? " · "+esc(ins.model_id) : "")+"</p>";
-  el.innerHTML = "<h3>Insight</h3>"+body;
+  el.innerHTML = "<h3>Insight (นโยบาย)</h3>"+body;
 }
-function loadInsightPanel(bcode) {
+function loadInsightPanel(bcode, live) {
   const el = $("insightPanel");
   if (!el) return;
   el.innerHTML = "<p class='meta'>โหลด insight…</p>";
   fetch("/parts9/api/insight/"+encodeURIComponent(bcode)+"?site="+encodeURIComponent($("site").value))
-    .then(r => r.json()).then(renderInsight)
+    .then(r => r.json()).then(ins => renderInsight(ins, live))
     .catch(() => { el.innerHTML = ""; });
 }
 function fmtSuggestEvidence(p) {
