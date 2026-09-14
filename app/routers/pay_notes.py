@@ -273,9 +273,8 @@ def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str,
     m = (mode or "amount").strip().lower()
     if m not in ("amount", "percent"):
         m = "amount"
+    # Negative discount is allowed (acts as a surcharge, e.g. -0.01).
     val = float(raw_input or 0)
-    if val < 0:
-        raise ValueError("discount cannot be negative")
     bill = float(billamt or 0)
     if m == "percent":
         if val > 100:

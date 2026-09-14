@@ -7,7 +7,7 @@ from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, noteno_
 from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines, resolve_stored_noteno
 from src.pay_notes.baht_text import baht_text
 from src.pay_notes.storage import safe_storage_filename
-from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _workflow_meta
+from app.routers.pay_notes import _note_totals, _parse_kbiz_datetime, _resolve_discount, _workflow_meta
 
 
 def test_safe_storage_filename_strips_thai_spaces_and_plus():
@@ -329,6 +329,20 @@ def test_note_totals_uses_reminder_discount_before_voucher():
     assert totals["discount"] == 570.75
     assert totals["netamt"] == 18454.25
     assert totals["net_text"] == "หนึ่งหมื่นแปดพันสี่ร้อยห้าสิบสี่บาทยี่สิบห้าสตางค์"
+
+
+def test_resolve_discount_allows_negative_amount():
+    mode, raw, amount = _resolve_discount(1000.0, "amount", -0.01)
+    assert mode == "amount"
+    assert raw == -0.01
+    assert amount == -0.01
+
+
+def test_resolve_discount_allows_negative_percent():
+    mode, raw, amount = _resolve_discount(1000.0, "percent", -1.0)
+    assert mode == "percent"
+    assert raw == -1.0
+    assert amount == -10.0
 
 
 def test_note_totals_prefers_voucher_net():
