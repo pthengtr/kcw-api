@@ -131,6 +131,6 @@ When `TRANSFER_ICLOW_STAMP_ENABLED=true` and submit happens at SYP (`to_branch=S
 
 - **On Submit**: stamp open ICLOW (`ORDERED=Y`, `DOCNO=TRF-{short_id}`)
 - **On Cancel**: revert if no shipments
-- **On Receive**: `RECEIVED=Y`, `RCVDNO=left12(ship_billno)`
+- **On Receive**: `RECEIVED=Y`, `RCVDNO=left12(ship_billno)` on **any** successful receive qty &gt; 0 (partial or complete; matches PARTS9). Do not wait for full requested qty.
 
 SYP→HQ requests (submit at HQ) do not stamp SYP ICLOW.

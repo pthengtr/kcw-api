@@ -1107,14 +1107,12 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
                 bump_shipment_line_received(
                     client, shipment_line_id=str(shipment_line_id), qty_receive=qty_recv
                 )
-            line_id = line.get("line_id")
-            line_info = transfer_lines.get(line_id, {}) if line_id else {}
-            new_recv = float(line_info.get("qty_received") or 0) + qty_recv
-            req_qty = float(line_info.get("qty_requested") or 0)
+            # Legacy PARTS9: RECEIVED='Y' on any receive (partial or complete).
+            # Partial vs complete is qty elsewhere — do not wait for full requested qty.
             iclow_id = line.get("iclow_id")
             if (
                 iclow_id
-                and new_recv >= req_qty
+                and qty_recv > 0
                 and should_stamp_iclow(
                     enabled=settings.transfer_iclow_stamp_enabled,
                     site=settings.site,
