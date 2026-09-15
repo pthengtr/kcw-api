@@ -755,7 +755,12 @@ async function api(path, opts){
     const headers = Object.assign({"Content-Type":"application/json"}, o.headers||{});
     const r = await fetch(path, Object.assign({credentials:"same-origin"}, o, {headers}));
     const j = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(j.error||j.detail||("HTTP "+r.status));
+    if(!r.ok){
+      const err = new Error(j.error||j.detail||("HTTP "+r.status));
+      err.payload = j;
+      err.status = r.status;
+      throw err;
+    }
     return j;
   } finally { if(!quiet) setBusy(false); }
 }
@@ -2000,7 +2005,7 @@ async function renderRequest(el, opts){
   }
 }
 
-async function submitPrepare(request, qtyByLineId, shipAsByLineId){
+async function submitPrepare(request, qtyByLineId, shipAsByLineId, confirmAddCatalog){
   const shipAs = shipAsByLineId || request._shipAsDraft || {};
   const shipLines = (request.lines||[]).map(ln=>{
     const q = Number(qtyByLineId[ln.line_id]||0);
@@ -2011,10 +2016,28 @@ async function submitPrepare(request, qtyByLineId, shipAsByLineId){
   }).filter(l=>l.qty_ship>0);
   if(!shipLines.length) throw new Error("ระบุจำนวนที่จัด");
   if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) throw new Error("ยกเลิก");
-  return api("/transfer/api/requests/"+request.transfer_id+"/prepare",{
-    method:"POST",
-    body:JSON.stringify({client_token:uuid(), lines:shipLines}),
-  });
+  const body = {client_token:uuid(), lines:shipLines};
+  if(confirmAddCatalog) body.confirm_add_catalog = true;
+  try{
+    return await api("/transfer/api/requests/"+request.transfer_id+"/prepare",{
+      method:"POST",
+      body:JSON.stringify(body),
+    });
+  }catch(e){
+    const payload = e && e.payload;
+    if(payload && payload.code === "needs_catalog_confirm" && !confirmAddCatalog){
+      const pairs = Array.isArray(payload.pairs) ? payload.pairs : [];
+      const lines = pairs.length
+        ? pairs.map(p=>`• ขอ ${p.request_bcode} → ส่งแทน ${p.ship_as_bcode}`).join("\n")
+        : (payload.detail || "");
+      const msg = "รหัสส่งแทนยังไม่ได้อยู่ในกลุ่มทดแทน\n\n"
+        + lines
+        + "\n\nยืนยันเพิ่มเข้า catalog แล้วจัดส่งเลยไหม?";
+      if(!confirm(msg)) throw new Error("ยกเลิก");
+      return submitPrepare(request, qtyByLineId, shipAsByLineId, true);
+    }
+    throw e;
+  }
 }
 
 async function submitReceive(shipment, qtyByLineId){
@@ -2339,7 +2362,7 @@ async function renderPrepare(el){
       <div class="card">
         <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
         <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้ · คงเหลือ ${shipBranchLabel} อ่านจาก PARTS9 สด</p>
-        <p class="meta">รหัสส่งแทน (ถ้ามี) ต้องอยู่ในกลุ่มทดแทนเดียวกับรหัสคำขอ — ระบบจะตัดสต็อกรหัสที่กรอก</p>
+        <p class="meta">รหัสส่งแทน (ถ้ามี) — ถ้ายังไม่ได้อยู่กลุ่มทดแทน ระบบจะถามยืนยันเพื่อเพิ่มเข้า catalog แล้วจัดส่ง</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th><th>รหัสส่งแทน</th></tr></thead><tbody>${rows}</tbody></table></div>`,

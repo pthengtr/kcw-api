@@ -863,7 +863,7 @@ def test_ship_as_rejects_live_only_peer_not_in_catalog():
     from src.substitutes.ship_as import resolve_ship_as
 
     store = MemorySubstitutes()
-    # catalog empty — live suggestion ALT999 must not authorize ส่งแทน
+    # catalog empty — live suggestion ALT999 must not authorize ส่งแทน without confirm
     bad = resolve_ship_as(
         request_bcode="REQ001",
         ship_as_bcode="ALT999",
@@ -873,6 +873,148 @@ def test_ship_as_rejects_live_only_peer_not_in_catalog():
     )
     assert bad.error
     assert "กลุ่ม" in bad.error
+    assert bad.needs_catalog_confirm is True
+
+
+def test_ensure_catalog_pair_create_and_add():
+    from src.substitutes.memory import MemorySubstitutes
+    from src.substitutes.ship_as import ensure_catalog_pair, resolve_ship_as
+
+    store = MemorySubstitutes()
+    g = ensure_catalog_pair(
+        request_bcode="REQ001",
+        ship_as_bcode="ALT001",
+        get_by_bcode=store.get_by_bcode,
+        create_group=store.create_group,
+        add_member=store.add_member,
+        created_by="op",
+    )
+    assert g.get("group_id")
+    members = {m["bcode"] for m in g.get("members") or []}
+    assert members == {"REQ001", "ALT001"}
+
+    ensure_catalog_pair(
+        request_bcode="REQ001",
+        ship_as_bcode="ALT002",
+        get_by_bcode=store.get_by_bcode,
+        create_group=store.create_group,
+        add_member=store.add_member,
+    )
+    by = store.get_by_bcode("REQ001")
+    assert {m["bcode"] for m in by["members"]} == {"REQ001", "ALT001", "ALT002"}
+
+    ok = resolve_ship_as(
+        request_bcode="REQ001",
+        ship_as_bcode="ALT002",
+        other_request_bcodes=set(),
+        get_by_bcode=store.get_by_bcode,
+        ship_from_meta=lambda b: {"descr": f"d-{b}"},
+    )
+    assert ok.is_substitute is True
+    assert ok.ship_bcode == "ALT002"
+
+
+def test_api_prepare_ship_as_needs_catalog_confirm_then_promotes():
+    from unittest.mock import MagicMock, patch
+
+    from app.routers.transfer import PrepareRequest, api_prepare
+    from fastapi.responses import JSONResponse
+    from src.substitutes.memory import MemorySubstitutes
+
+    store = MemorySubstitutes()
+
+    ident = MagicMock(display_name="op")
+    settings = MagicMock()
+    settings.site = "HQ"
+    settings.hq_ship_write_enabled = True
+    settings.syp_ship_write_enabled = False
+
+    lines_payload = [
+        {
+            "line_id": "line-1",
+            "bcode": "REQ001",
+            "descr": "requested",
+            "qty_requested": 5,
+            "qty_prepared": 0,
+            "qty_received": 0,
+        }
+    ]
+    icmas = (
+        {
+            "REQ001": {"qtyoh2": 0, "qtymin": -1, "blocked": True, "descr": "req"},
+            "ALT001": {"qtyoh2": 8, "qtymin": 1, "blocked": False, "descr": "alt peer"},
+        },
+        {},
+    )
+
+    def _run(confirm: bool):
+        body = PrepareRequest(
+            client_token="tok-confirm-" + ("y" if confirm else "n"),
+            confirm_add_catalog=confirm,
+            lines=[{"line_id": "line-1", "qty_ship": 2, "ship_as_bcode": "ALT001"}],
+        )
+        with (
+            patch("app.routers.transfer._require_api", return_value=(ident, None)),
+            patch("app.routers.transfer._settings", return_value=settings),
+            patch("app.routers.transfer.get_transfer_supabase_client", return_value=MagicMock()),
+            patch(
+                "app.routers.transfer.get_request",
+                return_value={
+                    "transfer_id": "t1",
+                    "from_branch": "HQ",
+                    "to_branch": "SYP",
+                    "status": "requested",
+                    "short_id": "TRF-abc",
+                },
+            ),
+            patch("app.routers.transfer.get_shipment_by_token", return_value=None),
+            patch("app.routers.transfer.list_lines", return_value=lines_payload),
+            patch("app.routers.transfer.enrich_lines", side_effect=lambda x: x),
+            patch("app.routers.transfer._fetch_dual_icmas", return_value=icmas),
+            patch("app.routers.transfer.post_transfer_ship") as mock_ship,
+            patch(
+                "app.routers.transfer.create_shipment",
+                return_value={"shipment_id": "ship-1"},
+            ),
+            patch("app.routers.transfer.shipment_has_lines", return_value=False),
+            patch("app.routers.transfer.add_shipment_lines"),
+            patch("app.routers.transfer.bump_line_prepared"),
+            patch("app.routers.transfer.insert_event") as mock_event,
+            patch("app.routers.transfer.refresh_request_status"),
+            patch(
+                "src.substitutes.db.get_substitutes_supabase_client",
+                return_value=store,
+            ),
+        ):
+            mock_ship.return_value = {
+                "ship_billno": "TF6808-010",
+                "tf_billno": "TF6808-010",
+            }
+            return api_prepare("t1", body, MagicMock()), mock_ship, mock_event
+
+    first, _, _ = _run(False)
+    assert isinstance(first, JSONResponse)
+    assert first.status_code == 409
+    body = first.body
+    import json
+
+    payload = json.loads(body)
+    assert payload["code"] == "needs_catalog_confirm"
+    assert payload["pairs"][0]["ship_as_bcode"] == "ALT001"
+    assert store.get_by_bcode("REQ001") is None
+
+    result, mock_ship, mock_event = _run(True)
+    assert result["ship_billno"] == "TF6808-010"
+    assert store.get_by_bcode("REQ001") is not None
+    assert {m["bcode"] for m in store.get_by_bcode("REQ001")["members"]} == {
+        "REQ001",
+        "ALT001",
+    }
+    shipped = mock_ship.call_args.kwargs["lines"]
+    assert shipped[0]["bcode"] == "ALT001"
+    event_types = [c.kwargs["event_type"] for c in mock_event.call_args_list]
+    assert "substitute_ship" in event_types
+    assert "substitute_catalog_confirm" in event_types
 
 
 def test_api_suggest_endpoint(monkeypatch):

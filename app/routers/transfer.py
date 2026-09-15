@@ -68,8 +68,14 @@ from src.transfer.parts9 import (
     lookup_transfer_product,
     suggest_transfer_skus,
 )
-from src.substitutes.ship_as import resolve_ship_as
+from src.substitutes.ship_as import (
+    NEEDS_CATALOG_CONFIRM,
+    ensure_catalog_pair,
+    is_catalog_gap_error,
+    resolve_ship_as,
+)
 from src.substitutes import db as substitutes_db
+from src.substitutes.models import BcodeConflictError, SubstituteError
 from src.transfer.sticker import (
     PRINTER_PORT,
     build_batch_tspl,
@@ -137,6 +143,8 @@ class DraftLines(BaseModel):
 class PrepareRequest(BaseModel):
     client_token: str = ""
     lines: list[dict[str, Any]] = Field(default_factory=list)
+    # After UI confirm: create/link catalog pair then ส่งแทน (see needs_catalog_confirm).
+    confirm_add_catalog: bool = False
 
 
 class ReceiveRequest(BaseModel):
@@ -779,6 +787,32 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
     except Exception:
         sub_client = None
 
+    def _get_by_bcode(bcode: str):
+        if not sub_client:
+            return None
+        getter = getattr(sub_client, "get_by_bcode", None)
+        if callable(getter):
+            return getter(bcode)
+        return substitutes_db.get_by_bcode(sub_client, bcode)
+
+    def _create_group(**kwargs):
+        if not sub_client:
+            raise SubstituteError("substitute catalog unavailable")
+        create = getattr(sub_client, "create_group", None)
+        if callable(create):
+            return create(**kwargs)
+        return substitutes_db.create_group(sub_client, **kwargs)
+
+    def _add_member(group_id: str, bcode: str, **kwargs):
+        if not sub_client:
+            raise SubstituteError("substitute catalog unavailable")
+        add = getattr(sub_client, "add_member", None)
+        if callable(add):
+            return add(group_id, bcode, **kwargs)
+        return substitutes_db.add_member(sub_client, group_id, bcode, **kwargs)
+
+    pending_catalog: list[dict[str, str]] = []
+    catalog_promoted: list[dict[str, str]] = []
     resolved_lines: list[dict[str, Any]] = []
     for line in body.lines:
         line_id = line.get("line_id")
@@ -805,11 +839,70 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             request_bcode=req_bcode,
             ship_as_bcode=line.get("ship_as_bcode"),
             other_request_bcodes=others,
-            get_by_bcode=(
-                (lambda b, _c=sub_client: substitutes_db.get_by_bcode(_c, b) if _c else None)
-            ),
+            get_by_bcode=_get_by_bcode,
             ship_from_meta=_ship_meta,
         )
+        promoted_now = False
+        if (
+            resolved.error
+            and resolved.needs_catalog_confirm
+            and is_catalog_gap_error(resolved.error)
+        ):
+            alt = str(line.get("ship_as_bcode") or "").strip()
+            if not _ship_meta(alt):
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"ส่งแทนไม่ได้ — ไม่พบ {alt} ใน ICMAS สาขาต้นทาง"
+                        )
+                    },
+                    status_code=400,
+                )
+            if not body.confirm_add_catalog:
+                pending_catalog.append(
+                    {
+                        "line_id": str(line_id),
+                        "request_bcode": req_bcode,
+                        "ship_as_bcode": alt,
+                    }
+                )
+                continue
+            if not sub_client:
+                return JSONResponse(
+                    {"error": "ส่งแทนไม่ได้ — ระบบกลุ่มทดแทนไม่พร้อม"},
+                    status_code=503,
+                )
+            try:
+                ensure_catalog_pair(
+                    request_bcode=req_bcode,
+                    ship_as_bcode=alt,
+                    get_by_bcode=_get_by_bcode,
+                    create_group=_create_group,
+                    add_member=_add_member,
+                    created_by=ident.display_name,
+                    note="from transfer ส่งแทน",
+                )
+            except BcodeConflictError as exc:
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"ส่งแทนไม่ได้ — {exc.bcode} อยู่ในกลุ่มทดแทนอื่นแล้ว "
+                            f"(ต้องจัดการใน Explorer)"
+                        ),
+                        "code": "catalog_conflict",
+                    },
+                    status_code=409,
+                )
+            except (SubstituteError, ValueError) as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+            promoted_now = True
+            resolved = resolve_ship_as(
+                request_bcode=req_bcode,
+                ship_as_bcode=alt,
+                other_request_bcodes=others,
+                get_by_bcode=_get_by_bcode,
+                ship_from_meta=_ship_meta,
+            )
         if resolved.error:
             return JSONResponse({"error": resolved.error}, status_code=400)
         out_line = dict(line)
@@ -819,7 +912,32 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
         out_line["qty_ship"] = qty_ship
         if resolved.is_substitute:
             out_line["requested_bcode"] = resolved.requested_bcode
+            if promoted_now:
+                catalog_promoted.append(
+                    {
+                        "line_id": str(line_id),
+                        "request_bcode": resolved.requested_bcode,
+                        "ship_as_bcode": resolved.ship_bcode,
+                    }
+                )
         resolved_lines.append(out_line)
+
+    if pending_catalog:
+        bits = [
+            f"{p['request_bcode']} → {p['ship_as_bcode']}" for p in pending_catalog
+        ]
+        return JSONResponse(
+            {
+                "error": (
+                    "ส่งแทนยังไม่ได้อยู่ในกลุ่มทดแทน — "
+                    "ยืนยันเพื่อเพิ่มเข้า catalog แล้วจัดส่ง"
+                ),
+                "code": NEEDS_CATALOG_CONFIRM,
+                "pairs": pending_catalog,
+                "detail": " · ".join(bits),
+            },
+            status_code=409,
+        )
 
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
     to_branch = (header.get("to_branch") or "SYP").upper()
@@ -861,6 +979,14 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
                         "qty_ship": line.get("qty_ship"),
                     },
                 )
+        for pair in catalog_promoted:
+            insert_event(
+                client,
+                transfer_id=transfer_id,
+                event_type="substitute_catalog_confirm",
+                actor=ident.display_name,
+                payload=pair,
+            )
         refresh_request_status(client, transfer_id)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(
