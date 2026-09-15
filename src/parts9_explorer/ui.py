@@ -915,6 +915,12 @@ function renderInsight(ins, live) {
   const qtyminHq = numOrNull(pick(stk.qtymin_hq, stBlk.qtymin_hq, pol.qtymin_hq));
   const qtyminSyp = numOrNull(pick(stk.qtymin_syp, stBlk.qtymin_syp, pol.qtymin_syp));
   const unit = pick(stk.unit, purch.order_unit, pol.order_unit, live.ui1, od.ui1, "");
+  // Append stock/sales unit in the Explorer UI (no prompt change needed).
+  function qtyU(n) {
+    const s = fmtQty(n);
+    if (n == null || !unit) return esc(s);
+    return esc(s) + " " + esc(unit);
+  }
 
   const dead = pick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
   const orderOk = pick(purch.order_ok, pol.order_ok, fl.order_ok);
@@ -955,17 +961,17 @@ function renderInsight(ins, live) {
     +(ins.prompt_version ? " · "+esc(ins.prompt_version) : "")+"</p>";
 
   body += "<div class='sec'><div class='sec-h'>ยอดขาย</div><div class='kv'>"
-    +cell("เดือนล่าสุด", esc(fmtQty(latestMo)))
-    +cell("เฉลี่ย 3 เดือน", esc(fmtQty(avg3)))
-    +cell("เฉลี่ย 12 เดือน", esc(fmtQty(avg12)))
-    +cell("รวม 12 เดือน", esc(fmtQty(tot12)))
+    +cell("เดือนล่าสุด", qtyU(latestMo))
+    +cell("เฉลี่ย 3 เดือน", qtyU(avg3))
+    +cell("เฉลี่ย 12 เดือน", qtyU(avg12))
+    +cell("รวม 12 เดือน", qtyU(tot12))
     +cell("Trend", esc(trendTh(trend)))
     +"</div></div>";
 
   body += "<div class='sec'><div class='sec-h'>ช่องทางขาย 12 เดือน</div><div class='kv'>"
-    +cell("HQ", esc(fmtQty(chHq))+(chHqPct != null ? " <span class='meta'>("+esc(fmtQty(chHqPct))+"%)</span>" : ""))
-    +cell("SYP", esc(fmtQty(chSyp))+(chSypPct != null ? " <span class='meta'>("+esc(fmtQty(chSypPct))+"%)</span>" : ""))
-    +cell("Online", esc(fmtQty(chOn))+(chOnPct != null ? " <span class='meta'>("+esc(fmtQty(chOnPct))+"%)</span>" : ""))
+    +cell("HQ", qtyU(chHq)+(chHqPct != null ? " <span class='meta'>("+esc(fmtQty(chHqPct))+"%)</span>" : ""))
+    +cell("SYP", qtyU(chSyp)+(chSypPct != null ? " <span class='meta'>("+esc(fmtQty(chSypPct))+"%)</span>" : ""))
+    +cell("Online", qtyU(chOn)+(chOnPct != null ? " <span class='meta'>("+esc(fmtQty(chOnPct))+"%)</span>" : ""))
     +"</div></div>";
 
   body += "<div class='sec'><div class='sec-h'>ราคา &amp; Margin</div><div class='kv'>"
@@ -977,13 +983,13 @@ function renderInsight(ins, live) {
     +"</div></div>";
 
   body += "<div class='sec'><div class='sec-h'>สต็อก</div><div class='kv'>"
-    +cell("รวม", esc(fmtQty(qtyTotal))+(unit ? " "+esc(unit) : ""))
-    +cell("HQ", esc(fmtQty(qtyHq)))
-    +cell("SYP", esc(fmtQty(qtySyp)))
-    +cell("เป้าสต็อก", esc(fmtQty(target)))
-    +cell("จุดสั่ง", esc(fmtQty(reorder)))
-    +cell("ล็อตแนะนำ", esc(fmtQty(lot)))
-    +cell("QTYMIN", "HQ "+esc(fmtQty(qtyminHq))+" · SYP "+esc(fmtQty(qtyminSyp)))
+    +cell("รวม", qtyU(qtyTotal))
+    +cell("HQ", qtyU(qtyHq))
+    +cell("SYP", qtyU(qtySyp))
+    +cell("เป้าสต็อก", qtyU(target))
+    +cell("จุดสั่ง", qtyU(reorder))
+    +cell("ล็อตแนะนำ", qtyU(lot))
+    +cell("QTYMIN", "HQ "+qtyU(qtyminHq)+" · SYP "+qtyU(qtyminSyp))
     +"</div></div>";
 
   body += "<div class='sec'><div class='sec-h'>สถานะการสั่งซื้อ</div>"
@@ -998,7 +1004,7 @@ function renderInsight(ins, live) {
       const q = numOrNull(s.qty);
       const ap = numOrNull(s.avg_price);
       return "<div class='party'>"+esc(nm)
-        +" <span class='sub'>· ซื้อ "+esc(fmtQty(q))
+        +" <span class='sub'>· ซื้อ "+qtyU(q)
         +(ap != null ? " · เฉลี่ย "+esc(fmtMoney(ap)) : "")
         +"</span></div>";
     }).join("");
@@ -1014,7 +1020,7 @@ function renderInsight(ins, live) {
       const q = numOrNull(c.qty);
       const pct = numOrNull(c.pct_of_sales);
       return "<div class='party'>"+esc(nm)
-        +" <span class='sub'>· "+esc(fmtQty(q))
+        +" <span class='sub'>· "+qtyU(q)
         +(pct != null ? " · "+esc(fmtQty(pct))+"%" : "")
         +"</span></div>";
     }).join("");
