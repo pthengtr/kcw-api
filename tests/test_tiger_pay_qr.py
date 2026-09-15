@@ -116,7 +116,7 @@ def test_send_qr_payment_returns_companion_qr():
     open_api.create_qr.assert_not_called()
     kwargs = open_api.create_payment.call_args.kwargs
     assert kwargs["payment_type"] == "qr"
-    assert "payment_gateway" not in kwargs
+    assert kwargs["payment_gateway"] == "KBANK"
 
 
 def test_send_qr_falls_back_to_kbank_create_qr():
