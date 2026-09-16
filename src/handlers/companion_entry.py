@@ -54,6 +54,7 @@ def handle_companion_command(
 
     elevated = is_elevated_access(access)
     workers = get_all_worker_status(engine, offline_after_seconds=60)
+    # Tiger Pay companion runs on HQ only (no SYP device).
     links = collect_branch_tool_links(
         workers,
         line_user_id=line_user_id,
@@ -65,17 +66,18 @@ def handle_companion_command(
         tailscale_url_key="companion_tailscale_base_url",
         include_tailscale=elevated,
         mint_app="companion",
+        branches={"HQ"},
     )
 
     if not links:
         return {
             "type": "text",
-            "text": "ยังไม่พบเซิร์ฟเวอร์ Tiger Pay ออนไลน์ครับ (รอ HQ/SYP heartbeat)",
+            "text": "ยังไม่พบเซิร์ฟเวอร์ Tiger Pay ออนไลน์ครับ (รอ HQ heartbeat)",
         }
 
     return branch_uri_buttons(
         title="ไทเกอร์เพย์",
-        alt_text="ไทเกอร์เพย์ — กดเลือกสาขา",
+        alt_text="ไทเกอร์เพย์ — กดเปิดที่สำนักงานใหญ่",
         links=links,
         wifi_hint=elevated_wifi_hint(elevated),
     )

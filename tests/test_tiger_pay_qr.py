@@ -6,7 +6,11 @@ import pytest
 
 from src.tiger_pay.open_api import TigerPayOpenApiClient, TigerPayOpenApiError
 from src.tiger_pay.payment_service import PaymentServiceError, poll_attempt_once, send_payment_for_bill
-from src.tiger_pay.qr import extract_companion_qr, should_confirm_qr_payment
+from src.tiger_pay.qr import (
+    extract_companion_qr,
+    has_displayable_qr,
+    should_confirm_qr_payment,
+)
 from tests.test_tiger_pay_companion import MOCK_OPEN_BILL, _FakeResponse
 
 
@@ -28,6 +32,93 @@ def test_extract_companion_qr_builds_data_uri():
     assert qr["image"] == "data:image/png;base64,abc123"
     assert qr["raw_data"] == "000201"
     assert qr["payment_gateway"] == "KBANK"
+
+
+def test_extract_companion_qr_renders_image_from_raw_data_when_image_empty():
+    qr = extract_companion_qr(
+        {
+            "data": {
+                "type": "qr",
+                "dynamicQR": {
+                    "qrImage": "",
+                    "qrRawData": "00020101021230810016A000000677010112",
+                    "status": "I",
+                },
+            }
+        }
+    )
+    assert qr is not None
+    assert qr["image"] is not None
+    assert qr["image"].startswith("data:image/png;base64,")
+    assert len(qr["image"]) > 40
+    assert not has_displayable_qr(
+        {"data": {"dynamicQR": {"qrImage": "", "qrRawData": "000201"}}}
+    )
+
+
+def test_send_qr_falls_back_when_tiger_returns_empty_qr_image():
+    engine = MagicMock()
+    open_api = MagicMock()
+    open_api.get_current.return_value = None
+    created_payment = {
+        "id": 259,
+        "paymentNo": "PA1",
+        "status": "pending",
+        "type": "qr",
+        "dynamicQR": {
+            "qrImage": "",
+            "qrRawData": "000201010212",
+            "status": "I",
+        },
+    }
+    open_api.create_payment.return_value = {
+        "data": created_payment,
+        "raw": {"data": created_payment},
+        "message": "Success",
+    }
+    open_api.create_qr.return_value = {
+        "data": {"dynamicQR": {"qrImage": "zzz", "status": "I"}},
+        "raw": {"data": {"dynamicQR": {"qrImage": "zzz", "status": "I"}}},
+        "message": "Success",
+    }
+    attempt_id = "a1b2c3d4e5f60718293a"
+    updated_row = {
+        "id": attempt_id,
+        "pos_bill_id": "bill-1001",
+        "status": "pending",
+        "tiger_payment_id": 259,
+        "tiger_payment_no": "PA1",
+    }
+
+    with (
+        patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.create_payment_attempt",
+            return_value={"id": attempt_id, "status": "sending"},
+        ),
+        patch("src.tiger_pay.payment_service.repos.insert_payment_event"),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value=updated_row,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.new_payment_attempt_id",
+            return_value=attempt_id,
+        ),
+    ):
+        result = send_payment_for_bill(
+            engine, "bill-1001", payment_type="qr", open_api=open_api
+        )
+
+    open_api.create_qr.assert_called_once()
+    assert result["qr"]["image"] == "data:image/png;base64,zzz"
 
 
 def test_should_confirm_qr_when_dynamic_qr_completed():
