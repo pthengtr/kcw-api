@@ -51,12 +51,12 @@ def test_extract_companion_qr_renders_image_from_raw_data_when_image_empty():
     assert qr["image"] is not None
     assert qr["image"].startswith("data:image/png;base64,")
     assert len(qr["image"]) > 40
-    assert not has_displayable_qr(
+    assert has_displayable_qr(
         {"data": {"dynamicQR": {"qrImage": "", "qrRawData": "000201"}}}
     )
 
 
-def test_send_qr_falls_back_when_tiger_returns_empty_qr_image():
+def test_send_qr_with_raw_data_skips_create_qr_and_renders_image():
     engine = MagicMock()
     open_api = MagicMock()
     open_api.get_current.return_value = None
@@ -67,18 +67,13 @@ def test_send_qr_falls_back_when_tiger_returns_empty_qr_image():
         "type": "qr",
         "dynamicQR": {
             "qrImage": "",
-            "qrRawData": "000201010212",
+            "qrRawData": "00020101021230810016A000000677010112",
             "status": "I",
         },
     }
     open_api.create_payment.return_value = {
         "data": created_payment,
         "raw": {"data": created_payment},
-        "message": "Success",
-    }
-    open_api.create_qr.return_value = {
-        "data": {"dynamicQR": {"qrImage": "zzz", "status": "I"}},
-        "raw": {"data": {"dynamicQR": {"qrImage": "zzz", "status": "I"}}},
         "message": "Success",
     }
     attempt_id = "a1b2c3d4e5f60718293a"
@@ -117,8 +112,10 @@ def test_send_qr_falls_back_when_tiger_returns_empty_qr_image():
             engine, "bill-1001", payment_type="qr", open_api=open_api
         )
 
-    open_api.create_qr.assert_called_once()
-    assert result["qr"]["image"] == "data:image/png;base64,zzz"
+    open_api.create_qr.assert_not_called()
+    assert open_api.create_payment.call_args.kwargs["payment_gateway"] == "KBANK"
+    assert result["qr"]["image"].startswith("data:image/png;base64,")
+    assert len(result["qr"]["image"]) > 40
 
 
 def test_should_confirm_qr_when_dynamic_qr_completed():
@@ -207,7 +204,7 @@ def test_send_qr_payment_returns_companion_qr():
     open_api.create_qr.assert_not_called()
     kwargs = open_api.create_payment.call_args.kwargs
     assert kwargs["payment_type"] == "qr"
-    assert "payment_gateway" not in kwargs
+    assert kwargs["payment_gateway"] == "KBANK"
 
 
 def test_send_qr_falls_back_to_kbank_create_qr():
