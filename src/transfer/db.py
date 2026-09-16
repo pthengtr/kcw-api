@@ -9,7 +9,17 @@ from supabase import Client, create_client
 from src.transfer.config import get_transfer_settings
 from datetime import datetime, timezone
 
-from src.transfer.state import derive_line_status, derive_request_status, make_short_id, prep_recv_mismatch, qty_open_prepare, qty_short_vs_order, request_has_open_prepare, summarize_request_progress
+from src.transfer.state import (
+    can_action,
+    derive_line_status,
+    derive_request_status,
+    make_short_id,
+    prep_recv_mismatch,
+    qty_open_prepare,
+    qty_short_vs_order,
+    request_has_open_prepare,
+    summarize_request_progress,
+)
 from src.transfer.parts9 import enrich_transfer_lines
 
 TRANSFER_SCHEMA = "transfer"
@@ -395,12 +405,16 @@ def enrich_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
             qty_received=row.get("qty_received", 0),
             cancelled=cancelled,
         )
-        row["qty_open_prepare"] = max(
-            float(row.get("qty_requested") or 0) - float(row.get("qty_prepared") or 0), 0
-        )
-        row["qty_open_receive"] = max(
-            float(row.get("qty_prepared") or 0) - float(row.get("qty_received") or 0), 0
-        )
+        if cancelled:
+            row["qty_open_prepare"] = 0.0
+            row["qty_open_receive"] = 0.0
+        else:
+            row["qty_open_prepare"] = max(
+                float(row.get("qty_requested") or 0) - float(row.get("qty_prepared") or 0), 0
+            )
+            row["qty_open_receive"] = max(
+                float(row.get("qty_prepared") or 0) - float(row.get("qty_received") or 0), 0
+            )
         row["qty_short_order_prepare"] = qty_short_vs_order(
             row.get("qty_requested", 0), row.get("qty_prepared", 0)
         )
@@ -410,6 +424,16 @@ def enrich_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row["prep_recv_mismatch"] = prep_recv_mismatch(
             row.get("qty_prepared", 0), row.get("qty_received", 0)
         )
+        fulfill = can_action(
+            "fulfill_line",
+            {
+                "cancelled_at": row.get("cancelled_at"),
+                "qty_prepared": row.get("qty_prepared", 0),
+                "qty_received": row.get("qty_received", 0),
+                "qty_requested": row.get("qty_requested", 0),
+            },
+        )
+        row["can_fulfill"] = fulfill.allowed
         out.append(row)
     return out
 
@@ -716,3 +740,58 @@ def cancel_request(client: Client, *, transfer_id: str) -> dict[str, Any]:
     )
 
     return _first_row(resp)
+
+
+def fulfill_line(
+    client: Client,
+    *,
+    transfer_id: str,
+    line_id: str,
+    reason: str = "no_longer_needed",
+) -> dict[str, Any]:
+    """Mark remaining line demand as fulfilled/cancelled (no qty edit).
+
+    Never-prepared → cancelled (+ caller may revert ICLOW).
+    Prepared with receive caught up → waived shortfall, line treated complete.
+    """
+    lines = enrich_lines(list_lines(client, transfer_id))
+    line = next((ln for ln in lines if ln.get("line_id") == line_id), None)
+    if not line:
+        raise ValueError("line ไม่พบ")
+    check = can_action(
+        "fulfill_line",
+        {
+            "cancelled_at": line.get("cancelled_at"),
+            "qty_prepared": line.get("qty_prepared", 0),
+            "qty_received": line.get("qty_received", 0),
+            "qty_requested": line.get("qty_requested", 0),
+        },
+    )
+    if not check.allowed:
+        raise ValueError(check.reason)
+
+    now = datetime.now(timezone.utc).isoformat()
+    prep = float(line.get("qty_prepared") or 0)
+    recv = float(line.get("qty_received") or 0)
+    # Persist computed status so list views without enrich stay consistent.
+    new_status = "complete" if prep > 0 and recv >= prep else "cancelled"
+    resp = (
+        _table(client, "lines")
+        .update(
+            {
+                "cancelled_at": now,
+                "cancel_reason": reason,
+                "line_status": new_status,
+                "updated_at": now,
+            }
+        )
+        .eq("line_id", line_id)
+        .eq("transfer_id", transfer_id)
+        .select("*")
+        .execute()
+    )
+    updated = _first_row(resp)
+    if not updated:
+        raise ValueError("อัปเดตรายการไม่สำเร็จ")
+    header = refresh_request_status(client, transfer_id)
+    return {"line": enrich_lines([updated])[0], "request": header}

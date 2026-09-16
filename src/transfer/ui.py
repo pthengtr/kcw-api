@@ -133,6 +133,7 @@ tr.row-mismatch td{background:#fff7f7}
 .item-card.row-mismatch{border-color:#fecaca;background:#fff7f7}
 .btn{border:0;border-radius:10px;padding:.55rem 1rem;font-family:inherit;font-weight:600;cursor:pointer;color:var(--text)}
 .btn-primary{background:var(--acc);color:#fff}.btn-ghost{background:#fff;border:1px solid var(--line);color:var(--text)}
+.btn-tiny{font-size:.78rem;padding:.2rem .45rem;white-space:nowrap}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btn-block{width:100%;text-align:left}
 .row-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
@@ -644,15 +645,16 @@ function pipeline(status, hasMismatch, receiveCaughtUp){
 }
 function lineStatusLabel(ln){
   const status = ln.line_status || ln.status || "";
-  const t={open:"รอจัด",partial_prepared:"จัดไม่ครบตามขอ",prepared:"จัดครบ รอรับ",partial_received:"รับไม่ครบตามขอ",complete:"เสร็จ",cancelled:"ยกเลิก"};
+  const t={open:"รอจัด",partial_prepared:"จัดไม่ครบตามขอ",prepared:"จัดครบ รอรับ",partial_received:"รับไม่ครบตามขอ",complete:"เสร็จ",cancelled:"ไม่ต้องการแล้ว"};
   const base = t[status]||status||"-";
+  if(ln.cancelled_at && status==="complete") return `<span title="ปิดรายการ — ไม่ต้องการส่วนที่เหลือ">ปิดแล้ว (รับครบที่จัด)</span>`;
   if(ln.prep_recv_mismatch) return `<span class="flag-mismatch" title="จัด ${fmtQty(ln.qty_prepared)} ≠ รับ ${fmtQty(ln.qty_received)}">⚠ ${base}</span>`;
   return base;
 }
 function mismatchBanner(progress){
   if(!progress || !progress.prep_recv_mismatch) return "";
   const n = progress.prep_recv_mismatch_count || 0;
-  return `<div class="alert-banner"><strong>⚠ จัดกับรับไม่ตรงกัน</strong> — ${n} รายการ (จัดแล้วแต่ยังรับไม่ครบ หรือรับไม่เท่าที่จัด)</div>`;
+  return `<div class="alert-banner"><strong>⚠ จัดกับรับไม่ตรงกัน</strong> — ${n} รายการ (เริ่มรับแล้ว แต่รับไม่เท่าที่จัด)</div>`;
 }
 function qtyCell(qty, mismatch){
   const q = fmtQty(qty);
@@ -807,6 +809,28 @@ async function cancelRequest(transferId){
   }catch(e){
     alert(e.message || "ยกเลิกไม่สำเร็จ");
   }
+}
+async function fulfillLine(transferId, lineId, bcode){
+  const label = bcode ? `รหัส ${bcode}` : "รายการนี้";
+  if(!confirm(`ปิด ${label}?\nไม่ต้องการส่วนที่เหลือแล้ว (ไม่แก้จำนวน)\nถ้ายังไม่เคยจัด จะคืน ICLOW เป็นยังไม่สั่ง`)) return;
+  try{
+    const r = await api("/transfer/api/requests/"+transferId+"/lines/"+lineId+"/fulfill",{method:"POST",body:"{}"});
+    showToast(r.request_status==="complete" ? "ปิดรายการแล้ว — คำขอเสร็จสิ้น" : "ปิดรายการแล้ว");
+    return r;
+  }catch(e){
+    alert(e.message || "ปิดรายการไม่สำเร็จ");
+    throw e;
+  }
+}
+function canFulfillLine(ln, toBranch){
+  if((toBranch||"").toUpperCase() !== SITE) return false;
+  if(ln && ln.can_fulfill === true) return true;
+  if(ln && ln.can_fulfill === false) return false;
+  if(ln && ln.cancelled_at) return false;
+  const prep = Number(ln.qty_prepared||0);
+  const recv = Number(ln.qty_received||0);
+  const req = Number(ln.qty_requested||0);
+  return prep <= recv && recv < req;
 }
 function canCancelRequest(status, toBranch, hasShipments){
   // Requester only; match API — allowed until any ship bill exists.
@@ -1180,7 +1204,7 @@ function printPrepareBill(req){
   const shipB = (fromB||SITE).toUpperCase();
   const shipLabel = branchLabel(shipB);
   const shortId = req.short_id || req.transfer_id || "";
-  const openLines = (req.lines||[]).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
+  const openLines = (req.lines||[]).filter(l=>!l.cancelled_at && Number(l.qty_open_prepare!=null?l.qty_open_prepare:(Number(l.qty_requested||0)-Number(l.qty_prepared||0)))>0);
   const esc = s=>String(s||"").replace(/</g,"&lt;");
   const shipLoc = ln=>{
     const loc = shipB === "HQ"
@@ -1237,6 +1261,9 @@ async function openRequestDetail(transferId){
   const lineRows = lines.map(ln=>{
     const si = stickerIndex[ln.bcode];
     const pick = si!=null ? `<input type="checkbox" class="pick-check stk-pick" data-i="${si}" title="พิมพ์บาร์โค้ด"/>` : "";
+    const fulfill = canFulfillLine(ln, toB)
+      ? `<button class="btn btn-ghost btn-tiny" data-fulfill="${ln.line_id}" data-bcode="${ln.bcode||""}">ไม่ต้องการแล้ว</button>`
+      : "";
     return `<tr class="${ln.prep_recv_mismatch?"row-mismatch":""}">
     <td>${pick}</td>
     <td><code>${ln.bcode}</code></td>
@@ -1245,6 +1272,7 @@ async function openRequestDetail(transferId){
     <td class="num">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</td>
     <td class="num">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</td>
     <td>${lineStatusLabel(ln)}</td>
+    <td>${fulfill}</td>
   </tr>`;
   }).join("");
   let shipHtml = "";
@@ -1271,6 +1299,9 @@ async function openRequestDetail(transferId){
   const lineCards = lines.map(ln=>{
     const si = stickerIndex[ln.bcode];
     const pick = si!=null ? `<label style="display:flex;align-items:center;gap:.35rem"><input type="checkbox" class="pick-check stk-pick" data-i="${si}"/><code>${ln.bcode}</code></label>` : `<code>${ln.bcode}</code>`;
+    const fulfill = canFulfillLine(ln, toB)
+      ? `<button class="btn btn-ghost btn-tiny" data-fulfill="${ln.line_id}" data-bcode="${ln.bcode||""}">ไม่ต้องการแล้ว</button>`
+      : "";
     return `<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
     <div class="item-card-head">${pick}${lineStatusLabel(ln)}</div>
     <div class="item-card-desc">${fmtDescr(ln)}</div>
@@ -1279,6 +1310,7 @@ async function openRequestDetail(transferId){
       <div class="item-field num"><span class="lbl">จัด</span><span class="val">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</span></div>
       <div class="item-field num"><span class="lbl">รับ</span><span class="val">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</span></div>
     </div>
+    ${fulfill ? `<div class="row-actions" style="margin-top:.35rem">${fulfill}</div>` : ""}
   </div>`;
   }).join("");
   const modal = showModal(`<h2>รายละเอียด · <code>${detail.short_id||transferId}</code></h2>
@@ -1289,8 +1321,8 @@ async function openRequestDetail(transferId){
     <p class="meta">AP จัดออก: ${shipAp||"—"} · AP รับเข้า: ${recvAp||"—"}</p>
     ${stickerLines.length ? `<p class="meta" style="margin:.65rem 0 0">ติ๊กสินค้าที่ต้องการพิมพ์บาร์โค้ด — จำนวนดวง = จำนวนที่รับ</p>` : ""}
     ${dualView(
-      `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th></tr></thead><tbody>
-        ${lineRows || '<tr><td colspan="7" class="empty">ไม่มีรายการ</td></tr>'}
+      `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th><th></th></tr></thead><tbody>
+        ${lineRows || '<tr><td colspan="8" class="empty">ไม่มีรายการ</td></tr>'}
       </tbody></table></div>`,
       itemCards(lineCards || '<div class="empty">ไม่มีรายการ</div>')
     )}
@@ -1329,6 +1361,17 @@ async function openRequestDetail(transferId){
   if(cancelBtn) cancelBtn.onclick = async()=>{ modal.close(); await cancelRequest(transferId); };
   const editBtn = modal.box.querySelector("#btnDetailEdit");
   if(editBtn) editBtn.onclick = ()=>{ modal.close(); editDraft(transferId); };
+  modal.box.querySelectorAll("[data-fulfill]").forEach(btn=>{
+    btn.onclick = async (e)=>{
+      e.stopPropagation();
+      try{
+        await fulfillLine(transferId, btn.dataset.fulfill, btn.dataset.bcode||"");
+        modal.close();
+        await openRequestDetail(transferId);
+        render();
+      }catch(_e){}
+    };
+  });
 }
 async function editDraft(transferId){
   const detail = await api("/transfer/api/requests/"+transferId+"/lines");
@@ -2315,7 +2358,7 @@ async function renderPrepare(el){
   }
 
   const req = prepareRequest;
-  const openLines = (req.lines||[]).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
+  const openLines = (req.lines||[]).filter(l=>!l.cancelled_at && Number(l.qty_open_prepare!=null?l.qty_open_prepare:(Number(l.qty_requested||0)-Number(l.qty_prepared||0)))>0);
   if(!openLines.length){
     prepareRequest = null;
     prepareStep = 1;
@@ -2438,7 +2481,7 @@ async function renderPrepare(el){
 
 async function openPrepareRequest(summary){
   const detail = await api("/transfer/api/requests/"+summary.transfer_id+"/lines");
-  const lines = (detail.items || detail.lines || []).filter(l=>Number(l.qty_requested||0)>Number(l.qty_prepared||0));
+  const lines = (detail.items || detail.lines || []).filter(l=>!l.cancelled_at && Number(l.qty_open_prepare!=null?l.qty_open_prepare:(Number(l.qty_requested||0)-Number(l.qty_prepared||0)))>0);
   if(!lines.length){alert("ไม่มีรายการที่ต้องจัด");return;}
   prepareRequest = {
     transfer_id: summary.transfer_id,

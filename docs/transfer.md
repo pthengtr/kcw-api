@@ -132,5 +132,14 @@ When `TRANSFER_ICLOW_STAMP_ENABLED=true` and submit happens at SYP (`to_branch=S
 - **On Submit**: stamp open ICLOW (`ORDERED=Y`, `DOCNO=TRF-{short_id}`)
 - **On Cancel**: revert if no shipments
 - **On Receive**: `RECEIVED=Y`, `RCVDNO=left12(ship_billno)` on **any** successful receive qty &gt; 0 (partial or complete; matches PARTS9). Do not wait for full requested qty.
+- **On line fulfill** (`POST .../lines/{line_id}/fulfill`): requester marks remaining demand as no longer needed. If the line was **never prepared**, revert ICLOW to `ORDERED=N` so it returns to รอสั่ง. If prepare/receive already happened, leave ICLOW alone (already received stamp).
 
 SYP→HQ requests (submit at HQ) do not stamp SYP ICLOW.
+
+## Close remaining line demand
+
+Requester site only. No qty edit — button **ไม่ต้องการแล้ว** on request detail when receive has caught up on what was prepared (or the line was never prepared):
+
+- Unprepared line → cancelled + ICLOW revert (HQ→SYP)
+- Short-ship remainder (prep == recv &lt; req) → line treated complete
+- When every line is complete/cancelled appropriately → request status → **complete** (or **cancelled** if nothing was ever prepared)
