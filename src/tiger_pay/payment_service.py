@@ -163,13 +163,17 @@ def send_payment_for_bill(
     if float(amount_value).is_integer():
         amount_value = int(amount_value)
     try:
-        create_result = client.create_payment(
-            amount=amount_value,
-            ref_no_1=bill.bill_number,
-            ref_no_2=str(attempt_id),
-            note=note,
-            payment_type=cleaned_type,
-        )
+        create_kwargs: dict[str, Any] = {
+            "amount": amount_value,
+            "ref_no_1": bill.bill_number,
+            "ref_no_2": str(attempt_id),
+            "note": note,
+            "payment_type": cleaned_type,
+        }
+        # Device defaults type=qr to SCB; SCB is disabled — force KBANK.
+        if cleaned_type == "qr":
+            create_kwargs["payment_gateway"] = get_tiger_pay_settings().tiger_pay_qr_gateway
+        create_result = client.create_payment(**create_kwargs)
         create_result = _ensure_qr_on_create(
             client,
             create_result,

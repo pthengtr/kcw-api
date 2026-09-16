@@ -59,17 +59,23 @@ def payment_type_from_attempt(attempt: dict[str, Any] | None) -> str | None:
 
 
 def has_displayable_qr(payload: Any) -> bool:
-    """True when Tiger returned a non-empty QR image Companion can show.
+    """True when Tiger returned QR content Companion can show.
 
-    qrRawData alone is not enough — Companion only renders ``qr.image``.
+    A non-empty ``qrImage`` or ``qrRawData`` counts — empty images are rendered
+    locally from the EMV string in ``extract_companion_qr``.
     """
     qr = dynamic_qr_from_payload(payload)
     if not isinstance(qr, dict):
         return False
-    if qr.get("qrImageOmitted"):
-        return False
     image = qr.get("qrImage")
-    return isinstance(image, str) and bool(image.strip())
+    if (
+        isinstance(image, str)
+        and image.strip()
+        and not qr.get("qrImageOmitted")
+    ):
+        return True
+    raw = qr.get("qrRawData")
+    return isinstance(raw, str) and bool(raw.strip())
 
 
 def qr_image_src(qr_image: str) -> str:
