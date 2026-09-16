@@ -75,19 +75,22 @@ def list_bills_with_payment_status(
     return results
 
 
+def _public_attempt(attempt: dict[str, Any]) -> dict[str, Any]:
+    attempt_out = dict(attempt)
+    if attempt_out.get("raw_create_response") is not None:
+        attempt_out["raw_create_response"] = omit_qr_images(attempt_out["raw_create_response"])
+    return attempt_out
+
+
 def get_attempt_detail(engine: Engine, attempt_id: str) -> dict[str, Any]:
     attempt = repos.get_payment_attempt(engine, attempt_id)
     if not attempt:
         raise PaymentServiceError("Payment attempt not found", code="not_found")
     events = repos.list_payment_events(engine, attempt_id)
-    qr = companion_qr_from_attempt(attempt)
-    attempt_out = dict(attempt)
-    if attempt_out.get("raw_create_response") is not None:
-        attempt_out["raw_create_response"] = omit_qr_images(attempt_out["raw_create_response"])
     return {
-        "attempt": attempt_out,
+        "attempt": _public_attempt(attempt),
         "events": events,
-        "qr": qr,
+        "qr": companion_qr_from_attempt(attempt),
         "payment_type": payment_type_from_attempt(attempt),
     }
 
@@ -240,11 +243,9 @@ def send_payment_for_bill(
         event_key=f"api:create_response:{attempt_id}:{raw_status}",
     )
 
-    attempt_out = dict(updated or attempt)
-    if attempt_out.get("raw_create_response") is not None:
-        attempt_out["raw_create_response"] = omit_qr_images(attempt_out["raw_create_response"])
+    stored = updated or attempt
     return {
-        "attempt": attempt_out,
+        "attempt": _public_attempt(stored),
         "create_response": omit_qr_images(create_result),
         "qr": extract_companion_qr(create_result.get("raw") or create_result),
         "payment_type": cleaned_type,
