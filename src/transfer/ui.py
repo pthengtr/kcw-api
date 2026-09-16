@@ -125,7 +125,7 @@ th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
 tbody tr:hover td{background:#f8fafc}
 tbody tr:last-child td{border-bottom:0}
 .badge{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.72rem;font-weight:600}
-.b-requested{background:var(--acc-soft);color:var(--acc)}.b-await{background:#ffedd5;color:#c2410c}.b-done{background:#dcfce7;color:#15803d}.b-alert{background:#fee2e2;color:#b91c1c}
+.b-requested{background:var(--acc-soft);color:var(--acc)}.b-await{background:#ffedd5;color:#c2410c}.b-done{background:#dcfce7;color:#15803d}.b-wave{background:#e0f2fe;color:#0369a1}.b-alert{background:#fee2e2;color:#b91c1c}
 .flag-mismatch{color:#b91c1c;font-weight:700}
 .qty-mismatch{color:#b91c1c;font-weight:600}
 .alert-banner{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:.5rem .75rem;margin:.5rem 0;font-size:.85rem}
@@ -632,7 +632,8 @@ function badge(status, fromB, toB, hasMismatch, receiveCaughtUp){
   const partialRecv = receiveCaughtUp ? "รับครบที่จัดแล้ว" : "รับไม่ครบตามขอ";
   const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดไม่ครบตามขอ",awaiting_receive:"รอรับ",partial_received:partialRecv,complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
   const waveDone = !!receiveCaughtUp && status==="partial_received";
-  const cls = hasMismatch ? "b-alert" : (waveDone ? "b-done" : (m[status]||"b-requested"));
+  // Sky (b-wave) vs green (b-done) so "รับครบที่จัดแล้ว" stays distinct on the Done tab.
+  const cls = hasMismatch ? "b-alert" : (waveDone ? "b-wave" : (m[status]||"b-requested"));
   const label = hasMismatch ? "จัด≠รับ" : (t[status]||status||"-");
   const title = hasMismatch ? "จำนวนจัดกับรับไม่ตรงกัน" : (waveDone ? "รับครบตามที่จัดแล้ว — ยังค้างจัดตามคำขอได้" : "");
   return `<span class="badge ${cls}" title="${title}">${label}</span>`;
