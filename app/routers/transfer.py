@@ -28,6 +28,7 @@ from src.transfer.db import (
     delete_draft,
     delete_need,
     enrich_lines,
+    fulfill_line,
     get_receipt_by_token,
     get_request,
     get_shipment_by_token,
@@ -829,6 +830,7 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
                 "qty_ship": qty_ship,
                 "qty_requested": line_info.get("qty_requested", 0),
                 "qty_prepared": line_info.get("qty_prepared", 0),
+                "cancelled_at": line_info.get("cancelled_at"),
             },
         )
         if not check.allowed:
@@ -1186,6 +1188,82 @@ def api_cancel(transfer_id: str, request: Request):
     cancel_request(client, transfer_id=transfer_id)
     return {"status": "canceled"}
 
+
+@router.post("/api/requests/{transfer_id}/lines/{line_id}/fulfill")
+def api_fulfill_line(transfer_id: str, line_id: str, request: Request):
+    """Requester marks remaining line demand as no longer needed / fulfilled."""
+    ident, err = _require_api(request)
+    if err:
+        return err
+    client = get_transfer_supabase_client()
+    header = get_request(client, transfer_id)
+    if not header:
+        return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
+    settings = _settings()
+    to_branch = (header.get("to_branch") or "SYP").upper()
+    if not can_submit_at_site(settings.site, to_branch):
+        return JSONResponse({"error": "ปิดรายการได้เฉพาะสาขาที่ขอโอน"}, status_code=400)
+
+    lines = enrich_lines(list_lines(client, transfer_id))
+    line = next((ln for ln in lines if ln.get("line_id") == line_id), None)
+    if not line:
+        return JSONResponse({"error": "line ไม่พบ"}, status_code=404)
+
+    check = can_action(
+        "fulfill_line",
+        {
+            "cancelled_at": line.get("cancelled_at"),
+            "qty_prepared": line.get("qty_prepared", 0),
+            "qty_received": line.get("qty_received", 0),
+            "qty_requested": line.get("qty_requested", 0),
+        },
+    )
+    if not check.allowed:
+        return JSONResponse({"error": check.reason}, status_code=400)
+
+    # Never prepared: put ICLOW back to not-ordered so it reappears on รอสั่ง.
+    revert_iclow = float(line.get("qty_prepared") or 0) <= 0 and bool(line.get("iclow_id"))
+    if revert_iclow and should_stamp_iclow(
+        enabled=settings.transfer_iclow_stamp_enabled,
+        site=settings.site,
+        from_branch=(header.get("from_branch") or "HQ"),
+        to_branch=to_branch,
+    ):
+        try:
+            revert_on_cancel(iclow_id=str(line["iclow_id"]))
+        except ICLOWStampError as exc:
+            return JSONResponse({"error": f"Failed to revert ICLOW stamp: {exc}"}, status_code=500)
+
+    try:
+        result = fulfill_line(
+            client,
+            transfer_id=transfer_id,
+            line_id=line_id,
+            reason="no_longer_needed",
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    insert_event(
+        client,
+        transfer_id=transfer_id,
+        event_type="line_fulfilled",
+        actor=getattr(ident, "display_name", None) or getattr(ident, "user_id", None),
+        payload={
+            "line_id": line_id,
+            "bcode": line.get("bcode"),
+            "qty_requested": line.get("qty_requested"),
+            "qty_prepared": line.get("qty_prepared"),
+            "qty_received": line.get("qty_received"),
+            "iclow_reverted": bool(revert_iclow),
+        },
+    )
+    return {
+        "status": "fulfilled",
+        "line": result["line"],
+        "request_status": (result.get("request") or {}).get("status"),
+        "iclow_reverted": bool(revert_iclow),
+    }
 
 def _sticker_labels_from_body(body: StickerPrintRequest):
     settings = _settings()

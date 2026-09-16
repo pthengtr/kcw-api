@@ -20,7 +20,8 @@ def test_qty_open():
 
 def test_prep_recv_mismatch():
     assert prep_recv_mismatch(6, 5)
-    assert prep_recv_mismatch(6, 0)
+    # Prepared but not yet received = awaiting receive, not a mismatch alert.
+    assert not prep_recv_mismatch(6, 0)
     assert not prep_recv_mismatch(0, 0)
     assert not prep_recv_mismatch(6, 6)
 
@@ -45,6 +46,89 @@ def test_line_status_complete():
     assert derive_line_status(qty_requested=10, qty_prepared=10, qty_received=10) == "complete"
 
 
+def test_line_status_waived_short_ship_counts_complete():
+    assert (
+        derive_line_status(qty_requested=10, qty_prepared=6, qty_received=6, cancelled=True)
+        == "complete"
+    )
+
+
+def test_line_status_cancelled_when_never_prepared():
+    assert (
+        derive_line_status(qty_requested=10, qty_prepared=0, qty_received=0, cancelled=True)
+        == "cancelled"
+    )
+
+
+def test_fulfill_line_allowed_when_receive_caught_up_or_unprepared():
+    assert can_action(
+        "fulfill_line",
+        {"qty_requested": 10, "qty_prepared": 6, "qty_received": 6},
+    ).allowed
+    assert can_action(
+        "fulfill_line",
+        {"qty_requested": 10, "qty_prepared": 0, "qty_received": 0},
+    ).allowed
+    assert not can_action(
+        "fulfill_line",
+        {"qty_requested": 10, "qty_prepared": 6, "qty_received": 3},
+    ).allowed
+    assert not can_action(
+        "fulfill_line",
+        {"qty_requested": 10, "qty_prepared": 10, "qty_received": 10},
+    ).allowed
+    assert not can_action(
+        "fulfill_line",
+        {
+            "qty_requested": 10,
+            "qty_prepared": 0,
+            "qty_received": 0,
+            "cancelled_at": "2026-09-16T00:00:00+00:00",
+        },
+    ).allowed
+
+
+def test_request_complete_after_waiving_short_ship_remainder():
+    lines = [
+        {
+            "qty_requested": 10,
+            "qty_prepared": 6,
+            "qty_received": 6,
+            "line_status": "complete",
+            "cancelled_at": "2026-09-16T00:00:00+00:00",
+        },
+        {
+            "qty_requested": 5,
+            "qty_prepared": 5,
+            "qty_received": 5,
+            "line_status": "complete",
+            "cancelled_at": None,
+        },
+    ]
+    assert (
+        derive_request_status(
+            header_status="partial_received", lines=lines, has_shipments=True
+        )
+        == "complete"
+    )
+
+
+def test_request_cancelled_when_only_unprepared_lines_fulfilled():
+    lines = [
+        {
+            "qty_requested": 10,
+            "qty_prepared": 0,
+            "qty_received": 0,
+            "line_status": "cancelled",
+            "cancelled_at": "2026-09-16T00:00:00+00:00",
+        }
+    ]
+    assert (
+        derive_request_status(header_status="requested", lines=lines, has_shipments=False)
+        == "cancelled"
+    )
+
+
 def test_summarize_request_progress_flags_mismatch():
     lines = [
         {
@@ -64,6 +148,30 @@ def test_summarize_request_progress_flags_mismatch():
     assert summary["receive_caught_up"] is False
     assert summary["qty_received_total"] == 3
     assert summary["received_line_count"] == 1
+
+
+def test_summarize_awaiting_receive_is_not_mismatch():
+    """Fully/partially prepared with zero received must not show จัด≠รับ."""
+    lines = [
+        {
+            "bcode": "A",
+            "qty_requested": 10,
+            "qty_prepared": 10,
+            "qty_received": 0,
+            "cancelled_at": None,
+        },
+        {
+            "bcode": "B",
+            "qty_requested": 5,
+            "qty_prepared": 2,
+            "qty_received": 0,
+            "cancelled_at": None,
+        },
+    ]
+    summary = summarize_request_progress(lines)
+    assert summary["prep_recv_mismatch"] is False
+    assert summary["has_received"] is False
+    assert summary["receive_caught_up"] is False
 
 
 def test_summarize_receive_caught_up_when_short_ship_fully_received():
