@@ -138,6 +138,15 @@ def test_should_confirm_qr_when_dynamic_qr_completed():
     assert not should_confirm_qr_payment(
         {"type": "cash", "status": "pending", "amount": 100, "totalPay": 100}
     )
+    assert should_confirm_qr_payment(
+        {
+            "type": "cash",
+            "status": "pending",
+            "amount": 100,
+            "totalPay": 40,
+            "dynamicQR": {"status": "C"},
+        }
+    )
 
 
 def test_send_qr_payment_returns_companion_qr():
@@ -411,3 +420,50 @@ def test_open_api_confirm_error(monkeypatch):
     client = TigerPayOpenApiClient(settings=settings)
     with pytest.raises(TigerPayOpenApiError):
         client.confirm_payment(1)
+
+
+def test_poll_confirms_mixed_cash_qr():
+    engine = MagicMock()
+    open_api = MagicMock()
+    open_api.get_payment.return_value = {
+        "id": 10,
+        "type": "cash",
+        "status": "pending",
+        "amount": 250,
+        "totalPay": 250,
+        "refNo2": "att-mix-1",
+        "dynamicQR": {"status": "C", "qrRawData": "000201"},
+        "updatedAt": "now",
+    }
+    open_api.confirm_payment.return_value = {
+        "data": {
+            "id": 10,
+            "status": "success",
+            "type": "cash",
+            "refNo2": "att-mix-1",
+            "amount": 250,
+            "totalPay": 250,
+        },
+        "raw": {"data": {"id": 10, "status": "success"}},
+        "message": "Success",
+    }
+    attempt = {"id": "att-mix-1", "status": "pending", "tiger_payment_id": 10}
+
+    with (
+        patch(
+            "src.tiger_pay.payment_service.repos.insert_payment_event",
+            return_value={"id": 1},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.find_attempt_by_tiger_or_ref",
+            return_value=attempt,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={**attempt, "status": "success"},
+        ),
+    ):
+        poll_attempt_once(engine, attempt, open_api=open_api)
+
+    open_api.confirm_payment.assert_called_once_with(10)
+

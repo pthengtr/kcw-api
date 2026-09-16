@@ -147,7 +147,7 @@ Created payments start as `pending` with `totalPay: 0`.
 
 `paymentGateway`: `SCB` or `KBANK`. Used to add a QR top-up to a cash (or mixed) payment for the remaining balance.
 
-**Not wrapped yet** in `TigerPayOpenApiClient`.
+**Implemented in KCW:** `TigerPayOpenApiClient.create_qr`. Companion uses this as QR-create fallback when `type=qr` returns no displayable QR. Mixed remainder QR is created on the Tiger box, not by Companion.
 
 #### Cancel QR
 
@@ -163,7 +163,7 @@ Created payments start as `pending` with `totalPay: 0`.
 
 Marks payment `success` after QR/cash completion (samples show QR and mixed).
 
-**Not wrapped yet.**
+**Implemented in KCW:** `TigerPayOpenApiClient.confirm_payment` (poller, including mixed cash+QR).
 
 #### Cancel payment
 
@@ -183,16 +183,19 @@ Marks payment `success` after QR/cash completion (samples show QR and mixed).
 2. **QR only** — Create `type=qr` → scan `dynamicQR` → Confirm → `success`, QR status `C`, payer fields filled.
 3. **Mixed** — Create cash → partial cash → Create QR for remainder → pay QR → Confirm → `success`.
 
+   KCW: Companion only `ส่งเงินสด`. The Tiger box handles the cash/QR split. Companion settles from webhook + poller confirm.
+
 ### KCW mapping (Open API)
 
 | Tiger capability | KCW today |
 | --- | --- |
 | Create payment | Companion `POST /companion/bills/{pos_bill_id}/pay` |
+| Create QR on existing cash payment | Tiger box UI (not Companion) |
 | Get payment / current | Poller + reconcile |
 | Cancel payment | `POST /companion/payments/{attempt_id}/cancel` |
 | Webhook ingest | `POST /webhooks/tiger-pay` |
 | List / categories / cash / change_status | Not exposed |
-| Create/cancel QR, Confirm | Companion QR send + poller confirm (`KBANK`) |
+| Confirm QR / mixed | Poller confirm (`KBANK`) |
 
 ---
 
