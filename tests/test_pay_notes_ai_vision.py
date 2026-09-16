@@ -1,12 +1,16 @@
 """Tests for pay-notes AI vision helpers (no OpenAI calls)."""
 
 from src.pay_notes.ai_vision import (
+    BILL_LINES_SYSTEM_PROMPT,
     amounts_match,
     compare_payment_amounts,
     dedupe_extracted_lines,
+    drop_statement_total_rows,
     extract_bill_lines_from_images,
     match_bill_lines,
+    merge_page_extractions,
     normalize_billno,
+    normalize_extracted_page,
 )
 
 
@@ -88,3 +92,92 @@ def test_payment_amount_match_tolerance():
     cmp2 = compare_payment_amounts(50.0, 100.0)
     assert cmp2["match"] is False
     assert cmp2["difference"] == -50.0
+
+
+def test_prompt_asks_for_table_rows_not_statement_header():
+    assert "เลขที่ใบส่งของ" in BILL_LINES_SYSTEM_PROMPT
+    assert "ใบวางบิล" in BILL_LINES_SYSTEM_PROMPT
+    assert "Do NOT use the document header number" in BILL_LINES_SYSTEM_PROMPT
+    assert "เงินคงค้าง" in BILL_LINES_SYSTEM_PROMPT
+
+
+def test_drop_statement_total_rows_removes_header_when_other_rows_exist():
+    lines, warnings = drop_statement_total_rows(
+        [
+            {"billno": "BO690011221", "amount": 82566.0},
+            {"billno": "IVE6932639", "amount": 5200.0},
+            {"billno": "IVE6932746", "amount": 3371.0},
+        ],
+        82566.0,
+    )
+    assert [ln["billno"] for ln in lines] == ["IVE6932639", "IVE6932746"]
+    assert warnings
+
+
+def test_drop_statement_total_rows_keeps_single_invoice_page():
+    lines, warnings = drop_statement_total_rows(
+        [{"billno": "IVE6932639", "amount": 5200.0}],
+        5200.0,
+    )
+    assert len(lines) == 1
+    assert not warnings
+
+
+def test_normalize_extracted_page_drops_footer_total_row():
+    page = normalize_extracted_page(
+        {
+            "lines": [
+                {"billno": "IVE1", "amount": 100.0},
+                {"billno": "IVE2", "amount": 200.0},
+                {"billno": "BO1", "amount": 300.0},
+            ],
+            "total_amount": 300.0,
+            "warnings": [],
+        }
+    )
+    assert [ln["billno"] for ln in page["lines"]] == ["IVE1", "IVE2"]
+    assert page["total_amount"] == 300.0
+
+
+def test_merge_page_extractions_concats_rows_and_sums_totals():
+    merged = merge_page_extractions(
+        [
+            {
+                "lines": [{"billno": "IVE1", "amount": 100.0}],
+                "total_amount": 100.0,
+                "warnings": [],
+                "usage": {"input_tokens": 10, "output_tokens": 4, "total_tokens": 14},
+            },
+            {
+                "lines": [{"billno": "IVE2", "amount": 200.0}],
+                "total_amount": 200.0,
+                "warnings": ["blurry row"],
+                "usage": {"input_tokens": 20, "output_tokens": 6, "total_tokens": 26},
+            },
+        ]
+    )
+    assert [ln["billno"] for ln in merged["lines"]] == ["IVE1", "IVE2"]
+    assert merged["total_amount"] == 300.0
+    assert merged["usage"]["total_tokens"] == 40
+    assert any("page 2" in w and "blurry" in w for w in merged["warnings"])
+
+
+def test_merge_page_extractions_dedupes_repeated_rows_across_pages():
+    merged = merge_page_extractions(
+        [
+            {
+                "lines": [{"billno": "IVE1", "amount": 100.0}],
+                "total_amount": 100.0,
+                "warnings": [],
+                "usage": {},
+            },
+            {
+                "lines": [{"billno": "IVE1", "amount": 100.0}],
+                "total_amount": 100.0,
+                "warnings": [],
+                "usage": {},
+            },
+        ]
+    )
+    assert merged["lines"] == [{"billno": "IVE1", "amount": 100.0}]
+    assert merged["total_amount"] == 200.0

@@ -156,10 +156,78 @@ label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align
 .kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:.45rem; margin:.2rem 0 .8rem; }
 @media (min-width:560px) { .kpis { grid-template-columns:repeat(4,1fr);} }
 .kpi { background:var(--card); border:1px solid var(--line); border-radius:.65rem; padding:.65rem .7rem; }
-.kpi .n { font-size:1.25rem; font-weight:700; }
+.kpi .n { font-size:1.25rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; }
 .kpi .l { font-size:.72rem; color:var(--muted); margin-top:.1rem; }
 .kpi.warn .n { color:var(--pend); }
 .kpi.ok .n { color:var(--ok); }
+.detail-overview {
+  background:var(--card); border:1px solid var(--line); border-radius:.85rem;
+  padding:.85rem .9rem .95rem; margin:0 0 .75rem;
+}
+.detail-overview h2 { margin:.05rem 0 .35rem; letter-spacing:.01em; }
+.detail-overview .descr { font-size:.95rem; line-height:1.4; margin:0 0 .35rem; }
+.detail-overview .meta { margin:.12rem 0; line-height:1.4; }
+.detail-overview .prices { margin:.45rem 0 .15rem; }
+.detail-overview .photos { margin:.55rem 0 .2rem; }
+.stock-kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:.45rem; margin:.65rem 0 0; }
+@media (min-width:520px) { .stock-kpis { grid-template-columns:repeat(3,1fr);} }
+.stock-kpi {
+  background:var(--inset); border:1px solid var(--line); border-radius:.6rem;
+  padding:.55rem .65rem;
+}
+.stock-kpi .n { font-size:1.15rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
+.stock-kpi .l { font-size:.7rem; color:var(--muted); margin-top:.18rem; }
+.stock-kpi .u { font-size:.72rem; font-weight:500; color:var(--muted); margin-left:.2rem; }
+.stock-kpi.flag { border-color:var(--pend); }
+.insight-panel-head {
+  display:flex; align-items:baseline; justify-content:space-between; gap:.5rem;
+  flex-wrap:wrap; margin:1rem 0 .45rem;
+}
+.insight-panel-head h3 { margin:0; }
+.insight-dash { display:flex; flex-direction:column; gap:.55rem; margin:0 0 .6rem; }
+.insight-card {
+  background:var(--card); border:1px solid var(--line); border-radius:.75rem;
+  padding:.7rem .8rem .75rem;
+}
+.insight-card.accent {
+  border-color:color-mix(in srgb, var(--acc) 45%, var(--line));
+  background:color-mix(in srgb, var(--acc) 8%, var(--card));
+}
+.insight-card .sec-h {
+  font-size:.76rem; font-weight:650; color:var(--heading);
+  margin:0 0 .45rem; letter-spacing:.02em; text-transform:none;
+}
+.insight-metrics {
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(6.4rem, 1fr));
+  gap:.4rem;
+}
+.insight-metric {
+  background:var(--inset); border:1px solid transparent; border-radius:.55rem;
+  padding:.45rem .5rem .5rem; min-width:0;
+}
+.insight-metric .lbl { display:block; font-size:.68rem; color:var(--muted); line-height:1.25; margin-bottom:.12rem; }
+.insight-metric .val {
+  display:block; font-size:.95rem; font-weight:650; line-height:1.25;
+  font-variant-numeric:tabular-nums; letter-spacing:.01em; word-break:break-word;
+}
+.insight-metric .val .meta { font-weight:500; }
+.insight-card .party {
+  font-size:.84rem; margin:0; padding:.4rem .5rem; color:var(--text);
+  background:var(--inset); border-radius:.5rem;
+}
+.insight-card .party + .party { margin-top:.35rem; }
+.insight-card .party .sub { color:var(--muted); font-weight:400; font-variant-numeric:tabular-nums; }
+.insight-card .ai { font-size:.9rem; margin:0; line-height:1.5; }
+.insight-card .status-row { display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; }
+.insight-dash .status-pill {
+  display:inline-block; font-size:.78rem; font-weight:650; padding:.28rem .6rem;
+  border-radius:.5rem; background:var(--chip); margin:0;
+}
+.insight-dash .status-pill.ok { background:var(--st-ok-bg); color:var(--ok); }
+.insight-dash .status-pill.warn { background:var(--st-pend-bg); color:var(--pend); }
+.insight-dash .status-pill.bad { background:var(--st-no-bg); color:var(--down); }
+.insight-dash .status-pill.order { background:var(--st-wait-bg); color:var(--acc); }
+.insight-foot { margin:.15rem 0 0; line-height:1.4; }
 .linkish { color:var(--acc); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; }
 h2 { font-size:1.15rem; margin:.15rem 0 .4rem; }
 h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
@@ -609,7 +677,7 @@ function render(data, opts) {
     const src = (p.photos && p.photos[0]) || "";
     html += "<button class='card' id='c"+i+"' onclick='showP("+i+")'><img class='thumb' src='"+src+"' onerror='imgErr(this)'/><div><strong>"+esc(p.bcode)+"</strong>"
       +(p.do_not_restock?" <span class='badge'>ไม่สั่งซ้ำ</span>":"")
-      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")+"</div>"+codeBits(p)+sizeBits(p)+locBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+p.qtyoh2+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
+      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")+"</div>"+codeBits(p)+sizeBits(p)+locBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+qty(p.qtyoh2)+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
   });
   $("list").innerHTML = html || "<div class='empty'>ไม่พบ</div>";
   if (KIND === "iclow" && SUMMARY && !DOCS.length) showSummary();
@@ -668,16 +736,16 @@ function showSummary() {
     "<h2>สรุปค้างรับ · "+esc(s.site)+"</h2>"
     +"<p class='meta'>ORDERED=Y · ยังไม่ RECEIVED · ไม่ยกเลิก — ตามรายงาน PARTS9</p>"
     +"<div class='kpis'>"
-    +"<div class='kpi warn'><div class='n'>"+esc(t.pending_lines||"0")+"</div><div class='l'>บรรทัดค้างรับ</div></div>"
-    +"<div class='kpi warn'><div class='n'>"+esc(t.pending_pos||"0")+"</div><div class='l'>ใบ PO ค้างรับ</div></div>"
+    +"<div class='kpi warn'><div class='n'>"+qty(t.pending_lines||0)+"</div><div class='l'>บรรทัดค้างรับ</div></div>"
+    +"<div class='kpi warn'><div class='n'>"+qty(t.pending_pos||0)+"</div><div class='l'>ใบ PO ค้างรับ</div></div>"
     +"<div class='kpi'><div class='n'>"+money(t.pending_amount)+"</div><div class='l'>มูลค่าค้างรับ</div></div>"
-    +"<div class='kpi ok'><div class='n'>"+esc(t.received_lines||"0")+"</div><div class='l'>บรรทัดรับแล้ว</div></div>"
+    +"<div class='kpi ok'><div class='n'>"+qty(t.received_lines||0)+"</div><div class='l'>บรรทัดรับแล้ว</div></div>"
     +"</div>"
-    +"<div class='meta'>รอสั่งซื้อ "+esc(t.to_order_lines||"0")+" · ยกเลิก "+esc(t.canceled_lines||"0")+" · ทั้งตาราง "+esc(t.total_lines||"0")+"</div>"
+    +"<div class='meta'>รอสั่งซื้อ "+qty(t.to_order_lines||0)+" · ยกเลิก "+qty(t.canceled_lines||0)+" · ทั้งตาราง "+qty(t.total_lines||0)+"</div>"
     +"<h3>ผู้ขายค้างรับสูงสุด</h3>"
     +(vendors.length ? "<table><thead><tr><th>ผู้ขาย</th><th>ชื่อ</th><th>บรรทัด</th><th>มูลค่า</th></tr></thead><tbody>"
       +vendors.map(v => "<tr><td><button class='linkish' data-jump='iclow' data-q='"+esc(v.VENDOR)+"'>"+esc(v.VENDOR)+"</button></td>"
-        +"<td>"+esc(v.ACCTNAME)+"</td><td>"+esc(v.lines)+"</td><td>"+money(v.amount)+"</td></tr>").join("")
+        +"<td>"+esc(v.ACCTNAME)+"</td><td>"+qty(v.lines)+"</td><td>"+money(v.amount)+"</td></tr>").join("")
       +"</tbody></table>" : "<p class='meta'>—</p>")
     +"<h3>ค้างรับล่าสุด</h3>"
     +lineTable(recent, ["DOCNO","DOCDATE","VENDOR","BCODE","DESCR","QTY","UI","AMOUNT"]);
@@ -754,20 +822,46 @@ function showP(i) {
   }
   const qtyHq = p.qtyoh2_hq != null ? p.qtyoh2_hq : (String(p.site||"").toUpperCase()==="HQ" ? p.qtyoh2 : null);
   const qtySyp = p.qtyoh2_syp != null ? p.qtyoh2_syp : (String(p.site||"").toUpperCase()==="SYP" ? p.qtyoh2 : null);
-  const stockHtml = (qtyHq != null || qtySyp != null)
-    ? "<p class='meta'>คงเหลือ สนญ "+(qtyHq != null ? qtyHq : "—")+" · สาขา "+(qtySyp != null ? qtySyp : "—")+" "+esc(p.ui1)+(p.do_not_restock?" (ไม่สั่งซ้ำ)":"")+"</p>"
-    : "<p class='meta'>คงเหลือ QTYOH2 = "+p.qtyoh2+" "+esc(p.ui1)+(p.do_not_restock?" (ไม่สั่งซ้ำ)":"")+"</p>";
-  $("detail").innerHTML = "<h2 style='margin:.2rem 0'>"+esc(p.bcode)+"</h2><div>"+esc(p.descr)+"</div>"
+  const qtyTotal = (qtyHq != null || qtySyp != null)
+    ? (Number(qtyHq || 0) + Number(qtySyp || 0))
+    : (p.qtyoh2 != null ? p.qtyoh2 : null);
+  const unitLbl = esc(p.ui1 || "");
+  function stockCard(label, val, flag) {
+    const n = (val == null || val === "") ? "—" : qty(val);
+    const u = (val != null && val !== "" && unitLbl) ? "<span class='u'>"+unitLbl+"</span>" : "";
+    return "<div class='stock-kpi"+(flag ? " flag" : "")+"'><div class='n'>"+n+u+"</div><div class='l'>"+esc(label)+"</div></div>";
+  }
+  let stockHtml = "";
+  if (qtyHq != null || qtySyp != null) {
+    stockHtml = "<div class='stock-kpis'>"
+      +stockCard("คงเหลือ สนญ", qtyHq, false)
+      +stockCard("คงเหลือ สาขา", qtySyp, false)
+      +stockCard("รวมบริษัท", qtyTotal, !!p.do_not_restock)
+      +"</div>"
+      +(p.do_not_restock ? "<p class='meta' style='margin:.45rem 0 0'>ไม่สั่งซ้ำ</p>" : "");
+  } else {
+    stockHtml = "<div class='stock-kpis'>"
+      +stockCard("คงเหลือ QTYOH2", p.qtyoh2, !!p.do_not_restock)
+      +"</div>"
+      +(p.do_not_restock ? "<p class='meta' style='margin:.45rem 0 0'>ไม่สั่งซ้ำ</p>" : "");
+  }
+  $("detail").innerHTML = "<div class='detail-overview'>"
+    +"<h2>"+esc(p.bcode)+"</h2>"
+    +"<div class='descr'>"+esc(p.descr)+"</div>"
     +"<div class='meta'>เบอร์แท้ "+esc(p.pcode||"—")+" · เบอร์โรงงาน "+esc(p.mcode||"—")
     +(p.acode ? " · ชื่อย่อ "+esc(p.acode) : "")
     +" · "+esc(p.brand)+" "+esc(p.model)+"</div>"
     +"<div class='meta'>"+esc(p.category)+" · "+esc(p.code1 ? (p.code1+" "+(p.code1_label||"")) : (p.code1_label||""))+(sizes ? " · "+esc(sizes) : "")+"</div>"
     +locHtml
-    +"<div class='meta'>"+esc(p.ui1)+"/"+esc(p.ui2)+"</div>"
-    +"<div class='prices'>"+fmtPrices(p.prices)+"</div><div class='photos'>"+photos+"</div>"
+    +"<div class='meta'>หน่วย "+esc(p.ui1)+" / "+esc(p.ui2)+"</div>"
+    +"<div class='prices'>"+fmtPrices(p.prices)+"</div>"
+    +(photos ? "<div class='photos'>"+photos+"</div>" : "")
     +stockHtml
+    +"</div>"
+    +"<div id='insightPanel'></div>"
     +"<div id='subPanel'></div>"
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
+  loadInsightPanel(p.bcode, { qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock });
   loadSubPanels(p.bcode);
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(d => {
@@ -780,16 +874,280 @@ function showP(i) {
         tbl("ประวัติการขาย", m.sales, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ประวัติการซื้อ", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
+      if (d.insight) renderInsight(d.insight, { qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock });
     }).catch(() => { $("more").innerHTML = ""; });
 }
+function renderInsight(ins, live) {
+  const el = $("insightPanel");
+  if (!el || !ins) return;
+  const st = ins.status || "no_movement";
+  if (st === "working") {
+    el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3></div>"
+      +"<div class='insight-card'><p class='meta' style='margin:0'>กำลังสร้าง insight…</p>"
+      +(ins.facts_as_of ? "<p class='meta' style='margin:.35rem 0 0'>snap "+esc(ins.facts_as_of)+"</p>" : "")
+      +"</div>";
+    return;
+  }
+  if (st === "no_movement") {
+    el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3></div>"
+      +"<div class='insight-card'><p class='meta' style='margin:0'>ไม่มีการเคลื่อนไหวใน 5 ปี</p></div>";
+    return;
+  }
+  const i = ins.insight || {};
+  const pol = ins.policy || {};
+  const der = i.derived || {};
+  const dash = i.dashboard || der.dashboard || {};
+  live = live || {};
+
+  function numOrNull(v) {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  function fmtQty(n) {
+    if (n == null) return "—";
+    const rounded = (Math.abs(n - Math.round(n)) < 0.05) ? Math.round(n) : Math.round(n * 10) / 10;
+    return rounded.toLocaleString("th-TH", { maximumFractionDigits: 1 });
+  }
+  function fmtPct(n) {
+    if (n == null) return "—";
+    const x = Math.round(n * 10) / 10;
+    const s = x.toLocaleString("th-TH", { maximumFractionDigits: 1 });
+    return (x > 0 ? "+" : "") + s + "%";
+  }
+  function fmtMoney(n) {
+    if (n == null) return "—";
+    return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function pick() {
+    for (let k = 0; k < arguments.length; k++) {
+      const v = arguments[k];
+      if (v != null && v !== "") return v;
+    }
+    return null;
+  }
+  function cell(lbl, val) {
+    return "<div class='insight-metric'><span class='lbl'>"+esc(lbl)+"</span><span class='val'>"+val+"</span></div>";
+  }
+  function card(title, inner, extraCls) {
+    return "<div class='insight-card"+(extraCls ? " "+extraCls : "")+"'><div class='sec-h'>"+esc(title)+"</div>"+inner+"</div>";
+  }
+
+  const trendMap = {
+    hot: "ร้อน", growing: "เติบโต", flat: "คงที่", declining: "ลดลง",
+    dead: "ตาย", lumpy: "กระจุก", seasonal: "ตามฤดูกาล", unknown: "ไม่ชัด"
+  };
+  const marginTrendMap = {
+    improving: "ดีขึ้น", stable: "คงที่", worsening: "แย่ลง", unknown: "ไม่ชัด"
+  };
+  const statusMap = {
+    no_order_needed: { th: "ยังไม่ต้องสั่ง", cls: "ok" },
+    should_order: { th: "ควรสั่ง", cls: "order" },
+    caution: { th: "ระวัง", cls: "warn" },
+    dead_stock: { th: "Dead Stock", cls: "bad" }
+  };
+
+  const sales = dash.sales || {};
+  const ch = dash.channels_12m || {};
+  const pm = dash.price_margin || {};
+  const stk = dash.stock || {};
+  const purch = i.purchase || {};
+  const ic = i.icmas || {};
+  const tr = i.trends || {};
+  const mg = i.margin || {};
+  const fl = der.flags || {};
+  const dem = der.demand || {};
+  const holdBlk = der.holding || {};
+  const od = der.order || {};
+  const stBlk = der.stock || {};
+  const mgDer = der.margin || {};
+  const td = der.trend || {};
+
+  const latestMo = numOrNull(pick(sales.latest_month, dem.qty_30d, pol.sales_qty_30d));
+  const avg3 = numOrNull(pick(sales.avg_3m, dem.monthly_from_90d));
+  const avg12 = numOrNull(pick(sales.avg_12m, dem.monthly_from_12m, i.typical_monthly_qty, pol.typical_monthly_qty));
+  const tot12 = numOrNull(pick(sales.total_12m, dem.qty_12m, pol.sales_qty_12m));
+  const trend = pick(sales.trend, tr.m12, i.trend_label, pol.trend_12m, td["12m"]);
+
+  const chHq = numOrNull(pick(ch.hq, (dem.by_channel_12m || {}).hq_store));
+  const chSyp = numOrNull(pick(ch.syp, (dem.by_channel_12m || {}).syp_store));
+  const chOn = numOrNull(pick(ch.online, (dem.by_channel_12m || {}).online));
+  const chSum = (chHq || 0) + (chSyp || 0) + (chOn || 0);
+  const chHqPct = numOrNull(pick(ch.hq_pct, chSum ? (chHq || 0) / chSum * 100 : null));
+  const chSypPct = numOrNull(pick(ch.syp_pct, chSum ? (chSyp || 0) / chSum * 100 : null));
+  const chOnPct = numOrNull(pick(ch.online_pct, chSum ? (chOn || 0) / chSum * 100 : null));
+
+  const avgBuy = numOrNull(pick(pm.avg_buy, mgDer.avg_buy_12m));
+  const avgSell = numOrNull(pick(pm.avg_sell, mgDer.avg_sell_12m));
+  const changePct = numOrNull(pick(pm.change_pct, mgDer.price_change_pct_12m, pol.price_change_pct_12m));
+  const marginPct = numOrNull(pick(pm.margin_pct, mgDer.realized_pct_12m, pol.margin_pct_12m, mg.list_pct, pol.margin_pct_list));
+  const marginTrend = pick(pm.margin_trend, pm.margin_flag, mg.flag, pol.margin_flag, mgDer.flag);
+
+  const qtyLiveHq = numOrNull(live.qtyHq);
+  const qtyLiveSyp = numOrNull(live.qtySyp);
+  const companyLive = (qtyLiveHq != null || qtyLiveSyp != null)
+    ? (qtyLiveHq || 0) + (qtyLiveSyp || 0) : null;
+  const qtyHq = numOrNull(pick(qtyLiveHq, stk.hq, stBlk.qtyoh_hq, pol.qtyoh_hq));
+  const qtySyp = numOrNull(pick(qtyLiveSyp, stk.syp, stBlk.qtyoh_syp, pol.qtyoh_syp));
+  const qtyTotal = numOrNull(pick(companyLive, stk.total, stBlk.company_qtyoh,
+    (qtyHq != null || qtySyp != null) ? (qtyHq || 0) + (qtySyp || 0) : null));
+  const target = numOrNull(pick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
+  const reorder = numOrNull(pick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
+  const lot = numOrNull(pick(stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
+  const qtyminHq = numOrNull(pick(stk.qtymin_hq, stBlk.qtymin_hq, pol.qtymin_hq));
+  const qtyminSyp = numOrNull(pick(stk.qtymin_syp, stBlk.qtymin_syp, pol.qtymin_syp));
+  const unit = pick(stk.unit, purch.order_unit, pol.order_unit, live.ui1, od.ui1, "");
+  // Append stock/sales unit in the Explorer UI (no prompt change needed).
+  function qtyU(n) {
+    const s = fmtQty(n);
+    if (n == null || !unit) return esc(s);
+    return esc(s) + " " + esc(unit);
+  }
+
+  const dead = pick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
+  const orderOk = pick(purch.order_ok, pol.order_ok, fl.order_ok);
+  let orderStatus = pick(dash.order_status, i.order_status, fl.order_status);
+  // Recompute from live stock so status matches on-hand above.
+  if (dead === "yes") orderStatus = "dead_stock";
+  else if (qtyTotal != null && target != null && qtyTotal >= target) orderStatus = "no_order_needed";
+  else if (qtyTotal != null && reorder != null && qtyTotal <= reorder) orderStatus = "should_order";
+  else if (orderOk === "caution" || dead === "maybe") orderStatus = "caution";
+  else if (orderOk === "no") orderStatus = "caution";
+  else if (qtyTotal != null && target != null && qtyTotal < target) orderStatus = "should_order";
+  else if (!orderStatus) orderStatus = (orderOk === "yes" ? "no_order_needed" : "caution");
+  if (live.doNotRestock && orderStatus !== "dead_stock") orderStatus = "caution";
+
+  const suppliers = (dash.suppliers || der.suppliers_12m || []).slice(0, 3);
+  const customers = (dash.customers || der.customers_12m || []).slice(0, 3);
+  const ai = pick(i.ai_action, ins.summary, i.summary, "");
+
+  function trendTh(v) {
+    if (v == null || v === "") return "—";
+    const k = String(v).toLowerCase();
+    return trendMap[k] || String(v);
+  }
+  function marginTrendTh(v) {
+    if (v == null || v === "") return "—";
+    const k = String(v).toLowerCase();
+    if (marginTrendMap[k]) return marginTrendMap[k];
+    const flagMap = {
+      healthy: "ดี", thin: "บาง", weak: "อ่อน", negative: "ติดลบ",
+      cost_up_price_lag: "ต้นทุนขึ้นราคายังไม่ตาม", unknown: "ไม่ชัด"
+    };
+    return flagMap[k] || String(v);
+  }
+
+  const stInfo = statusMap[orderStatus] || { th: String(orderStatus || "—"), cls: "warn" };
+  let body = "<div class='insight-dash'>";
+
+  body += card("ยอดขาย", "<div class='insight-metrics'>"
+    +cell("เดือนล่าสุด", qtyU(latestMo))
+    +cell("เฉลี่ย 3 เดือน", qtyU(avg3))
+    +cell("เฉลี่ย 12 เดือน", qtyU(avg12))
+    +cell("รวม 12 เดือน", qtyU(tot12))
+    +cell("Trend", esc(trendTh(trend)))
+    +"</div>");
+
+  body += card("ช่องทางขาย 12 เดือน", "<div class='insight-metrics'>"
+    +cell("HQ", qtyU(chHq)+(chHqPct != null ? " <span class='meta'>("+esc(fmtQty(chHqPct))+"%)</span>" : ""))
+    +cell("SYP", qtyU(chSyp)+(chSypPct != null ? " <span class='meta'>("+esc(fmtQty(chSypPct))+"%)</span>" : ""))
+    +cell("Online", qtyU(chOn)+(chOnPct != null ? " <span class='meta'>("+esc(fmtQty(chOnPct))+"%)</span>" : ""))
+    +"</div>");
+
+  body += card("ราคา & Margin", "<div class='insight-metrics'>"
+    +cell("ราคาซื้อเฉลี่ย", esc(fmtMoney(avgBuy)))
+    +cell("ราคาขายเฉลี่ย", esc(fmtMoney(avgSell)))
+    +cell("% เปลี่ยน", esc(fmtPct(changePct)))
+    +cell("Margin %", marginPct != null ? esc(fmtQty(marginPct))+"%" : "—")
+    +cell("แนวโน้ม Margin", esc(marginTrendTh(marginTrend)))
+    +"</div>");
+
+  body += card("สต็อก", "<div class='insight-metrics'>"
+    +cell("รวม", qtyU(qtyTotal))
+    +cell("HQ", qtyU(qtyHq))
+    +cell("SYP", qtyU(qtySyp))
+    +cell("เป้าสต็อก", qtyU(target))
+    +cell("จุดสั่ง", qtyU(reorder))
+    +cell("ล็อตแนะนำ", qtyU(lot))
+    +cell("QTYMIN HQ", qtyU(qtyminHq))
+    +cell("QTYMIN SYP", qtyU(qtyminSyp))
+    +"</div>");
+
+  body += card("สถานะการสั่งซื้อ", "<div class='status-row'>"
+    +"<span class='status-pill "+stInfo.cls+"'>"+esc(stInfo.th)+"</span>"
+    +(dead === "yes" && orderStatus !== "dead_stock" ? "<span class='status-pill bad'>Dead Stock</span>" : "")
+    +"</div>");
+
+  let supplierInner = "";
+  if (suppliers.length) {
+    supplierInner = suppliers.map(s => {
+      const nm = s.name || s.acctno || "—";
+      const q = numOrNull(s.qty);
+      const ap = numOrNull(s.avg_price);
+      return "<div class='party'>"+esc(nm)
+        +" <span class='sub'>· ซื้อ "+qtyU(q)
+        +(ap != null ? " · เฉลี่ย "+esc(fmtMoney(ap)) : "")
+        +"</span></div>";
+    }).join("");
+  } else {
+    supplierInner = "<p class='meta' style='margin:0'>—</p>";
+  }
+  body += card("Supplier หลัก", supplierInner);
+
+  let customerInner = "";
+  if (customers.length) {
+    customerInner = customers.map(c => {
+      const nm = c.name || c.acctno || "—";
+      const q = numOrNull(c.qty);
+      const pct = numOrNull(c.pct_of_sales);
+      return "<div class='party'>"+esc(nm)
+        +" <span class='sub'>· "+qtyU(q)
+        +(pct != null ? " · "+esc(fmtQty(pct))+"%" : "")
+        +"</span></div>";
+    }).join("");
+  } else {
+    customerInner = "<p class='meta' style='margin:0'>—</p>";
+  }
+  body += card("Customer หลัก", customerInner);
+
+  body += card("AI แนะนำ", "<p class='ai'>"+esc(ai || "—")+"</p>", "accent");
+
+  body += "<p class='meta insight-foot'>generated "+esc(ins.generated_at||"—")
+    +" · facts_as_of "+esc(ins.facts_as_of||"—")
+    +(ins.model_id ? " · "+esc(ins.model_id) : "")+"</p>";
+  body += "</div>";
+  el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3>"
+    +"<p class='meta' style='margin:0'>Dashboard · นโยบาย 14–30 วัน"
+    +(ins.prompt_version ? " · "+esc(ins.prompt_version) : "")+"</p></div>"+body;
+}
+function loadInsightPanel(bcode, live) {
+  const el = $("insightPanel");
+  if (!el) return;
+  el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3></div>"
+    +"<div class='insight-card'><p class='meta' style='margin:0'>โหลด insight…</p></div>";
+  fetch("/parts9/api/insight/"+encodeURIComponent(bcode)+"?site="+encodeURIComponent($("site").value))
+    .then(r => r.json()).then(ins => renderInsight(ins, live))
+    .catch(() => { el.innerHTML = ""; });
+}
+function fmtSuggestEvidence(p) {
+  const raw = (p && p.evidence || "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/\bPCODE=/gi, "แท้ ")
+    .replace(/\bMCODE=/gi, "โรงงาน ")
+    .replace(/\bCODE1=/gi, "รหัส ")
+    .replace(/\bSIZE=/gi, "ขนาด ");
+}
 function peerLine(p, badge) {
-  const hq = p.hq_qtyoh2 != null ? p.hq_qtyoh2 : "—";
-  const syp = p.syp_qtyoh2 != null ? p.syp_qtyoh2 : "—";
+  const hq = p.hq_qtyoh2 != null ? qty(p.hq_qtyoh2) : "—";
+  const syp = p.syp_qtyoh2 != null ? qty(p.syp_qtyoh2) : "—";
   const l1 = p.hq_l1 ? " <span class='badge'>L-1</span>" : "";
   const src = badge || p.source_label || p.source || "";
   const srcHtml = src ? " <span class='badge'>"+esc(src)+"</span>" : "";
+  const evid = fmtSuggestEvidence(p);
+  const evidHtml = evid ? " · "+esc(evid) : "";
   return "<div class='meta'><button class='linkish' data-jump='product' data-q='"+esc(p.bcode)+"'>"+esc(p.bcode)+"</button>"
-    +srcHtml+" "+esc((p.descr||"").slice(0,40))+" · สนญ "+hq+" / สาขา "+syp+l1+"</div>";
+    +srcHtml+" "+esc((p.descr||"").slice(0,40))+evidHtml+" · สนญ "+hq+" / สาขา "+syp+l1+"</div>";
 }
 function loadSubPanels(bcode) {
   const el = $("subPanel");
@@ -1006,10 +1364,17 @@ function render(data, suggestions){
   let html = "";
   if(suggestions && suggestions.length){
     html += "<div class='card'><h3 style='margin:.2rem 0'>แนะนำทดแทน (ยังไม่ยืนยัน)</h3>"
-      + suggestions.map(s => "<div class='member'><div><strong>"+esc(s.bcode)+"</strong> "
-        +"<span class='badge'>"+esc(s.source_label||s.source||"")+"</span><div class='meta'>"
-        +esc(s.descr||"")+" · "+stockLine(s)+"</div></div>"
-        +"<button type='button' data-promote='"+esc(s.bcode)+"'>เพิ่มเข้ากลุ่ม</button></div>").join("")
+      + suggestions.map(s => {
+          const evid = (s.evidence||"").trim()
+            .replace(/\bPCODE=/gi, "แท้ ")
+            .replace(/\bMCODE=/gi, "โรงงาน ")
+            .replace(/\bCODE1=/gi, "รหัส ")
+            .replace(/\bSIZE=/gi, "ขนาด ");
+          return "<div class='member'><div><strong>"+esc(s.bcode)+"</strong> "
+            +"<span class='badge'>"+esc(s.source_label||s.source||"")+"</span><div class='meta'>"
+            +esc(s.descr||"")+(evid ? " · "+esc(evid) : "")+" · "+stockLine(s)+"</div></div>"
+            +"<button type='button' data-promote='"+esc(s.bcode)+"'>เพิ่มเข้ากลุ่ม</button></div>";
+        }).join("")
       +"</div>";
   }
   if(!group){

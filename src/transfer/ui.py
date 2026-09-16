@@ -142,6 +142,7 @@ body.busy #busy{display:flex}
 .dir{font-size:.75rem;color:var(--muted)}
 .qty-input{width:5rem;padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
 .text-input{flex:1;min-width:0;padding:.5rem;border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--text);background:#fff;color-scheme:light}
+.prep-ship-as{width:7.5rem;max-width:100%;padding:.35rem .5rem;font-size:.82rem}
 .search-bar{display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem}
 .search-bar .text-input{flex:1}
 .tool-section{border:1px solid var(--line);border-radius:12px;padding:.75rem;background:#f8fafc;margin-bottom:.75rem}
@@ -391,6 +392,7 @@ let prepareStep = 1;
 let prepareRequest = null;
 let suggestItems = [];
 let suggestFilter = "";
+let suggestHintsLoaded = false;
 /** Local picks on suggest list: bcode → {checked, unit, qty} — survives soft re-renders. */
 let suggestPick = {};
 let receiveFilter = "";
@@ -697,6 +699,26 @@ function collectPositiveQtyMap(root, selector, dataProp){
   });
   return {qtyMap, any};
 }
+/** Optional ส่งแทน codes from visible pane; same-as-request BCODE is ignored. */
+function collectShipAsMap(root, selector, dataProp, lines){
+  const byLine = {};
+  (lines||[]).forEach(ln=>{ byLine[ln.line_id] = String(ln.bcode||"").trim(); });
+  const shipAsMap = {};
+  visibleDualPane(root).querySelectorAll(selector).forEach(inp=>{
+    const key = inp.dataset[dataProp];
+    if(!key) return;
+    const alt = String(inp.value||"").trim();
+    if(!alt) return;
+    if(alt === (byLine[key]||"")) return;
+    shipAsMap[key] = alt;
+  });
+  return shipAsMap;
+}
+function fmtShipAsConfirm(lineId, shipAsMap){
+  const alt = shipAsMap && shipAsMap[lineId];
+  if(!alt) return "";
+  return `<div class="meta" style="color:var(--accent,#c9a227)">ส่งแทน: <code>${escText(alt)}</code> · ตัดสต็อกรหัสนี้</div>`;
+}
 function bindDetailRows(container){
   container.querySelectorAll(".row-clickable[data-detail]").forEach(row=>{
     row.onclick = e=>{
@@ -733,7 +755,12 @@ async function api(path, opts){
     const headers = Object.assign({"Content-Type":"application/json"}, o.headers||{});
     const r = await fetch(path, Object.assign({credentials:"same-origin"}, o, {headers}));
     const j = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(j.error||j.detail||("HTTP "+r.status));
+    if(!r.ok){
+      const err = new Error(j.error||j.detail||("HTTP "+r.status));
+      err.payload = j;
+      err.status = r.status;
+      throw err;
+    }
     return j;
   } finally { if(!quiet) setBusy(false); }
 }
@@ -854,7 +881,7 @@ function leaveStickerPrint(){
   render();
 }
 async function openStickerPrintFromTransfer(transferId, {selectAll}={}){
-  const detail = await api("/transfer/api/requests/"+transferId+"/lines");
+  const detail = await api("/transfer/api/requests/"+transferId+"/lines?enrich=stock");
   const job = stickerLinesFromDetail(detail, {selected: selectAll === true});
   if(!job.lines.length) throw new Error("ยังไม่มีสินค้าที่รับเข้าสำหรับพิมพ์บาร์โค้ด");
   openStickerPrint({...job, selectAll: selectAll === true, returnView: "status"});
@@ -1468,16 +1495,25 @@ function bindLineSearch(root, {inputId, rowSelector, metaId, total}){
 
 async function fetchCounts(){
   try{
-    const [prep, recv] = await Promise.all([
-      api("/transfer/api/requests?role=prepare",{quiet:true}),
-      api("/transfer/api/receive-lines",{quiet:true}),
-    ]);
-    return {prepare:(prep.items||[]).length, receive:(recv.items||[]).length};
+    const data = await api("/transfer/api/counts",{quiet:true});
+    return {prepare:Number(data.prepare||0), receive:Number(data.receive||0)};
   }catch(e){ return {prepare:0, receive:0}; }
 }
 
+function applyHomeCounts(el, counts){
+  const recv = el.querySelector("[data-count=receive]");
+  const prep = el.querySelector("[data-count=prepare]");
+  if(recv){
+    if(counts.receive) recv.innerHTML = `<span class="count">${counts.receive} รายการรอรับ</span>`;
+    else recv.innerHTML = "";
+  }
+  if(prep){
+    if(counts.prepare) prep.innerHTML = `<span class="count">${counts.prepare} รายการรอจัด</span>`;
+    else prep.innerHTML = "";
+  }
+}
+
 async function renderHome(el){
-  const counts = await fetchCounts();
   el.innerHTML = `
     ${billTimelineHtml(OTHER, SITE)}
     <div class="action-grid">
@@ -1489,14 +1525,14 @@ async function renderHome(el){
         </button>
         <button class="action-card" data-go="receive">
           <p class="title">📦 รับสินค้าจาก ${OTHER_LABEL}</p>
-          <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ${counts.receive ? `<span class="count">${counts.receive} รายการรอรับ</span>` : ""}</p>
+          <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ<span data-count="receive"></span></p>
         </button>
       </div>
       <div class="action-group">
         <p class="action-group-label">ของออก</p>
         <button class="action-card" data-go="prepare">
           <p class="title">📤 ส่งสินค้าไป ${OTHER_LABEL}</p>
-          <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก${counts.prepare ? `<span class="count">${counts.prepare} รายการรอจัด</span>` : ""}</p>
+          <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก<span data-count="prepare"></span></p>
         </button>
       </div>
       <div class="action-group">
@@ -1508,6 +1544,11 @@ async function renderHome(el){
       </div>
     </div>`;
   el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>goView(b.dataset.go));
+  // Badges after first paint — counts API is cheap vs full prepare/receive lists.
+  fetchCounts().then(counts=>{
+    if(view!=="home") return;
+    applyHomeCounts(el, counts);
+  }).catch(()=>{});
 }
 
 async function renderRequest(el, opts){
@@ -1542,6 +1583,7 @@ async function renderRequest(el, opts){
         api("/transfer/api/need-list",{quiet:true}),
       ]);
       suggestItems = rows.items || [];
+      suggestHintsLoaded = false;
       cart = cartResp;
     }
     const cartItems = cart.items || [];
@@ -1720,14 +1762,16 @@ async function renderRequest(el, opts){
       const picks = collected.picks || [];
       if(!picks.length) return {ok:true, added:0};
       try{
-        await Promise.all(picks.map(p=>api("/transfer/api/need-list",{
+        await api("/transfer/api/need-list/bulk",{
           method:"POST",
           quiet:true,
           body:JSON.stringify({
-            bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
-            descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
+            lines: picks.map(p=>({
+              bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
+              descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
+            })),
           }),
-        })));
+        });
         picks.forEach(p=>writeSuggestPick(p.row.bcode, {checked:false}));
         return {ok:true, added:picks.length};
       }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); return {ok:false, added:0}; }
@@ -1780,6 +1824,33 @@ async function renderRequest(el, opts){
       });
     }
     filtered.forEach(r=>bindPickRow(suggestItems.indexOf(r)));
+
+    // Paint first; substitute hints fill in without blocking the table.
+    if(!suggestHintsLoaded && suggestItems.length){
+      window._suggestHintGen = (window._suggestHintGen || 0) + 1;
+      const hintGen = window._suggestHintGen;
+      api("/transfer/api/suggest/hints",{
+        method:"POST",
+        quiet:true,
+        body:JSON.stringify({items: suggestItems}),
+      }).then(resp=>{
+        if(hintGen !== window._suggestHintGen) return;
+        if(view!=="request" || requestStep!==2) return;
+        const by = {};
+        (resp.items||[]).forEach(h=>{ if(h && h.bcode) by[h.bcode] = h; });
+        if(!Object.keys(by).length){ suggestHintsLoaded = true; return; }
+        suggestItems = suggestItems.map(r=>{
+          const h = by[r.bcode];
+          if(!h) return r;
+          return Object.assign({}, r, {
+            suggestions: h.suggestions||[],
+            substitutes: h.substitutes||[],
+          });
+        });
+        suggestHintsLoaded = true;
+        withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
+      }).catch(()=>{ suggestHintsLoaded = true; });
+    }
 
     const searchEl = el.querySelector("#suggestSearch");
     if(searchEl){
@@ -1884,7 +1955,7 @@ async function renderRequest(el, opts){
   }
 
   if(requestStep === 3){
-    const cart = await api("/transfer/api/need-list");
+    const cart = await api("/transfer/api/need-list?enrich=stock");
     const cartItems = cart.items || [];
     el.innerHTML = `${stepBar(3)}
       <div class="card">
@@ -1934,17 +2005,39 @@ async function renderRequest(el, opts){
   }
 }
 
-async function submitPrepare(request, qtyByLineId){
+async function submitPrepare(request, qtyByLineId, shipAsByLineId, confirmAddCatalog){
+  const shipAs = shipAsByLineId || request._shipAsDraft || {};
   const shipLines = (request.lines||[]).map(ln=>{
     const q = Number(qtyByLineId[ln.line_id]||0);
-    return {line_id: ln.line_id, bcode: ln.bcode, qty_ship: q};
+    const alt = String(shipAs[ln.line_id]||"").trim();
+    const row = {line_id: ln.line_id, bcode: ln.bcode, qty_ship: q};
+    if(alt && alt !== String(ln.bcode||"").trim()) row.ship_as_bcode = alt;
+    return row;
   }).filter(l=>l.qty_ship>0);
   if(!shipLines.length) throw new Error("ระบุจำนวนที่จัด");
   if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) throw new Error("ยกเลิก");
-  return api("/transfer/api/requests/"+request.transfer_id+"/prepare",{
-    method:"POST",
-    body:JSON.stringify({client_token:uuid(), lines:shipLines}),
-  });
+  const body = {client_token:uuid(), lines:shipLines};
+  if(confirmAddCatalog) body.confirm_add_catalog = true;
+  try{
+    return await api("/transfer/api/requests/"+request.transfer_id+"/prepare",{
+      method:"POST",
+      body:JSON.stringify(body),
+    });
+  }catch(e){
+    const payload = e && e.payload;
+    if(payload && payload.code === "needs_catalog_confirm" && !confirmAddCatalog){
+      const pairs = Array.isArray(payload.pairs) ? payload.pairs : [];
+      const lines = pairs.length
+        ? pairs.map(p=>`• ขอ ${p.request_bcode} → ส่งแทน ${p.ship_as_bcode}`).join("\n")
+        : (payload.detail || "");
+      const msg = "รหัสส่งแทนยังไม่ได้อยู่ในกลุ่มทดแทน\n\n"
+        + lines
+        + "\n\nยืนยันเพิ่มเข้า catalog แล้วจัดส่งเลยไหม?";
+      if(!confirm(msg)) throw new Error("ยกเลิก");
+      return submitPrepare(request, qtyByLineId, shipAsByLineId, true);
+    }
+    throw e;
+  }
 }
 
 async function submitReceive(shipment, qtyByLineId){
@@ -2232,14 +2325,22 @@ async function renderPrepare(el){
   if(prepareStep === 2){
     const shipBranch = (req.from_branch||SITE).toUpperCase();
     const shipBranchLabel = branchLabel(shipBranch);
+    const qtyDraft = req._qtyDraft||{};
+    const shipAsDraft = req._shipAsDraft||{};
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
+      const qtyVal = qtyDraft[ln.line_id] != null ? qtyDraft[ln.line_id] : remain;
+      const shipAsVal = shipAsDraft[ln.line_id] || "";
       return `<tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
-        <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
-          data-line="${ln.line_id}"/></td></tr>`;
+        <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${escapeAttr(String(qtyVal))}"
+          data-line="${ln.line_id}"/></td>
+        <td><input class="text-input prep-ship-as" type="text" inputmode="numeric" autocomplete="off"
+          placeholder="ว่าง=รหัสขอ" value="${escapeAttr(shipAsVal)}" data-line="${ln.line_id}"/></td></tr>`;
     }).join("");
     const cardRows = openLines.map(ln=>{
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
+      const qtyVal = qtyDraft[ln.line_id] != null ? qtyDraft[ln.line_id] : remain;
+      const shipAsVal = shipAsDraft[ln.line_id] || "";
       return `<div class="item-card">
         <div class="item-card-head"><code>${ln.bcode}</code></div>
         <div class="item-card-desc">${fmtDescr(ln)}</div>
@@ -2248,9 +2349,12 @@ async function renderPrepare(el){
           <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
           <div class="item-field num"><span class="lbl">จัดแล้ว</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
         </div>
-        <div class="item-card-actions">
-          <label class="meta" style="margin-right:auto">จัดครั้งนี้</label>
-          <input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${remain}" data-line="${ln.line_id}"/>
+        <div class="item-card-actions" style="flex-wrap:wrap;gap:.5rem">
+          <label class="meta">รหัสส่งแทน</label>
+          <input class="text-input prep-ship-as" type="text" inputmode="numeric" autocomplete="off"
+            placeholder="ว่าง=รหัสขอ" value="${escapeAttr(shipAsVal)}" data-line="${ln.line_id}"/>
+          <label class="meta" style="margin-left:auto">จัดครั้งนี้</label>
+          <input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${escapeAttr(String(qtyVal))}" data-line="${ln.line_id}"/>
         </div>
       </div>`;
     }).join("");
@@ -2258,9 +2362,10 @@ async function renderPrepare(el){
       <div class="card">
         <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
         <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้ · คงเหลือ ${shipBranchLabel} อ่านจาก PARTS9 สด</p>
+        <p class="meta">รหัสส่งแทน (ถ้ามี) — ถ้ายังไม่ได้อยู่กลุ่มทดแทน ระบบจะถามยืนยันเพื่อเพิ่มเข้า catalog แล้วจัดส่ง</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
         ${dualView(
-          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+          `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th><th>รหัสส่งแทน</th></tr></thead><tbody>${rows}</tbody></table></div>`,
           itemCards(cardRows)
         )}
         ${shipBranch === "HQ" ? hqNoStockNoteHtml() : ""}
@@ -2271,11 +2376,13 @@ async function renderPrepare(el){
         </div>
       </div>`;
     bindSyncedQtyInputs(el, ".prep-qty");
+    bindSyncedQtyInputs(el, ".prep-ship-as");
     el.querySelector("#btnPrepPrint2").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnPrepNext2").onclick = ()=>{
       const {qtyMap, any} = collectPositiveQtyMap(el, ".prep-qty", "line");
       if(!any){alert("ระบุจำนวนที่จัด");return;}
       req._qtyDraft = qtyMap;
+      req._shipAsDraft = collectShipAsMap(el, ".prep-ship-as", "line", openLines);
       setPrepareStep(3);
     };
     return;
@@ -2283,14 +2390,15 @@ async function renderPrepare(el){
 
   if(prepareStep === 3){
     const qtyMap = req._qtyDraft||{};
+    const shipAsMap = req._shipAsDraft||{};
     const shipBranch = (req.from_branch||SITE).toUpperCase();
     const shipBranchLabel = branchLabel(shipBranch);
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
+      <tr><td><code>${ln.bcode}</code>${fmtShipAsConfirm(ln.line_id, shipAsMap)}</td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
     `).join("");
     const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`<div class="item-card">
       <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.line_id])}</strong></div>
-      <div class="item-card-desc">${fmtDescr(ln)}</div>
+      <div class="item-card-desc">${fmtDescr(ln)}${fmtShipAsConfirm(ln.line_id, shipAsMap)}</div>
       <div class="item-card-grid">
         <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>
         <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
@@ -2317,7 +2425,7 @@ async function renderPrepare(el){
     el.querySelector("#btnPrepPrint3").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnConfirmPrepare").onclick = async()=>{
       try{
-        const result = await submitPrepare(req, qtyMap);
+        const result = await submitPrepare(req, qtyMap, shipAsMap);
         const bill = result.ship_billno || result.tf_billno || "";
         showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");
         prepareRequest = null;
@@ -2361,8 +2469,8 @@ function sortDoneByReceived(items){
 }
 async function renderStatus(el){
   const isDone = statusFilter === "done";
-  // Always load full list so short-ship "receive caught up" rows can appear under Done.
-  const data = await api("/transfer/api/requests");
+  const scope = isDone ? "done" : "active";
+  const data = await api("/transfer/api/requests?scope="+scope);
   let items = data.items||[];
   if(isDone) items = sortDoneByReceived(items.filter(isStatusDoneRow));
   else items = items.filter(r=>!isStatusDoneRow(r)&&r.status!=="cancelled");

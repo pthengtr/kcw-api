@@ -1,0 +1,16 @@
+[Unit]
+Description=KCW Samba files share (Docker, host network)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+ExecStartPre=/bin/sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+ExecStart=/home/hqadmin/projects/kcw-api/scripts/hq-samba-setup.sh --foreground
+ExecStop=/usr/bin/docker stop kcw-samba
+
+[Install]
+WantedBy=default.target

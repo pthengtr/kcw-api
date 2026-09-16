@@ -52,6 +52,29 @@ def upsert_need(client: Client, row: dict[str, Any]) -> dict[str, Any]:
     return _first_row(resp)
 
 
+def upsert_need_many(
+    client: Client, rows: list[dict[str, Any]], *, actor: str
+) -> list[dict[str, Any]]:
+    """Upsert many cart rows without clearing existing picks."""
+    out: list[dict[str, Any]] = []
+    for raw in rows:
+        bcode = (raw.get("bcode") or "").strip()
+        if not bcode:
+            continue
+        payload = {
+            "bcode": bcode,
+            "qty": raw.get("qty"),
+            "descr": (raw.get("descr") or None),
+            "suggest_qty": raw.get("suggest_qty")
+            if raw.get("suggest_qty") is not None
+            else raw.get("qty"),
+            "hq_qtyoh2": raw.get("hq_qtyoh2"),
+            "added_by": actor,
+        }
+        out.append(upsert_need(client, payload))
+    return out
+
+
 def delete_need(client: Client, need_id: str) -> None:
     _table(client, "need_list").delete().eq("need_id", need_id).execute()
 
@@ -184,17 +207,23 @@ def list_requests(
         q = q.eq("from_branch", from_branch.upper())
     if to_branch:
         q = q.eq("to_branch", to_branch.upper())
+
+    site_u = (site or "").upper()
+    role_l = (role or "").lower()
+    # Push branch filter into the query when role implies it and caller didn't set it.
+    if site_u and role_l == "prepare" and not from_branch:
+        q = q.eq("from_branch", site_u)
+    elif site_u and role_l in ("receive", "mine") and not to_branch:
+        q = q.eq("to_branch", site_u)
+
     items = _rows(q.execute())
     if not role or not site:
         return items
-    site_u = site.upper()
-    role_l = role.lower()
     if role_l == "prepare":
         candidates = [
             r
             for r in items
-            if (r.get("from_branch") or "HQ").upper() == site_u
-            and (r.get("status") or "").lower() not in ("draft", "cancelled", "complete")
+            if (r.get("status") or "").lower() not in ("draft", "cancelled", "complete")
         ]
         lines_by = list_lines_by_transfers(
             client, [r["transfer_id"] for r in candidates]
@@ -209,12 +238,42 @@ def list_requests(
         return [
             r
             for r in items
-            if (r.get("to_branch") or "SYP").upper() == site_u
-            and (r.get("status") or "") not in ("draft", "cancelled", "complete")
+            if (r.get("status") or "") not in ("draft", "cancelled", "complete")
         ]
     if role_l == "mine":
-        return [r for r in items if (r.get("to_branch") or "").upper() == site_u]
+        return items
     return items
+
+
+def count_prepare_open(client: Client, *, site: str) -> int:
+    """Open prepare requests for this ship-from site (no list enrichment)."""
+    return len(list_requests(client, role="prepare", site=site))
+
+
+def count_receive_open(client: Client, *, site: str) -> int:
+    """Open receive shipment-lines for this site (no PARTS9 / substitutes)."""
+    site_u = (site or "SYP").upper()
+    reqs = list_requests(client, role="receive", site=site_u)
+    if not reqs:
+        return 0
+    transfer_ids = [r["transfer_id"] for r in reqs]
+    ships_by = list_shipments_by_transfers(client, transfer_ids)
+    ship_ids = [
+        s["shipment_id"]
+        for ships in ships_by.values()
+        for s in ships
+        if s.get("shipment_id")
+    ]
+    if not ship_ids:
+        return 0
+    ship_lines_by = list_shipment_lines_by_shipments(client, ship_ids)
+    n = 0
+    for lines in ship_lines_by.values():
+        for sl in lines:
+            qty_open = float(sl.get("qty_shipped") or 0) - float(sl.get("qty_received") or 0)
+            if qty_open > 0:
+                n += 1
+    return n
 
 
 def get_request(client: Client, transfer_id: str) -> dict[str, Any]:
@@ -568,12 +627,14 @@ def list_receive_queue(client: Client, *, site: str) -> list[dict[str, Any]]:
     enriched_by: dict[str, list[dict[str, Any]]] = {}
     for tid in active_transfer_ids:
         req = req_by_id[tid]
+        # Stock/descr only — substitutes belong on prepare/suggest, not the receive queue.
         enriched_by[tid] = enrich_transfer_lines(
             enrich_lines(lines_by.get(tid) or []),
             from_branch=req.get("from_branch"),
             to_branch=req.get("to_branch"),
             hq_icmas=hq_icmas,
             syp_icmas=syp_icmas,
+            include_suggestions=False,
         )
 
     ship_ids = [s["shipment_id"] for ships in ships_by.values() for s in ships]

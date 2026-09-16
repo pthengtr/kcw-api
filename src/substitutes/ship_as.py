@@ -13,10 +13,78 @@ class ShipAsResult:
     is_substitute: bool
     descr: str | None = None
     error: str | None = None
+    needs_catalog_confirm: bool = False
 
 
 GetByBcodeFn = Callable[[str], dict[str, Any] | None]
 ShipFromMetaFn = Callable[[str], dict[str, Any] | None]
+CreateGroupFn = Callable[..., dict[str, Any]]
+AddMemberFn = Callable[..., Any]
+
+# Operator-facing code returned when ส่งแทน needs an explicit catalog add.
+NEEDS_CATALOG_CONFIRM = "needs_catalog_confirm"
+
+
+def is_catalog_gap_error(error: str | None) -> bool:
+    """True when resolve failed only because peer is not in the same catalog group."""
+    if not error:
+        return False
+    if "รายการขออื่น" in error or "clash" in error.lower():
+        return False
+    if "ไม่พบ" in error and "ICMAS" in error:
+        return False
+    return "กลุ่ม" in error
+
+
+def ensure_catalog_pair(
+    *,
+    request_bcode: str,
+    ship_as_bcode: str,
+    get_by_bcode: GetByBcodeFn,
+    create_group: CreateGroupFn,
+    add_member: AddMemberFn,
+    created_by: str | None = None,
+    note: str = "from transfer ส่งแทน",
+) -> dict[str, Any]:
+    """Link request + peer in catalog (create group or add member).
+
+    Same rules as Explorer promote: one group per BCODE; cannot merge two groups.
+    """
+    requested = (request_bcode or "").strip()
+    alt = (ship_as_bcode or "").strip()
+    if not requested or not alt:
+        raise ValueError("request_bcode and ship_as_bcode required")
+    if requested == alt:
+        group = get_by_bcode(requested)
+        return group or {}
+
+    req_group = get_by_bcode(requested)
+    alt_group = get_by_bcode(alt)
+    req_gid = (req_group or {}).get("group_id")
+    alt_gid = (alt_group or {}).get("group_id")
+
+    if req_gid and alt_gid:
+        if req_gid == alt_gid:
+            return req_group or {}
+        raise ValueError(
+            f"ส่งแทนไม่ได้ — {requested} กับ {alt} อยู่คนละกลุ่มทดแทน "
+            f"(ต้องจัดการใน Explorer)"
+        )
+
+    if req_gid and not alt_gid:
+        add_member(str(req_gid), alt, note=note)
+        return get_by_bcode(requested) or req_group or {}
+
+    if alt_gid and not req_gid:
+        add_member(str(alt_gid), requested, note=note)
+        return get_by_bcode(alt) or alt_group or {}
+
+    return create_group(
+        name=None,
+        note=note,
+        created_by=created_by,
+        members=[{"bcode": requested}, {"bcode": alt}],
+    )
 
 
 def resolve_ship_as(
@@ -67,6 +135,7 @@ def resolve_ship_as(
             requested_bcode=requested,
             is_substitute=False,
             error=f"ส่งแทนไม่ได้ — {requested} ไม่อยู่ในกลุ่มทดแทน",
+            needs_catalog_confirm=True,
         )
     members = {
         str(m.get("bcode") or "").strip()
@@ -79,6 +148,7 @@ def resolve_ship_as(
             requested_bcode=requested,
             is_substitute=False,
             error=f"ส่งแทนไม่ได้ — {alt} ไม่ได้อยู่กลุ่มเดียวกับ {requested}",
+            needs_catalog_confirm=True,
         )
 
     meta = ship_from_meta(alt)

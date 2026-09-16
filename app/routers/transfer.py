@@ -20,6 +20,8 @@ from src.transfer.db import (
     bump_shipment_line_received,
     cancel_request,
     clear_need_list,
+    count_prepare_open,
+    count_receive_open,
     create_draft,
     create_receipt,
     create_shipment,
@@ -38,6 +40,7 @@ from src.transfer.db import (
     list_receive_queue,
     list_requests,
     list_shipment_lines,
+    list_shipment_lines_by_shipments,
     list_shipments,
     list_shipments_by_transfers,
     refresh_request_status,
@@ -46,6 +49,7 @@ from src.transfer.db import (
     shipment_has_lines,
     submit_request,
     upsert_need,
+    upsert_need_many,
 )
 from src.transfer.direction import (
     branches_for_direction,
@@ -57,14 +61,21 @@ from src.transfer.direction import (
 )
 from src.transfer.parts9 import (
     _fetch_dual_icmas,
+    attach_suggest_hints,
     enrich_transfer_lines,
     fetch_local_icmas_meta,
     fetch_sticker_catalog,
     lookup_transfer_product,
     suggest_transfer_skus,
 )
-from src.substitutes.ship_as import resolve_ship_as
+from src.substitutes.ship_as import (
+    NEEDS_CATALOG_CONFIRM,
+    ensure_catalog_pair,
+    is_catalog_gap_error,
+    resolve_ship_as,
+)
 from src.substitutes import db as substitutes_db
+from src.substitutes.models import BcodeConflictError, SubstituteError
 from src.transfer.sticker import (
     PRINTER_PORT,
     build_batch_tspl,
@@ -113,6 +124,14 @@ class NeedReplace(BaseModel):
     lines: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class NeedBulk(BaseModel):
+    lines: list[NeedCreate] = Field(default_factory=list)
+
+
+class SuggestHintsBody(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class DraftCreate(BaseModel):
     direction: str = "to_syp"
 
@@ -124,6 +143,8 @@ class DraftLines(BaseModel):
 class PrepareRequest(BaseModel):
     client_token: str = ""
     lines: list[dict[str, Any]] = Field(default_factory=list)
+    # After UI confirm: create/link catalog pair then ส่งแทน (see needs_catalog_confirm).
+    confirm_add_catalog: bool = False
 
 
 class ReceiveRequest(BaseModel):
@@ -303,6 +324,20 @@ def home(request: Request, t: str | None = None):
     return resp
 
 
+@router.get("/api/counts")
+def api_counts(request: Request):
+    """Lightweight badge counts for the home screen (no line dumps / PARTS9)."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    client = get_transfer_supabase_client()
+    return {
+        "prepare": count_prepare_open(client, site=settings.site),
+        "receive": count_receive_open(client, site=settings.site),
+    }
+
+
 @router.get("/api/suggest")
 def api_suggest(request: Request):
     _, err = _require_api(request)
@@ -310,10 +345,34 @@ def api_suggest(request: Request):
         return err
     settings = _settings()
     try:
-        items = suggest_transfer_skus(site=settings.site)
+        # Hints load async via /api/suggest/hints so the pick table paints sooner.
+        items = suggest_transfer_skus(site=settings.site, include_suggestions=False)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=503)
     return {"items": items}
+
+
+@router.post("/api/suggest/hints")
+def api_suggest_hints(body: SuggestHintsBody, request: Request):
+    """Attach capped substitute hints to an already-fetched suggest list."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    try:
+        out = attach_suggest_hints(body.items or [], site=settings.site)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    hinted = [
+        {
+            "bcode": r.get("bcode"),
+            "suggestions": r.get("suggestions") or [],
+            "substitutes": r.get("substitutes") or [],
+        }
+        for r in out
+        if (r.get("suggestions") or r.get("substitutes"))
+    ]
+    return {"items": hinted}
 
 
 @router.get("/api/product")
@@ -353,12 +412,16 @@ def api_local_icmas(request: Request, bcodes: str = "", include_blocked: str = "
 
 
 @router.get("/api/need-list")
-def api_need_list(request: Request):
+def api_need_list(request: Request, enrich: str = "none"):
     _, err = _require_api(request)
     if err:
         return err
-    items = enrich_transfer_lines(list_need(get_transfer_supabase_client()))
-    return {"items": items}
+    rows = list_need(get_transfer_supabase_client())
+    mode = (enrich or "none").strip().lower()
+    if mode in ("0", "false", "no", "none"):
+        return {"items": rows}
+    # Stock/descr only — cart UI does not need substitute discovery.
+    return {"items": enrich_transfer_lines(rows, include_suggestions=False)}
 
 
 @router.post("/api/need-list")
@@ -387,6 +450,29 @@ def api_need_create(body: NeedCreate, request: Request):
     return row
 
 
+@router.post("/api/need-list/bulk")
+def api_need_bulk(body: NeedBulk, request: Request):
+    """Upsert many cart picks in one request (used when committing checked suggest rows)."""
+    ident, err = _require_api(request)
+    if err:
+        return err
+    rows_in = [
+        {
+            "bcode": ln.bcode.strip(),
+            "qty": ln.qty,
+            "descr": (ln.descr or "").strip() or None,
+            "suggest_qty": ln.suggest_qty or ln.qty,
+            "hq_qtyoh2": ln.hq_qtyoh2,
+        }
+        for ln in (body.lines or [])
+        if (ln.bcode or "").strip()
+    ]
+    rows = upsert_need_many(
+        get_transfer_supabase_client(), rows_in, actor=ident.display_name
+    )
+    return {"items": rows}
+
+
 @router.delete("/api/need-list")
 def api_need_clear(request: Request):
     _, err = _require_api(request)
@@ -406,7 +492,7 @@ def api_need_replace(body: NeedReplace, request: Request):
         body.lines or [],
         actor=ident.display_name,
     )
-    return {"items": enrich_transfer_lines(rows)}
+    return {"items": rows}
 
 
 @router.delete("/api/need-list/{need_id}")
@@ -433,6 +519,7 @@ def api_requests(
     request: Request,
     status: str | None = None,
     role: str | None = None,
+    scope: str | None = None,
 ):
     _, err = _require_api(request)
     if err:
@@ -440,6 +527,21 @@ def api_requests(
     settings = _settings()
     client = get_transfer_supabase_client()
     items = list_requests(client, status=status, role=role, site=settings.site)
+    scope_l = (scope or "").strip().lower()
+    if scope_l == "active":
+        # Drop terminal history early; receive_caught_up short-ships stay (not complete yet).
+        items = [
+            r
+            for r in items
+            if (r.get("status") or "").lower() not in ("complete", "cancelled")
+        ]
+    elif scope_l == "done":
+        # Need completes + short-ship caught-up (still non-complete until remainder ships).
+        items = [
+            r
+            for r in items
+            if (r.get("status") or "").lower() != "cancelled"
+        ]
     transfer_ids = [req["transfer_id"] for req in items]
     lines_by = list_lines_by_transfers(client, transfer_ids)
     ships_by = list_shipments_by_transfers(client, transfer_ids)
@@ -464,12 +566,22 @@ def api_requests(
         fb = row.get("from_branch") or "HQ"
         tb = row.get("to_branch") or "SYP"
         row["direction_label"] = direction_label(fb, tb)
+        if scope_l == "active" and row.get("receive_caught_up"):
+            continue
+        if scope_l == "done" and not (
+            (row.get("status") or "").lower() == "complete" or row.get("receive_caught_up")
+        ):
+            continue
         out.append(row)
     return {"items": out}
 
 
 @router.get("/api/requests/{transfer_id}/lines")
-def api_request_lines(transfer_id: str, request: Request):
+def api_request_lines(
+    transfer_id: str,
+    request: Request,
+    enrich: str = "full",
+):
     _, err = _require_api(request)
     if err:
         return err
@@ -477,14 +589,28 @@ def api_request_lines(transfer_id: str, request: Request):
     header = get_request(client, transfer_id)
     if not header:
         return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
-    lines = enrich_transfer_lines(
-        enrich_lines(list_lines(client, transfer_id)),
-        from_branch=header.get("from_branch"),
-        to_branch=header.get("to_branch"),
-    )
+    raw_lines = enrich_lines(list_lines(client, transfer_id))
+    mode = (enrich or "full").strip().lower()
+    if mode in ("0", "false", "no", "none"):
+        lines = raw_lines
+    elif mode in ("stock", "stock_only"):
+        lines = enrich_transfer_lines(
+            raw_lines,
+            from_branch=header.get("from_branch"),
+            to_branch=header.get("to_branch"),
+            include_suggestions=False,
+        )
+    else:
+        lines = enrich_transfer_lines(
+            raw_lines,
+            from_branch=header.get("from_branch"),
+            to_branch=header.get("to_branch"),
+        )
     shipments = list_shipments(client, transfer_id=transfer_id)
+    ship_ids = [s["shipment_id"] for s in shipments if s.get("shipment_id")]
+    ship_lines_by = list_shipment_lines_by_shipments(client, ship_ids)
     for ship in shipments:
-        ship["lines"] = list_shipment_lines(client, shipment_id=ship["shipment_id"])
+        ship["lines"] = ship_lines_by.get(ship["shipment_id"]) or []
         ship["fully_received"] = shipment_lines_fully_received(ship["lines"])
     progress = summarize_request_progress(lines)
     return {
@@ -661,6 +787,32 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
     except Exception:
         sub_client = None
 
+    def _get_by_bcode(bcode: str):
+        if not sub_client:
+            return None
+        getter = getattr(sub_client, "get_by_bcode", None)
+        if callable(getter):
+            return getter(bcode)
+        return substitutes_db.get_by_bcode(sub_client, bcode)
+
+    def _create_group(**kwargs):
+        if not sub_client:
+            raise SubstituteError("substitute catalog unavailable")
+        create = getattr(sub_client, "create_group", None)
+        if callable(create):
+            return create(**kwargs)
+        return substitutes_db.create_group(sub_client, **kwargs)
+
+    def _add_member(group_id: str, bcode: str, **kwargs):
+        if not sub_client:
+            raise SubstituteError("substitute catalog unavailable")
+        add = getattr(sub_client, "add_member", None)
+        if callable(add):
+            return add(group_id, bcode, **kwargs)
+        return substitutes_db.add_member(sub_client, group_id, bcode, **kwargs)
+
+    pending_catalog: list[dict[str, str]] = []
+    catalog_promoted: list[dict[str, str]] = []
     resolved_lines: list[dict[str, Any]] = []
     for line in body.lines:
         line_id = line.get("line_id")
@@ -687,11 +839,70 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             request_bcode=req_bcode,
             ship_as_bcode=line.get("ship_as_bcode"),
             other_request_bcodes=others,
-            get_by_bcode=(
-                (lambda b, _c=sub_client: substitutes_db.get_by_bcode(_c, b) if _c else None)
-            ),
+            get_by_bcode=_get_by_bcode,
             ship_from_meta=_ship_meta,
         )
+        promoted_now = False
+        if (
+            resolved.error
+            and resolved.needs_catalog_confirm
+            and is_catalog_gap_error(resolved.error)
+        ):
+            alt = str(line.get("ship_as_bcode") or "").strip()
+            if not _ship_meta(alt):
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"ส่งแทนไม่ได้ — ไม่พบ {alt} ใน ICMAS สาขาต้นทาง"
+                        )
+                    },
+                    status_code=400,
+                )
+            if not body.confirm_add_catalog:
+                pending_catalog.append(
+                    {
+                        "line_id": str(line_id),
+                        "request_bcode": req_bcode,
+                        "ship_as_bcode": alt,
+                    }
+                )
+                continue
+            if not sub_client:
+                return JSONResponse(
+                    {"error": "ส่งแทนไม่ได้ — ระบบกลุ่มทดแทนไม่พร้อม"},
+                    status_code=503,
+                )
+            try:
+                ensure_catalog_pair(
+                    request_bcode=req_bcode,
+                    ship_as_bcode=alt,
+                    get_by_bcode=_get_by_bcode,
+                    create_group=_create_group,
+                    add_member=_add_member,
+                    created_by=ident.display_name,
+                    note="from transfer ส่งแทน",
+                )
+            except BcodeConflictError as exc:
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"ส่งแทนไม่ได้ — {exc.bcode} อยู่ในกลุ่มทดแทนอื่นแล้ว "
+                            f"(ต้องจัดการใน Explorer)"
+                        ),
+                        "code": "catalog_conflict",
+                    },
+                    status_code=409,
+                )
+            except (SubstituteError, ValueError) as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+            promoted_now = True
+            resolved = resolve_ship_as(
+                request_bcode=req_bcode,
+                ship_as_bcode=alt,
+                other_request_bcodes=others,
+                get_by_bcode=_get_by_bcode,
+                ship_from_meta=_ship_meta,
+            )
         if resolved.error:
             return JSONResponse({"error": resolved.error}, status_code=400)
         out_line = dict(line)
@@ -701,7 +912,32 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
         out_line["qty_ship"] = qty_ship
         if resolved.is_substitute:
             out_line["requested_bcode"] = resolved.requested_bcode
+            if promoted_now:
+                catalog_promoted.append(
+                    {
+                        "line_id": str(line_id),
+                        "request_bcode": resolved.requested_bcode,
+                        "ship_as_bcode": resolved.ship_bcode,
+                    }
+                )
         resolved_lines.append(out_line)
+
+    if pending_catalog:
+        bits = [
+            f"{p['request_bcode']} → {p['ship_as_bcode']}" for p in pending_catalog
+        ]
+        return JSONResponse(
+            {
+                "error": (
+                    "ส่งแทนยังไม่ได้อยู่ในกลุ่มทดแทน — "
+                    "ยืนยันเพื่อเพิ่มเข้า catalog แล้วจัดส่ง"
+                ),
+                "code": NEEDS_CATALOG_CONFIRM,
+                "pairs": pending_catalog,
+                "detail": " · ".join(bits),
+            },
+            status_code=409,
+        )
 
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
     to_branch = (header.get("to_branch") or "SYP").upper()
@@ -743,6 +979,14 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
                         "qty_ship": line.get("qty_ship"),
                     },
                 )
+        for pair in catalog_promoted:
+            insert_event(
+                client,
+                transfer_id=transfer_id,
+                event_type="substitute_catalog_confirm",
+                actor=ident.display_name,
+                payload=pair,
+            )
         refresh_request_status(client, transfer_id)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(
@@ -863,14 +1107,12 @@ def api_receive(shipment_id: str, body: ReceiveRequest, request: Request):
                 bump_shipment_line_received(
                     client, shipment_line_id=str(shipment_line_id), qty_receive=qty_recv
                 )
-            line_id = line.get("line_id")
-            line_info = transfer_lines.get(line_id, {}) if line_id else {}
-            new_recv = float(line_info.get("qty_received") or 0) + qty_recv
-            req_qty = float(line_info.get("qty_requested") or 0)
+            # Legacy PARTS9: RECEIVED='Y' on any receive (partial or complete).
+            # Partial vs complete is qty elsewhere — do not wait for full requested qty.
             iclow_id = line.get("iclow_id")
             if (
                 iclow_id
-                and new_recv >= req_qty
+                and qty_recv > 0
                 and should_stamp_iclow(
                     enabled=settings.transfer_iclow_stamp_enabled,
                     site=settings.site,

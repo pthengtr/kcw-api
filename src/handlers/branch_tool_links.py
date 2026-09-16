@@ -45,17 +45,21 @@ def collect_branch_tool_links(
     include_tailscale: bool,
     mint_app: str | None = None,
     mint_kwargs: dict[str, Any] | None = None,
+    branches: set[str] | frozenset[str] | None = None,
 ) -> list[BranchLink]:
     """
     Build Flex link rows from worker heartbeats.
 
     Regular users get LAN links only. admin/exec also get Tailscale links when
     the worker advertised a Tailscale base URL.
+
+    When ``branches`` is set (e.g. ``{"HQ"}``), only those branch codes are included.
     """
     workers = sorted(
         workers,
         key=lambda w: worker_sort_key(str(w.get("worker_name") or "")),
     )
+    allowed = {b.upper() for b in branches} if branches is not None else None
     links: list[BranchLink] = []
     seen_branch: set[str] = set()
     extra = dict(mint_kwargs or {})
@@ -65,6 +69,8 @@ def collect_branch_tool_links(
     for w in workers:
         branch = branch_for_worker(str(w.get("worker_name") or ""))
         if not branch or branch in seen_branch:
+            continue
+        if allowed is not None and branch not in allowed:
             continue
         online = w.get("online_status") == "online"
         lan_base = (w.get(lan_url_key) or "").strip().rstrip("/")

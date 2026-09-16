@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 # HQ company accounts used to pay vendors (BPDET = instrument from these accounts).
+# GL codes follow historical PARTS9 BPDET.ACCTNO for each BANKNAME.
 COMPANY_PAY_ACCOUNTS: dict[str, dict[str, str]] = {
     "ktb_44244": {
         "key": "ktb_44244",
@@ -11,12 +12,26 @@ COMPANY_PAY_ACCOUNTS: dict[str, dict[str, str]] = {
         "account_no": "248-0-44244-6",
         "gl": "2101.7",
     },
+    "ktb_00618": {
+        "key": "ktb_00618",
+        "label": "กรุงไทย 248-6-00618-4",
+        "bank_name": "กรุงไทย 248-6-00618-4",
+        "account_no": "248-6-00618-4",
+        "gl": "2101.2",
+    },
+    "ktb_00138": {
+        "key": "ktb_00138",
+        "label": "กรุงไทย 248-6-00138-7",
+        "bank_name": "กรุงไทย 248-6-00138-7",
+        "account_no": "248-6-00138-7",
+        "gl": "2101.1",
+    },
     "kbank_72355": {
         "key": "kbank_72355",
         "label": "กสิกร 141-1-72355-7",
         "bank_name": "กสิกร 141-1-72355-7",
         "account_no": "141-1-72355-7",
-        "gl": "2101.1",
+        "gl": "2101.5",
     },
 }
 

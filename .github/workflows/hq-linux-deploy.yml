@@ -3,10 +3,17 @@ name: HQ Linux deploy
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: [self-hosted, linux, hq]
     steps:
       - name: Pull and restart kcw-api units
-        run: bash "$HOME/projects/kcw-api/scripts/hq-linux-deploy.sh"
+        run: |
+          set -euo pipefail
+          REPO="${HOME}/projects/kcw-api"
+          cd "$REPO"
+          git fetch origin
+          git reset --hard origin/master
+          exec bash "$REPO/scripts/hq-linux-deploy.sh" --already-pulled

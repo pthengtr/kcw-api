@@ -707,7 +707,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <div class="step-num">2</div>
           <div class="step-body">
             <h3>สแกนเอกสารจากเจ้าหนี้</h3>
-            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement · ไฟล์นี้จะเป็นเอกสารอ้างอิงและอัปโหลดอัตโนมัติเมื่อบันทึก</p>
+            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement · หลายหน้าจะอ่านทีละหน้าแล้วรวมรายการ · ไฟล์นี้จะเป็นเอกสารอ้างอิงและอัปโหลดอัตโนมัติเมื่อบันทึก</p>
             <div class="drop" id="dropScan" tabindex="0">
               <div style="font-size:1.4rem;margin-bottom:.25rem">📄</div>
               <div>คลิกหรือลากเอกสารมาวางที่นี่</div>
@@ -857,7 +857,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
                   <button type="button" id="discModePercent" data-mode="percent">% จากยอดรวม</button>
                 </div>
                 <label class="lbl" id="discInputLabel" for="discInput" style="margin-top:.65rem">ส่วนลด (บาท)</label>
-                <input class="inp" id="discInput" type="number" inputmode="decimal" step="0.01" min="0" value="0.00"/>
+                <input class="inp" id="discInput" type="number" inputmode="decimal" step="0.01" value="0.00"/>
               </div>
               <div class="disc-sum">
                 <div class="pay-line"><span>ยอดรวมก่อนส่วนลด</span><strong id="discBillAmt">0.00</strong></div>
@@ -996,7 +996,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
             <button type="button" id="editDiscModePercent">% จากยอดรวม</button>
           </div>
           <label class="lbl" id="editDiscInputLabel" for="editDiscInput" style="margin-top:.65rem">ส่วนลด (บาท)</label>
-          <input class="inp" id="editDiscInput" type="number" step="0.01" min="0" value="0.00"/>
+          <input class="inp" id="editDiscInput" type="number" step="0.01" value="0.00"/>
         </div>
         <div class="disc-sum">
           <div class="pay-line"><span>ยอดรวมก่อนส่วนลด</span><strong id="editDiscBillAmt">0.00</strong></div>
@@ -2804,7 +2804,7 @@ function selectedBillTotal() {
   return { n: checked.length, total: checked.reduce((s, cb) => s + (Number(cb.dataset.amt) || 0), 0) };
 }
 function resolveDiscAmount(bill) {
-  const raw = Math.max(0, Number($('discInput').value || 0));
+  const raw = Number($('discInput').value || 0);
   if (discMode === 'percent') return Math.round(bill * Math.min(raw, 100) / 100 * 100) / 100;
   return Math.round(raw * 100) / 100;
 }
@@ -2952,7 +2952,9 @@ async function scanBillDocument(files) {
     }
   }
   
-  $('scanStatus').textContent = 'กำลังอ่านรายการบิล…';
+  $('scanStatus').textContent = files.length > 1
+    ? `กำลังอ่านรายการบิลทีละหน้า (${files.length} หน้า)…`
+    : 'กำลังอ่านรายการบิล…';
   $('btnScanSkip').classList.add('hidden');
   const fd = new FormData();
   fd.append('acctno', picked.acctno);
@@ -3283,7 +3285,7 @@ function editSelectedBillTotal() {
   return { n: checked.length, total: checked.reduce((s, cb) => s + (Number(cb.dataset.amt) || 0), 0) };
 }
 function resolveEditDiscAmount(bill) {
-  const raw = Math.max(0, Number($('editDiscInput').value || 0));
+  const raw = Number($('editDiscInput').value || 0);
   if (editDiscMode === 'percent') return Math.round(bill * Math.min(raw, 100) / 100 * 100) / 100;
   return Math.round(raw * 100) / 100;
 }

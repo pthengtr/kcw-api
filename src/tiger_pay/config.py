@@ -32,6 +32,10 @@ class TigerPaySettings(BaseSettings):
         default=1.5,
         validation_alias="TIGER_PAY_POLL_INTERVAL_SECONDS",
     )
+    tiger_pay_qr_gateway: str = Field(
+        default="KBANK",
+        validation_alias="TIGER_PAY_QR_GATEWAY",
+    )
     supabase_url: str = Field(validation_alias="SUPABASE_URL")
     supabase_service_role_key: str = Field(validation_alias="SUPABASE_SERVICE_ROLE_KEY")
     tiger_pay_max_body_bytes: int = Field(
@@ -55,6 +59,14 @@ class TigerPaySettings(BaseSettings):
     @classmethod
     def strip_optional(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("tiger_pay_qr_gateway")
+    @classmethod
+    def qr_gateway(cls, value: str) -> str:
+        cleaned = value.strip().upper() or "KBANK"
+        if cleaned not in {"KBANK", "SCB"}:
+            raise ValueError("must be KBANK or SCB")
+        return cleaned
 
     @field_validator("tiger_pay_poll_interval_seconds")
     @classmethod
