@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import io
 from typing import Any
+
+import qrcode
 
 from src.tiger_pay.status import TERMINAL_STATUSES, normalize_status
 
@@ -55,14 +59,17 @@ def payment_type_from_attempt(attempt: dict[str, Any] | None) -> str | None:
 
 
 def has_displayable_qr(payload: Any) -> bool:
+    """True when Tiger returned a non-empty QR image Companion can show.
+
+    qrRawData alone is not enough — Companion only renders ``qr.image``.
+    """
     qr = dynamic_qr_from_payload(payload)
     if not isinstance(qr, dict):
         return False
+    if qr.get("qrImageOmitted"):
+        return False
     image = qr.get("qrImage")
-    if isinstance(image, str) and image.strip() and not qr.get("qrImageOmitted"):
-        return True
-    raw = qr.get("qrRawData")
-    return isinstance(raw, str) and bool(raw.strip())
+    return isinstance(image, str) and bool(image.strip())
 
 
 def qr_image_src(qr_image: str) -> str:
@@ -70,6 +77,18 @@ def qr_image_src(qr_image: str) -> str:
     if image.startswith("data:"):
         return image
     return f"data:image/png;base64,{image}"
+
+
+def render_qr_image_data_uri(raw_data: str) -> str:
+    """Build a PNG data-URI from EMV / PromptPay payload text."""
+    qr = qrcode.QRCode(border=2, box_size=6)
+    qr.add_data(raw_data.strip())
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def extract_companion_qr(payload: Any) -> dict[str, Any] | None:
@@ -84,13 +103,18 @@ def extract_companion_qr(payload: Any) -> dict[str, Any] | None:
         image = qr_image_src(image_raw)
 
     raw_data = qr.get("qrRawData")
+    raw_text = raw_data.strip() if isinstance(raw_data, str) else ""
+    # Tiger often returns empty qrImage with a valid EMV string — render locally.
+    if image is None and raw_text:
+        image = render_qr_image_data_uri(raw_text)
+
     status = qr.get("status") or qr.get("qrStatus")
     gateway = (
         qr.get("paymentGateway")
         or payment.get("paymentGateway")
         or qr.get("bank")
     )
-    if image is None and not (isinstance(raw_data, str) and raw_data.strip()):
+    if image is None and not raw_text:
         if status is None and gateway is None:
             return None
 

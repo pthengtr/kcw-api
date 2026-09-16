@@ -70,6 +70,21 @@ def test_collect_branch_tool_links_adds_tailscale_for_elevated(monkeypatch):
     assert len(staff_links) == 2
     assert all(len(x) == 3 for x in staff_links)
 
+    hq_only = collect_branch_tool_links(
+        workers,
+        line_user_id="U1",
+        display_name="Staff",
+        secret="secret",
+        ttl_seconds=900,
+        path="/companion/",
+        lan_url_key="public_base_url",
+        tailscale_url_key="tailscale_public_base_url",
+        include_tailscale=False,
+        branches={"HQ"},
+    )
+    assert len(hq_only) == 1
+    assert hq_only[0][0] == "HQ"
+
     admin_links = collect_branch_tool_links(
         workers,
         line_user_id="U1",
