@@ -551,6 +551,8 @@ def list_pending_notes(site: str, reminders: list[dict[str, Any]]) -> list[dict[
         if not pvmas:
             continue
         merged = {**pvmas, "reminder": rem}
+        method = (rem.get("settle_method") or "").strip().lower()
+        merged["settle_method"] = method if method in ("transfer", "cheque", "cash") else "transfer"
         nd = pvmas.get("NOTEDATE")
         if isinstance(nd, datetime):
             merged["NOTEDATE"] = nd.date().isoformat()
