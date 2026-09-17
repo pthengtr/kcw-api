@@ -46,6 +46,8 @@ def create_payment_attempt(
     amount: Decimal | float | int | str,
     status: str,
     raw_status: str | None = None,
+    submitted_by: str | None = None,
+    submitted_by_name: str | None = None,
 ) -> dict[str, Any]:
     if len(attempt_id) > 20:
         raise ValueError("payment attempt id must be <= 20 characters for Tiger RefNo2")
@@ -58,7 +60,9 @@ def create_payment_attempt(
             pos_bill_number,
             amount,
             status,
-            raw_status
+            raw_status,
+            submitted_by,
+            submitted_by_name
         )
         values (
             :id,
@@ -66,7 +70,9 @@ def create_payment_attempt(
             :pos_bill_number,
             :amount,
             :status,
-            :raw_status
+            :raw_status,
+            :submitted_by,
+            :submitted_by_name
         )
         returning *
         """
@@ -81,6 +87,8 @@ def create_payment_attempt(
                 "amount": str(amount),
                 "status": status,
                 "raw_status": raw_status,
+                "submitted_by": submitted_by,
+                "submitted_by_name": submitted_by_name,
             },
         ).one()
     return _row_to_attempt(row)

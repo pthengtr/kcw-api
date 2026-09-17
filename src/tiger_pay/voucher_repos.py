@@ -55,6 +55,8 @@ def create_voucher_attempt(
     status: str,
     raw_status: str | None = None,
     ref_num: str | None = None,
+    submitted_by: str | None = None,
+    submitted_by_name: str | None = None,
 ) -> dict[str, Any]:
     if len(attempt_id) > 20:
         raise ValueError("voucher attempt id must be <= 20 characters")
@@ -68,7 +70,9 @@ def create_voucher_attempt(
             amount,
             status,
             raw_status,
-            ref_num
+            ref_num,
+            submitted_by,
+            submitted_by_name
         )
         values (
             :id,
@@ -77,7 +81,9 @@ def create_voucher_attempt(
             :amount,
             :status,
             :raw_status,
-            :ref_num
+            :ref_num,
+            :submitted_by,
+            :submitted_by_name
         )
         returning *
         """
@@ -93,6 +99,8 @@ def create_voucher_attempt(
                 "status": status,
                 "raw_status": raw_status,
                 "ref_num": ref_num,
+                "submitted_by": submitted_by,
+                "submitted_by_name": submitted_by_name,
             },
         ).one()
     return _row_to_attempt(row)

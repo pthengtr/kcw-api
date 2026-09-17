@@ -18,6 +18,8 @@ create table if not exists tiger_pay.payment_attempt (
     raw_status text null,
     raw_create_response jsonb null,
     error_message text null,
+    submitted_by text null,
+    submitted_by_name text null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     last_polled_at timestamptz null,
@@ -37,6 +39,9 @@ create index if not exists payment_attempt_pos_bill_id_idx
 
 create index if not exists payment_attempt_status_idx
     on tiger_pay.payment_attempt (status);
+
+create index if not exists payment_attempt_submitted_by_idx
+    on tiger_pay.payment_attempt (submitted_by);
 
 create table if not exists tiger_pay.payment_event (
     id bigserial primary key,

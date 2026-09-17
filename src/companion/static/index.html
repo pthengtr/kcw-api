@@ -1089,6 +1089,15 @@
       return map[action] || action;
     }
 
+    function submitterLabel(source) {
+      if (!source) return "";
+      const name = String(source.submitted_by_name || "").trim();
+      const by = String(source.submitted_by || "").trim();
+      if (name) return name;
+      if (by === "tailscale") return "Tailscale account";
+      return by;
+    }
+
     async function api(path, options = {}) {
       const res = await fetch(path, {
         credentials: "same-origin",
@@ -1556,6 +1565,7 @@
             <div>สถานะ Tiger: <strong><span class="${statusClass(bill.tiger_payment_status)}">${statusLabel(bill.tiger_payment_status)}</span></strong></div>
             <div>PAID: <strong>${bill.pos_status || "—"}</strong></div>
             <div>พนักงานขาย: <strong>${bill.salesperson || "—"}</strong></div>
+            <div>ผู้ส่ง: <strong>${submitterLabel(bill) || "—"}</strong></div>
             <div>${isPayoutBill(bill) ? "เลข voucher" : "เลขชำระ"}: <strong>${bill.tiger_payment_no || "—"}</strong></div>
           </div>
           <div class="bill-card-actions">${buttonHtml(bill)}</div>
@@ -1585,13 +1595,15 @@
         const key = `${ev.created_at || ""}:${ev.source || ""}:${idx}`;
         const expanded = state.expandedPayload.has(key);
         const payloadJson = JSON.stringify(ev.payload ?? {}, null, 2);
+        const who = submitterLabel(ev.payload || {});
+        const whoMeta = who ? ` · ผู้ส่ง ${who}` : "";
         return `<li class="cat-${cat}" data-key="${key}">
           <div class="row-top">
             <span class="cat-badge ${cat}">${CAT_LABEL[cat]}</span>
             <strong>${actionLabel(ev)}</strong>
             <span class="${statusClass(ev.status)}">${statusLabel(ev.status)}</span>
           </div>
-          <div class="meta">${formatBangkokTime(ev.created_at)} · ${ev.source || "—"}</div>
+          <div class="meta">${formatBangkokTime(ev.created_at)} · ${ev.source || "—"}${whoMeta}</div>
           <button type="button" class="btn-link" data-toggle-payload="${key}">${expanded ? `${ICONS.chevronUp} ซ่อนข้อมูล` : `${ICONS.chevronDown} แสดงข้อมูล`}</button>
           ${expanded ? `<pre class="payload">${escapeHtml(payloadJson)}</pre>` : ""}
         </li>`;

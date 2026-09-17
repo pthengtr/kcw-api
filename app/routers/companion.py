@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from src.companion.config import get_companion_bill_settings
 from src.db import get_engine
-from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
+from src.stock_check.auth import StockCheckIdentity, TokenError, mint_access_token, verify_access_token
 from src.stock_check.net import client_ip, is_tailscale_cg_nat
 from src.stock_check.config import get_stock_check_settings
 from src.tiger_pay.payment_service import (
@@ -27,6 +27,7 @@ from src.tiger_pay.voucher_service import (
 )
 from src.tiger_pay import repos
 from src.tiger_pay import voucher_repos
+from src.tiger_pay.submitter import submitter_from_identity
 
 router = APIRouter(prefix="/companion", tags=["companion"])
 
@@ -59,7 +60,7 @@ def _http_error(exc: PaymentServiceError | VoucherServiceError) -> HTTPException
     return HTTPException(status_code=status, detail=detail)
 
 
-def _verify_companion_token(token: str):
+def _verify_companion_token(token: str) -> StockCheckIdentity:
     settings = get_stock_check_settings()
     return verify_access_token(
         token,
@@ -69,9 +70,9 @@ def _verify_companion_token(token: str):
     )
 
 
-def _require_companion_user(request: Request) -> None:
+def _require_companion_user(request: Request) -> StockCheckIdentity | None:
     if not _line_auth_required():
-        return
+        return None
     token = request.cookies.get(SESSION_COOKIE) or ""
     if not token:
         raise HTTPException(
@@ -79,12 +80,20 @@ def _require_companion_user(request: Request) -> None:
             detail={"message": "ต้องเปิดลิงก์จาก LINE", "code": "line_auth_required"},
         )
     try:
-        _verify_companion_token(token)
+        return _verify_companion_token(token)
     except TokenError as exc:
         raise HTTPException(
             status_code=401,
             detail={"message": str(exc), "code": "line_auth_invalid"},
         ) from exc
+
+
+def _submitter_kwargs(identity: StockCheckIdentity | None) -> dict[str, str | None]:
+    submitted_by, submitted_by_name = submitter_from_identity(identity)
+    return {
+        "submitted_by": submitted_by,
+        "submitted_by_name": submitted_by_name,
+    }
 
 
 @router.get("", response_class=HTMLResponse)
@@ -121,7 +130,7 @@ async def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
                 minted = mint_access_token(
                     secret=settings.stock_check_token_secret,
                     line_user_id="tailscale",
-                    display_name="tailnet",
+                    display_name="Tailscale account",
                     branch=settings.stock_check_branch,
                     ttl_seconds=max(settings.stock_check_token_ttl_seconds, 3600),
                     app="companion",
@@ -172,7 +181,7 @@ async def companion_bills(
 
 @router.post("/bills/{pos_bill_id}/pay")
 async def companion_pay_bill(request: Request, pos_bill_id: str) -> dict:
-    _require_companion_user(request)
+    ident = _require_companion_user(request)
     payment_type = "cash"
     content_type = (request.headers.get("content-type") or "").lower()
     if "application/json" in content_type:
@@ -188,6 +197,7 @@ async def companion_pay_bill(request: Request, pos_bill_id: str) -> dict:
             engine,
             pos_bill_id,
             payment_type=payment_type,
+            **_submitter_kwargs(ident),
         )
     except PaymentServiceError as exc:
         raise _http_error(exc) from exc
@@ -196,20 +206,28 @@ async def companion_pay_bill(request: Request, pos_bill_id: str) -> dict:
 
 @router.post("/bills/{pos_bill_id}/voucher")
 async def companion_create_voucher(request: Request, pos_bill_id: str) -> dict:
-    _require_companion_user(request)
+    ident = _require_companion_user(request)
     engine = get_engine()
     try:
-        return create_voucher_for_bill(engine, pos_bill_id)
+        return create_voucher_for_bill(
+            engine,
+            pos_bill_id,
+            **_submitter_kwargs(ident),
+        )
     except VoucherServiceError as exc:
         raise _http_error(exc) from exc
 
 
 @router.post("/payments/{attempt_id}/cancel")
 async def companion_cancel_payment(request: Request, attempt_id: str) -> dict:
-    _require_companion_user(request)
+    ident = _require_companion_user(request)
     engine = get_engine()
     try:
-        result = cancel_payment_attempt(engine, attempt_id)
+        result = cancel_payment_attempt(
+            engine,
+            attempt_id,
+            **_submitter_kwargs(ident),
+        )
     except PaymentServiceError as exc:
         raise _http_error(exc) from exc
     return result
@@ -217,10 +235,14 @@ async def companion_cancel_payment(request: Request, attempt_id: str) -> dict:
 
 @router.post("/vouchers/{attempt_id}/cancel")
 async def companion_cancel_voucher(request: Request, attempt_id: str) -> dict:
-    _require_companion_user(request)
+    ident = _require_companion_user(request)
     engine = get_engine()
     try:
-        return cancel_voucher_attempt(engine, attempt_id)
+        return cancel_voucher_attempt(
+            engine,
+            attempt_id,
+            **_submitter_kwargs(ident),
+        )
     except VoucherServiceError as exc:
         raise _http_error(exc) from exc
 

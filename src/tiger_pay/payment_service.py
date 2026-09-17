@@ -21,6 +21,7 @@ from src.tiger_pay.qr import (
     should_confirm_qr_payment,
 )
 from src.tiger_pay.status import is_active_status, normalize_status
+from src.tiger_pay.submitter import normalize_submitter, submitter_payload
 
 logger = logging.getLogger("kcw.tiger_pay.payment_service")
 
@@ -74,6 +75,8 @@ def list_bills_with_payment_status(
         )
         item["payment_type"] = payment_type_from_attempt(attempt) if attempt else None
         item["voucher"] = None
+        item["submitted_by"] = attempt.get("submitted_by") if attempt else None
+        item["submitted_by_name"] = attempt.get("submitted_by_name") if attempt else None
         results.append(item)
 
     results.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
@@ -106,6 +109,8 @@ def send_payment_for_bill(
     *,
     payment_type: str = "cash",
     open_api: TigerPayOpenApiClient | None = None,
+    submitted_by: str | None = None,
+    submitted_by_name: str | None = None,
 ) -> dict[str, Any]:
     cleaned_type = str(payment_type or "cash").strip().lower()
     if cleaned_type not in ALLOWED_PAYMENT_TYPES:
@@ -113,6 +118,14 @@ def send_payment_for_bill(
             "payment_type must be cash or qr",
             code="invalid_payment_type",
         )
+    submitted_by, submitted_by_name = normalize_submitter(
+        line_user_id=submitted_by,
+        display_name=submitted_by_name,
+    )
+    submitter = submitter_payload(
+        submitted_by=submitted_by,
+        submitted_by_name=submitted_by_name,
+    )
 
     bill = get_open_bill(pos_bill_id)
     if bill is None:
@@ -155,6 +168,8 @@ def send_payment_for_bill(
             amount=bill.amount,
             status="sending",
             raw_status="sending",
+            submitted_by=submitted_by,
+            submitted_by_name=submitted_by_name,
         )
     except IntegrityError as exc:
         raise PaymentServiceError(
@@ -167,7 +182,11 @@ def send_payment_for_bill(
         payment_attempt_id=attempt_id,
         source="api",
         status="sending",
-        payload={"action": "payment_created", "pos_bill_id": bill.id},
+        payload={
+            "action": "payment_created",
+            "pos_bill_id": bill.id,
+            **submitter,
+        },
         event_key=f"api:created:{attempt_id}",
     )
 
@@ -267,6 +286,8 @@ def cancel_payment_attempt(
     attempt_id: str,
     *,
     open_api: TigerPayOpenApiClient | None = None,
+    submitted_by: str | None = None,
+    submitted_by_name: str | None = None,
 ) -> dict[str, Any]:
     attempt = repos.get_payment_attempt(engine, attempt_id)
     if not attempt:
@@ -285,6 +306,15 @@ def cancel_payment_attempt(
             code="missing_tiger_id",
         )
 
+    actor_by, actor_name = normalize_submitter(
+        line_user_id=submitted_by,
+        display_name=submitted_by_name,
+    )
+    actor = submitter_payload(
+        submitted_by=actor_by,
+        submitted_by_name=actor_name,
+    )
+
     updated = repos.update_payment_attempt(
         engine,
         attempt_id,
@@ -296,7 +326,7 @@ def cancel_payment_attempt(
         payment_attempt_id=attempt_id,
         source="api",
         status="cancelling",
-        payload={"action": "cancellation_requested"},
+        payload={"action": "cancellation_requested", **actor},
         event_key=f"api:cancel_requested:{attempt_id}",
     )
 
