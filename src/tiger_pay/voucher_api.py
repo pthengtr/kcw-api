@@ -66,11 +66,36 @@ def _dig_token(payload: Any) -> str | None:
     return None
 
 
+_BOOLEANISH = frozenset({"true", "false", "yes", "no", "y", "n", "1", "0"})
+
+
+def _looks_like_voucher_num(value: Any) -> str | None:
+    """Return a cleaned voucher number, ignoring success flags / empty values."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        text = str(int(value)) if float(value).is_integer() else str(value)
+    elif isinstance(value, str):
+        text = value.strip()
+    else:
+        return None
+    if not text or text.lower() in _BOOLEANISH:
+        return None
+    return text
+
+
 def extract_voucher_num(payload: Any) -> str | None:
     if payload is None:
         return None
-    if isinstance(payload, str) and payload.strip():
-        return payload.strip()
+    direct = _looks_like_voucher_num(payload)
+    if direct is not None and not isinstance(payload, (dict, list)):
+        return direct
+    if isinstance(payload, list):
+        for item in payload:
+            found = extract_voucher_num(item)
+            if found:
+                return found
+        return None
     if not isinstance(payload, dict):
         return None
     for key in (
@@ -83,16 +108,31 @@ def extract_voucher_num(payload: Any) -> str | None:
         "number",
         "code",
     ):
-        value = payload.get(key)
-        if isinstance(value, (str, int)) and str(value).strip():
-            return str(value).strip()
-    for nest_key in ("data", "success", "voucher", "result"):
-        nested = payload.get(nest_key)
-        found = extract_voucher_num(nested)
+        found = _looks_like_voucher_num(payload.get(key))
         if found:
             return found
-    if isinstance(payload.get("items"), list) and payload["items"]:
-        return extract_voucher_num(payload["items"][0])
+    # Tiger create returns result: ["0824…"]; prefer that before success:"true".
+    result = payload.get("result")
+    if isinstance(result, list):
+        found = extract_voucher_num(result)
+        if found:
+            return found
+    for nest_key in ("voucher", "data", "items"):
+        nested = payload.get(nest_key)
+        if isinstance(nested, list) and nested:
+            found = extract_voucher_num(nested[0])
+            if found:
+                return found
+        elif isinstance(nested, dict):
+            found = extract_voucher_num(nested)
+            if found:
+                return found
+    # Only dig into success when it is an object (login-style), never "true"/"false".
+    success = payload.get("success")
+    if isinstance(success, dict):
+        found = extract_voucher_num(success)
+        if found:
+            return found
     return None
 
 
