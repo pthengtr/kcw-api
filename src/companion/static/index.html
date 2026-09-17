@@ -1378,7 +1378,7 @@
       const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
       const cashLabel = cashLoading
         ? `${ICONS.spinner} กำลังส่ง…`
-        : `${ICONS.send} ส่งเงินสด`;
+        : `${ICONS.send} ส่งเงินสด / บิล VAT`;
       const qrLabel = qrLoading
         ? `${ICONS.spinner} กำลังส่ง QR…`
         : showQr && bill.payment_attempt_active
@@ -1510,7 +1510,7 @@
         state.events = [];
         document.getElementById("timeline").innerHTML = isPayoutBill(bill)
           ? `<li class="empty">ยังไม่มี voucher กด「สร้าง voucher / จ่ายคืน」</li>`
-          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด」หรือ「ส่ง QR」</li>`;
+          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」หรือ「ส่ง QR」</li>`;
       }
     }
 
