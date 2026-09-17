@@ -9,7 +9,12 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from src.companion.bill_mapping import REQUIRED_COLUMNS, frames_to_bills, row_to_bill
+from src.companion.bill_mapping import (
+    REQUIRED_COLUMNS,
+    frames_to_bills,
+    is_cn_payout_bill_number,
+    row_to_bill,
+)
 from src.companion.bills import PosBill
 from src.companion.config import CompanionBillSettings, get_companion_bill_settings
 from src.db.mssql_host import pick_mssql_server
@@ -64,13 +69,36 @@ def _select_columns_sql() -> str:
     return ", ".join(f"[{c}]" for c in cols)
 
 
-def _base_where_sql(*, today_only: bool) -> str:
+def _base_where_sql(*, today_only: bool, payout: bool = False) -> str:
     clauses = [
-        "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
         "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'TF%'",
         "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'SA%'",
         "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3SA%'",
     ]
+    if payout:
+        # Counter CN cash-return candidates (exclude transfer/online CN subtypes).
+        clauses.extend(
+            [
+                "("
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE 'CN%' "
+                "OR UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE '3CN%'"
+                ")",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTF%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTF%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTAD%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTAD%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([PAID], '')))) <> 'Y'",
+            ]
+        )
+    else:
+        clauses.extend(
+            [
+                "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
+                # Keep CN payout bills out of the collect list.
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CN%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CN%'",
+            ]
+        )
     if today_only:
         # Assumes SQL Server local clock matches shop timezone (Thailand).
         clauses.append("CONVERT(date, [BILLDATE]) = CONVERT(date, GETDATE())")
@@ -95,7 +123,7 @@ def list_mssql_bills(
         SELECT TOP ({limit})
             {_select_columns_sql()}
         FROM {table_sql}
-        WHERE {_base_where_sql(today_only=today_only)}
+        WHERE {_base_where_sql(today_only=today_only, payout=False)}
         ORDER BY [BILLDATE] DESC, [BILLTIME] DESC
         """
     )
@@ -104,7 +132,37 @@ def list_mssql_bills(
     frame = pd.read_sql(sql, eng)
     if frame.empty:
         return []
-    return frames_to_bills(frame)
+    return frames_to_bills(frame, kind="collect")
+
+
+def list_mssql_cn_bills(
+    settings: CompanionBillSettings | None = None,
+    *,
+    engine: Engine | None = None,
+) -> list[PosBill]:
+    settings = settings or get_companion_bill_settings()
+    if not settings.pos_mssql_bills_table:
+        raise ValueError("POS_MSSQL_BILLS_TABLE is required when POS_BILL_SOURCE=mssql")
+
+    table_sql = _quote_table_name(settings.pos_mssql_bills_table)
+    today_only = settings.pos_bills_mode == "today"
+    limit = int(settings.pos_bills_limit)
+
+    sql = text(
+        f"""
+        SELECT TOP ({limit})
+            {_select_columns_sql()}
+        FROM {table_sql}
+        WHERE {_base_where_sql(today_only=today_only, payout=True)}
+        ORDER BY [BILLDATE] DESC, [BILLTIME] DESC
+        """
+    )
+
+    eng = engine or get_mssql_engine()
+    frame = pd.read_sql(sql, eng)
+    if frame.empty:
+        return []
+    return frames_to_bills(frame, kind="payout")
 
 
 def get_mssql_bill(
@@ -118,12 +176,15 @@ def get_mssql_bill(
         raise ValueError("POS_MSSQL_BILLS_TABLE is required when POS_BILL_SOURCE=mssql")
 
     table_sql = _quote_table_name(settings.pos_mssql_bills_table)
+    # Lookup by id without CASHED/PAID list filters so pay + voucher actions work.
     sql = text(
         f"""
         SELECT TOP (1)
             {_select_columns_sql()}
         FROM {table_sql}
-        WHERE {_base_where_sql(today_only=False)}
+        WHERE UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'TF%'
+          AND UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'SA%'
+          AND UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3SA%'
           AND LTRIM(RTRIM(CONVERT(varchar(64), [ID]))) = :pos_bill_id
         """
     )
@@ -131,4 +192,6 @@ def get_mssql_bill(
     frame = pd.read_sql(sql, eng, params={"pos_bill_id": str(pos_bill_id).strip()})
     if frame.empty:
         return None
-    return row_to_bill(frame.iloc[0])
+    bill_number = frame.iloc[0].get("BILLNO")
+    kind = "payout" if is_cn_payout_bill_number(bill_number) else "collect"
+    return row_to_bill(frame.iloc[0], kind=kind)

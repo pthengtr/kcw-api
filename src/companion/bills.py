@@ -18,6 +18,7 @@ class PosBill:
     created_at: datetime
     pos_status: str = "open"
     salesperson: str | None = None
+    kind: str = "collect"  # collect | payout
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -34,6 +35,7 @@ _MOCK_BILLS: tuple[PosBill, ...] = (
         created_at=datetime(2026, 7, 14, 9, 15, tzinfo=timezone.utc),
         pos_status="N",
         salesperson="mock.user",
+        kind="collect",
     ),
     PosBill(
         id="bill-1002",
@@ -42,6 +44,7 @@ _MOCK_BILLS: tuple[PosBill, ...] = (
         created_at=datetime(2026, 7, 14, 10, 2, tzinfo=timezone.utc),
         pos_status="N",
         salesperson="mock.user",
+        kind="collect",
     ),
     PosBill(
         id="bill-1003",
@@ -50,6 +53,16 @@ _MOCK_BILLS: tuple[PosBill, ...] = (
         created_at=datetime(2026, 7, 14, 11, 40, tzinfo=timezone.utc),
         pos_status="Y",
         salesperson="mock.user",
+        kind="collect",
+    ),
+    PosBill(
+        id="bill-cn-2001",
+        bill_number="CN2607140001",
+        amount=Decimal("150.00"),
+        created_at=datetime(2026, 7, 14, 12, 5, tzinfo=timezone.utc),
+        pos_status="N",
+        salesperson="mock.user",
+        kind="payout",
     ),
 )
 
@@ -91,8 +104,10 @@ def _settings_with_overrides(
     return settings.model_copy(update=updates)
 
 
-def _filter_mock_bills(mode: str, *, limit: int) -> list[PosBill]:
+def _filter_mock_bills(mode: str, *, limit: int, kind: str | None = None) -> list[PosBill]:
     bills = list(_MOCK_BILLS)
+    if kind is not None:
+        bills = [bill for bill in bills if bill.kind == kind]
     if mode == "today":
         from src.companion.bill_mapping import BANGKOK_TZ
 
@@ -117,7 +132,11 @@ def list_open_bills(
         from src.companion.csv_bills import list_csv_bills
 
         try:
-            return list_csv_bills(settings)
+            return [
+                bill
+                for bill in list_csv_bills(settings)
+                if bill.kind == "collect"
+            ]
         except Exception:
             logger.exception("Failed to load POS bills from CSV; returning empty list")
             return []
@@ -134,6 +153,44 @@ def list_open_bills(
     return _filter_mock_bills(
         settings.pos_bills_mode,
         limit=int(settings.pos_bills_limit),
+        kind="collect",
+    )
+
+
+def list_cn_bills(
+    *,
+    mode: str | None = None,
+    limit: int | str | None = None,
+) -> list[PosBill]:
+    settings = _settings_with_overrides(mode=mode, limit=limit)
+    source = settings.pos_bill_source
+
+    if source == "csv":
+        from src.companion.csv_bills import list_csv_bills
+
+        try:
+            return [
+                bill
+                for bill in list_csv_bills(settings)
+                if bill.kind == "payout"
+            ][: int(settings.pos_bills_limit)]
+        except Exception:
+            logger.exception("Failed to load CN bills from CSV; returning empty list")
+            return []
+
+    if source == "mssql":
+        from src.companion.mssql_bills import list_mssql_cn_bills
+
+        try:
+            return list_mssql_cn_bills(settings)
+        except Exception:
+            logger.exception("Failed to load CN bills from MSSQL; returning empty list")
+            return []
+
+    return _filter_mock_bills(
+        settings.pos_bills_mode,
+        limit=int(settings.pos_bills_limit),
+        kind="payout",
     )
 
 
