@@ -253,7 +253,17 @@ Bearer auth, `multipart/form-data`:
 | `find_by` | `created_date` |
 | `used` | `A` |
 
-**Not implemented in KCW** today (Companion focuses on Open API Payment v2).
+**Implemented in KCW (Companion CN cash-return):**
+
+| Tiger capability | KCW |
+| --- | --- |
+| Login | `TigerVoucherApiClient.login` |
+| Create voucher | Companion `POST /companion/bills/{pos_bill_id}/voucher` |
+| Show voucher | Poll via `GET /companion/vouchers/{attempt_id}` |
+| Cancel voucher | `POST /companion/vouchers/{attempt_id}/cancel` |
+| Query vouchers | Client method only (not exposed in UI yet) |
+
+CN bill selection: `CN*` / `3CN*` (exclude `CNTF*` / `CNTAD*`). Amount = `abs(AFTERTAX)`. Stored in `tiger_pay.voucher_attempt` + `voucher_event` (see `docs/sql/tiger_pay_voucher_attempt.sql`).
 
 ---
 
@@ -266,8 +276,13 @@ Bearer auth, `multipart/form-data`:
 | `TIGER_PAY_CLIENT_SECRET` | Open API JWT secret (+ webhook auth) |
 | `TIGER_PAY_POLL_INTERVAL_SECONDS` | Companion poller |
 | `TIGER_PAY_MAX_BODY_BYTES` | Webhook body limit |
-
-Voucher login credentials are **not** wired in KCW env yet.
+| `TIGER_VOUCHER_API_HOST` | Voucher API host (default `https://api.tigercashbox.com`) |
+| `TIGER_VOUCHER_USERNAME` | Voucher login username |
+| `TIGER_VOUCHER_PASSWORD` | Voucher login password |
+| `TIGER_VOUCHER_MOBILE` | Voucher login mobile |
+| `TIGER_VOUCHER_AUTHEN_REQUIRED` | Create form flag (default `0`) |
+| `TIGER_VOUCHER_APPROVED_REQUIRED` | Create form flag (default `0`) |
+| `TIGER_VOUCHER_EXPIRE_HOURS` | Voucher validity window (default `8`) |
 
 ---
 

@@ -19,7 +19,14 @@ from src.tiger_pay.payment_service import (
     list_bills_with_payment_status,
     send_payment_for_bill,
 )
+from src.tiger_pay.voucher_service import (
+    VoucherServiceError,
+    cancel_voucher_attempt,
+    create_voucher_for_bill,
+    get_voucher_attempt_detail,
+)
 from src.tiger_pay import repos
+from src.tiger_pay import voucher_repos
 
 router = APIRouter(prefix="/companion", tags=["companion"])
 
@@ -32,13 +39,19 @@ def _line_auth_required() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
-def _http_error(exc: PaymentServiceError) -> HTTPException:
+def _http_error(exc: PaymentServiceError | VoucherServiceError) -> HTTPException:
     status = 400
     if exc.code == "not_found" or exc.code == "bill_not_found":
         status = 404
-    elif exc.code in {"active_attempt_exists", "tiger_busy", "not_active"}:
+    elif exc.code in {
+        "active_attempt_exists",
+        "tiger_busy",
+        "not_active",
+        "not_collect_bill",
+        "not_payout_bill",
+    }:
         status = 409
-    elif exc.code == "invalid_payment_type":
+    elif exc.code in {"invalid_payment_type", "missing_voucher_num", "missing_tiger_id"}:
         status = 400
     detail: dict = {"message": exc.message, "code": exc.code}
     if exc.details:
@@ -181,6 +194,16 @@ async def companion_pay_bill(request: Request, pos_bill_id: str) -> dict:
     return result
 
 
+@router.post("/bills/{pos_bill_id}/voucher")
+async def companion_create_voucher(request: Request, pos_bill_id: str) -> dict:
+    _require_companion_user(request)
+    engine = get_engine()
+    try:
+        return create_voucher_for_bill(engine, pos_bill_id)
+    except VoucherServiceError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.post("/payments/{attempt_id}/cancel")
 async def companion_cancel_payment(request: Request, attempt_id: str) -> dict:
     _require_companion_user(request)
@@ -192,12 +215,23 @@ async def companion_cancel_payment(request: Request, attempt_id: str) -> dict:
     return result
 
 
+@router.post("/vouchers/{attempt_id}/cancel")
+async def companion_cancel_voucher(request: Request, attempt_id: str) -> dict:
+    _require_companion_user(request)
+    engine = get_engine()
+    try:
+        return cancel_voucher_attempt(engine, attempt_id)
+    except VoucherServiceError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.get("/payments/active")
 async def companion_active_payments(request: Request) -> dict:
     _require_companion_user(request)
     engine = get_engine()
     attempts = repos.list_active_payment_attempts(engine)
-    return {"attempts": attempts}
+    vouchers = voucher_repos.list_active_voucher_attempts(engine)
+    return {"attempts": attempts, "vouchers": vouchers}
 
 
 @router.get("/payments/{attempt_id}")
@@ -209,3 +243,13 @@ async def companion_payment_detail(request: Request, attempt_id: str) -> dict:
     except PaymentServiceError as exc:
         raise _http_error(exc) from exc
     return result
+
+
+@router.get("/vouchers/{attempt_id}")
+async def companion_voucher_detail(request: Request, attempt_id: str) -> dict:
+    _require_companion_user(request)
+    engine = get_engine()
+    try:
+        return get_voucher_attempt_detail(engine, attempt_id)
+    except VoucherServiceError as exc:
+        raise _http_error(exc) from exc

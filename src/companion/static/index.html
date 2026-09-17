@@ -313,9 +313,9 @@
       background: var(--pill);
       white-space: nowrap;
     }
-    .status-success { background: var(--ok-bg); color: var(--ok-fg); }
-    .status-failed, .status-cancelled { background: var(--bad-bg); color: var(--bad-fg); }
-    .status-pending, .status-paying, .status-sending, .status-cancelling, .status-changing {
+    .status-success, .status-used { background: var(--ok-bg); color: var(--ok-fg); }
+    .status-failed, .status-cancelled, .status-expired { background: var(--bad-bg); color: var(--bad-fg); }
+    .status-pending, .status-paying, .status-sending, .status-cancelling, .status-changing, .status-creating {
       background: var(--warn-bg); color: var(--warn-fg);
     }
     .desktop-table { display: block; }
@@ -703,7 +703,12 @@
       success: "สำเร็จ",
       cancelled: "ยกเลิก",
     };
-    const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested", "confirm_requested"]);
+    const REQUEST_ACTIONS = new Set([
+      "payment_created",
+      "voucher_created",
+      "cancellation_requested",
+      "confirm_requested",
+    ]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
       "create_failed",
@@ -711,6 +716,7 @@
       "cancel_api_failed",
       "confirm_api_response",
       "confirm_api_failed",
+      "show_polled",
     ]);
     const CAT_LABEL = {
       request: "Request",
@@ -738,14 +744,24 @@
       moon: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`,
       inbox: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
     };
-    const ACTIVE_STATUSES = new Set(["sending", "pending", "paying", "changing", "cancelling"]);
+    const ACTIVE_STATUSES = new Set([
+      "sending",
+      "pending",
+      "paying",
+      "changing",
+      "cancelling",
+      "creating",
+    ]);
     const STATUS_LABEL = {
       success: "สำเร็จ",
+      used: "จ่ายคืนแล้ว",
       failed: "ล้มเหลว",
       cancelled: "ยกเลิกแล้ว",
+      expired: "หมดอายุ",
       pending: "รอดำเนินการ",
       paying: "กำลังชำระ",
       sending: "กำลังส่ง",
+      creating: "กำลังสร้าง voucher",
       cancelling: "กำลังยกเลิก",
       changing: "กำลังเปลี่ยน",
     };
@@ -948,7 +964,7 @@
         if (!state.statusSnapshotReady) continue;
         const prev = state.statusByBillId[bill.id];
         if (!prev || prev === status) continue;
-        if (ACTIVE_STATUSES.has(prev) && (status === "success" || status === "cancelled" || status === "failed")) {
+        if (ACTIVE_STATUSES.has(prev) && (status === "success" || status === "used" || status === "cancelled" || status === "failed" || status === "expired")) {
           transitions.push({ bill, prev, status });
         }
       }
@@ -958,14 +974,16 @@
       // Prefer the selected bill if several settle in one poll tick.
       const chosen = transitions.find((t) => t.bill.id === state.selectedBillId) || transitions[0];
       const billNo = chosen.bill.bill_number;
-      if (chosen.status === "success") {
+      if (chosen.status === "success" || chosen.status === "used") {
         closeQrDialog();
         showAlertDialog({
           type: "success",
-          title: "ชำระเงินสำเร็จ",
-          message: `บิล ${billNo} ชำระผ่าน Tiger Pay เรียบร้อยแล้ว`,
+          title: isPayoutBill(chosen.bill) ? "จ่ายคืนสำเร็จ" : "ชำระเงินสำเร็จ",
+          message: isPayoutBill(chosen.bill)
+            ? `บิล ${billNo} จ่ายคืนเงินสดผ่าน voucher เรียบร้อยแล้ว`
+            : `บิล ${billNo} ชำระผ่าน Tiger Pay เรียบร้อยแล้ว`,
         });
-      } else if (chosen.status === "cancelled") {
+      } else if (chosen.status === "cancelled" || chosen.status === "expired") {
         closeQrDialog();
         showAlertDialog({
           type: "info",
@@ -1045,6 +1063,7 @@
       const action = (ev.payload && ev.payload.action) || ev.status || "event";
       const map = {
         payment_created: "สร้างรายการชำระ",
+        voucher_created: "สร้าง voucher จ่ายคืน",
         api_response_received: "ได้รับตอบกลับจาก API",
         create_failed: "สร้างรายการล้มเหลว",
         cancellation_requested: "ส่งคำขอยกเลิก",
@@ -1055,6 +1074,7 @@
         confirm_api_failed: "ยืนยัน QR ล้มเหลว",
         webhook_update: "อัปเดตจาก Webhook",
         polling_update: "อัปเดตจากโพลลิ่ง",
+        show_polled: "อัปเดตสถานะ voucher",
       };
       return map[action] || action;
     }
@@ -1106,9 +1126,13 @@
       const status = bill.tiger_payment_status;
       if (!status && !bill.payment_attempt_id) return "unsent";
       if (isPendingStatus(status) || status === "failed") return "pending";
-      if (status === "success") return "success";
-      if (status === "cancelled") return "cancelled";
+      if (status === "success" || status === "used") return "success";
+      if (status === "cancelled" || status === "expired") return "cancelled";
       return "pending";
+    }
+
+    function isPayoutBill(bill) {
+      return bill?.kind === "payout" || bill?.payment_type === "voucher";
     }
 
     function billMatchesSearch(bill, query) {
@@ -1167,6 +1191,12 @@
     }
 
     function qrStatusLabel(qr, bill) {
+      if (isPayoutBill(bill)) {
+        if (bill?.tiger_payment_status === "used") return "จ่ายคืนเงินสดแล้ว";
+        if (bill?.tiger_payment_status === "cancelled") return "ยกเลิก voucher แล้ว";
+        if (bill?.tiger_payment_status === "expired") return "voucher หมดอายุ";
+        return "รอลูกค้ารับเงินที่ตู้ Tiger";
+      }
       const raw = String(qr?.status || "").toUpperCase();
       if (bill?.tiger_payment_status === "success") return "ชำระสำเร็จแล้ว";
       if (raw === "C") return "ธนาคารรับชำระแล้ว — กำลังยืนยัน";
@@ -1181,8 +1211,11 @@
       const img = document.getElementById("qrDialogImage");
       const wrap = document.getElementById("qrDialogImageWrap");
       if (statusEl) statusEl.textContent = qrStatusLabel(qr, bill);
-      if (qr?.image && img) {
-        img.src = qr.image;
+      const image = qr?.image || qr?.qr_image;
+      if (image && img) {
+        img.src = image.startsWith("data:") || image.startsWith("http")
+          ? image
+          : `data:image/png;base64,${image}`;
         wrap.style.display = "";
       }
       const cancelBtn = document.getElementById("qrDialogCancel");
@@ -1190,6 +1223,60 @@
         const active = !!(bill && bill.payment_attempt_active);
         cancelBtn.disabled = !active || !!state.actionInFlight;
       }
+    }
+
+    async function showVoucherDialog({ bill, attemptId, voucher }) {
+      if (voucher) cacheQr(attemptId, voucher);
+      let resolved = state.qrByAttemptId[attemptId] || voucher;
+      if ((!resolved?.qr_image && !resolved?.image) && attemptId) {
+        try {
+          const data = await api(`/companion/vouchers/${attemptId}`);
+          if (data.voucher) {
+            cacheQr(attemptId, data.voucher);
+            resolved = data.voucher;
+          }
+        } catch (_) {
+          /* keep dialog even if refresh fails */
+        }
+      }
+      const dialog = document.getElementById("qrDialog");
+      document.getElementById("qrDialogIcon").innerHTML = ICONS.qr;
+      document.getElementById("qrDialogTitle").textContent = "Voucher จ่ายคืนเงินสด";
+      document.getElementById("qrDialogBill").textContent =
+        `บิล CN ${bill.bill_number}` + (resolved?.voucher_num || resolved?.code
+          ? ` · ${resolved.voucher_num || resolved.code}`
+          : "");
+      document.getElementById("qrDialogAmount").textContent = `฿${formatAmount(bill.amount)}`;
+      const img = document.getElementById("qrDialogImage");
+      const wrap = document.getElementById("qrDialogImageWrap");
+      const hint = document.getElementById("qrDialogHint");
+      const image = resolved?.qr_image || resolved?.image;
+      if (image) {
+        img.src = image.startsWith("data:") || image.startsWith("http")
+          ? image
+          : `data:image/png;base64,${image}`;
+        wrap.style.display = "";
+        hint.textContent = "ให้ลูกค้าสแกน/ใช้ voucher ที่ตู้ Tiger เพื่อรับเงินสด";
+      } else {
+        img.removeAttribute("src");
+        wrap.style.display = "none";
+        hint.textContent = resolved?.voucher_num || resolved?.code
+          ? `รหัส voucher: ${resolved.voucher_num || resolved.code} — ใช้ที่ตู้ Tiger เพื่อรับเงินสด`
+          : "สร้าง voucher แล้ว — ให้ลูกค้าทำรายการที่ตู้ Tiger เพื่อรับเงินสด";
+      }
+      document.getElementById("qrDialogStatus").textContent = qrStatusLabel(resolved, bill);
+      state.openQrAttemptId = attemptId;
+      const cancelBtn = document.getElementById("qrDialogCancel");
+      cancelBtn.textContent = "ยกเลิก voucher";
+      cancelBtn.dataset.attempt = attemptId || "";
+      cancelBtn.dataset.billId = bill.id;
+      cancelBtn.dataset.kind = "voucher";
+      cancelBtn.disabled = !bill.payment_attempt_active && !attemptId;
+      closeAlertDialog();
+      if (typeof dialog.showModal === "function") {
+        if (!dialog.open) dialog.showModal();
+      }
+      syncQrDialog();
     }
 
     async function showQrDialog({ bill, attemptId, qr }) {
@@ -1208,6 +1295,7 @@
       }
       const dialog = document.getElementById("qrDialog");
       document.getElementById("qrDialogIcon").innerHTML = ICONS.qr;
+      document.getElementById("qrDialogTitle").textContent = "สแกน QR เพื่อชำระ";
       document.getElementById("qrDialogBill").textContent = `บิล ${bill.bill_number}`;
       document.getElementById("qrDialogAmount").textContent = `฿${formatAmount(bill.amount)}`;
       const img = document.getElementById("qrDialogImage");
@@ -1225,8 +1313,10 @@
       document.getElementById("qrDialogStatus").textContent = qrStatusLabel(resolved, bill);
       state.openQrAttemptId = attemptId;
       const cancelBtn = document.getElementById("qrDialogCancel");
+      cancelBtn.textContent = "ยกเลิกการชำระ";
       cancelBtn.dataset.attempt = attemptId || "";
       cancelBtn.dataset.billId = bill.id;
+      cancelBtn.dataset.kind = "payment";
       cancelBtn.disabled = !bill.payment_attempt_active && !attemptId;
       closeAlertDialog();
       if (typeof dialog.showModal === "function") {
@@ -1236,11 +1326,33 @@
     }
 
     function buttonHtml(bill) {
+      const cancelLoading = isCancelLoading(bill.payment_attempt_id);
+      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight;
+      const cancelLabel = cancelLoading
+        ? `${ICONS.spinner} กำลังยกเลิก…`
+        : `${ICONS.cancel} ยกเลิก`;
+
+      if (isPayoutBill(bill)) {
+        const voucherLoading = isSendLoading(bill.id, "voucher");
+        const createDisabled = bill.payment_attempt_active || !!state.actionInFlight;
+        const showVoucher = !!bill.payment_attempt_id;
+        const voucherLabel = voucherLoading
+          ? `${ICONS.spinner} กำลังสร้าง…`
+          : showVoucher && bill.payment_attempt_active
+            ? `${ICONS.qr} ดู voucher`
+            : `${ICONS.send} สร้าง voucher / จ่ายคืน`;
+        const voucherDisabled = showVoucher && bill.payment_attempt_active
+          ? !!state.actionInFlight
+          : createDisabled;
+        return `
+          <button class="btn-send" type="button" data-action="create-voucher" data-id="${bill.id}" ${voucherDisabled ? "disabled" : ""}>${voucherLabel}</button>
+          <button class="btn-cancel" type="button" data-action="cancel-voucher" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
+        `;
+      }
+
       const cashLoading = isSendLoading(bill.id, "cash");
       const qrLoading = isSendLoading(bill.id, "qr");
-      const cancelLoading = isCancelLoading(bill.payment_attempt_id);
       const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight;
-      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight;
       const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
       const cashLabel = cashLoading
         ? `${ICONS.spinner} กำลังส่ง…`
@@ -1253,9 +1365,6 @@
       const qrDisabled = showQr && bill.payment_attempt_active
         ? !!state.actionInFlight
         : sendDisabled;
-      const cancelLabel = cancelLoading
-        ? `${ICONS.spinner} กำลังยกเลิก…`
-        : `${ICONS.cancel} ยกเลิก`;
       return `
         <button class="btn-send" type="button" data-action="send-cash" data-id="${bill.id}" ${sendDisabled ? "disabled" : ""}>${cashLabel}</button>
         <button class="btn-qr" type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
@@ -1269,7 +1378,41 @@
           event.stopPropagation();
           const action = btn.getAttribute("data-action");
           try {
-            if (action === "send-cash" || action === "send-qr") {
+            if (action === "create-voucher") {
+              if (bill.payment_attempt_active && bill.payment_attempt_id) {
+                await showVoucherDialog({
+                  bill,
+                  attemptId: bill.payment_attempt_id,
+                  voucher: bill.voucher || state.qrByAttemptId[bill.payment_attempt_id],
+                });
+                return;
+              }
+              state.actionInFlight = { type: "send", billId: bill.id, paymentType: "voucher" };
+              renderBills();
+              setMessage(`กำลังสร้าง voucher สำหรับบิล ${bill.bill_number}...`);
+              const result = await api(`/companion/bills/${bill.id}/voucher`, { method: "POST" });
+              state.selectedBillId = bill.id;
+              state.selectedAttemptId = result.attempt && result.attempt.id;
+              if (result.voucher) cacheQr(state.selectedAttemptId, result.voucher);
+              await showVoucherDialog({
+                bill: { ...bill, payment_attempt_active: true, payment_type: "voucher", kind: "payout" },
+                attemptId: state.selectedAttemptId,
+                voucher: result.voucher,
+              });
+            } else if (action === "cancel-voucher") {
+              const attemptId = btn.getAttribute("data-attempt");
+              state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
+              renderBills();
+              setMessage("กำลังขอยกเลิก voucher...");
+              await api(`/companion/vouchers/${attemptId}/cancel`, { method: "POST" });
+              state.selectedAttemptId = attemptId;
+              closeQrDialog();
+              showAlertDialog({
+                type: "info",
+                title: "ยกเลิก voucher แล้ว",
+                message: `ยกเลิก voucher ของบิล ${bill.bill_number} แล้ว`,
+              });
+            } else if (action === "send-cash" || action === "send-qr") {
               const paymentType = action === "send-qr" ? "qr" : "cash";
               const viewingQr = paymentType === "qr" && bill.payment_type === "qr" && bill.payment_attempt_active;
               if (viewingQr) {
@@ -1340,11 +1483,12 @@
       state.selectedAttemptId = bill.payment_attempt_id || null;
       state.expandedPayload = new Set();
       renderBills();
-      if (state.selectedAttemptId) loadTimeline(state.selectedAttemptId);
+      if (state.selectedAttemptId) loadTimeline(state.selectedAttemptId, { payout: isPayoutBill(bill) });
       else {
         state.events = [];
-        document.getElementById("timeline").innerHTML =
-          `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด」หรือ「ส่ง QR」</li>`;
+        document.getElementById("timeline").innerHTML = isPayoutBill(bill)
+          ? `<li class="empty">ยังไม่มี voucher กด「สร้าง voucher / จ่ายคืน」</li>`
+          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด」หรือ「ส่ง QR」</li>`;
       }
     }
 
@@ -1367,8 +1511,8 @@
         if (bill.id === state.selectedBillId) tr.classList.add("selected");
         tr.onclick = () => selectBill(bill);
         tr.innerHTML = `
-          <td>${bill.bill_number}</td>
-          <td>${formatAmount(bill.amount)}</td>
+          <td>${isPayoutBill(bill) ? `<span class="status-pill">CN</span> ` : ""}${bill.bill_number}</td>
+          <td>${isPayoutBill(bill) ? "−" : ""}${formatAmount(bill.amount)}</td>
           <td>${bill.pos_status || "—"}</td>
           <td>${bill.salesperson || "—"}</td>
           <td><span class="${statusClass(bill.tiger_payment_status)}">${statusLabel(bill.tiger_payment_status)}</span></td>
@@ -1383,14 +1527,14 @@
         card.onclick = () => selectBill(bill);
         card.innerHTML = `
           <div class="bill-card-top">
-            <div class="bill-card-no">${bill.bill_number}</div>
-            <div class="bill-card-amount">${formatAmount(bill.amount)}</div>
+            <div class="bill-card-no">${isPayoutBill(bill) ? "CN · " : ""}${bill.bill_number}</div>
+            <div class="bill-card-amount">${isPayoutBill(bill) ? "คืน " : ""}${formatAmount(bill.amount)}</div>
           </div>
           <div class="bill-card-meta">
             <div>สถานะ Tiger: <strong><span class="${statusClass(bill.tiger_payment_status)}">${statusLabel(bill.tiger_payment_status)}</span></strong></div>
             <div>PAID: <strong>${bill.pos_status || "—"}</strong></div>
             <div>พนักงานขาย: <strong>${bill.salesperson || "—"}</strong></div>
-            <div>เลขชำระ: <strong>${bill.tiger_payment_no || "—"}</strong></div>
+            <div>${isPayoutBill(bill) ? "เลข voucher" : "เลขชำระ"}: <strong>${bill.tiger_payment_no || "—"}</strong></div>
           </div>
           <div class="bill-card-actions">${buttonHtml(bill)}</div>
         `;
@@ -1471,7 +1615,8 @@
         syncToolbar();
         renderBills();
         if (state.selectedAttemptId) {
-          await loadTimeline(state.selectedAttemptId);
+          const selected = state.bills.find((b) => b.id === state.selectedBillId);
+          await loadTimeline(state.selectedAttemptId, { payout: isPayoutBill(selected) });
         }
         maybeStartPolling();
       } finally {
@@ -1484,12 +1629,16 @@
       }
     }
 
-    async function loadTimeline(attemptId) {
+    async function loadTimeline(attemptId, { payout = false } = {}) {
       if (!attemptId) return;
       try {
-        const data = await api(`/companion/payments/${attemptId}`);
+        const path = payout
+          ? `/companion/vouchers/${attemptId}`
+          : `/companion/payments/${attemptId}`;
+        const data = await api(path);
         state.events = data.events || [];
         if (data.qr) cacheQr(attemptId, data.qr);
+        if (data.voucher) cacheQr(attemptId, data.voucher);
         renderTimeline();
         syncQrDialog();
       } catch (err) {
@@ -1579,18 +1728,24 @@
       const btn = document.getElementById("qrDialogCancel");
       const attemptId = btn.dataset.attempt;
       const billId = btn.dataset.billId;
+      const kind = btn.dataset.kind || "payment";
       const bill = state.bills.find((b) => b.id === billId);
       if (!attemptId) return;
       try {
         state.actionInFlight = { type: "cancel", billId, attemptId };
         renderBills();
-        setMessage("กำลังขอยกเลิก...");
-        await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
+        setMessage(kind === "voucher" ? "กำลังขอยกเลิก voucher..." : "กำลังขอยกเลิก...");
+        const path = kind === "voucher"
+          ? `/companion/vouchers/${attemptId}/cancel`
+          : `/companion/payments/${attemptId}/cancel`;
+        await api(path, { method: "POST" });
         closeQrDialog();
         showAlertDialog({
           type: "info",
-          title: "ส่งคำขอยกเลิกแล้ว",
-          message: `ส่งคำขอยกเลิกบิล ${bill?.bill_number || ""} แล้ว\nรอการยืนยันจาก Tiger Pay`,
+          title: kind === "voucher" ? "ยกเลิก voucher แล้ว" : "ส่งคำขอยกเลิกแล้ว",
+          message: kind === "voucher"
+            ? `ยกเลิก voucher ของบิล ${bill?.bill_number || ""} แล้ว`
+            : `ส่งคำขอยกเลิกบิล ${bill?.bill_number || ""} แล้ว\nรอการยืนยันจาก Tiger Pay`,
         });
       } catch (err) {
         showAlertDialog({

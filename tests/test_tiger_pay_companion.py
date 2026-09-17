@@ -351,7 +351,9 @@ def test_companion_ui_and_bills_route():
         assert "ส่ง QR" in ui.text
         assert 'id="qrDialog"' in ui.text
         assert "Request" in ui.text
-        assert 'id="statusChips"' in ui.text
+        assert 'id="statusTabs"' in ui.text
+        assert 'id="billSearch"' in ui.text
+        assert "สร้าง voucher / จ่ายคืน" in ui.text
         assert "ยังไม่ส่ง" in ui.text
         assert "รอดำเนินการ" in ui.text
         assert 'id="alertDialog"' in ui.text

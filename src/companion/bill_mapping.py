@@ -45,6 +45,18 @@ def is_excluded_bill_number(bill_number: object) -> bool:
     return bool(re.match(r"^(3)?SA", text))
 
 
+def is_cn_payout_bill_number(bill_number: object) -> bool:
+    """Counter CN cash-return bills (exclude transfer/online CN subtypes)."""
+    text = blank(bill_number).upper()
+    if not text:
+        return False
+    if re.match(r"^(3)?CNTF", text):
+        return False
+    if re.match(r"^(3)?CNTAD", text):
+        return False
+    return bool(re.match(r"^(3)?CN", text))
+
+
 def parse_bill_datetime(bill_date: object, bill_time: object) -> datetime:
     date_text = blank(bill_date)
     time_text = blank(bill_time)
@@ -90,7 +102,7 @@ def parse_bill_datetime(bill_date: object, bill_time: object) -> datetime:
     return datetime.combine(parsed_date, parsed_time, tzinfo=BANGKOK_TZ)
 
 
-def row_to_bill(row: pd.Series) -> PosBill | None:
+def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
     try:
         amount = Decimal(blank(row["AFTERTAX"]) or "nan")
     except (InvalidOperation, AttributeError, TypeError):
@@ -106,6 +118,15 @@ def row_to_bill(row: pd.Series) -> PosBill | None:
     if not bill_id or not bill_number:
         return None
     if is_excluded_bill_number(bill_number):
+        return None
+
+    resolved_kind = kind
+    if resolved_kind is None:
+        resolved_kind = "payout" if is_cn_payout_bill_number(bill_number) else "collect"
+    if resolved_kind == "payout":
+        amount = abs(amount)
+    elif amount < 0:
+        # Collect list should not include negative non-CN rows.
         return None
 
     try:
@@ -125,13 +146,14 @@ def row_to_bill(row: pd.Series) -> PosBill | None:
         created_at=created_at,
         pos_status=pos_status,
         salesperson=salesperson,
+        kind=resolved_kind,
     )
 
 
-def frames_to_bills(frame: pd.DataFrame) -> list[PosBill]:
+def frames_to_bills(frame: pd.DataFrame, *, kind: str | None = None) -> list[PosBill]:
     bills: list[PosBill] = []
     for _, row in frame.iterrows():
-        bill = row_to_bill(row)
+        bill = row_to_bill(row, kind=kind)
         if bill is not None:
             bills.append(bill)
     return bills

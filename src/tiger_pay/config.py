@@ -42,6 +42,34 @@ class TigerPaySettings(BaseSettings):
         default=DEFAULT_MAX_BODY_BYTES,
         validation_alias="TIGER_PAY_MAX_BODY_BYTES",
     )
+    tiger_voucher_api_host: str = Field(
+        default="https://api.tigercashbox.com",
+        validation_alias="TIGER_VOUCHER_API_HOST",
+    )
+    tiger_voucher_username: str = Field(
+        default="",
+        validation_alias="TIGER_VOUCHER_USERNAME",
+    )
+    tiger_voucher_password: str = Field(
+        default="",
+        validation_alias="TIGER_VOUCHER_PASSWORD",
+    )
+    tiger_voucher_mobile: str = Field(
+        default="",
+        validation_alias="TIGER_VOUCHER_MOBILE",
+    )
+    tiger_voucher_authen_required: str = Field(
+        default="0",
+        validation_alias="TIGER_VOUCHER_AUTHEN_REQUIRED",
+    )
+    tiger_voucher_approved_required: str = Field(
+        default="0",
+        validation_alias="TIGER_VOUCHER_APPROVED_REQUIRED",
+    )
+    tiger_voucher_expire_hours: float = Field(
+        default=8.0,
+        validation_alias="TIGER_VOUCHER_EXPIRE_HOURS",
+    )
 
     @field_validator(
         "tiger_pay_client_secret",
@@ -55,10 +83,26 @@ class TigerPaySettings(BaseSettings):
             raise ValueError("must not be empty")
         return stripped
 
-    @field_validator("tiger_pay_client_id", "tiger_pay_api_host")
+    @field_validator(
+        "tiger_pay_client_id",
+        "tiger_pay_api_host",
+        "tiger_voucher_api_host",
+        "tiger_voucher_username",
+        "tiger_voucher_password",
+        "tiger_voucher_mobile",
+        "tiger_voucher_authen_required",
+        "tiger_voucher_approved_required",
+    )
     @classmethod
     def strip_optional(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("tiger_voucher_expire_hours")
+    @classmethod
+    def positive_voucher_expire_hours(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("must be greater than zero")
+        return value
 
     @field_validator("tiger_pay_qr_gateway")
     @classmethod
