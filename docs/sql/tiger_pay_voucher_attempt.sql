@@ -15,6 +15,8 @@ create table if not exists tiger_pay.voucher_attempt (
     raw_create_response jsonb null,
     raw_last_show jsonb null,
     error_message text null,
+    submitted_by text null,
+    submitted_by_name text null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     last_polled_at timestamptz null,
@@ -34,6 +36,9 @@ create index if not exists voucher_attempt_voucher_num_idx
 
 create index if not exists voucher_attempt_status_idx
     on tiger_pay.voucher_attempt (status);
+
+create index if not exists voucher_attempt_submitted_by_idx
+    on tiger_pay.voucher_attempt (submitted_by);
 
 create table if not exists tiger_pay.voucher_event (
     id bigserial primary key,

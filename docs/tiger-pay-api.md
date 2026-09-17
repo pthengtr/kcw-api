@@ -197,6 +197,10 @@ Marks payment `success` after QR/cash completion (samples show QR and mixed).
 | List / categories / cash / change_status | Not exposed |
 | Confirm QR / mixed | Poller confirm (`KBANK`) |
 
+Companion stores the auth submitter on each payment/voucher attempt:
+`submitted_by` = LINE user id, or `tailscale` for Tailscale access;
+`submitted_by_name` = LINE display name, or `Tailscale account`.
+
 ---
 
 ## 2. Tiger Voucher API

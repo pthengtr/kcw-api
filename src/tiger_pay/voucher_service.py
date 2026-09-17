@@ -19,6 +19,7 @@ from src.tiger_pay.voucher_api import (
     normalize_voucher_status,
 )
 from src.tiger_pay.qr import render_qr_image_data_uri
+from src.tiger_pay.submitter import normalize_submitter, submitter_payload
 
 
 logger = logging.getLogger("kcw.tiger_pay.voucher_service")
@@ -109,6 +110,8 @@ def create_voucher_for_bill(
     pos_bill_id: str,
     *,
     voucher_api: TigerVoucherApiClient | None = None,
+    submitted_by: str | None = None,
+    submitted_by_name: str | None = None,
 ) -> dict[str, Any]:
     bill = get_open_bill(pos_bill_id)
     if bill is None:
@@ -118,6 +121,15 @@ def create_voucher_for_bill(
             "Only CN payout bills can create vouchers",
             code="not_payout_bill",
         )
+
+    submitted_by, submitted_by_name = normalize_submitter(
+        line_user_id=submitted_by,
+        display_name=submitted_by_name,
+    )
+    submitter = submitter_payload(
+        submitted_by=submitted_by,
+        submitted_by_name=submitted_by_name,
+    )
 
     existing = voucher_repos.get_active_voucher_for_bill(engine, pos_bill_id)
     if existing:
@@ -137,6 +149,8 @@ def create_voucher_for_bill(
             status="creating",
             raw_status="creating",
             ref_num=bill.bill_number,
+            submitted_by=submitted_by,
+            submitted_by_name=submitted_by_name,
         )
     except IntegrityError as exc:
         raise VoucherServiceError(
@@ -149,7 +163,11 @@ def create_voucher_for_bill(
         voucher_attempt_id=attempt_id,
         source="api",
         status="creating",
-        payload={"action": "voucher_created", "pos_bill_id": bill.id},
+        payload={
+            "action": "voucher_created",
+            "pos_bill_id": bill.id,
+            **submitter,
+        },
         event_key=f"api:created:{attempt_id}",
     )
 
@@ -325,6 +343,8 @@ def cancel_voucher_attempt(
     attempt_id: str,
     *,
     voucher_api: TigerVoucherApiClient | None = None,
+    submitted_by: str | None = None,
+    submitted_by_name: str | None = None,
 ) -> dict[str, Any]:
     attempt = voucher_repos.get_voucher_attempt(engine, attempt_id)
     if not attempt:
@@ -341,12 +361,21 @@ def cancel_voucher_attempt(
             code="missing_voucher_num",
         )
 
+    actor_by, actor_name = normalize_submitter(
+        line_user_id=submitted_by,
+        display_name=submitted_by_name,
+    )
+    actor = submitter_payload(
+        submitted_by=actor_by,
+        submitted_by_name=actor_name,
+    )
+
     voucher_repos.insert_voucher_event(
         engine,
         voucher_attempt_id=attempt_id,
         source="api",
         status="pending",
-        payload={"action": "cancellation_requested"},
+        payload={"action": "cancellation_requested", **actor},
         event_key=f"api:cancel_requested:{attempt_id}",
     )
 

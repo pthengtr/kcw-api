@@ -236,11 +236,20 @@ def test_send_payment_happy_path():
             return_value=attempt_id,
         ),
     ):
-        result = send_payment_for_bill(engine, "bill-1001", open_api=open_api)
+        result = send_payment_for_bill(
+            engine,
+            "bill-1001",
+            open_api=open_api,
+            submitted_by="Uline",
+            submitted_by_name="Cashier A",
+        )
 
     assert result["attempt"]["status"] == "pending"
     assert result["attempt"]["tiger_payment_id"] == 259
     create_attempt.assert_called_once()
+    create_kwargs = create_attempt.call_args.kwargs
+    assert create_kwargs["submitted_by"] == "Uline"
+    assert create_kwargs["submitted_by_name"] == "Cashier A"
     open_api.create_payment.assert_called_once()
     kwargs = open_api.create_payment.call_args.kwargs
     assert kwargs["ref_no_1"] == "B2607140001"
@@ -248,6 +257,55 @@ def test_send_payment_happy_path():
     assert len(kwargs["ref_no_2"]) <= 20
     assert kwargs["payment_type"] == "cash"
     assert "payment_gateway" not in kwargs
+
+
+def test_send_payment_maps_tailscale_submitter():
+    engine = MagicMock()
+    open_api = MagicMock()
+    open_api.get_current.return_value = None
+    open_api.create_payment.return_value = {
+        "data": {"id": 1, "paymentNo": "PA1", "status": "pending", "type": "cash"},
+        "raw": {},
+    }
+    attempt_id = "a1b2c3d4e5f60718293b"
+    with (
+        patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.create_payment_attempt",
+            return_value={"id": attempt_id, "status": "sending"},
+        ) as create_attempt,
+        patch(
+            "src.tiger_pay.payment_service.repos.insert_payment_event",
+        ) as insert_event,
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={"id": attempt_id, "status": "pending"},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.new_payment_attempt_id",
+            return_value=attempt_id,
+        ),
+    ):
+        send_payment_for_bill(
+            engine,
+            "bill-1001",
+            open_api=open_api,
+            submitted_by="tailscale",
+            submitted_by_name="tailnet",
+        )
+
+    assert create_attempt.call_args.kwargs["submitted_by"] == "tailscale"
+    assert create_attempt.call_args.kwargs["submitted_by_name"] == "Tailscale account"
+    created_payload = insert_event.call_args_list[0].kwargs["payload"]
+    assert created_payload["submitted_by"] == "tailscale"
+    assert created_payload["submitted_by_name"] == "Tailscale account"
 
 
 def test_new_payment_attempt_id_fits_tiger_refno2():
@@ -413,6 +471,29 @@ def test_companion_pay_qr_passes_type():
     assert response.json()["payment_type"] == "qr"
     assert response.json()["qr"]["image"].startswith("data:image")
     assert send.call_args.kwargs["payment_type"] == "qr"
+    assert send.call_args.kwargs["submitted_by"] is None
+    assert send.call_args.kwargs["submitted_by_name"] is None
+
+
+def test_companion_pay_passes_line_submitter(monkeypatch):
+    monkeypatch.setenv("COMPANION_REQUIRE_LINE_AUTH", "1")
+    ident = MagicMock(line_user_id="U999", display_name="Pannawit")
+    with (
+        patch("app.routers.companion.get_engine", return_value=MagicMock()),
+        patch(
+            "app.routers.companion._require_companion_user",
+            return_value=ident,
+        ),
+        patch(
+            "app.routers.companion.send_payment_for_bill",
+            return_value={"attempt": {"id": "att-1", "status": "pending"}},
+        ) as send,
+    ):
+        client = TestClient(app)
+        response = client.post("/companion/bills/bill-1001/pay")
+    assert response.status_code == 200
+    assert send.call_args.kwargs["submitted_by"] == "U999"
+    assert send.call_args.kwargs["submitted_by_name"] == "Pannawit"
 
 
 def test_webhook_still_succeeds_when_reconcile_errors():
