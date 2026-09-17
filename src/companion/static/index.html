@@ -556,6 +556,15 @@
       color: var(--amount);
       margin: 0.25rem 0 0.15rem;
     }
+    .qr-dialog-code {
+      display: none;
+      margin: 0.35rem 0 0.15rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      font-variant-numeric: tabular-nums;
+      word-break: break-all;
+    }
     .qr-dialog-actions {
       display: flex;
       flex-wrap: wrap;
@@ -586,6 +595,7 @@
       <h3 id="qrDialogTitle">สแกน QR เพื่อชำระ</h3>
       <p id="qrDialogBill"></p>
       <div class="qr-dialog-amount" id="qrDialogAmount"></div>
+      <div class="qr-dialog-code" id="qrDialogCode"></div>
       <div class="qr-dialog-image-wrap" id="qrDialogImageWrap">
         <img id="qrDialogImage" alt="QR ชำระเงิน" />
       </div>
@@ -1239,14 +1249,20 @@
           /* keep dialog even if refresh fails */
         }
       }
+      const code = resolved?.voucher_num || resolved?.code || "";
       const dialog = document.getElementById("qrDialog");
       document.getElementById("qrDialogIcon").innerHTML = ICONS.qr;
       document.getElementById("qrDialogTitle").textContent = "Voucher จ่ายคืนเงินสด";
-      document.getElementById("qrDialogBill").textContent =
-        `บิล CN ${bill.bill_number}` + (resolved?.voucher_num || resolved?.code
-          ? ` · ${resolved.voucher_num || resolved.code}`
-          : "");
+      document.getElementById("qrDialogBill").textContent = `บิล CN ${bill.bill_number}`;
       document.getElementById("qrDialogAmount").textContent = `฿${formatAmount(bill.amount)}`;
+      const codeEl = document.getElementById("qrDialogCode");
+      if (code) {
+        codeEl.textContent = code;
+        codeEl.style.display = "block";
+      } else {
+        codeEl.textContent = "";
+        codeEl.style.display = "none";
+      }
       const img = document.getElementById("qrDialogImage");
       const wrap = document.getElementById("qrDialogImageWrap");
       const hint = document.getElementById("qrDialogHint");
@@ -1255,13 +1271,16 @@
         img.src = image.startsWith("data:") || image.startsWith("http")
           ? image
           : `data:image/png;base64,${image}`;
+        img.alt = code ? `Voucher ${code}` : "Voucher QR";
         wrap.style.display = "";
-        hint.textContent = "ให้ลูกค้าสแกน/ใช้ voucher ที่ตู้ Tiger เพื่อรับเงินสด";
+        hint.textContent = code
+          ? `สแกน QR หรือพิมพ์รหัสด้านบนที่ตู้ Tiger เพื่อรับเงินสด`
+          : "ให้ลูกค้าสแกน/ใช้ voucher ที่ตู้ Tiger เพื่อรับเงินสด";
       } else {
         img.removeAttribute("src");
         wrap.style.display = "none";
-        hint.textContent = resolved?.voucher_num || resolved?.code
-          ? `รหัส voucher: ${resolved.voucher_num || resolved.code} — ใช้ที่ตู้ Tiger เพื่อรับเงินสด`
+        hint.textContent = code
+          ? `พิมพ์รหัส ${code} ที่ตู้ Tiger เพื่อรับเงินสด`
           : "สร้าง voucher แล้ว — ให้ลูกค้าทำรายการที่ตู้ Tiger เพื่อรับเงินสด";
       }
       document.getElementById("qrDialogStatus").textContent = qrStatusLabel(resolved, bill);
@@ -1298,6 +1317,9 @@
       document.getElementById("qrDialogTitle").textContent = "สแกน QR เพื่อชำระ";
       document.getElementById("qrDialogBill").textContent = `บิล ${bill.bill_number}`;
       document.getElementById("qrDialogAmount").textContent = `฿${formatAmount(bill.amount)}`;
+      const codeEl = document.getElementById("qrDialogCode");
+      codeEl.textContent = "";
+      codeEl.style.display = "none";
       const img = document.getElementById("qrDialogImage");
       const wrap = document.getElementById("qrDialogImageWrap");
       const hint = document.getElementById("qrDialogHint");
