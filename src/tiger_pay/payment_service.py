@@ -7,9 +7,8 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 
-from src.companion.bills import get_open_bill, list_cn_bills, list_open_bills
+from src.companion.bills import get_open_bill, list_open_bills
 from src.tiger_pay import repos
-from src.tiger_pay import voucher_repos
 from src.tiger_pay.config import get_tiger_pay_settings
 from src.tiger_pay.open_api import TigerPayOpenApiClient, TigerPayOpenApiError, get_open_api_client
 from src.tiger_pay.payload import omit_qr_images
@@ -22,8 +21,6 @@ from src.tiger_pay.qr import (
     should_confirm_qr_payment,
 )
 from src.tiger_pay.status import is_active_status, normalize_status
-from src.tiger_pay.voucher_repos import is_voucher_active_status
-from src.tiger_pay.voucher_service import companion_voucher_from_attempt, refresh_active_vouchers
 
 logger = logging.getLogger("kcw.tiger_pay.payment_service")
 
@@ -57,54 +54,26 @@ def list_bills_with_payment_status(
     mode: str | None = None,
     limit: int | str | None = None,
 ) -> list[dict[str, Any]]:
-    # Refresh pending CN vouchers so bill rows show used/cancelled promptly.
-    try:
-        refresh_active_vouchers(engine)
-    except Exception:
-        logger.exception("Failed refreshing active vouchers before bill list")
-
+    # Collect-only: CN / payout bills are excluded from the companion list.
     collect_bills = list_open_bills(mode=mode, limit=limit)
-    payout_bills = list_cn_bills(mode=mode, limit=limit)
-    bills = [*collect_bills, *payout_bills]
 
     latest_by_bill = repos.list_latest_attempts_by_bill_ids(
         engine,
         [bill.id for bill in collect_bills],
     )
-    try:
-        latest_vouchers = voucher_repos.list_latest_vouchers_by_bill_ids(
-            engine,
-            [bill.id for bill in payout_bills],
-        )
-    except Exception:
-        # Keep collect bills usable if voucher tables are not migrated yet.
-        logger.exception("Failed loading voucher attempts for bill list")
-        latest_vouchers = {}
     results: list[dict[str, Any]] = []
-    for bill in bills:
+    for bill in collect_bills:
         item = bill.to_dict()
-        if bill.kind == "payout":
-            attempt = latest_vouchers.get(bill.id)
-            item["tiger_payment_status"] = attempt["status"] if attempt else None
-            item["tiger_payment_no"] = attempt.get("voucher_num") if attempt else None
-            item["tiger_payment_id"] = None
-            item["payment_attempt_id"] = attempt["id"] if attempt else None
-            item["payment_attempt_active"] = bool(
-                attempt and is_voucher_active_status(str(attempt["status"]))
-            )
-            item["payment_type"] = "voucher"
-            item["voucher"] = companion_voucher_from_attempt(attempt)
-        else:
-            attempt = latest_by_bill.get(bill.id)
-            item["tiger_payment_status"] = attempt["status"] if attempt else None
-            item["tiger_payment_no"] = attempt["tiger_payment_no"] if attempt else None
-            item["tiger_payment_id"] = attempt["tiger_payment_id"] if attempt else None
-            item["payment_attempt_id"] = attempt["id"] if attempt else None
-            item["payment_attempt_active"] = bool(
-                attempt and is_active_status(str(attempt["status"]))
-            )
-            item["payment_type"] = payment_type_from_attempt(attempt) if attempt else None
-            item["voucher"] = None
+        attempt = latest_by_bill.get(bill.id)
+        item["tiger_payment_status"] = attempt["status"] if attempt else None
+        item["tiger_payment_no"] = attempt["tiger_payment_no"] if attempt else None
+        item["tiger_payment_id"] = attempt["tiger_payment_id"] if attempt else None
+        item["payment_attempt_id"] = attempt["id"] if attempt else None
+        item["payment_attempt_active"] = bool(
+            attempt and is_active_status(str(attempt["status"]))
+        )
+        item["payment_type"] = payment_type_from_attempt(attempt) if attempt else None
+        item["voucher"] = None
         results.append(item)
 
     results.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
