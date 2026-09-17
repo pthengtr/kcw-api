@@ -18,6 +18,8 @@ from src.tiger_pay.voucher_api import (
     get_voucher_api_client,
     normalize_voucher_status,
 )
+from src.tiger_pay.qr import render_qr_image_data_uri
+
 
 logger = logging.getLogger("kcw.tiger_pay.voucher_service")
 
@@ -51,16 +53,38 @@ def companion_voucher_from_attempt(attempt: dict[str, Any] | None) -> dict[str, 
         return None
     display = extract_voucher_display(attempt.get("raw_create_response") or {})
     show = extract_voucher_display(attempt.get("raw_last_show") or {})
+    # Evaluate each candidate with _looks_like_voucher_num — "false" is truthy in Python.
     voucher_num = (
-        attempt.get("voucher_num")
-        or show.get("voucher_num")
-        or display.get("voucher_num")
+        _looks_like_voucher_num(attempt.get("voucher_num"))
+        or _looks_like_voucher_num(show.get("voucher_num"))
+        or _looks_like_voucher_num(display.get("voucher_num"))
+        or extract_voucher_num(attempt.get("raw_create_response") or {})
+        or extract_voucher_num(attempt.get("raw_last_show") or {})
     )
+    code = (
+        _looks_like_voucher_num(show.get("code"))
+        or _looks_like_voucher_num(display.get("code"))
+        or voucher_num
+    )
+    qr_image = show.get("qr_image") or display.get("qr_image")
+    qr_raw = (
+        _looks_like_voucher_num(show.get("qr_raw"))
+        or _looks_like_voucher_num(display.get("qr_raw"))
+        or voucher_num
+    )
+    # Tiger cloud create/show do not return a QR image — render one from the code
+    # so Companion can show both a scannable QR and the numeric code.
+    if not qr_image and voucher_num:
+        try:
+            qr_image = render_qr_image_data_uri(str(voucher_num))
+        except Exception:
+            logger.exception("Failed rendering voucher QR for %s", voucher_num)
+            qr_image = None
     return {
         "voucher_num": voucher_num,
-        "code": show.get("code") or display.get("code") or voucher_num,
-        "qr_image": show.get("qr_image") or display.get("qr_image"),
-        "qr_raw": show.get("qr_raw") or display.get("qr_raw"),
+        "code": code,
+        "qr_image": qr_image,
+        "qr_raw": qr_raw,
         "status": attempt.get("status"),
         "raw_status": attempt.get("raw_status"),
     }

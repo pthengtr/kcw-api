@@ -59,6 +59,27 @@ def test_normalize_voucher_status_and_extract():
     assert display["raw_status"] == "N"
 
 
+def test_companion_voucher_renders_qr_from_numeric_code():
+    from src.tiger_pay.voucher_service import companion_voucher_from_attempt
+
+    voucher = companion_voucher_from_attempt(
+        {
+            "status": "pending",
+            "raw_status": "pending",
+            "voucher_num": "false",
+            "raw_create_response": {
+                "success": "true",
+                "result": ["082475711990"],
+            },
+            "raw_last_show": None,
+        }
+    )
+    assert voucher["voucher_num"] == "082475711990"
+    assert voucher["code"] == "082475711990"
+    assert voucher["qr_image"].startswith("data:image/png;base64,")
+
+
+
 def test_voucher_validity_window():
     now = datetime(2026, 9, 17, 10, 0, 0, tzinfo=timezone.utc)
     window = voucher_validity_window(expire_hours=2, now=now)
