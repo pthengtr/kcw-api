@@ -102,10 +102,27 @@ def parse_bill_datetime(bill_date: object, bill_time: object) -> datetime:
     return datetime.combine(parsed_date, parsed_time, tzinfo=BANGKOK_TZ)
 
 
+def _parse_aftertax(value: object) -> Decimal | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, Decimal):
+        amount = value
+    else:
+        text = blank(value)
+        if not text:
+            return None
+        try:
+            amount = Decimal(text)
+        except (InvalidOperation, AttributeError, TypeError, ValueError):
+            return None
+    if not amount.is_finite():
+        return None
+    return amount
+
+
 def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
-    try:
-        amount = Decimal(blank(row["AFTERTAX"]) or "nan")
-    except (InvalidOperation, AttributeError, TypeError):
+    amount = _parse_aftertax(row.get("AFTERTAX"))
+    if amount is None:
         logger.warning(
             "Skipping bill with invalid AFTERTAX id=%s value=%r",
             row.get("ID"),

@@ -445,3 +445,25 @@ def test_webhook_still_succeeds_when_reconcile_errors():
         )
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+def test_row_to_bill_skips_nan_aftertax():
+    import pandas as pd
+    from decimal import Decimal
+    from src.companion.bill_mapping import row_to_bill
+
+    row = pd.Series(
+        {
+            "ID": "1",
+            "BILLNO": "8K69-001",
+            "AFTERTAX": float("nan"),
+            "BILLDATE": "2026-09-17",
+            "BILLTIME": "10:00:00",
+            "PAID": "N",
+            "CASHED": "N",
+            "SALE": "x",
+        }
+    )
+    assert row_to_bill(row, kind="collect") is None
+    row2 = row.copy()
+    row2["AFTERTAX"] = Decimal("NaN")
+    assert row_to_bill(row2, kind="collect") is None
