@@ -71,10 +71,15 @@ def list_bills_with_payment_status(
         engine,
         [bill.id for bill in collect_bills],
     )
-    latest_vouchers = voucher_repos.list_latest_vouchers_by_bill_ids(
-        engine,
-        [bill.id for bill in payout_bills],
-    )
+    try:
+        latest_vouchers = voucher_repos.list_latest_vouchers_by_bill_ids(
+            engine,
+            [bill.id for bill in payout_bills],
+        )
+    except Exception:
+        # Keep collect bills usable if voucher tables are not migrated yet.
+        logger.exception("Failed loading voucher attempts for bill list")
+        latest_vouchers = {}
     results: list[dict[str, Any]] = []
     for bill in bills:
         item = bill.to_dict()
