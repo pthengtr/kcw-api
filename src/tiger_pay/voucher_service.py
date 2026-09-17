@@ -12,6 +12,7 @@ from src.tiger_pay import voucher_repos
 from src.tiger_pay.voucher_api import (
     TigerVoucherApiClient,
     TigerVoucherApiError,
+    _looks_like_voucher_num,
     extract_voucher_display,
     extract_voucher_num,
     get_voucher_api_client,
@@ -223,8 +224,18 @@ def refresh_voucher_attempt(
         return attempt
 
     voucher_num = attempt.get("voucher_num")
-    if not voucher_num:
-        return attempt
+    if not _looks_like_voucher_num(voucher_num):
+        # Recover from older create payloads that stored success:"true"/false.
+        recovered = extract_voucher_num(attempt.get("raw_create_response") or {})
+        if recovered:
+            voucher_repos.update_voucher_attempt(
+                engine,
+                attempt_id,
+                voucher_num=recovered,
+            )
+            voucher_num = recovered
+        else:
+            return attempt
 
     client = voucher_api or get_voucher_api_client()
     try:
@@ -251,12 +262,16 @@ def refresh_voucher_attempt(
     if status == "unknown":
         status = "pending"
 
+    next_num = display.get("voucher_num") or voucher_num
+    if not _looks_like_voucher_num(next_num):
+        next_num = voucher_num
+
     updated = voucher_repos.update_voucher_attempt(
         engine,
         attempt_id,
         status=status,
         raw_status=raw_status,
-        voucher_num=display.get("voucher_num") or voucher_num,
+        voucher_num=next_num,
         raw_last_show=raw if isinstance(raw, dict) else {"raw": raw},
         touch_last_polled=True,
         clear_error=True,
@@ -294,7 +309,9 @@ def cancel_voucher_attempt(
         raise VoucherServiceError("Voucher attempt is not active", code="not_active")
 
     voucher_num = attempt.get("voucher_num")
-    if not voucher_num:
+    if not _looks_like_voucher_num(voucher_num):
+        voucher_num = extract_voucher_num(attempt.get("raw_create_response") or {})
+    if not _looks_like_voucher_num(voucher_num):
         raise VoucherServiceError(
             "Voucher number is missing; cannot cancel yet",
             code="missing_voucher_num",

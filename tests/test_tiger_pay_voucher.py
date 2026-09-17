@@ -35,6 +35,24 @@ def test_normalize_voucher_status_and_extract():
     assert normalize_voucher_status("cancelled") == "cancelled"
     assert extract_voucher_num({"data": {"voucher_num": "V123"}}) == "V123"
     assert extract_voucher_num({"voucherNumber": "ABC"}) == "ABC"
+    # Live Tiger create shape: result list + success flag string.
+    assert (
+        extract_voucher_num(
+            {
+                "success": "true",
+                "result": ["082475711990"],
+                "ref_num": "CN6908-007",
+            }
+        )
+        == "082475711990"
+    )
+    assert extract_voucher_num({"success": "false", "error": "not found"}) is None
+    assert (
+        extract_voucher_num(
+            {"success": "true", "voucher": {"voucher_num": "082475711990", "used": 0}}
+        )
+        == "082475711990"
+    )
     display = extract_voucher_display({"data": {"voucher_num": "V1", "qrImage": "img", "used": "N"}})
     assert display["voucher_num"] == "V1"
     assert display["qr_image"] == "img"
