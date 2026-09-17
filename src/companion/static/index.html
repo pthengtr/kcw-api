@@ -7,7 +7,9 @@
   <script>
     (function () {
       try {
-        var raw = localStorage.getItem("kcw.companion.ui.v6") || localStorage.getItem("kcw.companion.ui.v5");
+        var raw = localStorage.getItem("kcw.companion.ui.v7")
+          || localStorage.getItem("kcw.companion.ui.v6")
+          || localStorage.getItem("kcw.companion.ui.v5");
         var theme = null;
         if (raw) theme = JSON.parse(raw).theme;
         if (theme !== "light" && theme !== "dark") {
@@ -355,6 +357,7 @@
       header { padding: 0.75rem; }
       main { padding: 0.75rem; }
       .toolbar { padding: 0.65rem 0.75rem; }
+      .filter-bar { padding: 0.65rem 0.75rem; }
     }
     .chip-bar {
       display: flex;
@@ -378,11 +381,54 @@
     .chip[data-cat="response"].active { background: color-mix(in srgb, var(--response) 28%, transparent); border-color: var(--response); }
     .chip[data-cat="webhook"].active { background: color-mix(in srgb, var(--webhook) 28%, transparent); border-color: var(--webhook); }
     .chip[data-cat="polling"].active { background: color-mix(in srgb, var(--polling) 28%, transparent); border-color: var(--polling); }
-    .chip[data-status="unsent"].active { background: color-mix(in srgb, var(--muted) 28%, transparent); border-color: #7f93a8; }
-    .chip[data-status="pending"].active { background: color-mix(in srgb, var(--warn) 28%, transparent); border-color: var(--warn); }
-    .chip[data-status="success"].active { background: color-mix(in srgb, var(--accent) 28%, transparent); border-color: var(--accent); }
-    .chip[data-status="cancelled"].active { background: color-mix(in srgb, var(--danger) 28%, transparent); border-color: var(--danger); }
-    .toolbar + .chip-bar { border-top: 0; }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: center;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .toolbar + .filter-bar { border-top: 0; }
+    .status-tabs {
+      display: inline-flex;
+      flex: 1 1 auto;
+      flex-wrap: wrap;
+      overflow: visible;
+    }
+    .status-tabs button .count {
+      color: inherit;
+      opacity: 0.75;
+      font-weight: 600;
+    }
+    .status-tabs button.active .count { opacity: 0.9; }
+    .bill-search-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex: 1 1 14rem;
+      min-width: min(100%, 14rem);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .bill-search-wrap input {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text);
+      background: var(--control-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: var(--touch);
+      padding: 0.35rem 0.75rem;
+    }
+    .bill-search-wrap input::placeholder { color: var(--muted); }
+    .bill-search-wrap input:focus {
+      outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+      outline-offset: 1px;
+    }
     #timeline {
       list-style: none;
       margin: 0;
@@ -588,11 +634,18 @@
           <select id="limitSelect" aria-label="จำนวนบิลสูงสุด"></select>
         </label>
       </div>
-      <div class="chip-bar" id="statusChips" role="group" aria-label="กรองสถานะ Tiger">
-        <button type="button" class="chip active" data-status="unsent">ยังไม่ส่ง</button>
-        <button type="button" class="chip active" data-status="pending">รอดำเนินการ</button>
-        <button type="button" class="chip active" data-status="success">สำเร็จ</button>
-        <button type="button" class="chip active" data-status="cancelled">ยกเลิก</button>
+      <div class="filter-bar">
+        <div class="seg status-tabs" id="statusTabs" role="tablist" aria-label="กรองสถานะ Tiger">
+          <button type="button" role="tab" data-status="all" class="active" aria-selected="true">ทั้งหมด <span class="count">(0)</span></button>
+          <button type="button" role="tab" data-status="unsent" aria-selected="false">ยังไม่ส่ง <span class="count">(0)</span></button>
+          <button type="button" role="tab" data-status="pending" aria-selected="false">รอดำเนินการ <span class="count">(0)</span></button>
+          <button type="button" role="tab" data-status="success" aria-selected="false">สำเร็จ <span class="count">(0)</span></button>
+          <button type="button" role="tab" data-status="cancelled" aria-selected="false">ยกเลิก <span class="count">(0)</span></button>
+        </div>
+        <label class="bill-search-wrap" for="billSearch">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="billSearch" type="search" placeholder="ค้นหาชื่อขาย / เลขบิล / ยอดเงิน" autocomplete="off" spellcheck="false" />
+        </label>
       </div>
       <div class="desktop-table">
         <div class="table-wrap">
@@ -641,8 +694,15 @@
     </section>
   </main>
   <script>
-    const STORAGE_KEY = "kcw.companion.ui.v6";
-    const STATUS_FILTER_KEYS = ["unsent", "pending", "success", "cancelled"];
+    const STORAGE_KEY = "kcw.companion.ui.v7";
+    const STATUS_FILTER_KEYS = ["all", "unsent", "pending", "success", "cancelled"];
+    const STATUS_TAB_LABELS = {
+      all: "ทั้งหมด",
+      unsent: "ยังไม่ส่ง",
+      pending: "รอดำเนินการ",
+      success: "สำเร็จ",
+      cancelled: "ยกเลิก",
+    };
     const REQUEST_ACTIONS = new Set(["payment_created", "cancellation_requested", "confirm_requested"]);
     const RESPONSE_ACTIONS = new Set([
       "api_response_received",
@@ -702,12 +762,8 @@
       mode: "latest",
       limit: "10",
       theme: systemTheme(),
-      statusFilters: {
-        unsent: true,
-        pending: true,
-        success: true,
-        cancelled: true,
-      },
+      statusFilter: "all",
+      billSearch: "",
       timelineFilters: {
         request: true,
         response: true,
@@ -741,36 +797,26 @@
       select.value = state.limit;
     }
 
-    function normalizeStatusFilters(parsed = {}) {
-      const defaults = defaultPrefs().statusFilters;
-      // Migrate older single-select statusFilter values.
-      if (typeof parsed.statusFilter === "string") {
-        const single = parsed.statusFilter;
-        if (single === "all") return { ...defaults };
-        if (STATUS_FILTER_KEYS.includes(single)) {
-          return {
-            unsent: single === "unsent",
-            pending: single === "pending",
-            success: single === "success",
-            cancelled: single === "cancelled",
-          };
-        }
+    function normalizeStatusFilter(parsed = {}) {
+      // Prefer explicit single-select statusFilter.
+      if (typeof parsed.statusFilter === "string" && STATUS_FILTER_KEYS.includes(parsed.statusFilter)) {
+        return parsed.statusFilter;
       }
-      if (parsed.pendingOnly === true) {
-        return { unsent: false, pending: true, success: false, cancelled: false };
+      if (parsed.pendingOnly === true) return "pending";
+      // Migrate older multi-select statusFilters (on/off include chips).
+      const filters = parsed.statusFilters;
+      if (filters && typeof filters === "object") {
+        const enabled = ["unsent", "pending", "success", "cancelled"].filter((k) => filters[k] !== false);
+        if (enabled.length === 1) return enabled[0];
       }
-      return {
-        unsent: parsed.statusFilters?.unsent !== false,
-        pending: parsed.statusFilters?.pending !== false,
-        success: parsed.statusFilters?.success !== false,
-        cancelled: parsed.statusFilters?.cancelled !== false,
-      };
+      return "all";
     }
 
     function loadPrefs() {
       try {
         const raw =
           localStorage.getItem(STORAGE_KEY) ||
+          localStorage.getItem("kcw.companion.ui.v6") ||
           localStorage.getItem("kcw.companion.ui.v5") ||
           localStorage.getItem("kcw.companion.ui.v4") ||
           localStorage.getItem("kcw.companion.ui.v3") ||
@@ -782,7 +828,8 @@
           mode: parsed.mode === "today" ? "today" : "latest",
           limit: normalizeLimit(parsed.limit, parsed.mode === "today" ? "today" : "latest"),
           theme: normalizeTheme(parsed.theme),
-          statusFilters: normalizeStatusFilters(parsed),
+          statusFilter: normalizeStatusFilter(parsed),
+          billSearch: typeof parsed.billSearch === "string" ? parsed.billSearch : "",
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
             response: parsed.timelineFilters?.response !== false,
@@ -800,7 +847,8 @@
         mode: state.mode,
         limit: state.limit,
         theme: state.theme,
-        statusFilters: state.statusFilters,
+        statusFilter: state.statusFilter,
+        billSearch: state.billSearch,
         timelineFilters: state.timelineFilters,
       }));
     }
@@ -816,7 +864,8 @@
       mode: prefs.mode,
       limit: prefs.limit,
       theme: prefs.theme,
-      statusFilters: prefs.statusFilters,
+      statusFilter: prefs.statusFilter,
+      billSearch: prefs.billSearch || "",
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
@@ -824,16 +873,6 @@
       statusSnapshotReady: false,
       qrByAttemptId: {},
       openQrAttemptId: null,
-      refreshing: false,
-      mode: prefs.mode,
-      limit: prefs.limit,
-      theme: prefs.theme,
-      statusFilters: prefs.statusFilters,
-      timelineFilters: prefs.timelineFilters,
-      events: [],
-      expandedPayload: new Set(),
-      statusByBillId: {},
-      statusSnapshotReady: false,
     };
 
     function applyTheme(theme) {
@@ -1047,10 +1086,11 @@
       document.getElementById("modeLatest").classList.toggle("active", state.mode === "latest");
       document.getElementById("modeToday").classList.toggle("active", state.mode === "today");
       syncLimitOptions();
-      document.querySelectorAll("#statusChips .chip").forEach((chip) => {
-        const key = chip.getAttribute("data-status");
-        chip.classList.toggle("active", !!state.statusFilters[key]);
-      });
+      syncStatusTabs();
+      const searchInput = document.getElementById("billSearch");
+      if (searchInput && searchInput.value !== state.billSearch) {
+        searchInput.value = state.billSearch;
+      }
       document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
         const cat = chip.getAttribute("data-cat");
         chip.classList.toggle("active", !!state.timelineFilters[cat]);
@@ -1071,8 +1111,48 @@
       return "pending";
     }
 
+    function billMatchesSearch(bill, query) {
+      const q = String(query || "").trim().toLowerCase();
+      if (!q) return true;
+      const sale = String(bill.salesperson || "").toLowerCase();
+      const billNo = String(bill.bill_number || "").toLowerCase();
+      const amountRaw = bill.amount == null ? "" : String(bill.amount);
+      const amountFmt = formatAmount(bill.amount).toLowerCase();
+      return sale.includes(q) || billNo.includes(q) || amountRaw.includes(q) || amountFmt.includes(q);
+    }
+
+    function searchedBills() {
+      return state.bills.filter((b) => billMatchesSearch(b, state.billSearch));
+    }
+
+    function statusCounts(bills) {
+      const counts = { all: bills.length, unsent: 0, pending: 0, success: 0, cancelled: 0 };
+      for (const bill of bills) {
+        const bucket = billStatusBucket(bill);
+        if (counts[bucket] != null) counts[bucket] += 1;
+      }
+      return counts;
+    }
+
+    function syncStatusTabs() {
+      const counts = statusCounts(searchedBills());
+      document.querySelectorAll("#statusTabs [data-status]").forEach((tab) => {
+        const key = tab.getAttribute("data-status");
+        const active = state.statusFilter === key;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", active ? "true" : "false");
+        const countEl = tab.querySelector(".count");
+        const n = counts[key] ?? 0;
+        if (countEl) countEl.textContent = `(${n})`;
+        else tab.textContent = `${STATUS_TAB_LABELS[key] || key} (${n})`;
+      });
+    }
+
     function visibleBills() {
-      return state.bills.filter((b) => !!state.statusFilters[billStatusBucket(b)]);
+      return searchedBills().filter((b) => {
+        if (state.statusFilter === "all") return true;
+        return billStatusBucket(b) === state.statusFilter;
+      });
     }
 
     function cacheQr(attemptId, qr) {
@@ -1459,14 +1539,21 @@
       syncToolbar();
       loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
     };
-    document.querySelectorAll("#statusChips .chip").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        const key = chip.getAttribute("data-status");
-        state.statusFilters[key] = !state.statusFilters[key];
+    document.querySelectorAll("#statusTabs [data-status]").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const key = tab.getAttribute("data-status");
+        if (!STATUS_FILTER_KEYS.includes(key)) return;
+        state.statusFilter = key;
         savePrefs();
         syncToolbar();
         renderBills();
       });
+    });
+    document.getElementById("billSearch").addEventListener("input", (event) => {
+      state.billSearch = event.target.value;
+      savePrefs();
+      syncStatusTabs();
+      renderBills();
     });
     document.querySelectorAll("#timelineChips .chip").forEach((chip) => {
       chip.addEventListener("click", () => {
