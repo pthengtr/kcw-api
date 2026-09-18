@@ -155,6 +155,22 @@ def list_active_payment_attempts(engine: Engine) -> list[dict[str, Any]]:
     return [_row_to_attempt(row) for row in rows]
 
 
+def list_unknown_attempts_with_tiger_id(engine: Engine) -> list[dict[str, Any]]:
+    """Stuck rows: Tiger moved to status=change (mapped unknown historically) then success."""
+    sql = text(
+        """
+        select *
+        from tiger_pay.payment_attempt
+        where status = 'unknown'
+          and tiger_payment_id is not null
+        order by created_at asc
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql).all()
+    return [_row_to_attempt(row) for row in rows]
+
+
 def list_latest_attempts_by_bill_ids(
     engine: Engine,
     pos_bill_ids: list[str],

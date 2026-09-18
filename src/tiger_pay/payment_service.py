@@ -140,7 +140,27 @@ def list_bills_with_payment_status(
         results.append(item)
 
     results.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    # Collect + CN each use TOP(limit); without a combined cap the UI dropdown
+    # (e.g. 10) can show ~2× that many rows.
+    cap = _combined_bills_cap(limit)
+    if cap is not None:
+        results = results[:cap]
     return results
+
+
+def _combined_bills_cap(limit: int | str | None) -> int | None:
+    """Max rows for the merged companion list, or None when unlimited."""
+    if limit is None:
+        from src.companion.config import get_companion_bill_settings
+
+        return max(1, int(get_companion_bill_settings().pos_bills_limit))
+    if isinstance(limit, str) and limit.strip().lower() == "all":
+        return None
+    try:
+        parsed = int(limit)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _public_attempt(attempt: dict[str, Any]) -> dict[str, Any]:
@@ -195,12 +215,7 @@ def send_payment_for_bill(
             "CN payout bills use voucher cash-return, not payment",
             code="not_collect_bill",
         )
-    if str(bill.pos_status or "").strip().upper() == "Y":
-        raise PaymentServiceError(
-            "Bill is already paid in POS",
-            code="bill_already_paid",
-        )
-
+    # Legacy POS PAID is display-only — Tiger payment_attempt is the source of truth.
     completed = repos.get_successful_attempt_for_bill(engine, pos_bill_id)
     if completed:
         raise PaymentServiceError(
@@ -730,9 +745,18 @@ def recover_active_attempts(
     *,
     open_api: TigerPayOpenApiClient | None = None,
 ) -> list[dict[str, Any]]:
-    active = repos.list_active_payment_attempts(engine)
+    to_poll = [
+        *repos.list_active_payment_attempts(engine),
+        # Historical bug: raw status "change" was stored as unknown → poller stopped.
+        *repos.list_unknown_attempts_with_tiger_id(engine),
+    ]
+    seen: set[str] = set()
     recovered: list[dict[str, Any]] = []
-    for attempt in active:
+    for attempt in to_poll:
+        attempt_id = str(attempt.get("id") or "")
+        if not attempt_id or attempt_id in seen:
+            continue
+        seen.add(attempt_id)
         updated = poll_attempt_once(engine, attempt, open_api=open_api)
         recovered.append(updated or attempt)
     return recovered

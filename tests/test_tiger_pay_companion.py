@@ -44,10 +44,68 @@ def test_normalize_status_aliases_and_unknown():
     assert normalize_status("Pending") == "pending"
     assert normalize_status("Paid") == "success"
     assert normalize_status("canceled") == "cancelled"
+    assert normalize_status("change") == "changing"
+    assert is_active_status(normalize_status("change"))
     assert normalize_status("nope") == "unknown"
     assert is_active_status("paying")
     assert is_terminal_status("success")
     assert not is_active_status("success")
+
+
+def test_list_bills_combined_limit_caps_collect_plus_cn():
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    from src.companion.bills import PosBill
+    from src.tiger_pay.payment_service import list_bills_with_payment_status
+
+    collect = [
+        PosBill(
+            id=f"c{i}",
+            bill_number=f"8K-{i}",
+            amount=Decimal("10"),
+            created_at=datetime(2026, 9, 18, 10, i, tzinfo=timezone.utc),
+            pos_status="N",
+            kind="collect",
+        )
+        for i in range(5)
+    ]
+    payout = [
+        PosBill(
+            id=f"p{i}",
+            bill_number=f"KCN-{i}",
+            amount=Decimal("20"),
+            created_at=datetime(2026, 9, 18, 11, i, tzinfo=timezone.utc),
+            pos_status="N",
+            kind="payout",
+        )
+        for i in range(5)
+    ]
+    with (
+        patch(
+            "src.tiger_pay.payment_service.list_open_bills",
+            return_value=collect,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.list_cn_bills",
+            return_value=payout,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.refresh_active_vouchers",
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.list_latest_attempts_by_bill_ids",
+            return_value={},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_latest_vouchers_by_bill_ids",
+            return_value={},
+        ),
+    ):
+        bills = list_bills_with_payment_status(MagicMock(), mode="latest", limit=3)
+    assert len(bills) == 3
+    # Newest first across both kinds (payout 11:4, 11:3, 11:2 …)
+    assert [b["bill_number"] for b in bills] == ["KCN-4", "KCN-3", "KCN-2"]
 
 
 def test_build_open_api_authorization_with_and_without_digest():
@@ -198,7 +256,8 @@ def test_send_payment_rejects_when_bill_already_completed():
         assert exc.value.code == "payment_already_completed"
 
 
-def test_send_payment_rejects_when_pos_already_paid():
+def test_send_payment_ignores_legacy_pos_paid():
+    """POS PAID=Y is display-only; Tiger attempt state gates sends."""
     engine = MagicMock()
     paid_bill = PosBill(
         id="bill-1003",
@@ -208,13 +267,47 @@ def test_send_payment_rejects_when_pos_already_paid():
         pos_status="Y",
         salesperson="mock.user",
     )
-    with patch(
-        "src.tiger_pay.payment_service.get_open_bill",
-        return_value=paid_bill,
+    open_api = MagicMock()
+    open_api.get_current.return_value = None
+    open_api.create_payment.return_value = {
+        "data": {"id": 301, "paymentNo": "PA301", "status": "pending"},
+        "raw": {"data": {"id": 301}},
+        "message": "Success",
+    }
+    attempt_id = "pospaidignore000001"
+    with (
+        patch("src.tiger_pay.payment_service.get_open_bill", return_value=paid_bill),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.create_payment_attempt",
+            return_value={"id": attempt_id, "pos_bill_id": "bill-1003", "status": "sending"},
+        ),
+        patch("src.tiger_pay.payment_service.repos.insert_payment_event"),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={
+                "id": attempt_id,
+                "pos_bill_id": "bill-1003",
+                "status": "pending",
+                "tiger_payment_id": 301,
+                "tiger_payment_no": "PA301",
+            },
+        ),
+        patch(
+            "src.tiger_pay.payment_service.new_payment_attempt_id",
+            return_value=attempt_id,
+        ),
     ):
-        with pytest.raises(PaymentServiceError) as exc:
-            send_payment_for_bill(engine, "bill-1003")
-        assert exc.value.code == "bill_already_paid"
+        result = send_payment_for_bill(engine, "bill-1003", open_api=open_api)
+    assert result["attempt"]["tiger_payment_id"] == 301
+    open_api.create_payment.assert_called_once()
 
 
 def test_send_payment_rejects_when_tiger_busy():
@@ -529,6 +622,7 @@ def test_companion_ui_and_bills_route():
         assert 'class="header-copy"' in ui.text
         assert 'id="billSearch"' in ui.text
         assert "ค้นหาบิล / พนักงาน / ยอด" in ui.text
+        assert "billNoCompact" in ui.text
         assert "status-tabs-row" in ui.text
         assert "align-content: flex-start" in ui.text
         assert "สร้าง voucher / จ่ายคืน" in ui.text
@@ -536,6 +630,14 @@ def test_companion_ui_and_bills_route():
         assert "รอดำเนินการ" in ui.text
         assert 'status === "failed") return "unsent"' in ui.text
         assert "status-unsent" in ui.text
+        assert "PAID (POS · info)" in ui.text
+        assert "pos_status" in ui.text  # still shown as info
+        assert 'tiger_payment_status === "success"' in ui.text
+        assert 'pos_status || "").trim().toUpperCase() === "Y"' not in ui.text
+        assert "busyLabel" in ui.text
+        assert "btn-busy" in ui.text
+        assert "syncDialogCancelButton" in ui.text
+        assert "กำลังยกเลิก" in ui.text
         assert "--fail-bg" in ui.text
         assert 'id="alertDialog"' in ui.text
         assert 'id="themeBtn"' in ui.text
