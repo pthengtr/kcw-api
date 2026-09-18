@@ -168,6 +168,10 @@ def test_send_payment_rejects_when_bill_has_active_attempt():
             return_value=MOCK_OPEN_BILL,
         ),
         patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
             return_value={"id": "x", "status": "pending"},
         ),
@@ -175,6 +179,42 @@ def test_send_payment_rejects_when_bill_has_active_attempt():
         with pytest.raises(PaymentServiceError) as exc:
             send_payment_for_bill(engine, "bill-1001")
         assert exc.value.code == "active_attempt_exists"
+
+
+def test_send_payment_rejects_when_bill_already_completed():
+    engine = MagicMock()
+    with (
+        patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value={"id": "done", "status": "success"},
+        ),
+    ):
+        with pytest.raises(PaymentServiceError) as exc:
+            send_payment_for_bill(engine, "bill-1001")
+        assert exc.value.code == "payment_already_completed"
+
+
+def test_send_payment_rejects_when_pos_already_paid():
+    engine = MagicMock()
+    paid_bill = PosBill(
+        id="bill-1003",
+        bill_number="B2607140003",
+        amount=Decimal("1250.00"),
+        created_at=datetime(2026, 7, 14, 11, 40, tzinfo=timezone.utc),
+        pos_status="Y",
+        salesperson="mock.user",
+    )
+    with patch(
+        "src.tiger_pay.payment_service.get_open_bill",
+        return_value=paid_bill,
+    ):
+        with pytest.raises(PaymentServiceError) as exc:
+            send_payment_for_bill(engine, "bill-1003")
+        assert exc.value.code == "bill_already_paid"
 
 
 def test_send_payment_rejects_when_tiger_busy():
@@ -185,6 +225,10 @@ def test_send_payment_rejects_when_tiger_busy():
         patch(
             "src.tiger_pay.payment_service.get_open_bill",
             return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
         ),
         patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
@@ -228,6 +272,10 @@ def test_send_payment_happy_path():
         patch(
             "src.tiger_pay.payment_service.get_open_bill",
             return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
         ),
         patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
@@ -295,6 +343,10 @@ def test_send_payment_floors_fractional_cash_amount():
             return_value=fractional,
         ),
         patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
             return_value=None,
         ),
@@ -331,6 +383,10 @@ def test_send_payment_maps_tailscale_submitter():
         patch(
             "src.tiger_pay.payment_service.get_open_bill",
             return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
         ),
         patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",

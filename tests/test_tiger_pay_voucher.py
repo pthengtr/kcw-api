@@ -187,6 +187,7 @@ def test_create_voucher_for_bill_persists(monkeypatch):
     with (
         patch("src.tiger_pay.voucher_service.get_open_bill", return_value=MOCK_CN_BILL),
         patch("src.tiger_pay.voucher_service.voucher_repos.get_active_voucher_for_bill", return_value=None),
+        patch("src.tiger_pay.voucher_service.voucher_repos.get_used_voucher_for_bill", return_value=None),
         patch(
             "src.tiger_pay.voucher_service.voucher_repos.create_voucher_attempt",
             return_value={"id": "attempt1", "status": "creating"},
@@ -207,6 +208,21 @@ def test_create_voucher_for_bill_persists(monkeypatch):
     assert result["voucher"]["voucher_num"] == "V100"
     create_m.assert_called_once()
     voucher_api.create_voucher.assert_called_once()
+
+
+def test_create_voucher_rejects_when_already_used():
+    engine = MagicMock()
+    with (
+        patch("src.tiger_pay.voucher_service.get_open_bill", return_value=MOCK_CN_BILL),
+        patch("src.tiger_pay.voucher_service.voucher_repos.get_active_voucher_for_bill", return_value=None),
+        patch(
+            "src.tiger_pay.voucher_service.voucher_repos.get_used_voucher_for_bill",
+            return_value={"id": "used1", "status": "used"},
+        ),
+    ):
+        with pytest.raises(VoucherServiceError) as exc:
+            create_voucher_for_bill(engine, "bill-cn-2001", voucher_api=MagicMock())
+        assert exc.value.code == "voucher_already_completed"
 
 
 def test_create_voucher_rejects_collect_bill():

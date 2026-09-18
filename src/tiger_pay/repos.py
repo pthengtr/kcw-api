@@ -123,6 +123,24 @@ def get_active_attempt_for_bill(engine: Engine, pos_bill_id: str) -> dict[str, A
     return _row_to_attempt(row) if row else None
 
 
+def get_successful_attempt_for_bill(
+    engine: Engine, pos_bill_id: str
+) -> dict[str, Any] | None:
+    sql = text(
+        """
+        select *
+        from tiger_pay.payment_attempt
+        where pos_bill_id = :pos_bill_id
+          and status = 'success'
+        order by created_at desc
+        limit 1
+        """
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"pos_bill_id": pos_bill_id}).first()
+    return _row_to_attempt(row) if row else None
+
+
 def list_active_payment_attempts(engine: Engine) -> list[dict[str, Any]]:
     sql = text(
         f"""

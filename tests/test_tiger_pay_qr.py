@@ -91,6 +91,10 @@ def test_send_qr_with_raw_data_skips_create_qr_and_renders_image():
             return_value=MOCK_OPEN_BILL,
         ),
         patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
             return_value=None,
         ),
@@ -187,6 +191,10 @@ def test_send_qr_payment_returns_companion_qr():
             return_value=MOCK_OPEN_BILL,
         ),
         patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
             return_value=None,
         ),
@@ -249,6 +257,10 @@ def test_send_qr_falls_back_to_kbank_create_qr():
         patch(
             "src.tiger_pay.payment_service.get_open_bill",
             return_value=MOCK_OPEN_BILL,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
         ),
         patch(
             "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",

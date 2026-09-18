@@ -1148,6 +1148,15 @@
       const raw = (err && err.message) || String(err || "");
       const cleaned = raw.replace(/^เกิดข้อผิดพลาด:\s*/i, "").trim();
       const lower = cleaned.toLowerCase();
+      if (
+        lower.includes("payment_already_completed")
+        || lower.includes("bill_already_paid")
+        || lower.includes("voucher_already_completed")
+        || lower.includes("already has a completed")
+        || lower.includes("already paid")
+      ) {
+        return "บิลนี้ชำระสำเร็จแล้ว ไม่สามารถส่งชำระซ้ำได้";
+      }
       if (lower.includes("active") || lower.includes("busy") || lower.includes("already")) {
         return "มีรายการชำระที่กำลังดำเนินการอยู่แล้ว หรือเครื่อง Tiger ไม่ว่างในตอนนี้";
       }
@@ -1576,12 +1585,15 @@
 
       if (isPayoutBill(bill)) {
         const voucherLoading = isSendLoading(bill.id, "voucher");
-        const createDisabled = bill.payment_attempt_active || !!state.actionInFlight;
+        const alreadyCompleted = bill.tiger_payment_status === "used";
+        const createDisabled = bill.payment_attempt_active || alreadyCompleted || !!state.actionInFlight;
         const showVoucher = !!bill.payment_attempt_id;
         const voucherLabel = voucherLoading
           ? `${ICONS.spinner}<span class="btn-text-full"> กำลังสร้าง…</span><span class="btn-text-short"> สร้าง…</span>`
           : showVoucher && bill.payment_attempt_active
             ? `${ICONS.qr}<span class="btn-text-full"> ดู voucher</span><span class="btn-text-short"> ดู voucher</span>`
+            : alreadyCompleted
+              ? `${ICONS.check}<span class="btn-text-full"> จ่ายคืนแล้ว</span><span class="btn-text-short"> จ่ายแล้ว</span>`
             : `${ICONS.send}<span class="btn-text-full"> สร้าง voucher / จ่ายคืน</span><span class="btn-text-short"> สร้าง voucher</span>`;
         const voucherDisabled = showVoucher && bill.payment_attempt_active
           ? !!state.actionInFlight
@@ -1594,15 +1606,21 @@
 
       const cashLoading = isSendLoading(bill.id, "cash");
       const qrLoading = isSendLoading(bill.id, "qr");
-      const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight;
+      const alreadyCompleted = bill.tiger_payment_status === "success"
+        || String(bill.pos_status || "").trim().toUpperCase() === "Y";
+      const sendDisabled = bill.payment_attempt_active || alreadyCompleted || !!state.actionInFlight;
       const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
       const cashLabel = cashLoading
         ? `${ICONS.spinner}<span class="btn-text-full"> กำลังส่ง…</span><span class="btn-text-short"> ส่ง…</span>`
+        : alreadyCompleted
+          ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
         : `${ICONS.send}<span class="btn-text-full"> ส่งเงินสด / บิล VAT</span><span class="btn-text-short"> เงินสด/VAT</span>`;
       const qrLabel = qrLoading
         ? `${ICONS.spinner}<span class="btn-text-full"> กำลังส่ง QR…</span><span class="btn-text-short"> QR…</span>`
         : showQr && bill.payment_attempt_active
           ? `${ICONS.qr}<span class="btn-text-full"> ดู QR</span><span class="btn-text-short"> ดู QR</span>`
+          : alreadyCompleted
+            ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
           : `${ICONS.qr}<span class="btn-text-full"> ส่ง QR</span><span class="btn-text-short"> ส่ง QR</span>`;
       const qrDisabled = showQr && bill.payment_attempt_active
         ? !!state.actionInFlight
