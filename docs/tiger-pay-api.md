@@ -267,7 +267,7 @@ Bearer auth, `multipart/form-data`:
 | Cancel voucher | `POST /companion/vouchers/{attempt_id}/cancel` |
 | Query vouchers | Client method only (not exposed in UI yet) |
 
-CN bill selection: `CN*` / `3CN*` (exclude `CNTF*` / `CNTAD*`). Amount = `abs(AFTERTAX)`. Stored in `tiger_pay.voucher_attempt` + `voucher_event` (see `docs/sql/tiger_pay_voucher_attempt.sql`).
+CN bill selection: `KCN*` (cashed shop credit notes) and `CN*` / `3CN*` (exclude `CNTF*` / `CNTAD*`). Amount = `abs(AFTERTAX)`. Stored in `tiger_pay.voucher_attempt` + `voucher_event` (see `docs/sql/tiger_pay_voucher_attempt.sql`).
 
 ---
 

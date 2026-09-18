@@ -46,10 +46,16 @@ def is_excluded_bill_number(bill_number: object) -> bool:
 
 
 def is_cn_payout_bill_number(bill_number: object) -> bool:
-    """Counter CN cash-return bills (exclude transfer/online CN subtypes)."""
+    """Counter CN cash-return bills (exclude transfer/online CN subtypes).
+
+    Shop credit notes use ``KCN*`` (e.g. ``KCN6908-0268``). Older / alternate
+    prefixes ``CN*`` / ``3CN*`` are also treated as payout.
+    """
     text = blank(bill_number).upper()
     if not text:
         return False
+    if text.startswith("KCN"):
+        return True
     if re.match(r"^(3)?CNTF", text):
         return False
     if re.match(r"^(3)?CNTAD", text):
