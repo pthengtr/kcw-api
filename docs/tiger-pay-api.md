@@ -134,6 +134,7 @@ Also works with `"type": "qr"` — response includes `dynamicQR` (`qrRawData`, b
 Created payments start as `pending` with `totalPay: 0`.
 
 **Implemented in KCW:** `TigerPayOpenApiClient.create_payment` (default `type=cash`).
+Cash create amounts are **floored to whole baht** before send (Tiger rejects fractional cash `amount`); the payment attempt still stores the original POS `AFTERTAX`.
 
 #### Create QR on existing payment
 

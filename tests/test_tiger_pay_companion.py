@@ -16,6 +16,7 @@ from src.tiger_pay.payment_service import (
     cancel_payment_attempt,
     reconcile_from_tiger_payment,
     send_payment_for_bill,
+    tiger_create_amount,
 )
 from src.tiger_pay.status import is_active_status, is_terminal_status, normalize_status
 
@@ -27,6 +28,16 @@ MOCK_OPEN_BILL = PosBill(
     pos_status="N",
     salesperson="mock.user",
 )
+
+
+def test_tiger_create_amount_floors_cash_to_whole_baht():
+    assert tiger_create_amount(Decimal("224.70"), payment_type="cash") == 224
+    assert tiger_create_amount(Decimal("224.01"), payment_type="cash") == 224
+    assert tiger_create_amount(Decimal("225.00"), payment_type="cash") == 225
+    assert tiger_create_amount(Decimal("224.70"), payment_type="qr") == 224.7
+    with pytest.raises(PaymentServiceError) as exc:
+        tiger_create_amount(Decimal("0.70"), payment_type="cash")
+    assert exc.value.code == "invalid_cash_amount"
 
 
 def test_normalize_status_aliases_and_unknown():
@@ -256,7 +267,55 @@ def test_send_payment_happy_path():
     assert kwargs["ref_no_2"] == attempt_id
     assert len(kwargs["ref_no_2"]) <= 20
     assert kwargs["payment_type"] == "cash"
+    assert kwargs["amount"] == 250
     assert "payment_gateway" not in kwargs
+
+
+def test_send_payment_floors_fractional_cash_amount():
+    engine = MagicMock()
+    open_api = MagicMock()
+    open_api.get_current.return_value = None
+    open_api.create_payment.return_value = {
+        "data": {"id": 260, "paymentNo": "PA2", "status": "pending"},
+        "raw": {},
+        "message": "Success",
+    }
+    fractional = PosBill(
+        id="bill-tr",
+        bill_number="TR6909-036",
+        amount=Decimal("224.70"),
+        created_at=datetime(2026, 9, 18, 15, 0, tzinfo=timezone.utc),
+        pos_status="N",
+        salesperson="mock.user",
+    )
+    attempt_id = "a1b2c3d4e5f60718293c"
+    with (
+        patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            return_value=fractional,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.create_payment_attempt",
+            return_value={"id": attempt_id, "status": "sending"},
+        ) as create_attempt,
+        patch("src.tiger_pay.payment_service.repos.insert_payment_event"),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={"id": attempt_id, "status": "pending"},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.new_payment_attempt_id",
+            return_value=attempt_id,
+        ),
+    ):
+        send_payment_for_bill(engine, "bill-tr", open_api=open_api)
+
+    assert create_attempt.call_args.kwargs["amount"] == Decimal("224.70")
+    assert open_api.create_payment.call_args.kwargs["amount"] == 224
 
 
 def test_send_payment_maps_tailscale_submitter():
