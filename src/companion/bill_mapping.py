@@ -46,21 +46,30 @@ def is_excluded_bill_number(bill_number: object) -> bool:
 
 
 def is_cn_payout_bill_number(bill_number: object) -> bool:
-    """Counter CN cash-return bills (exclude transfer/online CN subtypes).
+    """Counter CN cash-return bill prefixes (exclude transfer/online CN subtypes).
 
     Shop credit notes use ``KCN*`` (e.g. ``KCN6908-0268``). Older / alternate
     prefixes ``CN*`` / ``3CN*`` are also treated as payout.
+
+    Prefer amount-based classification in ``row_to_bill``: any negative
+    ``AFTERTAX`` (including normal ``5K`` / ``8K`` bills) is a voucher payout.
     """
     text = blank(bill_number).upper()
     if not text:
         return False
     if text.startswith("KCN"):
         return True
-    if re.match(r"^(3)?CNTF", text):
-        return False
-    if re.match(r"^(3)?CNTAD", text):
+    if is_blocked_cn_subtype_bill_number(text):
         return False
     return bool(re.match(r"^(3)?CN", text))
+
+
+def is_blocked_cn_subtype_bill_number(bill_number: object) -> bool:
+    """Transfer/online CN subtypes that must not create Tiger vouchers."""
+    text = blank(bill_number).upper()
+    if not text:
+        return False
+    return bool(re.match(r"^(3)?CNTF", text) or re.match(r"^(3)?CNTAD", text))
 
 
 def parse_bill_datetime(bill_date: object, bill_time: object) -> datetime:
@@ -142,14 +151,21 @@ def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
         return None
     if is_excluded_bill_number(bill_number):
         return None
+    if is_blocked_cn_subtype_bill_number(bill_number):
+        return None
 
     resolved_kind = kind
     if resolved_kind is None:
-        resolved_kind = "payout" if is_cn_payout_bill_number(bill_number) else "collect"
+        # Negative AFTERTAX = cash-return → Tiger voucher (KCN, CN, or normal 5K/8K).
+        resolved_kind = (
+            "payout"
+            if amount < 0 or is_cn_payout_bill_number(bill_number)
+            else "collect"
+        )
     if resolved_kind == "payout":
         amount = abs(amount)
     elif amount < 0:
-        # Collect list should not include negative non-CN rows.
+        # Collect list should not include negative rows.
         return None
 
     try:

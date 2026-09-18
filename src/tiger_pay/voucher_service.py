@@ -118,7 +118,7 @@ def create_voucher_for_bill(
         raise VoucherServiceError("POS bill not found", code="bill_not_found")
     if bill.kind != "payout":
         raise VoucherServiceError(
-            "Only CN payout bills can create vouchers",
+            "Only cash-return (negative) bills can create vouchers",
             code="not_payout_bill",
         )
 
