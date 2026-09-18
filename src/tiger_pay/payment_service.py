@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from decimal import Decimal, ROUND_FLOOR
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -36,6 +37,32 @@ ALLOWED_PAYMENT_TYPES = frozenset({"cash", "qr"})
 def new_payment_attempt_id() -> str:
     """Generate an internal attempt id that fits Tiger RefNo2 (<=20)."""
     return uuid.uuid4().hex[:TIGER_REF_NO2_MAX_LEN]
+
+
+def tiger_create_amount(
+    amount: Decimal | float | int | str,
+    *,
+    payment_type: str,
+) -> int | float:
+    """Amount sent to Tiger create-payment.
+
+    Cash Open API rejects fractional baht (``value.amount`` 400). Floor cash
+    to a whole baht; keep QR decimals when present.
+    """
+    value = Decimal(str(amount))
+    if payment_type == "cash":
+        floored = int(value.to_integral_value(rounding=ROUND_FLOOR))
+        if floored <= 0:
+            raise PaymentServiceError(
+                "Cash amount must be at least 1 baht after rounding down",
+                code="invalid_cash_amount",
+                details={"amount": str(amount), "floored": floored},
+            )
+        return floored
+    amount_value: float | int = float(value)
+    if float(amount_value).is_integer():
+        return int(amount_value)
+    return amount_value
 
 
 class PaymentServiceError(Exception):
@@ -191,6 +218,9 @@ def send_payment_for_bill(
             code="tiger_busy",
         )
 
+    # Validate/normalize Tiger amount before opening an attempt row.
+    amount_value = tiger_create_amount(bill.amount, payment_type=cleaned_type)
+
     attempt_id = new_payment_attempt_id()
     try:
         attempt = repos.create_payment_attempt(
@@ -218,15 +248,13 @@ def send_payment_for_bill(
         payload={
             "action": "payment_created",
             "pos_bill_id": bill.id,
+            "tiger_amount": amount_value,
             **submitter,
         },
         event_key=f"api:created:{attempt_id}",
     )
 
     note = f"POS bill {bill.bill_number}"
-    amount_value: float | int = float(bill.amount)
-    if float(amount_value).is_integer():
-        amount_value = int(amount_value)
     try:
         create_kwargs: dict[str, Any] = {
             "amount": amount_value,
