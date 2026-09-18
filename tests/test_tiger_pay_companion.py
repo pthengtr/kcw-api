@@ -410,7 +410,12 @@ def test_companion_ui_and_bills_route():
         assert 'id="qrDialog"' in ui.text
         assert "Request" in ui.text
         assert 'id="statusTabs"' in ui.text
+        assert 'class="status-tabs-row"' in ui.text
+        assert 'class="header-copy"' in ui.text
         assert 'id="billSearch"' in ui.text
+        assert "ค้นหาบิล / พนักงาน / ยอด" in ui.text
+        assert "status-tabs-row" in ui.text
+        assert "align-content: flex-start" in ui.text
         assert "สร้าง voucher / จ่ายคืน" in ui.text
         assert "ยังไม่ส่ง" in ui.text
         assert "รอดำเนินการ" in ui.text
