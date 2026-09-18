@@ -414,6 +414,9 @@ def test_companion_ui_and_bills_route():
         assert "สร้าง voucher / จ่ายคืน" in ui.text
         assert "ยังไม่ส่ง" in ui.text
         assert "รอดำเนินการ" in ui.text
+        assert 'status === "failed") return "unsent"' in ui.text
+        assert "status-unsent" in ui.text
+        assert "--fail-bg" in ui.text
         assert 'id="alertDialog"' in ui.text
         assert 'id="themeBtn"' in ui.text
         assert 'data-theme' in ui.text
