@@ -111,6 +111,58 @@ def test_list_mssql_bills_today_mode_filters_on_server():
     assert "CONVERT(date, [BILLDATE])" in sql_text
 
 
+def test_list_mssql_bills_excludes_kcn_from_collect():
+    import src.companion.mssql_bills as mssql_bills
+
+    original = mssql_bills.pd.read_sql
+    mocked = MagicMock(return_value=pd.DataFrame())
+    mssql_bills.pd.read_sql = mocked
+    try:
+        list_mssql_bills(_settings(), engine=MagicMock())
+    finally:
+        mssql_bills.pd.read_sql = original
+
+    sql_text = str(mocked.call_args.args[0])
+    assert "NOT LIKE 'KCN%'" in sql_text
+    assert "NOT LIKE 'CN%'" in sql_text
+
+
+def test_list_mssql_cn_bills_includes_kcn_cashed():
+    from src.companion.mssql_bills import list_mssql_cn_bills
+
+    frame = pd.DataFrame(
+        [
+            {
+                "ID": "572545",
+                "BILLNO": "KCN6908-0268",
+                "AFTERTAX": "-1000.00",
+                "BILLDATE": "2026-09-18",
+                "BILLTIME": "12:52:00",
+                "PAID": "Y",
+                "CASHED": "Y",
+                "SALE": "MINT",
+            }
+        ]
+    )
+    import src.companion.mssql_bills as mssql_bills
+
+    original = mssql_bills.pd.read_sql
+    mocked = MagicMock(return_value=frame)
+    mssql_bills.pd.read_sql = mocked
+    try:
+        bills = list_mssql_cn_bills(_settings(), engine=MagicMock())
+    finally:
+        mssql_bills.pd.read_sql = original
+
+    assert len(bills) == 1
+    assert bills[0].bill_number == "KCN6908-0268"
+    assert bills[0].kind == "payout"
+    assert bills[0].amount == Decimal("1000.00")
+    sql_text = str(mocked.call_args.args[0])
+    assert "LIKE 'KCN%'" in sql_text
+    assert "CASHED" in sql_text
+
+
 def test_get_mssql_bill():
     frame = pd.DataFrame(
         [

@@ -76,25 +76,34 @@ def _base_where_sql(*, today_only: bool, payout: bool = False) -> str:
         "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3SA%'",
     ]
     if payout:
-        # Counter CN cash-return candidates (exclude transfer/online CN subtypes).
-        clauses.extend(
-            [
-                "("
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE 'CN%' "
-                "OR UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE '3CN%'"
-                ")",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTF%'",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTF%'",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTAD%'",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTAD%'",
-                "UPPER(LTRIM(RTRIM(COALESCE([PAID], '')))) <> 'Y'",
-            ]
+        # Counter cash-return candidates:
+        # - KCN*: shop credit notes (usually already CASHED=Y / PAID=Y)
+        # - CN* / 3CN*: alternate CN prefixes still unpaid (exclude CNTF/CNTAD)
+        clauses.append(
+            "("
+            "("
+            "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE 'KCN%' "
+            "AND UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'"
+            ") "
+            "OR ("
+            "("
+            "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE 'CN%' "
+            "OR UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE '3CN%'"
+            ") "
+            "AND UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTF%' "
+            "AND UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTF%' "
+            "AND UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTAD%' "
+            "AND UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTAD%' "
+            "AND UPPER(LTRIM(RTRIM(COALESCE([PAID], '')))) <> 'Y'"
+            ")"
+            ")"
         )
     else:
         clauses.extend(
             [
                 "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
-                # Keep CN payout bills out of the collect list.
+                # Keep CN / KCN payout bills out of the collect list.
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'KCN%'",
                 "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CN%'",
                 "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CN%'",
             ]

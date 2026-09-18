@@ -20,6 +20,8 @@ from src.tiger_pay.voucher_service import VoucherServiceError, create_voucher_fo
 
 
 def test_is_cn_payout_bill_number():
+    assert is_cn_payout_bill_number("KCN6908-0268")
+    assert is_cn_payout_bill_number("kcn6908-0268")
     assert is_cn_payout_bill_number("CN2607140001")
     assert is_cn_payout_bill_number("3CN2607140001")
     assert not is_cn_payout_bill_number("CNTF2607140001")
