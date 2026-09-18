@@ -58,6 +58,8 @@
       --ok-fg: #9de7c8;
       --bad-bg: #4a2724;
       --bad-fg: #f0b0aa;
+      --fail-bg: #4a1f2e;
+      --fail-fg: #fb7185;
       --warn-bg: #4a3b1f;
       --warn-fg: #f0d59a;
       --amount: #9de7c8;
@@ -93,6 +95,8 @@
       --ok-fg: #146446;
       --bad-bg: #f8ddd9;
       --bad-fg: #8f2f28;
+      --fail-bg: #fce4ec;
+      --fail-fg: #b01040;
       --warn-bg: #f7ead0;
       --warn-fg: #8a5a10;
       --amount: #146446;
@@ -192,6 +196,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
+      max-width: 100%;
     }
     .seg button {
       border-radius: 0;
@@ -199,6 +204,8 @@
       color: var(--muted);
       min-height: var(--touch);
       padding: 0.4rem 0.85rem;
+      white-space: nowrap;
+      flex: 0 0 auto;
     }
     .seg button.active {
       background: var(--seg-active);
@@ -348,7 +355,17 @@
       white-space: nowrap;
     }
     .status-success, .status-used { background: var(--ok-bg); color: var(--ok-fg); }
-    .status-failed, .status-cancelled, .status-expired { background: var(--bad-bg); color: var(--bad-fg); }
+    .status-unsent {
+      background: color-mix(in srgb, var(--muted) 22%, transparent);
+      color: var(--muted);
+      border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+    }
+    .status-failed {
+      background: var(--fail-bg);
+      color: var(--fail-fg);
+      border: 1px solid color-mix(in srgb, var(--fail-fg) 40%, transparent);
+    }
+    .status-cancelled, .status-expired { background: var(--bad-bg); color: var(--bad-fg); }
     .status-pending, .status-paying, .status-sending, .status-cancelling, .status-changing, .status-creating {
       background: var(--warn-bg); color: var(--warn-fg);
     }
@@ -400,11 +417,24 @@
     }
     .bill-card-meta strong { color: var(--text); font-weight: 600; }
     .bill-card-actions {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 0.5rem;
     }
-    .bill-card-actions button { flex: 1 1 calc(50% - 0.25rem); min-width: 8.5rem; }
+    .bill-card-actions button {
+      min-width: 0;
+      width: 100%;
+      white-space: nowrap;
+      font-size: 0.86rem;
+      padding: 0.5rem 0.55rem;
+    }
+    .bill-card-actions button:only-child {
+      grid-column: 1 / -1;
+    }
+    .bill-card-actions:has(> button:nth-child(3)) .btn-cancel {
+      grid-column: 1 / -1;
+    }
+    .btn-text-short { display: none; }
     @media (min-width: 420px) {
       .bill-card-meta { grid-template-columns: 1fr 1fr; }
     }
@@ -416,12 +446,72 @@
         padding-top: max(0.7rem, env(safe-area-inset-top));
       }
       main { padding: 0.65rem 0.65rem 1.25rem; }
-      .toolbar { padding: 0.55rem 0.75rem; flex-wrap: nowrap; }
+      .toolbar {
+        padding: 0.55rem 0.75rem;
+        flex-wrap: nowrap;
+        gap: 0.5rem;
+      }
+      .toolbar .seg {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .toolbar .seg button {
+        flex: 1 1 0;
+        padding: 0.4rem 0.55rem;
+        font-size: 0.88rem;
+      }
+      .limit-wrap {
+        flex: 0 0 auto;
+        gap: 0.3rem;
+      }
+      .limit-label,
+      .limit-wrap > span { display: none; }
       .filter-bar { padding: 0.55rem 0.75rem; }
       .panel h2 { padding: 0.7rem 0.75rem; font-size: 0.95rem; }
-      .limit-label { display: none; }
       .btn-theme, .btn-refresh { padding: 0.45rem 0.65rem; }
-      .status-tabs button { padding: 0.4rem 0.65rem; font-size: 0.82rem; }
+      .status-tabs button {
+        padding: 0.35rem 0.65rem;
+        font-size: 0.82rem;
+        min-height: 2.25rem;
+      }
+      .bill-search-wrap {
+        display: block;
+        position: relative;
+        gap: 0;
+      }
+      .bill-search-wrap > .icon {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 1;
+        pointer-events: none;
+        width: 1rem;
+        height: 1rem;
+        opacity: 0.75;
+      }
+      .bill-search-wrap input {
+        display: block;
+        width: 100%;
+        min-height: 2.6rem;
+        padding: 0.55rem 0.85rem 0.55rem 2.35rem;
+        font-size: 0.92rem;
+        line-height: 1.35;
+      }
+      .bill-search-wrap input::placeholder {
+        letter-spacing: 0;
+        opacity: 0.85;
+      }
+      .btn-text-full { display: none; }
+      .btn-text-short { display: inline; }
+      .chip-bar {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .chip-bar::-webkit-scrollbar { display: none; }
+      .chip { flex: 0 0 auto; }
     }
     @media (max-width: 600px) {
       header { flex-wrap: wrap; align-items: center; }
@@ -1121,12 +1211,12 @@
     }
 
     function statusClass(status) {
-      if (!status) return "status-pill";
+      if (!status) return "status-pill status-unsent";
       return `status-pill status-${status}`;
     }
 
     function statusLabel(status) {
-      if (!status) return "—";
+      if (!status) return "ยังไม่ส่ง";
       return STATUS_LABEL[status] || status;
     }
 
@@ -1149,6 +1239,21 @@
         hour: "2-digit",
         minute: "2-digit",
         ...(compact ? {} : { second: "2-digit" }),
+        hour12: false,
+      }).format(date);
+    }
+
+    function formatBillDateTime(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return new Intl.DateTimeFormat("th-TH", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
         hour12: false,
       }).format(date);
     }
@@ -1253,8 +1358,9 @@
 
     function billStatusBucket(bill) {
       const status = bill.tiger_payment_status;
-      if (!status && !bill.payment_attempt_id) return "unsent";
-      if (isPendingStatus(status) || status === "failed") return "pending";
+      // Failed stays with unsent so staff can retry; distinguished by status pill color.
+      if ((!status && !bill.payment_attempt_id) || status === "failed") return "unsent";
+      if (isPendingStatus(status)) return "pending";
       if (status === "success" || status === "used") return "success";
       if (status === "cancelled" || status === "expired") return "cancelled";
       return "pending";
@@ -1470,18 +1576,18 @@
       const cancelLoading = isCancelLoading(bill.payment_attempt_id);
       const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight;
       const cancelLabel = cancelLoading
-        ? `${ICONS.spinner} กำลังยกเลิก…`
-        : `${ICONS.cancel} ยกเลิก`;
+        ? `${ICONS.spinner}<span class="btn-text-full"> กำลังยกเลิก…</span><span class="btn-text-short"> ยกเลิก…</span>`
+        : `${ICONS.cancel}<span class="btn-text-full"> ยกเลิก</span><span class="btn-text-short"> ยกเลิก</span>`;
 
       if (isPayoutBill(bill)) {
         const voucherLoading = isSendLoading(bill.id, "voucher");
         const createDisabled = bill.payment_attempt_active || !!state.actionInFlight;
         const showVoucher = !!bill.payment_attempt_id;
         const voucherLabel = voucherLoading
-          ? `${ICONS.spinner} กำลังสร้าง…`
+          ? `${ICONS.spinner}<span class="btn-text-full"> กำลังสร้าง…</span><span class="btn-text-short"> สร้าง…</span>`
           : showVoucher && bill.payment_attempt_active
-            ? `${ICONS.qr} ดู voucher`
-            : `${ICONS.send} สร้าง voucher / จ่ายคืน`;
+            ? `${ICONS.qr}<span class="btn-text-full"> ดู voucher</span><span class="btn-text-short"> ดู voucher</span>`
+            : `${ICONS.send}<span class="btn-text-full"> สร้าง voucher / จ่ายคืน</span><span class="btn-text-short"> สร้าง voucher</span>`;
         const voucherDisabled = showVoucher && bill.payment_attempt_active
           ? !!state.actionInFlight
           : createDisabled;
@@ -1496,13 +1602,13 @@
       const sendDisabled = bill.payment_attempt_active || !!state.actionInFlight;
       const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
       const cashLabel = cashLoading
-        ? `${ICONS.spinner} กำลังส่ง…`
-        : `${ICONS.send} ส่งเงินสด / บิล VAT`;
+        ? `${ICONS.spinner}<span class="btn-text-full"> กำลังส่ง…</span><span class="btn-text-short"> ส่ง…</span>`
+        : `${ICONS.send}<span class="btn-text-full"> ส่งเงินสด / บิล VAT</span><span class="btn-text-short"> เงินสด/VAT</span>`;
       const qrLabel = qrLoading
-        ? `${ICONS.spinner} กำลังส่ง QR…`
+        ? `${ICONS.spinner}<span class="btn-text-full"> กำลังส่ง QR…</span><span class="btn-text-short"> QR…</span>`
         : showQr && bill.payment_attempt_active
-          ? `${ICONS.qr} ดู QR`
-          : `${ICONS.qr} ส่ง QR`;
+          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR</span><span class="btn-text-short"> ดู QR</span>`
+          : `${ICONS.qr}<span class="btn-text-full"> ส่ง QR</span><span class="btn-text-short"> ส่ง QR</span>`;
       const qrDisabled = showQr && bill.payment_attempt_active
         ? !!state.actionInFlight
         : sendDisabled;
@@ -1670,7 +1776,7 @@
           <div class="bill-card-top">
             <div class="bill-card-heading">
               <div class="bill-card-no">${isPayoutBill(bill) ? "CN · " : ""}${bill.bill_number}</div>
-              <div class="bill-card-time">${formatBangkokTime(bill.created_at, { compact: true })}</div>
+              <div class="bill-card-time">${formatBillDateTime(bill.created_at) || "—"}</div>
             </div>
             <div class="bill-card-amount">${isPayoutBill(bill) ? "คืน " : ""}${formatAmount(bill.amount)}</div>
           </div>
