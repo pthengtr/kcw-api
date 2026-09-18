@@ -50,6 +50,9 @@ def _http_error(exc: PaymentServiceError | VoucherServiceError) -> HTTPException
         "not_active",
         "not_collect_bill",
         "not_payout_bill",
+        "bill_already_paid",
+        "payment_already_completed",
+        "voucher_already_completed",
     }:
         status = 409
     elif exc.code in {"invalid_payment_type", "missing_voucher_num", "missing_tiger_id"}:

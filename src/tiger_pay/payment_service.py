@@ -195,6 +195,18 @@ def send_payment_for_bill(
             "CN payout bills use voucher cash-return, not payment",
             code="not_collect_bill",
         )
+    if str(bill.pos_status or "").strip().upper() == "Y":
+        raise PaymentServiceError(
+            "Bill is already paid in POS",
+            code="bill_already_paid",
+        )
+
+    completed = repos.get_successful_attempt_for_bill(engine, pos_bill_id)
+    if completed:
+        raise PaymentServiceError(
+            "Bill already has a completed payment",
+            code="payment_already_completed",
+        )
 
     existing = repos.get_active_attempt_for_bill(engine, pos_bill_id)
     if existing:

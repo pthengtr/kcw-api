@@ -138,6 +138,13 @@ def create_voucher_for_bill(
             code="active_attempt_exists",
         )
 
+    completed = voucher_repos.get_used_voucher_for_bill(engine, pos_bill_id)
+    if completed:
+        raise VoucherServiceError(
+            "Bill already has a completed voucher",
+            code="voucher_already_completed",
+        )
+
     attempt_id = new_voucher_attempt_id()
     try:
         attempt = voucher_repos.create_voucher_attempt(
