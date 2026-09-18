@@ -50,7 +50,6 @@ def _http_error(exc: PaymentServiceError | VoucherServiceError) -> HTTPException
         "not_active",
         "not_collect_bill",
         "not_payout_bill",
-        "bill_already_paid",
         "payment_already_completed",
         "voucher_already_completed",
     }:

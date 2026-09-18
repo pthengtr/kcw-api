@@ -25,6 +25,8 @@ _RAW_STATUS_ALIASES = {
     "canceled": "cancelled",
     "fail": "failed",
     "error": "failed",
+    # Device uses "change" while dispensing overpayment change; keep polling.
+    "change": "changing",
 }
 
 

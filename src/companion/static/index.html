@@ -323,6 +323,11 @@
       opacity: 0.45;
       cursor: not-allowed;
     }
+    /* Keep the in-flight button fully visible so the spinner is obvious. */
+    button.btn-busy:disabled {
+      opacity: 1;
+      cursor: wait;
+    }
     .btn-send { background: var(--accent); color: var(--on-accent); }
     .btn-qr { background: var(--request); color: #f4f8fc; }
     .btn-cancel { background: var(--danger); color: var(--btn-cancel-text); }
@@ -859,7 +864,7 @@
               <tr>
                 <th>เลขที่บิล</th>
                 <th>ยอดเงิน</th>
-                <th>PAID</th>
+                <th title="Legacy POS field — info only; Tiger companion status is the payment source of truth">PAID (POS · info)</th>
                 <th>พนักงานขาย</th>
                 <th>สถานะ Tiger</th>
                 <th>เลขชำระ Tiger</th>
@@ -968,7 +973,8 @@
       sending: "กำลังส่ง",
       creating: "กำลังสร้าง voucher",
       cancelling: "กำลังยกเลิก",
-      changing: "กำลังเปลี่ยน",
+      changing: "กำลังทอนเงิน",
+      unknown: "ไม่ทราบสถานะ",
     };
 
     function systemTheme() {
@@ -1150,12 +1156,10 @@
       const lower = cleaned.toLowerCase();
       if (
         lower.includes("payment_already_completed")
-        || lower.includes("bill_already_paid")
         || lower.includes("voucher_already_completed")
         || lower.includes("already has a completed")
-        || lower.includes("already paid")
       ) {
-        return "บิลนี้ชำระสำเร็จแล้ว ไม่สามารถส่งชำระซ้ำได้";
+        return "บิลนี้ชำระสำเร็จแล้วผ่าน Tiger ไม่สามารถส่งชำระซ้ำได้";
       }
       if (lower.includes("active") || lower.includes("busy") || lower.includes("already")) {
         return "มีรายการชำระที่กำลังดำเนินการอยู่แล้ว หรือเครื่อง Tiger ไม่ว่างในตอนนี้";
@@ -1274,6 +1278,39 @@
       return state.actionInFlight?.type === "cancel" && state.actionInFlight.attemptId === attemptId;
     }
 
+    function busyLabel(kind) {
+      const map = {
+        cancel: { full: "กำลังยกเลิก…", short: "ยกเลิก…" },
+        cash: { full: "กำลังส่ง…", short: "ส่ง…" },
+        qr: { full: "กำลังส่ง QR…", short: "QR…" },
+        voucher: { full: "กำลังสร้าง…", short: "สร้าง…" },
+      };
+      const label = map[kind] || { full: "กำลังทำรายการ…", short: "…" };
+      return `${ICONS.spinner}<span class="btn-text-full"> ${label.full}</span><span class="btn-text-short"> ${label.short}</span>`;
+    }
+
+    /** Disable siblings while one action runs; keep the busy button marked for spinner. */
+    function actionBlocked(exceptLoading) {
+      return !!state.actionInFlight && !exceptLoading;
+    }
+
+    function syncDialogCancelButton() {
+      const cancelBtn = document.getElementById("qrDialogCancel");
+      if (!cancelBtn || !state.openQrAttemptId) return;
+      const attemptId = cancelBtn.dataset.attempt || state.openQrAttemptId;
+      const kind = cancelBtn.dataset.kind || "payment";
+      const loading = isCancelLoading(attemptId);
+      const bill = state.bills.find((b) => b.id === cancelBtn.dataset.billId);
+      const canCancel = !!(bill && bill.payment_attempt_active) || !!attemptId;
+      const idleText = kind === "voucher" ? "ยกเลิก voucher" : "ยกเลิกการชำระ";
+      cancelBtn.classList.toggle("btn-busy", loading);
+      cancelBtn.setAttribute("aria-busy", loading ? "true" : "false");
+      cancelBtn.disabled = !canCancel || !!state.actionInFlight;
+      cancelBtn.innerHTML = loading
+        ? `${ICONS.spinner}<span> กำลังยกเลิก…</span>`
+        : idleText;
+    }
+
     function eventCategory(ev) {
       const source = String(ev.source || "").toLowerCase();
       if (source === "webhook") return "webhook";
@@ -1362,6 +1399,7 @@
 
     function billStatusBucket(bill) {
       const status = bill.tiger_payment_status;
+      // Tiger payment_attempt only — ignore legacy POS PAID for send state.
       // Failed stays with unsent so staff can retry; distinguished by status pill color.
       if ((!status && !bill.payment_attempt_id) || status === "failed") return "unsent";
       if (isPendingStatus(status)) return "pending";
@@ -1377,11 +1415,24 @@
     function billMatchesSearch(bill, query) {
       const q = String(query || "").trim().toLowerCase();
       if (!q) return true;
+      const qCompact = q.replace(/[\s\-_,]/g, "");
       const sale = String(bill.salesperson || "").toLowerCase();
       const billNo = String(bill.bill_number || "").toLowerCase();
+      const billNoCompact = billNo.replace(/[\s\-_]/g, "");
       const amountRaw = bill.amount == null ? "" : String(bill.amount);
       const amountFmt = formatAmount(bill.amount).toLowerCase();
-      return sale.includes(q) || billNo.includes(q) || amountRaw.includes(q) || amountFmt.includes(q);
+      const amountDigits = amountRaw.replace(/[^\d.]/g, "");
+      const amountFmtDigits = amountFmt.replace(/[^\d.]/g, "");
+      return (
+        sale.includes(q)
+        || billNo.includes(q)
+        || (qCompact.length > 0 && billNoCompact.includes(qCompact))
+        || amountRaw.includes(q)
+        || amountFmt.includes(q)
+        || (qCompact.length > 0 && (
+          amountDigits.includes(qCompact) || amountFmtDigits.includes(qCompact)
+        ))
+      );
     }
 
     function searchedBills() {
@@ -1459,8 +1510,7 @@
       }
       const cancelBtn = document.getElementById("qrDialogCancel");
       if (cancelBtn) {
-        const active = !!(bill && bill.payment_attempt_active);
-        cancelBtn.disabled = !active || !!state.actionInFlight;
+        syncDialogCancelButton();
       }
     }
 
@@ -1515,11 +1565,10 @@
       document.getElementById("qrDialogStatus").textContent = qrStatusLabel(resolved, bill);
       state.openQrAttemptId = attemptId;
       const cancelBtn = document.getElementById("qrDialogCancel");
-      cancelBtn.textContent = "ยกเลิก voucher";
       cancelBtn.dataset.attempt = attemptId || "";
       cancelBtn.dataset.billId = bill.id;
       cancelBtn.dataset.kind = "voucher";
-      cancelBtn.disabled = !bill.payment_attempt_active && !attemptId;
+      syncDialogCancelButton();
       closeAlertDialog();
       if (typeof dialog.showModal === "function") {
         if (!dialog.open) dialog.showModal();
@@ -1564,11 +1613,10 @@
       document.getElementById("qrDialogStatus").textContent = qrStatusLabel(resolved, bill);
       state.openQrAttemptId = attemptId;
       const cancelBtn = document.getElementById("qrDialogCancel");
-      cancelBtn.textContent = "ยกเลิกการชำระ";
       cancelBtn.dataset.attempt = attemptId || "";
       cancelBtn.dataset.billId = bill.id;
       cancelBtn.dataset.kind = "payment";
-      cancelBtn.disabled = !bill.payment_attempt_active && !attemptId;
+      syncDialogCancelButton();
       closeAlertDialog();
       if (typeof dialog.showModal === "function") {
         if (!dialog.open) dialog.showModal();
@@ -1578,57 +1626,64 @@
 
     function buttonHtml(bill) {
       const cancelLoading = isCancelLoading(bill.payment_attempt_id);
-      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id || !!state.actionInFlight;
-      const cancelLabel = cancelLoading
-        ? `${ICONS.spinner}<span class="btn-text-full"> กำลังยกเลิก…</span><span class="btn-text-short"> ยกเลิก…</span>`
+      const cancelDisabled = !bill.payment_attempt_active || !bill.payment_attempt_id
+        || actionBlocked(cancelLoading) || cancelLoading;
+      const cancelLabel = cancelLoading ? busyLabel("cancel")
         : `${ICONS.cancel}<span class="btn-text-full"> ยกเลิก</span><span class="btn-text-short"> ยกเลิก</span>`;
+      const cancelBusyAttr = cancelLoading ? ` class="btn-cancel btn-busy" aria-busy="true"` : ` class="btn-cancel"`;
 
       if (isPayoutBill(bill)) {
         const voucherLoading = isSendLoading(bill.id, "voucher");
         const alreadyCompleted = bill.tiger_payment_status === "used";
-        const createDisabled = bill.payment_attempt_active || alreadyCompleted || !!state.actionInFlight;
+        const createDisabled = bill.payment_attempt_active || alreadyCompleted
+          || actionBlocked(voucherLoading) || voucherLoading;
         const showVoucher = !!bill.payment_attempt_id;
         const voucherLabel = voucherLoading
-          ? `${ICONS.spinner}<span class="btn-text-full"> กำลังสร้าง…</span><span class="btn-text-short"> สร้าง…</span>`
+          ? busyLabel("voucher")
           : showVoucher && bill.payment_attempt_active
             ? `${ICONS.qr}<span class="btn-text-full"> ดู voucher</span><span class="btn-text-short"> ดู voucher</span>`
             : alreadyCompleted
               ? `${ICONS.check}<span class="btn-text-full"> จ่ายคืนแล้ว</span><span class="btn-text-short"> จ่ายแล้ว</span>`
             : `${ICONS.send}<span class="btn-text-full"> สร้าง voucher / จ่ายคืน</span><span class="btn-text-short"> สร้าง voucher</span>`;
         const voucherDisabled = showVoucher && bill.payment_attempt_active
-          ? !!state.actionInFlight
+          ? actionBlocked(false)
           : createDisabled;
+        const voucherBusyAttr = voucherLoading ? ` class="btn-send btn-busy" aria-busy="true"` : ` class="btn-send"`;
         return `
-          <button class="btn-send" type="button" data-action="create-voucher" data-id="${bill.id}" ${voucherDisabled ? "disabled" : ""}>${voucherLabel}</button>
-          <button class="btn-cancel" type="button" data-action="cancel-voucher" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
+          <button${voucherBusyAttr} type="button" data-action="create-voucher" data-id="${bill.id}" ${voucherDisabled ? "disabled" : ""}>${voucherLabel}</button>
+          <button${cancelBusyAttr} type="button" data-action="cancel-voucher" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
         `;
       }
 
       const cashLoading = isSendLoading(bill.id, "cash");
       const qrLoading = isSendLoading(bill.id, "qr");
-      const alreadyCompleted = bill.tiger_payment_status === "success"
-        || String(bill.pos_status || "").trim().toUpperCase() === "Y";
-      const sendDisabled = bill.payment_attempt_active || alreadyCompleted || !!state.actionInFlight;
+      // Completed only when Tiger companion recorded success — not legacy POS PAID.
+      const alreadyCompleted = bill.tiger_payment_status === "success";
+      const sendDisabled = bill.payment_attempt_active || alreadyCompleted
+        || actionBlocked(cashLoading || qrLoading);
+      const cashDisabled = sendDisabled || cashLoading;
       const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
       const cashLabel = cashLoading
-        ? `${ICONS.spinner}<span class="btn-text-full"> กำลังส่ง…</span><span class="btn-text-short"> ส่ง…</span>`
+        ? busyLabel("cash")
         : alreadyCompleted
           ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
         : `${ICONS.send}<span class="btn-text-full"> ส่งเงินสด / บิล VAT</span><span class="btn-text-short"> เงินสด/VAT</span>`;
       const qrLabel = qrLoading
-        ? `${ICONS.spinner}<span class="btn-text-full"> กำลังส่ง QR…</span><span class="btn-text-short"> QR…</span>`
+        ? busyLabel("qr")
         : showQr && bill.payment_attempt_active
           ? `${ICONS.qr}<span class="btn-text-full"> ดู QR</span><span class="btn-text-short"> ดู QR</span>`
           : alreadyCompleted
             ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
           : `${ICONS.qr}<span class="btn-text-full"> ส่ง QR</span><span class="btn-text-short"> ส่ง QR</span>`;
       const qrDisabled = showQr && bill.payment_attempt_active
-        ? !!state.actionInFlight
-        : sendDisabled;
+        ? actionBlocked(false)
+        : (sendDisabled || qrLoading);
+      const cashBusyAttr = cashLoading ? ` class="btn-send btn-busy" aria-busy="true"` : ` class="btn-send"`;
+      const qrBusyAttr = qrLoading ? ` class="btn-qr btn-busy" aria-busy="true"` : ` class="btn-qr"`;
       return `
-        <button class="btn-send" type="button" data-action="send-cash" data-id="${bill.id}" ${sendDisabled ? "disabled" : ""}>${cashLabel}</button>
-        <button class="btn-qr" type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
-        <button class="btn-cancel" type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
+        <button${cashBusyAttr} type="button" data-action="send-cash" data-id="${bill.id}" ${cashDisabled ? "disabled" : ""}>${cashLabel}</button>
+        <button${qrBusyAttr} type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
+        <button${cancelBusyAttr} type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
       `;
     }
 
@@ -1663,6 +1718,7 @@
               const attemptId = btn.getAttribute("data-attempt");
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
               renderBills();
+              syncDialogCancelButton();
               setMessage("กำลังขอยกเลิก voucher...");
               await api(`/companion/vouchers/${attemptId}/cancel`, { method: "POST" });
               state.selectedAttemptId = attemptId;
@@ -1714,6 +1770,7 @@
               const attemptId = btn.getAttribute("data-attempt");
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
               renderBills();
+              syncDialogCancelButton();
               setMessage("กำลังขอยกเลิก...");
               await api(`/companion/payments/${attemptId}/cancel`, { method: "POST" });
               state.selectedAttemptId = attemptId;
@@ -1795,7 +1852,7 @@
           </div>
           <div class="bill-card-meta">
             <div>สถานะ Tiger: <strong><span class="${statusClass(bill.tiger_payment_status)}">${statusLabel(bill.tiger_payment_status)}</span></strong></div>
-            <div>PAID: <strong>${bill.pos_status || "—"}</strong></div>
+            <div>PAID (POS · info): <strong>${bill.pos_status || "—"}</strong></div>
             <div>พนักงานขาย: <strong>${bill.salesperson || "—"}</strong></div>
             <div>ผู้ส่ง: <strong>${submitterLabel(bill) || "—"}</strong></div>
             <div>${isPayoutBill(bill) ? "เลข voucher" : "เลขชำระ"}: <strong>${bill.tiger_payment_no || "—"}</strong></div>
@@ -2000,6 +2057,7 @@
       try {
         state.actionInFlight = { type: "cancel", billId, attemptId };
         renderBills();
+        syncDialogCancelButton();
         setMessage(kind === "voucher" ? "กำลังขอยกเลิก voucher..." : "กำลังขอยกเลิก...");
         const path = kind === "voucher"
           ? `/companion/vouchers/${attemptId}/cancel`
@@ -2021,6 +2079,7 @@
         });
       } finally {
         state.actionInFlight = null;
+        syncDialogCancelButton();
         await loadBills();
       }
     };
