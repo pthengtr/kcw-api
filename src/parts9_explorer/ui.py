@@ -192,55 +192,105 @@ label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align
 .stock-kpi .l { font-size:.7rem; color:var(--muted); margin-top:.18rem; }
 .stock-kpi .u { font-size:.72rem; font-weight:500; color:var(--muted); margin-left:.2rem; }
 .stock-kpi.flag { border-color:var(--pend); }
-.insight-panel-head {
-  display:flex; align-items:baseline; justify-content:space-between; gap:.5rem;
-  flex-wrap:wrap; margin:1rem 0 .45rem;
+/* Product Insight dashboard — aligned to kcw_product_insight_dashboard_v12 reference */
+.insight-wrap { margin:0 0 .75rem; }
+.pi-head {
+  display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start;
+  margin:0 0 .65rem;
 }
-.insight-panel-head h3 { margin:0; }
-.insight-dash { display:flex; flex-direction:column; gap:.55rem; margin:0 0 .6rem; }
-.insight-card {
-  background:var(--card); border:1px solid var(--line); border-radius:.75rem;
-  padding:.7rem .8rem .75rem;
+.pi-head h2 { margin:0 0 .2rem; font-size:1.2rem; letter-spacing:.01em; }
+.pi-head .pi-sub { margin:0; color:var(--muted); font-size:.82rem; line-height:1.35; }
+.pi-status {
+  background:var(--st-ok-bg); color:var(--ok); border:1px solid color-mix(in srgb, var(--ok) 35%, var(--line));
+  padding:.45rem .7rem; border-radius:.65rem; font-weight:800; font-size:.82rem; white-space:nowrap;
 }
-.insight-card.accent {
-  border-color:color-mix(in srgb, var(--acc) 45%, var(--line));
-  background:color-mix(in srgb, var(--acc) 8%, var(--card));
+.pi-status.warn { background:var(--st-pend-bg); color:var(--pend); border-color:color-mix(in srgb, var(--pend) 35%, var(--line)); }
+.pi-status.bad { background:var(--st-no-bg); color:var(--down); border-color:color-mix(in srgb, var(--down) 35%, var(--line)); }
+.pi-status.order { background:var(--st-wait-bg); color:var(--acc); border-color:color-mix(in srgb, var(--acc) 35%, var(--line)); }
+.pi-card {
+  background:var(--card); border:1px solid var(--line); border-radius:.9rem;
+  padding:.8rem .85rem; box-shadow:0 1px 2px rgba(16,24,40,.04); margin:0 0 .65rem;
 }
-.insight-card .sec-h {
-  font-size:.76rem; font-weight:650; color:var(--heading);
-  margin:0 0 .45rem; letter-spacing:.02em; text-transform:none;
+.pi-card h3 { margin:0 0 .55rem; font-size:1rem; color:var(--text); }
+.pi-summary-row {
+  display:flex; gap:.75rem; justify-content:space-between; align-items:center;
 }
-.insight-metrics {
-  display:grid; grid-template-columns:repeat(auto-fill, minmax(6.4rem, 1fr));
-  gap:.4rem;
+.pi-summary-main { font-size:.88rem; color:var(--muted); line-height:1.45; }
+.pi-summary-main strong { color:var(--text); }
+.pi-mini { display:flex; gap:.4rem; flex-wrap:wrap; justify-content:flex-end; }
+.pi-mini-tag {
+  background:var(--inset); border:1px solid var(--line); border-radius:.55rem;
+  padding:.35rem .5rem; font-size:.72rem; color:var(--muted);
 }
-.insight-metric {
-  background:var(--inset); border:1px solid transparent; border-radius:.55rem;
-  padding:.45rem .5rem .5rem; min-width:0;
+.pi-grid-main {
+  display:grid; grid-template-columns:minmax(0,1.55fr) minmax(240px,.85fr); gap:.65rem;
+  margin:0 0 .65rem;
 }
-.insight-metric .lbl { display:block; font-size:.68rem; color:var(--muted); line-height:1.25; margin-bottom:.12rem; }
-.insight-metric .val {
-  display:block; font-size:.95rem; font-weight:650; line-height:1.25;
-  font-variant-numeric:tabular-nums; letter-spacing:.01em; word-break:break-word;
+.pi-grid-two {
+  display:grid; grid-template-columns:1fr 1fr; gap:.65rem; margin:0 0 .65rem;
 }
-.insight-metric .val .meta { font-weight:500; }
-.insight-card .party {
-  font-size:.84rem; margin:0; padding:.4rem .5rem; color:var(--text);
-  background:var(--inset); border-radius:.5rem;
+.pi-sales-head {
+  display:flex; justify-content:space-between; gap:.5rem; align-items:center; margin:0 0 .5rem;
 }
-.insight-card .party + .party { margin-top:.35rem; }
-.insight-card .party .sub { color:var(--muted); font-weight:400; font-variant-numeric:tabular-nums; }
-.insight-card .ai { font-size:.9rem; margin:0; line-height:1.5; }
-.insight-card .status-row { display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; }
-.insight-dash .status-pill {
-  display:inline-block; font-size:.78rem; font-weight:650; padding:.28rem .6rem;
-  border-radius:.5rem; background:var(--chip); margin:0;
+.pi-sales-head h3 { margin:0; }
+.pi-badge {
+  display:inline-flex; align-items:center; padding:.25rem .5rem; border-radius:999px;
+  font-size:.72rem; font-weight:800;
 }
-.insight-dash .status-pill.ok { background:var(--st-ok-bg); color:var(--ok); }
-.insight-dash .status-pill.warn { background:var(--st-pend-bg); color:var(--pend); }
-.insight-dash .status-pill.bad { background:var(--st-no-bg); color:var(--down); }
-.insight-dash .status-pill.order { background:var(--st-wait-bg); color:var(--acc); }
-.insight-foot { margin:.15rem 0 0; line-height:1.4; }
+.pi-badge.down { background:var(--st-no-bg); color:var(--down); }
+.pi-badge.up { background:var(--st-ok-bg); color:var(--ok); }
+.pi-badge.flat { background:var(--chip); color:var(--muted); }
+.pi-kpis {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:0 0 .5rem;
+}
+.pi-kpi {
+  background:var(--inset); border:1px solid var(--line); border-radius:.55rem; padding:.45rem .5rem;
+}
+.pi-kpi .label { color:var(--muted); font-size:.68rem; margin-bottom:.1rem; }
+.pi-kpi .value { font-weight:800; font-size:.88rem; font-variant-numeric:tabular-nums; }
+.pi-chart-wrap { border-top:1px solid var(--line); padding-top:.4rem; overflow-x:auto; }
+.pi-chart-title {
+  display:flex; justify-content:space-between; gap:.5rem; color:var(--muted); font-size:.68rem; margin-bottom:.15rem;
+}
+.pi-sales-chart { width:100%; min-width:520px; height:auto; display:block; }
+.pi-stock-grid { display:grid; grid-template-columns:1fr 1fr; gap:.4rem; }
+.pi-metric {
+  background:var(--inset); border:1px solid var(--line); border-radius:.55rem; padding:.55rem .6rem;
+}
+.pi-metric .label { color:var(--muted); font-size:.68rem; margin-bottom:.1rem; }
+.pi-metric .value { font-weight:800; font-size:.95rem; font-variant-numeric:tabular-nums; }
+.pi-metric .note { color:var(--muted); font-size:.65rem; margin-top:.15rem; }
+.pi-card table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.pi-card th, .pi-card td { padding:.4rem .35rem; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+.pi-card th { color:var(--muted); background:var(--inset); font-weight:700; }
+.pi-card tr:last-child td { border-bottom:none; }
+.pi-card .num { text-align:right; font-variant-numeric:tabular-nums; }
+.pi-reco {
+  margin-top:.5rem; padding:.45rem .55rem; border-radius:.55rem;
+  background:var(--st-pend-bg); color:var(--pend); font-size:.78rem; font-weight:700;
+}
+.pi-syp {
+  display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+}
+.pi-syp-stats { display:flex; gap:.4rem; flex-wrap:wrap; }
+.pi-syp .pi-metric { min-width:7.5rem; }
+.pi-ai { margin:0; }
+.pi-ai p { margin:0; color:var(--muted); font-size:.88rem; line-height:1.5; }
+.pi-ai p strong { color:var(--text); }
+.pi-foot { margin:.35rem 0 0; color:var(--muted); font-size:.68rem; text-align:center; line-height:1.4; }
+@media (max-width:900px) {
+  .pi-grid-main, .pi-grid-two { grid-template-columns:1fr; }
+  .pi-kpis { grid-template-columns:1fr 1fr; }
+  .pi-summary-row { align-items:flex-start; flex-direction:column; }
+  .pi-mini { justify-content:flex-start; }
+}
+@media (max-width:560px) {
+  .pi-head { flex-direction:column; }
+  .pi-status { white-space:normal; }
+  .pi-stock-grid { grid-template-columns:1fr 1fr; }
+  .pi-syp { align-items:flex-start; flex-direction:column; }
+  .pi-syp .pi-metric { min-width:0; width:100%; }
+}
 .linkish { color:var(--acc); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; }
 h2 { font-size:1.15rem; margin:.15rem 0 .4rem; }
 h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
@@ -1033,7 +1083,10 @@ function showP(i) {
     +"<div id='insightPanel'></div>"
     +"<div id='subPanel'></div>"
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
-  loadInsightPanel(p.bcode, { qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock });
+  loadInsightPanel(p.bcode, {
+    qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
+    descr: p.descr || "", bcode: p.bcode
+  });
   loadSubPanels(p.bcode);
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(d => {
@@ -1046,29 +1099,81 @@ function showP(i) {
         tbl("ประวัติการขาย", m.sales, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ประวัติการซื้อ", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
-      if (d.insight) renderInsight(d.insight, { qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock });
+      if (d.insight) renderInsight(d.insight, {
+        qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
+        descr: p.descr || "", bcode: p.bcode
+      });
     }).catch(() => { $("more").innerHTML = ""; });
+}
+function thMonthLabel(ym) {
+  const TH_MO = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const m = parseInt(String(ym).slice(5,7), 10);
+  const y = String(ym).slice(2,4);
+  if (!m || m < 1 || m > 12) return esc(ym);
+  return TH_MO[m-1] + " " + y;
+}
+function buildSalesChart(series, avgLine, unit) {
+  if (!series || !series.length) return "";
+  const vals = series.map(s => Number(s.qty) || 0);
+  const maxV = Math.max(avgLine || 0, ...vals, 1);
+  const niceMax = Math.ceil(maxV / 50) * 50 || 50;
+  const W = 760, H = 230, L = 44, R = 742, top = 24, bot = 192;
+  const n = series.length;
+  function yOf(v) { return bot - (Math.max(0, v) / niceMax) * (bot - top); }
+  function xOf(i) { return n <= 1 ? (L+R)/2 : L + (i / (n-1)) * (R - L); }
+  const ticks = [];
+  const step = niceMax <= 100 ? 25 : (niceMax <= 250 ? 50 : Math.ceil(niceMax / 5 / 50) * 50);
+  for (let t = 0; t <= niceMax + 0.01; t += step) {
+    const y = yOf(t);
+    ticks.push("<line x1='"+L+"' y1='"+y.toFixed(1)+"' x2='"+R+"' y2='"+y.toFixed(1)+"' stroke='currentColor' stroke-opacity='.12' stroke-width='1'/>"
+      +"<text x='"+(L-8)+"' y='"+(y+3).toFixed(1)+"' text-anchor='end' font-size='10' fill='currentColor' fill-opacity='.45'>"+t+"</text>");
+  }
+  let avgSvg = "";
+  if (avgLine != null && avgLine > 0) {
+    const ay = yOf(avgLine);
+    avgSvg = "<line x1='"+L+"' y1='"+ay.toFixed(1)+"' x2='"+R+"' y2='"+ay.toFixed(1)+"' stroke='currentColor' stroke-opacity='.4' stroke-width='1.2' stroke-dasharray='5 4'/>"
+      +"<text x='"+R+"' y='"+(ay-6).toFixed(1)+"' text-anchor='end' font-size='10' fill='currentColor' fill-opacity='.55'>เฉลี่ย "+esc(fmtChartQty(avgLine))+"/"+esc(unit || "เดือน")+"</text>";
+  }
+  const pts = series.map((s,i) => xOf(i).toFixed(1)+","+yOf(vals[i]).toFixed(1)).join(" ");
+  const dots = series.map((s,i) => {
+    const x = xOf(i), y = yOf(vals[i]);
+    return "<circle cx='"+x.toFixed(1)+"' cy='"+y.toFixed(1)+"' r='3.2' fill='currentColor'/>"
+      +"<text x='"+x.toFixed(1)+"' y='"+(y-8).toFixed(1)+"' text-anchor='middle' font-size='10' font-weight='700' fill='currentColor' fill-opacity='.7'>"+esc(fmtChartQty(vals[i]))+"</text>"
+      +"<text x='"+x.toFixed(1)+"' y='219' text-anchor='middle' font-size='9.5' fill='currentColor' fill-opacity='.45'>"+thMonthLabel(s.ym)+"</text>";
+  }).join("");
+  const first = series[0].ym, last = series[series.length-1].ym;
+  return "<div class='pi-chart-wrap'><div class='pi-chart-title'>"
+    +"<span>ยอดขายรายเดือน · "+thMonthLabel(first)+" – "+thMonthLabel(last)+"</span>"
+    +"<span>หน่วย: "+esc(unit || "")+"</span></div>"
+    +"<svg class='pi-sales-chart' viewBox='0 0 "+W+" "+H+"' aria-label='กราฟยอดขายรายเดือน'>"
+    +ticks.join("")+avgSvg
+    +"<polyline points='"+pts+"' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/>"
+    +dots+"</svg></div>";
+}
+function fmtChartQty(n) {
+  if (n == null) return "—";
+  const rounded = (Math.abs(n - Math.round(n)) < 0.05) ? Math.round(n) : Math.round(n * 10) / 10;
+  return rounded.toLocaleString("th-TH", { maximumFractionDigits: 1 });
 }
 function renderInsight(ins, live) {
   const el = $("insightPanel");
   if (!el || !ins) return;
   const st = ins.status || "no_movement";
   if (st === "working") {
-    el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3></div>"
-      +"<div class='insight-card'><p class='meta' style='margin:0'>กำลังสร้าง insight…</p>"
+    el.innerHTML = "<div class='insight-wrap'><div class='pi-card'><p class='meta' style='margin:0'>กำลังสร้าง insight…</p>"
       +(ins.facts_as_of ? "<p class='meta' style='margin:.35rem 0 0'>snap "+esc(ins.facts_as_of)+"</p>" : "")
-      +"</div>";
+      +"</div></div>";
     return;
   }
   if (st === "no_movement") {
-    el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3></div>"
-      +"<div class='insight-card'><p class='meta' style='margin:0'>ไม่มีการเคลื่อนไหวใน 5 ปี</p></div>";
+    el.innerHTML = "<div class='insight-wrap'><div class='pi-card'><p class='meta' style='margin:0'>ไม่มีการเคลื่อนไหวใน 5 ปี</p></div></div>";
     return;
   }
   const i = ins.insight || {};
   const pol = ins.policy || {};
   const der = i.derived || {};
   const dash = i.dashboard || der.dashboard || {};
+  const monthly = ins.monthly_sales || [];
   live = live || {};
 
   function numOrNull(v) {
@@ -1081,12 +1186,6 @@ function renderInsight(ins, live) {
     const rounded = (Math.abs(n - Math.round(n)) < 0.05) ? Math.round(n) : Math.round(n * 10) / 10;
     return rounded.toLocaleString("th-TH", { maximumFractionDigits: 1 });
   }
-  function fmtPct(n) {
-    if (n == null) return "—";
-    const x = Math.round(n * 10) / 10;
-    const s = x.toLocaleString("th-TH", { maximumFractionDigits: 1 });
-    return (x > 0 ? "+" : "") + s + "%";
-  }
   function fmtMoney(n) {
     if (n == null) return "—";
     return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1098,12 +1197,6 @@ function renderInsight(ins, live) {
     }
     return null;
   }
-  function cell(lbl, val) {
-    return "<div class='insight-metric'><span class='lbl'>"+esc(lbl)+"</span><span class='val'>"+val+"</span></div>";
-  }
-  function card(title, inner, extraCls) {
-    return "<div class='insight-card"+(extraCls ? " "+extraCls : "")+"'><div class='sec-h'>"+esc(title)+"</div>"+inner+"</div>";
-  }
 
   const trendMap = {
     hot: "ร้อน", growing: "เติบโต", flat: "คงที่", declining: "ลดลง",
@@ -1113,10 +1206,10 @@ function renderInsight(ins, live) {
     improving: "ดีขึ้น", stable: "คงที่", worsening: "แย่ลง", unknown: "ไม่ชัด"
   };
   const statusMap = {
-    no_order_needed: { th: "ยังไม่ต้องสั่ง", cls: "ok" },
-    should_order: { th: "ควรสั่ง", cls: "order" },
-    caution: { th: "ระวัง", cls: "warn" },
-    dead_stock: { th: "Dead Stock", cls: "bad" }
+    no_order_needed: { th: "ยังไม่ต้องสั่ง", cls: "ok", emoji: "🟢 " },
+    should_order: { th: "ควรสั่ง", cls: "order", emoji: "🔵 " },
+    caution: { th: "ระวัง", cls: "warn", emoji: "🟠 " },
+    dead_stock: { th: "Dead Stock", cls: "bad", emoji: "🔴 " }
   };
 
   const sales = dash.sales || {};
@@ -1134,6 +1227,7 @@ function renderInsight(ins, live) {
   const stBlk = der.stock || {};
   const mgDer = der.margin || {};
   const td = der.trend || {};
+  const xfer = der.transfer || {};
 
   const latestMo = numOrNull(pick(sales.latest_month, dem.qty_30d, pol.sales_qty_30d));
   const avg3 = numOrNull(pick(sales.avg_3m, dem.monthly_from_90d));
@@ -1151,9 +1245,9 @@ function renderInsight(ins, live) {
 
   const avgBuy = numOrNull(pick(pm.avg_buy, mgDer.avg_buy_12m));
   const avgSell = numOrNull(pick(pm.avg_sell, mgDer.avg_sell_12m));
-  const changePct = numOrNull(pick(pm.change_pct, mgDer.price_change_pct_12m, pol.price_change_pct_12m));
   const marginPct = numOrNull(pick(pm.margin_pct, mgDer.realized_pct_12m, pol.margin_pct_12m, mg.list_pct, pol.margin_pct_list));
   const marginTrend = pick(pm.margin_trend, pm.margin_flag, mg.flag, pol.margin_flag, mgDer.flag);
+  const marginFlag = pick(pm.margin_flag, mg.flag, pol.margin_flag, mgDer.flag);
 
   const qtyLiveHq = numOrNull(live.qtyHq);
   const qtyLiveSyp = numOrNull(live.qtySyp);
@@ -1166,10 +1260,9 @@ function renderInsight(ins, live) {
   const target = numOrNull(pick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
   const reorder = numOrNull(pick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
   const lot = numOrNull(pick(stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
-  const qtyminHq = numOrNull(pick(stk.qtymin_hq, stBlk.qtymin_hq, pol.qtymin_hq));
-  const qtyminSyp = numOrNull(pick(stk.qtymin_syp, stBlk.qtymin_syp, pol.qtymin_syp));
+  const coverWeeks = numOrNull(pick(pol.suggested_cover_weeks, holdBlk.cover_weeks, i.suggested_cover_weeks));
+  const coverDays = coverWeeks != null ? Math.round(coverWeeks * 7) : null;
   const unit = pick(stk.unit, purch.order_unit, pol.order_unit, live.ui1, od.ui1, "");
-  // Append stock/sales unit in the Explorer UI (no prompt change needed).
   function qtyU(n) {
     const s = fmtQty(n);
     if (n == null || !unit) return esc(s);
@@ -1179,7 +1272,6 @@ function renderInsight(ins, live) {
   const dead = pick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
   const orderOk = pick(purch.order_ok, pol.order_ok, fl.order_ok);
   let orderStatus = pick(dash.order_status, i.order_status, fl.order_status);
-  // Recompute from live stock so status matches on-hand above.
   if (dead === "yes") orderStatus = "dead_stock";
   else if (qtyTotal != null && target != null && qtyTotal >= target) orderStatus = "no_order_needed";
   else if (qtyTotal != null && reorder != null && qtyTotal <= reorder) orderStatus = "should_order";
@@ -1189,14 +1281,20 @@ function renderInsight(ins, live) {
   else if (!orderStatus) orderStatus = (orderOk === "yes" ? "no_order_needed" : "caution");
   if (live.doNotRestock && orderStatus !== "dead_stock") orderStatus = "caution";
 
+  const sypTarget = numOrNull(pick(xfer.syp_safe_holding, pol.rec_transfer_qty_to_syp));
+  const recXfer = numOrNull(pick(pol.rec_transfer_qty_to_syp, xfer.rec_transfer_qty_to_syp));
+  let sypNeedTransfer = false;
+  if (qtySyp != null && sypTarget != null) sypNeedTransfer = qtySyp < sypTarget;
+  else if (recXfer != null && recXfer > 0 && qtySyp != null && sypTarget != null) sypNeedTransfer = qtySyp < sypTarget;
+
   const suppliers = (dash.suppliers || der.suppliers_12m || []).slice(0, 3);
   const customers = (dash.customers || der.customers_12m || []).slice(0, 3);
   const ai = pick(i.ai_action, ins.summary, i.summary, "");
+  const summaryTxt = pick(ins.summary, i.summary, i.demand_hint, "");
 
   function trendTh(v) {
     if (v == null || v === "") return "—";
-    const k = String(v).toLowerCase();
-    return trendMap[k] || String(v);
+    return trendMap[String(v).toLowerCase()] || String(v);
   }
   function marginTrendTh(v) {
     if (v == null || v === "") return "—";
@@ -1208,95 +1306,140 @@ function renderInsight(ins, live) {
     };
     return flagMap[k] || String(v);
   }
-
-  const stInfo = statusMap[orderStatus] || { th: String(orderStatus || "—"), cls: "warn" };
-  let body = "<div class='insight-dash'>";
-
-  body += card("ยอดขาย", "<div class='insight-metrics'>"
-    +cell("เดือนล่าสุด", qtyU(latestMo))
-    +cell("เฉลี่ย 3 เดือน", qtyU(avg3))
-    +cell("เฉลี่ย 12 เดือน", qtyU(avg12))
-    +cell("รวม 12 เดือน", qtyU(tot12))
-    +cell("Trend", esc(trendTh(trend)))
-    +"</div>");
-
-  body += card("ช่องทางขาย 12 เดือน", "<div class='insight-metrics'>"
-    +cell("HQ", qtyU(chHq)+(chHqPct != null ? " <span class='meta'>("+esc(fmtQty(chHqPct))+"%)</span>" : ""))
-    +cell("SYP", qtyU(chSyp)+(chSypPct != null ? " <span class='meta'>("+esc(fmtQty(chSypPct))+"%)</span>" : ""))
-    +cell("Online", qtyU(chOn)+(chOnPct != null ? " <span class='meta'>("+esc(fmtQty(chOnPct))+"%)</span>" : ""))
-    +"</div>");
-
-  body += card("ราคา & Margin", "<div class='insight-metrics'>"
-    +cell("ราคาซื้อเฉลี่ย", esc(fmtMoney(avgBuy)))
-    +cell("ราคาขายเฉลี่ย", esc(fmtMoney(avgSell)))
-    +cell("% เปลี่ยน", esc(fmtPct(changePct)))
-    +cell("Margin %", marginPct != null ? esc(fmtQty(marginPct))+"%" : "—")
-    +cell("แนวโน้ม Margin", esc(marginTrendTh(marginTrend)))
-    +"</div>");
-
-  body += card("สต็อก", "<div class='insight-metrics'>"
-    +cell("รวม", qtyU(qtyTotal))
-    +cell("HQ", qtyU(qtyHq))
-    +cell("SYP", qtyU(qtySyp))
-    +cell("เป้าสต็อก", qtyU(target))
-    +cell("จุดสั่ง", qtyU(reorder))
-    +cell("ล็อตแนะนำ", qtyU(lot))
-    +cell("QTYMIN HQ", qtyU(qtyminHq))
-    +cell("QTYMIN SYP", qtyU(qtyminSyp))
-    +"</div>");
-
-  body += card("สถานะการสั่งซื้อ", "<div class='status-row'>"
-    +"<span class='status-pill "+stInfo.cls+"'>"+esc(stInfo.th)+"</span>"
-    +(dead === "yes" && orderStatus !== "dead_stock" ? "<span class='status-pill bad'>Dead Stock</span>" : "")
-    +"</div>");
-
-  let supplierInner = "";
-  if (suppliers.length) {
-    supplierInner = suppliers.map(s => {
-      const nm = s.name || s.acctno || "—";
-      const q = numOrNull(s.qty);
-      const ap = numOrNull(s.avg_price);
-      return "<div class='party'>"+esc(nm)
-        +" <span class='sub'>· ซื้อ "+qtyU(q)
-        +(ap != null ? " · เฉลี่ย "+esc(fmtMoney(ap)) : "")
-        +"</span></div>";
-    }).join("");
-  } else {
-    supplierInner = "<p class='meta' style='margin:0'>—</p>";
+  function trendBadge(v) {
+    const k = String(v || "").toLowerCase();
+    if (k === "declining" || k === "dead") return { cls: "down", arrow: "↓ ", th: trendTh(v) };
+    if (k === "growing" || k === "hot") return { cls: "up", arrow: "↑ ", th: trendTh(v) };
+    return { cls: "flat", arrow: "→ ", th: trendTh(v) };
   }
-  body += card("Supplier หลัก", supplierInner);
 
-  let customerInner = "";
-  if (customers.length) {
-    customerInner = customers.map(c => {
-      const nm = c.name || c.acctno || "—";
-      const q = numOrNull(c.qty);
-      const pct = numOrNull(c.pct_of_sales);
-      return "<div class='party'>"+esc(nm)
-        +" <span class='sub'>· "+qtyU(q)
-        +(pct != null ? " · "+esc(fmtQty(pct))+"%" : "")
-        +"</span></div>";
-    }).join("");
+  const stInfo = statusMap[orderStatus] || { th: String(orderStatus || "—"), cls: "warn", emoji: "" };
+  const tb = trendBadge(trend);
+  const bcode = live.bcode || ins.bcode || "";
+  const descr = live.descr || "";
+
+  // Summary narrative (reference-style)
+  let summaryMain = "";
+  if (qtyTotal != null && target != null) {
+    const gap = Math.abs(qtyTotal - target);
+    const cmp = qtyTotal >= target ? "สูงกว่า" : "ต่ำกว่า";
+    summaryMain = "สต็อกปัจจุบัน <strong>"+qtyU(qtyTotal)+"</strong> "+cmp+" Safety Stock <strong>"+qtyU(gap)+"</strong>";
+    if (latestMo != null && avg12 != null) {
+      summaryMain += latestMo < avg12
+        ? " และยอดขายช่วงล่าสุดยังต่ำกว่าค่าเฉลี่ย"
+        : " และยอดขายช่วงล่าสุดสูงกว่าหรือใกล้ค่าเฉลี่ย";
+    }
+  } else if (summaryTxt) {
+    summaryMain = esc(summaryTxt);
   } else {
-    customerInner = "<p class='meta' style='margin:0'>—</p>";
+    summaryMain = "—";
   }
-  body += card("Customer หลัก", customerInner);
 
-  body += card("AI แนะนำ", "<p class='ai'>"+esc(ai || "—")+"</p>", "accent");
+  let html = "<div class='insight-wrap'>";
+  html += "<div class='pi-head'><div>"
+    +"<h2>Insight · "+esc(bcode)+"</h2>"
+    +(descr ? "<p class='pi-sub'>"+esc(descr)+" · วิเคราะห์สินค้ารายตัว</p>" : "<p class='pi-sub'>วิเคราะห์สินค้ารายตัว</p>")
+    +"</div><div class='pi-status "+stInfo.cls+"'>"+stInfo.emoji+esc(stInfo.th)+"</div></div>";
 
-  body += "<p class='meta insight-foot'>generated "+esc(ins.generated_at||"—")
+  html += "<section class='pi-card'><div class='pi-summary-row'><div>"
+    +"<h3>สรุปตอนนี้</h3><div class='pi-summary-main'>"+summaryMain+"</div></div>"
+    +"<div class='pi-mini'>"
+    +(qtyTotal != null ? "<div class='pi-mini-tag'>Stock "+qtyU(qtyTotal)+"</div>" : "")
+    +(coverDays != null ? "<div class='pi-mini-tag'>Safety Stock "+esc(String(coverDays))+" วัน</div>" : "")
+    +"<div class='pi-mini-tag'>ยอดขาย "+esc(tb.arrow+tb.th)+"</div>"
+    +"</div></div></section>";
+
+  html += "<div class='pi-grid-main'>";
+  html += "<section class='pi-card'><div class='pi-sales-head'><h3>ยอดขาย</h3>"
+    +"<span class='pi-badge "+tb.cls+"'>"+esc(tb.arrow+tb.th)+"</span></div>"
+    +"<div class='pi-kpis'>"
+    +"<div class='pi-kpi'><div class='label'>เดือนล่าสุด</div><div class='value'>"+qtyU(latestMo)+"</div></div>"
+    +"<div class='pi-kpi'><div class='label'>เฉลี่ย 3 เดือน</div><div class='value'>"+qtyU(avg3)+(avg3 != null ? "<span class='meta'>/เดือน</span>" : "")+"</div></div>"
+    +"<div class='pi-kpi'><div class='label'>เฉลี่ยช่วงข้อมูล</div><div class='value'>"+qtyU(avg12)+(avg12 != null ? "<span class='meta'>/เดือน</span>" : "")+"</div></div>"
+    +"<div class='pi-kpi'><div class='label'>รวม 12 เดือน</div><div class='value'>"+qtyU(tot12)+"</div></div>"
+    +"</div>"
+    +buildSalesChart(monthly, avg12, unit)
+    +"</section>";
+
+  html += "<section class='pi-card'><h3>Stock</h3><div class='pi-stock-grid'>"
+    +"<div class='pi-metric'><div class='label'>คงเหลือรวม</div><div class='value'>"+qtyU(qtyTotal)+"</div></div>"
+    +"<div class='pi-metric'><div class='label'>Safety Stock</div><div class='value'>"+qtyU(target)+"</div>"
+    +(coverDays != null ? "<div class='note'>ประมาณ "+esc(String(coverDays))+" วัน</div>" : "")
+    +"</div>"
+    +"<div class='pi-metric'><div class='label'>จุดสั่งซื้อ</div><div class='value'>"+qtyU(reorder)+"</div></div>"
+    +"<div class='pi-metric'><div class='label'>ล็อตแนะนำ</div><div class='value'>"+qtyU(lot)+"</div></div>"
+    +"</div></section></div>";
+
+  html += "<div class='pi-grid-two'>";
+  html += "<section class='pi-card'><h3>ช่องทางขาย 12 เดือน</h3><table><thead><tr><th>ช่องทาง</th><th class='num'>ยอดขาย</th><th class='num'>สัดส่วน</th></tr></thead><tbody>"
+    +"<tr><td>HQ</td><td class='num'><strong>"+qtyU(chHq)+"</strong></td><td class='num'>"+(chHqPct != null ? esc(fmtQty(chHqPct))+"%" : "—")+"</td></tr>"
+    +"<tr><td>SYP</td><td class='num'><strong>"+qtyU(chSyp)+"</strong></td><td class='num'>"+(chSypPct != null ? esc(fmtQty(chSypPct))+"%" : "—")+"</td></tr>"
+    +"<tr><td>Online</td><td class='num'><strong>"+qtyU(chOn)+"</strong></td><td class='num'>"+(chOnPct != null ? esc(fmtQty(chOnPct))+"%" : "—")+"</td></tr>"
+    +"</tbody></table></section>";
+
+  const marginReco = (marginFlag === "thin" || marginFlag === "weak" || marginFlag === "negative" || (marginPct != null && marginPct < 15))
+    ? "<div class='pi-reco'><strong>แนะนำ:</strong> Margin "+(marginPct != null ? esc(fmtQty(marginPct))+"%" : "")
+      +" ค่อนข้างบาง ควรติดตามต้นทุนก่อนปรับราคา</div>"
+    : "";
+  html += "<section class='pi-card'><h3>Price &amp; Margin</h3><table><tbody>"
+    +"<tr><td>ราคาซื้อเฉลี่ย</td><td class='num'><strong>"+esc(fmtMoney(avgBuy))+(avgBuy != null && unit ? " บาท/"+esc(unit) : "")+"</strong></td></tr>"
+    +"<tr><td>ราคาขายเฉลี่ย</td><td class='num'><strong>"+esc(fmtMoney(avgSell))+(avgSell != null && unit ? " บาท/"+esc(unit) : "")+"</strong></td></tr>"
+    +"<tr><td>Margin</td><td class='num'><strong>"+(marginPct != null ? esc(fmtQty(marginPct))+"%" : "—")+"</strong></td></tr>"
+    +"<tr><td>แนวโน้ม Margin</td><td class='num'>"+esc("→ "+marginTrendTh(marginTrend))+"</td></tr>"
+    +"</tbody></table>"+marginReco+"</section></div>";
+
+  const sypStatus = sypNeedTransfer
+    ? "<span class='pi-badge down'>ควรโอน</span>"
+    : "<span class='pi-badge up'>ยังไม่ต้องโอน</span>";
+  html += "<section class='pi-card'><div class='pi-syp'><div>"
+    +"<h3 style='margin-bottom:.25rem'>SYP</h3>"
+    +"<div style='font-size:.75rem;color:var(--muted)'>สถานะการโอนสินค้าไปสาขา</div></div>"
+    +"<div class='pi-syp-stats'>"
+    +"<div class='pi-metric'><div class='label'>คงเหลือ SYP</div><div class='value'>"+qtyU(qtySyp)+"</div></div>"
+    +"<div class='pi-metric'><div class='label'>เป้าสต็อก SYP</div><div class='value'>"+qtyU(sypTarget)+"</div></div>"
+    +"<div class='pi-metric'><div class='label'>สถานะ</div><div class='value'>"+sypStatus+"</div></div>"
+    +"</div></div></section>";
+
+  html += "<div class='pi-grid-two'>";
+  let supRows = suppliers.length
+    ? suppliers.map(s => {
+        const nm = s.name || s.acctno || "—";
+        return "<tr><td>"+esc(nm)+"</td><td class='num'><strong>"+qtyU(numOrNull(s.qty))+"</strong></td>"
+          +"<td class='num'>"+(numOrNull(s.avg_price) != null ? esc(fmtMoney(s.avg_price))+(unit ? " บาท/"+esc(unit) : "") : "—")+"</td></tr>";
+      }).join("")
+    : "<tr><td colspan='3' class='meta'>—</td></tr>";
+  html += "<section class='pi-card'><h3>Supplier หลัก</h3><table><thead><tr><th>Supplier</th><th class='num'>ยอดซื้อ</th><th class='num'>ราคาเฉลี่ย</th></tr></thead><tbody>"
+    +supRows+"</tbody></table></section>";
+
+  let custRows = customers.length
+    ? customers.map(c => {
+        const nm = c.name || c.acctno || "—";
+        const pct = numOrNull(c.pct_of_sales);
+        return "<tr><td>"+esc(nm)+"</td><td class='num'><strong>"+qtyU(numOrNull(c.qty))+"</strong></td>"
+          +"<td class='num'>"+(pct != null ? esc(fmtQty(pct))+"%" : "—")+"</td></tr>";
+      }).join("")
+    : "<tr><td colspan='3' class='meta'>—</td></tr>";
+  html += "<section class='pi-card'><h3>Customer หลัก</h3><table><thead><tr><th>Customer</th><th class='num'>ยอดซื้อ</th><th class='num'>สัดส่วน</th></tr></thead><tbody>"
+    +custRows+"</tbody></table></section></div>";
+
+  html += "<section class='pi-card pi-ai'><h3>AI แนะนำ</h3><p><strong>"+esc(stInfo.th)
+    +(sypNeedTransfer ? " และควรโอนไป SYP" : " และยังไม่ต้องโอนไป SYP")
+    +"</strong> "
+    +esc(ai || summaryTxt || "—")+"</p></section>";
+
+  html += "<div class='pi-foot'>Dashboard · นโยบาย 14–30 วัน"
+    +(ins.prompt_version ? " · "+esc(ins.prompt_version) : "")
+    +" · generated "+esc(ins.generated_at||"—")
     +" · facts_as_of "+esc(ins.facts_as_of||"—")
-    +(ins.model_id ? " · "+esc(ins.model_id) : "")+"</p>";
-  body += "</div>";
-  el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3>"
-    +"<p class='meta' style='margin:0'>Dashboard · นโยบาย 14–30 วัน"
-    +(ins.prompt_version ? " · "+esc(ins.prompt_version) : "")+"</p></div>"+body;
+    +(ins.model_id ? " · "+esc(ins.model_id) : "")
+    +"</div></div>";
+
+  el.innerHTML = html;
 }
 function loadInsightPanel(bcode, live) {
   const el = $("insightPanel");
   if (!el) return;
-  el.innerHTML = "<div class='insight-panel-head'><h3>Insight</h3></div>"
-    +"<div class='insight-card'><p class='meta' style='margin:0'>โหลด insight…</p></div>";
+  el.innerHTML = "<div class='insight-wrap'><div class='pi-card'><p class='meta' style='margin:0'>โหลด insight…</p></div></div>";
   fetch("/parts9/api/insight/"+encodeURIComponent(bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(ins => renderInsight(ins, live))
     .catch(() => { el.innerHTML = ""; });
