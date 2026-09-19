@@ -577,6 +577,32 @@ def test_explorer_page_uses_thai_headers_and_formats_billamt():
     assert 'minimumFractionDigits: 2' in html
 
 
+def test_explorer_page_has_insight_v12_layout():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
+    assert "insight-wrap" in html
+    assert "pi-grid-main" in html
+    assert "pi-grid-two" in html
+    assert "buildSalesChart" in html
+    assert "สรุปตอนนี้" in html
+    assert "ช่องทางขาย 12 เดือน" in html
+    assert "Price &amp; Margin" in html
+    assert "AI แนะนำ" in html
+    assert "monthly_sales" in html
+    assert "insight-dash" not in html
+
+
+def test_monthly_customer_sales_from_snap():
+    from src.parts9_explorer.insights import monthly_customer_sales
+
+    rows = monthly_customer_sales("22010585", n_months=11)
+    if not rows:
+        # Snap may be absent in CI — skip soft
+        return
+    assert len(rows) == 11
+    assert "ym" in rows[0] and "qty" in rows[0]
+    assert rows[0]["ym"] < rows[-1]["ym"]
+
+
 def test_explorer_js_renders_comma_billamt_and_sequential_lines(tmp_path):
     import json
     import shutil
