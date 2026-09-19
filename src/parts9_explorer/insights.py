@@ -72,6 +72,7 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
             "order_unit",
             "order_unit_large",
             "last_supplier",
+            "last_supplier_acct",
             "last_buy_price",
             "last_buy_date",
             "rec_qtymin",

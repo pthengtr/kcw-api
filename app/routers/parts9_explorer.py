@@ -14,6 +14,7 @@ from src.parts9_explorer.search import (
     recent_for_product,
     search_products,
 )
+from src.parts9_explorer.ap_reorder import ap_detail, search_ap
 from src.parts9_explorer.insights import lookup_insight
 from src.parts9_explorer.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
@@ -218,6 +219,28 @@ def api_insight(request: Request, bcode: str, site: str = "hq"):
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
     _ = ident
     return lookup_insight(site, bcode)
+
+
+@router.get("/api/ap/search")
+def api_ap_search(request: Request, q: str = "", site: str = "hq"):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    accounts, err_a = search_ap(q, site=site)
+    return {"q": q, "site": (site or "hq").lower(), "accounts": accounts, "error": err_a}
+
+
+@router.get("/api/ap/{acctno}")
+def api_ap_detail(request: Request, acctno: str, site: str = "hq", days: int = 365):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    code = (acctno or "").strip()
+    if not code:
+        return JSONResponse({"detail": "acctno required"}, status_code=400)
+    return ap_detail(code, site=site, days=max(30, min(int(days or 365), 1825)))
 
 
 @router.get("/api/health")

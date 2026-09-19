@@ -133,10 +133,23 @@ button.primary:disabled { opacity:.45; cursor:not-allowed; }
 .badge.ok { color:var(--ok); } .badge.down { color:var(--down); }
 .badge.si { color:var(--si); } .badge.pi { color:var(--pi); } .badge.po { color:var(--po); }
 .badge.pv { color:var(--pv); } .badge.rv { color:var(--rv); } .badge.iclow { color:var(--pend); }
+.badge.ap { color:var(--acc); }
 .badge.pending { background:var(--st-pend-bg); color:var(--pend); }
 .badge.received { background:var(--st-ok-bg); color:var(--ok); }
 .badge.canceled { background:var(--st-no-bg); color:var(--down); }
 .badge.to_order { background:var(--st-wait-bg); color:var(--muted); }
+.badge.should_order { background:var(--st-pend-bg); color:var(--pend); }
+.badge.dead_stock { background:var(--st-no-bg); color:var(--down); }
+.badge.in_iclow { background:var(--st-ok-bg); color:var(--ok); }
+.ap-panels { display:grid; gap:1rem; margin-top:.75rem; }
+@media (min-width:880px) { .ap-panels { grid-template-columns:1fr 1fr; } }
+.ap-panel { background:var(--card); border:1px solid var(--line); border-radius:.75rem; padding:.7rem .75rem; }
+.ap-panel h3 { margin:.1rem 0 .5rem; font-size:.95rem; }
+.ap-filters { display:flex; flex-wrap:wrap; gap:.3rem; margin:0 0 .55rem; }
+.ap-filters button { font-size:.75rem; padding:.28rem .55rem; border-radius:999px; }
+.ap-filters button.on { background:var(--acc); border-color:var(--acc); color:var(--on-acc); }
+.ap-line { cursor:pointer; }
+.ap-line:hover { background:var(--inset); }
 main { display:grid; grid-template-columns:1fr; max-width:1180px; margin:0 auto; }
 @media (min-width:880px) { main { grid-template-columns: minmax(280px,40%) 1fr; min-height:calc(100vh - 9rem);} .list{border-right:1px solid var(--line);} }
 .list, .detail { padding:.75rem 1rem 2rem; }
@@ -306,6 +319,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
     <button type="button" data-k="pv">PV จ่าย</button>
     <button type="button" data-k="rv">RV รับ</button>
     <button type="button" data-k="iclow">ICLOW ค้างรับ</button>
+    <button type="button" data-k="ap">เจ้าหนี้ AP</button>
   </div>
   <div class="row" style="margin-top:.45rem">
     <span class="badge __HQBADGE__">__HQ_LABEL__ SQL __HQSQL__</span>
@@ -330,6 +344,7 @@ const MODES = [
   {id:"pv", label:"PV จ่าย"},
   {id:"rv", label:"RV รับ"},
   {id:"iclow", label:"ICLOW ค้างรับ"},
+  {id:"ap", label:"เจ้าหนี้ AP"},
 ];
 const PLACE = {
   all: "รหัส / เบอร์แท้ PCODE / เบอร์โรงงาน MCODE / ชื่อย่อ นมฮPT ลป / I K ซีล 31 46 / PO เลขบิล",
@@ -341,8 +356,16 @@ const PLACE = {
   pv: "เลขใบสำคัญจ่าย KCPN / P… หรือเลขโน้ต",
   rv: "เลขใบสำคัญรับ RC / RVI",
   iclow: "เลข PO / รหัสสินค้า / ผู้ขาย — ว่าง = สรุปค้างรับ",
+  ap: "รหัสเจ้าหนี้ / ชื่อ เช่น CRRK หรือ ชัยรุ่งเรือง — ว่าง = รายชื่อตัวอย่าง",
 };
 const STATUS_TH = {pending:"ค้างรับ", received:"รับแล้ว", canceled:"ยกเลิก", to_order:"รอสั่ง"};
+const ORDER_STATUS_TH = {
+  should_order: "ควรสั่ง",
+  no_order_needed: "ไม่ต้องสั่ง",
+  caution: "ระวัง",
+  dead_stock: "สินค้าตาย",
+  pending_insight: "รอ insight",
+};
 const COL_TH = {
   JOURTYPE:"ประเภทสมุด", VOUCED:"ผ่านใบสำคัญ", VOUCDATE:"วันที่ใบสำคัญ", VOUCNO:"เลขใบสำคัญ",
   NOTED:"ผ่านโน้ต", NOTEDATE:"วันที่โน้ต", NOTENO:"เลขโน้ต", RCPTNO:"เลขใบเสร็จ",
@@ -379,6 +402,9 @@ let KIND = "all";
 let ITEMS = [];
 let DOCS = [];
 let SUMMARY = null;
+let APS = [];
+let AP_DETAIL = null;
+let AP_FILTER = "should_order";
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) {
     if (c === "&") return "&amp;";
@@ -595,7 +621,7 @@ function setKind(k) {
   if (!isCodeSizeMode()) $("q").placeholder = PLACE[k] || PLACE.all;
   if (isMobileLayout()) setSearchPanelOpen(true);
   updateSearchSummary();
-  if (k === "iclow" || currentQuery()) go();
+  if (k === "iclow" || k === "ap" || currentQuery()) go();
   else if (k === "code_size") {
     $("list").innerHTML = "<div class='empty'>เลือกประเภทชิ้นส่วน แล้วกรอกขนาด (กรอกบางช่องก็ค้นได้)</div>";
     $("detail").innerHTML = "";
@@ -617,10 +643,20 @@ async function go(ev, opts) {
   const q = currentQuery();
   const site = $("site").value;
   const skip = $("skip").checked ? "1" : "0";
-  if (!q && KIND !== "iclow") return false;
+  if (!q && KIND !== "iclow" && KIND !== "ap") return false;
   $("list").innerHTML = "<div class='empty'>กำลังค้น…</div>";
   $("detail").innerHTML = "";
   try {
+    if (KIND === "ap") {
+      const r = await fetch("/parts9/api/ap/search?site="+encodeURIComponent(site)+"&q="+encodeURIComponent(q));
+      const data = await r.json();
+      if (!r.ok) {
+        $("list").innerHTML = "<div class='empty'>"+esc(data.detail || ("HTTP "+r.status))+"</div>";
+        return false;
+      }
+      renderApSearch(data, { collapse });
+      return false;
+    }
     let url = "/parts9/api/search?site="+encodeURIComponent(site)+"&include_skip="+skip+"&kind="+encodeURIComponent(KIND)+"&q="+encodeURIComponent(q);
     const cat = $("category");
     if (cat && cat.value && isProductMode()) url += "&category="+encodeURIComponent(cat.value);
@@ -724,6 +760,142 @@ function jumpIclow(q) {
   $("q").placeholder = PLACE.iclow;
   $("q").value = q;
   go();
+}
+function jumpAp(acctno) {
+  KIND = "ap";
+  drawModes();
+  toggleSearchChrome();
+  $("q").placeholder = PLACE.ap;
+  $("q").value = acctno || "";
+  updateSearchSummary();
+  Promise.resolve(go(null, { collapse: true })).then(() => {
+    const i = APS.findIndex(a => a.acctno === acctno);
+    if (i >= 0) showAp(i);
+  });
+}
+function renderApSearch(data, opts) {
+  APS = data.accounts || [];
+  AP_DETAIL = null;
+  if (!APS.length) {
+    $("list").innerHTML = "<div class='empty'>ไม่พบเจ้าหนี้ "+esc(data.error||"")+"</div>";
+    $("detail").innerHTML = "";
+    return;
+  }
+  let html = "";
+  APS.forEach((a, i) => {
+    html += "<button class='card' id='ap"+i+"' onclick='showAp("+i+")'><div>"
+      +"<span class='badge ap'>AP</span> <strong>"+esc(a.acctno)+"</strong>"
+      +"<div class='meta'>"+esc(a.acctname||"")+(a.phone ? " · "+esc(a.phone) : "")+"</div></div></button>";
+  });
+  $("list").innerHTML = html;
+  if (opts && opts.collapse && isMobileLayout()) setSearchPanelOpen(false);
+  if (APS.length === 1) showAp(0);
+}
+async function showAp(i) {
+  const a = APS[i];
+  if (!a) return;
+  document.querySelectorAll(".list .card").forEach(c => c.classList.remove("active"));
+  const el = $("ap"+i); if (el) el.classList.add("active");
+  const site = $("site").value;
+  $("detail").innerHTML = "<div class='empty'>กำลังโหลดแนะนำสั่งซื้อ…</div>";
+  try {
+    const r = await fetch("/parts9/api/ap/"+encodeURIComponent(a.acctno)+"?site="+encodeURIComponent(site)+"&days=365");
+    const data = await r.json();
+    if (!r.ok) {
+      $("detail").innerHTML = "<div class='empty'>"+esc(data.detail || ("HTTP "+r.status))+"</div>";
+      return;
+    }
+    AP_DETAIL = data;
+    AP_FILTER = "should_order";
+    renderApDetail();
+  } catch (e) {
+    $("detail").innerHTML = "<div class='empty'>โหลดไม่สำเร็จ "+esc(e && e.message ? e.message : e)+"</div>";
+  }
+}
+function setApFilter(f) {
+  AP_FILTER = f;
+  renderApDetail();
+}
+function stBadgeOrder(st) {
+  const k = st || "";
+  return "<span class='badge "+esc(k)+"'>"+esc(ORDER_STATUS_TH[k] || k)+"</span>";
+}
+function renderApDetail() {
+  const data = AP_DETAIL;
+  if (!data) return;
+  const acc = data.account || {};
+  const ac = data.ai_counts || {};
+  const ic = data.iclow_counts || {};
+  const filters = [
+    ["should_order", "ควรสั่ง "+(ac.should_order||0)],
+    ["all", "ทั้งหมด "+(ac.total||0)],
+    ["pending_insight", "รอ insight "+(ac.pending_insight||0)],
+    ["caution", "ระวัง "+(ac.caution||0)],
+  ];
+  let aiRows = data.ai_lines || [];
+  if (AP_FILTER !== "all") aiRows = aiRows.filter(x => x.order_status === AP_FILTER);
+  const aiTable = !aiRows.length
+    ? "<div class='empty'>ไม่มีรายการในตัวกรองนี้</div>"
+    : "<div class='table-wrap'><table><thead><tr>"
+      +"<th>รหัส</th><th>สถานะ</th><th>สต็อก</th><th>สั่ง</th><th>ซื้อ12ด.</th></tr></thead><tbody>"
+      + aiRows.map(ln => {
+          const badges = stBadgeOrder(ln.order_status)
+            + (ln.in_iclow ? " <span class='badge in_iclow'>มีใน ICLOW</span>" : "");
+          const oh = qty(ln.qtyoh_total);
+          const ord = ln.order_status === "should_order"
+            ? (qty(ln.order_qty_now != null ? ln.order_qty_now : ln.suggested_order_qty) + " " + esc(ln.order_unit||""))
+            : "—";
+          return "<tr class='ap-line' onclick='jumpProduct("+JSON.stringify(ln.bcode)+")'>"
+            +"<td><strong>"+esc(ln.bcode)+"</strong><div class='meta'>"+esc((ln.descr||"").slice(0,48))+"</div>"
+            +(ln.summary ? "<div class='meta'>"+esc(String(ln.summary).slice(0,72))+"</div>" : "")
+            +"</td>"
+            +"<td>"+badges+"</td>"
+            +"<td>"+oh+"</td>"
+            +"<td>"+ord+"</td>"
+            +"<td>"+qty(ln.buy_qty)+"</td></tr>";
+        }).join("")
+      +"</tbody></table></div>";
+
+  const icLines = (data.iclow_lines || []).filter(x => x.status === "to_order" || x.status === "pending");
+  const icTable = !icLines.length
+    ? "<div class='empty'>ไม่มี ICLOW รอสั่ง/ค้างรับ</div>"
+    : "<div class='table-wrap'><table><thead><tr>"
+      +"<th>สถานะ</th><th>PO</th><th>รหัส</th><th>จำนวน</th></tr></thead><tbody>"
+      + icLines.map(ln => "<tr class='ap-line' onclick='jumpProduct("+JSON.stringify(ln.bcode)+")'>"
+        +"<td>"+stBadge(ln.status)+"</td>"
+        +"<td>"+esc(ln.docno)+"<div class='meta'>"+esc(ln.docdate||"")+"</div></td>"
+        +"<td><strong>"+esc(ln.bcode)+"</strong><div class='meta'>"+esc((ln.descr||"").slice(0,40))+"</div></td>"
+        +"<td>"+qty(ln.qty)+" "+esc(ln.ui||"")+"</td></tr>").join("")
+      +"</tbody></table></div>";
+
+  $("detail").innerHTML =
+    "<div class='detail-overview'>"
+    +"<div class='meta'>เจ้าหนี้ AP</div>"
+    +"<h2>"+esc(acc.acctno||"")+"</h2>"
+    +"<p class='descr'>"+esc(acc.acctname||"")+"</p>"
+    +(acc.phone ? "<div class='meta'>โทร "+esc(acc.phone)+"</div>" : "")
+    +"<div class='meta'>snap "+esc(data.snap_id||"—")
+      +(data.snap_error ? " · "+esc(data.snap_error) : "")
+      +" · ทับซ้อนควรสั่ง+ICLOW "+esc((data.overlap_bcodes||[]).length)+"</div>"
+    +"</div>"
+    +"<div class='kpis'>"
+    +"<div class='kpi warn'><div class='n'>"+esc(ac.should_order||0)+"</div><div class='l'>AI ควรสั่ง</div></div>"
+    +"<div class='kpi'><div class='n'>"+esc(ac.pending_insight||0)+"</div><div class='l'>รอ insight</div></div>"
+    +"<div class='kpi warn'><div class='n'>"+esc(ic.to_order||0)+"</div><div class='l'>ICLOW รอสั่ง</div></div>"
+    +"<div class='kpi'><div class='n'>"+esc(ic.pending||0)+"</div><div class='l'>ICLOW ค้างรับ</div></div>"
+    +"</div>"
+    +"<div class='ap-panels'>"
+    +"<div class='ap-panel'><h3>AI แนะนำสั่ง</h3>"
+    +"<div class='ap-filters'>"
+    + filters.map(([k,lab]) =>
+        "<button type='button' class='"+(AP_FILTER===k?"on":"")+"' onclick='setApFilter("+JSON.stringify(k)+")'>"+esc(lab)+"</button>"
+      ).join("")
+    +"</div>"
+    + aiTable
+    +"</div>"
+    +"<div class='ap-panel'><h3>ICLOW ของเจ้าหนี้นี้</h3>"
+    +(data.iclow_error ? "<div class='empty'>"+esc(data.iclow_error)+"</div>" : icTable)
+    +"</div></div>";
 }
 function showSummary() {
   document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
@@ -1201,7 +1373,7 @@ window.addEventListener("resize", () => {
 });
 $("site").addEventListener("change", () => {
   updateSearchSummary();
-  if (currentQuery() || KIND==="iclow") go();
+  if (currentQuery() || KIND==="iclow" || KIND==="ap") go();
 });
 $("q").addEventListener("input", scheduleGo);
 $("q").addEventListener("search", (e) => go(e, { collapse: true }));
