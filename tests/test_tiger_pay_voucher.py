@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
@@ -223,7 +224,7 @@ def test_refresh_active_vouchers_throttled(monkeypatch):
     )
     monkeypatch.setattr(
         "src.tiger_pay.voucher_service.refresh_voucher_attempt",
-        lambda engine, attempt_id: shows.append(attempt_id),
+        lambda engine, attempt_id, voucher_api=None: shows.append(attempt_id),
     )
     engine = MagicMock()
     voucher_service.refresh_active_vouchers(engine, min_interval_seconds=60)
@@ -232,6 +233,42 @@ def test_refresh_active_vouchers_throttled(monkeypatch):
     voucher_service.reset_voucher_refresh_gate_for_tests()
     voucher_service.refresh_active_vouchers(engine, min_interval_seconds=60)
     assert shows == ["v1", "v1"]
+
+
+def test_refresh_active_vouchers_skips_while_in_progress(monkeypatch):
+    from src.tiger_pay import voucher_service
+
+    voucher_service.reset_voucher_refresh_gate_for_tests()
+    started = threading.Event()
+    release = threading.Event()
+    shows: list[str] = []
+
+    def slow_list(_engine):
+        started.set()
+        assert release.wait(timeout=2)
+        return [{"id": "v1"}]
+
+    monkeypatch.setattr(
+        "src.tiger_pay.voucher_service.voucher_repos.list_active_voucher_attempts",
+        slow_list,
+    )
+    monkeypatch.setattr(
+        "src.tiger_pay.voucher_service.refresh_voucher_attempt",
+        lambda engine, attempt_id, voucher_api=None: shows.append(attempt_id),
+    )
+    engine = MagicMock()
+    t = threading.Thread(
+        target=voucher_service.refresh_active_vouchers,
+        args=(engine,),
+        kwargs={"min_interval_seconds": 0},
+    )
+    t.start()
+    assert started.wait(timeout=2)
+    voucher_service.refresh_active_vouchers(engine, min_interval_seconds=0)
+    release.set()
+    t.join(timeout=2)
+    assert shows == ["v1"]
+    voucher_service.reset_voucher_refresh_gate_for_tests()
 
 
 class _FakeResponse:

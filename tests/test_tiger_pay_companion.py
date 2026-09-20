@@ -91,7 +91,7 @@ def test_list_bills_combined_limit_caps_collect_plus_cn():
             return_value=payout,
         ),
         patch(
-            "src.tiger_pay.payment_service.refresh_active_vouchers",
+            "src.tiger_pay.payment_service.schedule_refresh_active_vouchers",
         ),
         patch(
             "src.tiger_pay.payment_service.repos.list_latest_attempts_by_bill_ids",
