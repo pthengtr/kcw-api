@@ -24,10 +24,13 @@ def reset_tiger_pay_caches():
     get_tiger_pay_settings.cache_clear()
     from src.tiger_pay.client import get_tiger_pay_supabase_client
     from src.tiger_pay.open_api import get_open_api_client
+    from src.tiger_pay.voucher_api import get_voucher_api_client
 
     get_tiger_pay_supabase_client.cache_clear()
     get_open_api_client.cache_clear()
+    get_voucher_api_client.cache_clear()
     yield
     get_tiger_pay_settings.cache_clear()
     get_tiger_pay_supabase_client.cache_clear()
     get_open_api_client.cache_clear()
+    get_voucher_api_client.cache_clear()

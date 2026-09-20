@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import uuid
 from typing import Any
 
@@ -342,8 +344,36 @@ def refresh_voucher_attempt(
     return updated or attempt
 
 
-def refresh_active_vouchers(engine: Engine) -> None:
-    for attempt in voucher_repos.list_active_voucher_attempts(engine):
+_VOUCHER_REFRESH_MIN_INTERVAL_SECONDS = 1.5
+_refresh_lock = threading.Lock()
+_last_refresh_mono = 0.0
+
+
+def reset_voucher_refresh_gate_for_tests() -> None:
+    global _last_refresh_mono
+    with _refresh_lock:
+        _last_refresh_mono = 0.0
+
+
+def refresh_active_vouchers(
+    engine: Engine,
+    *,
+    min_interval_seconds: float | None = None,
+) -> None:
+    """Show-poll active CN vouchers, at most once per interval across callers."""
+    global _last_refresh_mono
+    interval = (
+        _VOUCHER_REFRESH_MIN_INTERVAL_SECONDS
+        if min_interval_seconds is None
+        else float(min_interval_seconds)
+    )
+    with _refresh_lock:
+        now = time.monotonic()
+        if interval > 0 and (now - _last_refresh_mono) < interval:
+            return
+        _last_refresh_mono = now
+        attempts = voucher_repos.list_active_voucher_attempts(engine)
+    for attempt in attempts:
         try:
             refresh_voucher_attempt(engine, str(attempt["id"]))
         except Exception:

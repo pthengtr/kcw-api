@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Literal
@@ -104,7 +105,7 @@ def _submitter_kwargs(identity: StockCheckIdentity | None) -> dict[str, str | No
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-async def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
+def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
     if not _UI_PATH.is_file():
         raise HTTPException(status_code=404, detail="Companion UI not found")
 
@@ -159,7 +160,7 @@ async def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
 
 
 @router.get("/bills")
-async def companion_bills(
+def companion_bills(
     request: Request,
     mode: Literal["latest", "today"] | None = Query(
         default=None,
@@ -199,7 +200,8 @@ async def companion_pay_bill(request: Request, pos_bill_id: str) -> dict:
             payment_type = str(payload.get("payment_type") or "").strip().lower()
     engine = get_engine()
     try:
-        result = send_payment_for_bill(
+        result = await asyncio.to_thread(
+            send_payment_for_bill,
             engine,
             pos_bill_id,
             payment_type=payment_type,
@@ -215,7 +217,8 @@ async def companion_create_voucher(request: Request, pos_bill_id: str) -> dict:
     ident = _require_companion_user(request)
     engine = get_engine()
     try:
-        return create_voucher_for_bill(
+        return await asyncio.to_thread(
+            create_voucher_for_bill,
             engine,
             pos_bill_id,
             **_submitter_kwargs(ident),
@@ -229,7 +232,8 @@ async def companion_cancel_payment(request: Request, attempt_id: str) -> dict:
     ident = _require_companion_user(request)
     engine = get_engine()
     try:
-        result = cancel_payment_attempt(
+        result = await asyncio.to_thread(
+            cancel_payment_attempt,
             engine,
             attempt_id,
             **_submitter_kwargs(ident),
@@ -244,7 +248,8 @@ async def companion_cancel_voucher(request: Request, attempt_id: str) -> dict:
     ident = _require_companion_user(request)
     engine = get_engine()
     try:
-        return cancel_voucher_attempt(
+        return await asyncio.to_thread(
+            cancel_voucher_attempt,
             engine,
             attempt_id,
             **_submitter_kwargs(ident),
@@ -254,7 +259,7 @@ async def companion_cancel_voucher(request: Request, attempt_id: str) -> dict:
 
 
 @router.get("/payments/active")
-async def companion_active_payments(request: Request) -> dict:
+def companion_active_payments(request: Request) -> dict:
     _require_companion_user(request)
     engine = get_engine()
     attempts = repos.list_active_payment_attempts(engine)
@@ -263,7 +268,7 @@ async def companion_active_payments(request: Request) -> dict:
 
 
 @router.get("/payments/{attempt_id}")
-async def companion_payment_detail(request: Request, attempt_id: str) -> dict:
+def companion_payment_detail(request: Request, attempt_id: str) -> dict:
     _require_companion_user(request)
     engine = get_engine()
     try:
@@ -274,7 +279,7 @@ async def companion_payment_detail(request: Request, attempt_id: str) -> dict:
 
 
 @router.get("/vouchers/{attempt_id}")
-async def companion_voucher_detail(request: Request, attempt_id: str) -> dict:
+def companion_voucher_detail(request: Request, attempt_id: str) -> dict:
     _require_companion_user(request)
     engine = get_engine()
     try:

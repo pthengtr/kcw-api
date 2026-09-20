@@ -183,6 +183,57 @@ def test_voucher_client_login_and_create(monkeypatch):
     assert any(url.endswith("/api/tigerpay/login") for _m, url, _d, _h in calls)
 
 
+def test_voucher_client_reuses_http_and_login(monkeypatch):
+    settings = MagicMock()
+    settings.tiger_voucher_api_host = "https://api.tigercashbox.com"
+    settings.tiger_voucher_username = "user"
+    settings.tiger_voucher_password = "pass"
+    settings.tiger_voucher_mobile = "0800000000"
+    created = []
+    calls = []
+
+    class FakeHttpClient:
+        def __init__(self, *args, **kwargs):
+            created.append(1)
+
+        def request(self, method, url, data=None, headers=None):
+            calls.append((method, url))
+            if url.endswith("/api/tigerpay/login"):
+                return _FakeResponse(200, {"success": {"token": "tok-1"}})
+            if "/api/voucher/show/" in url:
+                return _FakeResponse(200, {"data": {"voucher_num": "V-9", "used": "N"}})
+            raise AssertionError(f"unexpected {method} {url}")
+
+    monkeypatch.setattr("src.tiger_pay.voucher_api.httpx.Client", FakeHttpClient)
+    client = TigerVoucherApiClient(settings=settings)
+    client.show_voucher("V-9")
+    client.show_voucher("V-9")
+    assert created == [1]
+    assert sum(1 for _m, url in calls if url.endswith("/api/tigerpay/login")) == 1
+
+
+def test_refresh_active_vouchers_throttled(monkeypatch):
+    from src.tiger_pay import voucher_service
+
+    voucher_service.reset_voucher_refresh_gate_for_tests()
+    shows: list[str] = []
+    monkeypatch.setattr(
+        "src.tiger_pay.voucher_service.voucher_repos.list_active_voucher_attempts",
+        lambda engine: [{"id": "v1"}],
+    )
+    monkeypatch.setattr(
+        "src.tiger_pay.voucher_service.refresh_voucher_attempt",
+        lambda engine, attempt_id: shows.append(attempt_id),
+    )
+    engine = MagicMock()
+    voucher_service.refresh_active_vouchers(engine, min_interval_seconds=60)
+    voucher_service.refresh_active_vouchers(engine, min_interval_seconds=60)
+    assert shows == ["v1"]
+    voucher_service.reset_voucher_refresh_gate_for_tests()
+    voucher_service.refresh_active_vouchers(engine, min_interval_seconds=60)
+    assert shows == ["v1", "v1"]
+
+
 class _FakeResponse:
     def __init__(self, status_code: int, payload: dict):
         self.status_code = status_code

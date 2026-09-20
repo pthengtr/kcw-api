@@ -203,6 +203,17 @@ def test_webhook_received_recently_window():
     assert not webhook_received_recently(now, quiet_seconds=0, now=now)
 
 
+def test_poller_leadership_is_exclusive(tmp_path):
+    from src.tiger_pay.poller import release_poller_leadership, try_acquire_poller_leadership
+
+    lock = tmp_path / "poller.lock"
+    assert try_acquire_poller_leadership(lock_path=lock)
+    assert not try_acquire_poller_leadership(lock_path=lock)
+    release_poller_leadership()
+    assert try_acquire_poller_leadership(lock_path=lock)
+    release_poller_leadership()
+
+
 def test_poller_skips_device_get_when_webhook_fresh():
     import asyncio
 

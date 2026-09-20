@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import IO
 
 from src.db import get_engine
 from src.tiger_pay.config import get_tiger_pay_settings
@@ -18,6 +21,46 @@ from src.tiger_pay.status import is_active_status
 logger = logging.getLogger("kcw.tiger_pay.poller")
 
 _WEBHOOK_WARN_INTERVAL_SECONDS = 15 * 60
+_leader_lock_fh: IO[str] | None = None
+
+
+def _default_poller_lock_path() -> Path:
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    return Path(runtime) / "kcw-tiger-pay-poller.lock"
+
+
+def try_acquire_poller_leadership(*, lock_path: str | Path | None = None) -> bool:
+    """First worker to lock the file runs the device poller. No-op lock on Windows."""
+    global _leader_lock_fh
+    if os.name == "nt":
+        return True
+    import fcntl
+
+    path = Path(lock_path) if lock_path is not None else _default_poller_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(path, "a+", encoding="utf-8")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.close()
+        return False
+    fh.seek(0)
+    fh.truncate()
+    fh.write(str(os.getpid()))
+    fh.flush()
+    _leader_lock_fh = fh
+    return True
+
+
+def release_poller_leadership() -> None:
+    global _leader_lock_fh
+    if _leader_lock_fh is None:
+        return
+    try:
+        _leader_lock_fh.close()
+    except Exception:
+        logger.debug("poller lock close failed", exc_info=True)
+    _leader_lock_fh = None
 
 
 def webhook_received_recently(
