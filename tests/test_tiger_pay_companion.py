@@ -648,6 +648,15 @@ def test_reconcile_matches_by_ref_no_2():
     assert update.call_args.kwargs["status"] == "success"
 
 
+def test_companion_bills_is_sync():
+    import inspect
+
+    from app.routers.companion import companion_bills, companion_ui
+
+    assert not inspect.iscoroutinefunction(companion_ui)
+    assert not inspect.iscoroutinefunction(companion_bills)
+
+
 def test_companion_ui_and_bills_route():
     with (
         patch("app.routers.companion.get_engine", return_value=MagicMock()),

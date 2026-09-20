@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -236,6 +238,15 @@ class TigerVoucherApiClient:
         self.timeout_seconds = timeout_seconds
         self._token: str | None = None
         self._token_expires_at: float = 0.0
+        self._token_lock = threading.Lock()
+        self._http: httpx.Client | None = None
+        self._http_lock = threading.Lock()
+
+    def _http_client(self) -> httpx.Client:
+        with self._http_lock:
+            if self._http is None:
+                self._http = httpx.Client(timeout=self.timeout_seconds)
+            return self._http
 
     def _request(
         self,
@@ -252,8 +263,7 @@ class TigerVoucherApiClient:
             headers["Authorization"] = f"Bearer {token}"
 
         try:
-            with httpx.Client(timeout=self.timeout_seconds) as client:
-                response = client.request(method, url, data=data, headers=headers)
+            response = self._http_client().request(method, url, data=data, headers=headers)
         except httpx.HTTPError as exc:
             raise TigerVoucherApiError(f"Tiger voucher request failed: {exc}") from exc
 
@@ -278,34 +288,35 @@ class TigerVoucherApiClient:
         return response.status_code, payload
 
     def login(self, *, force: bool = False) -> str:
-        now = time.time()
-        if not force and self._token and now < self._token_expires_at:
-            return self._token
+        with self._token_lock:
+            now = time.time()
+            if not force and self._token and now < self._token_expires_at:
+                return self._token
 
-        _host, username, password, mobile = _require_voucher_credentials(self.settings)
-        _status, payload = self._request(
-            "POST",
-            "/api/tigerpay/login",
-            data={
-                "username": username,
-                "password": password,
-                "mobile": mobile,
-            },
-        )
-        token = _dig_token(payload)
-        if not token:
-            raise TigerVoucherApiError(
-                "Tiger voucher login did not return a token",
-                payload=payload,
+            _host, username, password, mobile = _require_voucher_credentials(self.settings)
+            _status, payload = self._request(
+                "POST",
+                "/api/tigerpay/login",
+                data={
+                    "username": username,
+                    "password": password,
+                    "mobile": mobile,
+                },
             )
-        if len(password) < 8:
-            logger.warning(
-                "TIGER_VOUCHER_PASSWORD is shorter than 8 characters; rotate the cloud login"
-            )
-        self._token = token
-        # Tokens are opaque; refresh proactively every 30 minutes.
-        self._token_expires_at = now + 30 * 60
-        return token
+            token = _dig_token(payload)
+            if not token:
+                raise TigerVoucherApiError(
+                    "Tiger voucher login did not return a token",
+                    payload=payload,
+                )
+            if len(password) < 8:
+                logger.warning(
+                    "TIGER_VOUCHER_PASSWORD is shorter than 8 characters; rotate the cloud login"
+                )
+            self._token = token
+            # Tokens are opaque; refresh proactively every 30 minutes.
+            self._token_expires_at = now + 30 * 60
+            return token
 
     def _authed_request(
         self,
@@ -391,5 +402,6 @@ class TigerVoucherApiClient:
         return {"data": payload.get("data") if isinstance(payload, dict) else payload, "raw": payload}
 
 
-def get_voucher_api_client(settings: TigerPaySettings | None = None) -> TigerVoucherApiClient:
-    return TigerVoucherApiClient(settings=settings)
+@lru_cache
+def get_voucher_api_client() -> TigerVoucherApiClient:
+    return TigerVoucherApiClient()

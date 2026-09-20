@@ -8,6 +8,8 @@ import os
 import time
 import logging
 
+import anyio
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -17,7 +19,11 @@ from app.routers.companion import router as companion_router
 from app.routers.health import router as health_router
 from app.routers.tiger_pay import router as tiger_pay_router
 from src.tiger_pay.config import get_tiger_pay_settings
-from src.tiger_pay.poller import payment_status_poller
+from src.tiger_pay.poller import (
+    payment_status_poller,
+    release_poller_leadership,
+    try_acquire_poller_leadership,
+)
 
 from src.db import get_engine
 from src.bot.line_bot import (
@@ -58,13 +64,28 @@ _EXPOSE_INTERNAL_ROUTES = _env_flag("KCW_EXPOSE_INTERNAL_ROUTES", default=False)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    if limiter.total_tokens < 64:
+        limiter.total_tokens = 64
     settings = get_tiger_pay_settings()
+    acquired_lock = False
+    poller_owned = False
     if settings.tiger_pay_api_host and settings.tiger_pay_client_id:
-        await payment_status_poller.start()
+        if try_acquire_poller_leadership():
+            acquired_lock = True
+            await payment_status_poller.start()
+            poller_owned = True
+        else:
+            logging.getLogger("kcw.tiger_pay.poller").info(
+                "Tiger Pay payment poller skipped; another worker holds the lock"
+            )
     try:
         yield
     finally:
-        await payment_status_poller.stop()
+        if poller_owned:
+            await payment_status_poller.stop()
+        if acquired_lock:
+            release_poller_leadership()
 
 
 app = FastAPI(

@@ -15,7 +15,7 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/health/ready")
-async def ready() -> dict[str, object]:
+def ready() -> dict[str, object]:
     """Companion readiness: DB plus webhook recency. Does not ping the LAN device."""
     payload: dict[str, object] = {"status": "ok", "db": "ok"}
     try:
