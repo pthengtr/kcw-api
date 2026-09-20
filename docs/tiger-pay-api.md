@@ -195,7 +195,8 @@ Marks payment `success` after QR/cash completion (samples show QR and mixed).
 | Get payment / current | Poller + reconcile |
 | Cancel payment | `POST /companion/payments/{attempt_id}/cancel` |
 | Webhook ingest | `POST /webhooks/tiger-pay` |
-| List / categories / cash / change_status | Not exposed |
+| List / categories | Not exposed |
+| Cash inventory + change_status | Companion `GET /companion/cash` (cached snapshot) and `?live=true` (device GET, persist snapshot). kcw-v2 reads `tiger_pay.cash_snapshot` only. |
 | Confirm QR / mixed | Poller confirm (`KBANK`) |
 
 Companion stores the auth submitter on each payment/voucher attempt:

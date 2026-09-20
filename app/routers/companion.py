@@ -28,6 +28,7 @@ from src.tiger_pay.voucher_service import (
 )
 from src.tiger_pay import repos
 from src.tiger_pay import voucher_repos
+from src.tiger_pay.cash_inventory import cached_or_live_cash
 from src.tiger_pay.submitter import submitter_from_identity
 
 router = APIRouter(prefix="/companion", tags=["companion"])
@@ -276,6 +277,23 @@ def companion_payment_detail(request: Request, attempt_id: str) -> dict:
     except PaymentServiceError as exc:
         raise _http_error(exc) from exc
     return result
+
+
+@router.get("/cash")
+def companion_cash(
+    request: Request,
+    live: bool = Query(False, description="Query the cashbox now and persist a snapshot."),
+) -> dict:
+    _require_companion_user(request)
+    engine = get_engine()
+    try:
+        return cached_or_live_cash(engine, live=live)
+    except Exception:
+        return {
+            "snapshot": None,
+            "live": False,
+            "error": "อ่านสถานะเงินทอนไม่สำเร็จ",
+        }
 
 
 @router.get("/vouchers/{attempt_id}")

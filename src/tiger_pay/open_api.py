@@ -306,6 +306,40 @@ class TigerPayOpenApiClient:
         data = _parse_envelope(payload)
         return {"data": data, "message": payload.get("message"), "raw": payload}
 
+    def get_cash(self) -> list[dict[str, Any]]:
+        status_code, payload = self._request("GET", "api/open/v2/payment/cash")
+        if status_code >= 400:
+            raise TigerPayOpenApiError(
+                _tiger_error_message(payload, "Failed to get cash inventory"),
+                status_code=status_code,
+                payload=payload,
+            )
+        data = _parse_envelope(payload)
+        if not isinstance(data, list):
+            raise TigerPayOpenApiError(
+                "Cash inventory not found in response",
+                status_code=status_code,
+                payload=payload,
+            )
+        return [item for item in data if isinstance(item, dict)]
+
+    def get_change_status(self) -> bool:
+        status_code, payload = self._request("GET", "api/open/v2/payment/change_status")
+        if status_code >= 400:
+            raise TigerPayOpenApiError(
+                _tiger_error_message(payload, "Failed to get change status"),
+                status_code=status_code,
+                payload=payload,
+            )
+        data = _parse_envelope(payload)
+        if isinstance(data, bool):
+            return data
+        raise TigerPayOpenApiError(
+            "Change status not found in response",
+            status_code=status_code,
+            payload=payload,
+        )
+
     def list_payments(self, *, page: int = 1, limit: int = 50) -> list[dict[str, Any]]:
         status_code, payload = self._request(
             "GET",

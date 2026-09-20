@@ -61,6 +61,26 @@ class TigerPaySettings(BaseSettings):
         default=24.0,
         validation_alias="TIGER_PAY_WEBHOOK_STALE_HOURS",
     )
+    tiger_pay_eod_hour: int = Field(
+        default=21,
+        validation_alias="TIGER_PAY_EOD_HOUR",
+    )
+    tiger_pay_default_shop_code: str = Field(
+        default="1",
+        validation_alias="TIGER_PAY_DEFAULT_SHOP_CODE",
+    )
+    tiger_pay_change_denoms: tuple[int, ...] = Field(
+        default=(100, 50, 20, 10, 5, 1),
+        validation_alias="TIGER_PAY_CHANGE_DENOMS",
+    )
+    tiger_pay_change_warn_pieces: int = Field(
+        default=10,
+        validation_alias="TIGER_PAY_CHANGE_WARN_PIECES",
+    )
+    tiger_pay_change_crit_pieces: int = Field(
+        default=2,
+        validation_alias="TIGER_PAY_CHANGE_CRIT_PIECES",
+    )
     tiger_voucher_api_host: str = Field(
         default="https://api.tigercashbox.com",
         validation_alias="TIGER_VOUCHER_API_HOST",
@@ -101,6 +121,42 @@ class TigerPaySettings(BaseSettings):
         if not stripped:
             raise ValueError("must not be empty")
         return stripped
+
+    @field_validator("tiger_pay_default_shop_code")
+    @classmethod
+    def default_shop_code(cls, value: str) -> str:
+        return (value or "1").strip() or "1"
+
+    @field_validator("tiger_pay_change_denoms", mode="before")
+    @classmethod
+    def parse_change_denoms(cls, value: object) -> tuple[int, ...]:
+        if isinstance(value, (list, tuple)):
+            parts = value
+        else:
+            text = str(value or "").strip()
+            if not text:
+                return (100, 50, 20, 10, 5, 1)
+            parts = [part.strip() for part in text.split(",") if part.strip()]
+        denoms = tuple(int(part) for part in parts)
+        if not denoms:
+            raise ValueError("must include at least one denomination")
+        if any(n <= 0 for n in denoms):
+            raise ValueError("denominations must be positive")
+        return denoms
+
+    @field_validator("tiger_pay_eod_hour")
+    @classmethod
+    def eod_hour_range(cls, value: int) -> int:
+        if value < 0 or value > 23:
+            raise ValueError("must be between 0 and 23")
+        return value
+
+    @field_validator("tiger_pay_change_warn_pieces", "tiger_pay_change_crit_pieces")
+    @classmethod
+    def non_negative_pieces(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("must not be negative")
+        return value
 
     @field_validator(
         "tiger_pay_client_id",
