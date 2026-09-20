@@ -59,3 +59,11 @@ create unique index if not exists voucher_event_attempt_event_key_idx
 
 create index if not exists voucher_event_attempt_id_created_at_idx
     on tiger_pay.voucher_event (voucher_attempt_id, created_at);
+
+create unique index if not exists voucher_attempt_one_blocking_per_bill_idx
+    on tiger_pay.voucher_attempt (pos_bill_id)
+    where status in ('creating', 'pending', 'used');
+
+create unique index if not exists voucher_attempt_one_used_per_bill_idx
+    on tiger_pay.voucher_attempt (pos_bill_id)
+    where status = 'used';

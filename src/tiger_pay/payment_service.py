@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
-from decimal import Decimal, ROUND_FLOOR
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_FLOOR, InvalidOperation
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +13,7 @@ from sqlalchemy.engine import Engine
 from src.companion.bills import get_open_bill, list_cn_bills, list_open_bills
 from src.tiger_pay import repos
 from src.tiger_pay import voucher_repos
-from src.tiger_pay.config import get_tiger_pay_settings
+from src.tiger_pay.config import get_tiger_pay_settings, parse_payment_id_epoch
 from src.tiger_pay.open_api import TigerPayOpenApiClient, TigerPayOpenApiError, get_open_api_client
 from src.tiger_pay.payload import omit_qr_images
 from src.tiger_pay.qr import (
@@ -22,7 +24,7 @@ from src.tiger_pay.qr import (
     payment_type_from_attempt,
     should_confirm_qr_payment,
 )
-from src.tiger_pay.status import is_active_status, normalize_status
+from src.tiger_pay.status import can_replace_status, is_active_status, normalize_status
 from src.tiger_pay.submitter import normalize_submitter, submitter_payload
 from src.tiger_pay.voucher_repos import is_voucher_active_status
 from src.tiger_pay.voucher_service import companion_voucher_from_attempt, refresh_active_vouchers
@@ -65,6 +67,33 @@ def tiger_create_amount(
     return amount_value
 
 
+def tiger_amount_compatible(attempt: dict[str, Any], payment: dict[str, Any]) -> bool:
+    """True when a Tiger success may be applied to this attempt.
+
+    Cash satang is floored on create (vendor limit, accepted). QR must match
+    the POS amount to 2 decimals. Missing amounts skip the check.
+    """
+    raw_tiger = payment.get("amount")
+    raw_pos = attempt.get("amount")
+    if raw_tiger is None or raw_tiger == "" or raw_pos is None or raw_pos == "":
+        return True
+    try:
+        tiger = Decimal(str(raw_tiger))
+        pos = Decimal(str(raw_pos))
+    except (InvalidOperation, TypeError, ValueError):
+        return True
+
+    pay_type = str(
+        payment.get("type") or payment.get("payment_type") or payment_type_from_attempt(attempt) or "cash"
+    ).strip().lower()
+    if pay_type in {"qr", "promptpay"}:
+        quantum = Decimal("0.01")
+        return tiger.quantize(quantum) == pos.quantize(quantum)
+
+    floored = pos.to_integral_value(rounding=ROUND_FLOOR)
+    return tiger == floored or tiger == pos
+
+
 class PaymentServiceError(Exception):
     def __init__(
         self,
@@ -77,6 +106,37 @@ class PaymentServiceError(Exception):
         self.code = code
         self.details = details or {}
         super().__init__(message)
+
+
+class _ThreadResult:
+    """Run ``fn`` on a worker thread; ``result()`` joins and returns or raises."""
+
+    def __init__(self, fn) -> None:
+        self._error: BaseException | None = None
+        self._value: Any = None
+        self._thread = threading.Thread(target=self._run, args=(fn,), daemon=True)
+        self._thread.start()
+
+    def _run(self, fn) -> None:
+        try:
+            self._value = fn()
+        except BaseException as exc:
+            self._error = exc
+
+    def result(self) -> Any:
+        self._thread.join()
+        if self._error is not None:
+            raise self._error
+        return self._value
+
+
+def _join_ignored(job: _ThreadResult | None) -> None:
+    if job is None:
+        return
+    try:
+        job.result()
+    except Exception:
+        logger.debug("background Tiger get_current finished with error", exc_info=True)
 
 
 def list_bills_with_payment_status(
@@ -207,43 +267,48 @@ def send_payment_for_bill(
         submitted_by_name=submitted_by_name,
     )
 
-    bill = get_open_bill(pos_bill_id)
-    if bill is None:
-        raise PaymentServiceError("POS bill not found", code="bill_not_found")
-    if bill.kind == "payout":
-        raise PaymentServiceError(
-            "CN payout bills use voucher cash-return, not payment",
-            code="not_collect_bill",
-        )
-    # Legacy POS PAID is display-only — Tiger payment_attempt is the source of truth.
-    completed = repos.get_successful_attempt_for_bill(engine, pos_bill_id)
-    if completed:
-        raise PaymentServiceError(
-            "Bill already has a completed payment",
-            code="payment_already_completed",
-        )
-
-    existing = repos.get_active_attempt_for_bill(engine, pos_bill_id)
-    if existing:
-        raise PaymentServiceError(
-            "Bill already has an active payment attempt",
-            code="active_attempt_exists",
-        )
-
     client = open_api or get_open_api_client()
+    current_job = _ThreadResult(client.get_current)
     try:
-        current = client.get_current()
-    except TigerPayOpenApiError as exc:
-        raise PaymentServiceError(
-            f"Unable to check Tiger current payment: {exc.message}",
-            code="tiger_current_failed",
-        ) from exc
+        bill = get_open_bill(pos_bill_id)
+        if bill is None:
+            raise PaymentServiceError("POS bill not found", code="bill_not_found")
+        if bill.kind == "payout":
+            raise PaymentServiceError(
+                "CN payout bills use voucher cash-return, not payment",
+                code="not_collect_bill",
+            )
+        # Legacy POS PAID is display-only — Tiger payment_attempt is the source of truth.
+        completed = repos.get_successful_attempt_for_bill(engine, pos_bill_id)
+        if completed:
+            raise PaymentServiceError(
+                "Bill already has a completed payment",
+                code="payment_already_completed",
+            )
 
-    if current is not None:
-        raise PaymentServiceError(
-            "Tiger Pay already has an active payment",
-            code="tiger_busy",
-        )
+        existing = repos.get_active_attempt_for_bill(engine, pos_bill_id)
+        if existing:
+            raise PaymentServiceError(
+                "Bill already has an active payment attempt",
+                code="active_attempt_exists",
+            )
+
+        try:
+            current = current_job.result()
+        except TigerPayOpenApiError as exc:
+            raise PaymentServiceError(
+                f"Unable to check Tiger current payment: {exc.message}",
+                code="tiger_current_failed",
+            ) from exc
+        current_job = None
+
+        if current is not None:
+            raise PaymentServiceError(
+                "Tiger Pay already has an active payment",
+                code="tiger_busy",
+            )
+    finally:
+        _join_ignored(current_job)
 
     # Validate/normalize Tiger amount before opening an attempt row.
     amount_value = tiger_create_amount(bill.amount, payment_type=cleaned_type)
@@ -262,6 +327,11 @@ def send_payment_for_bill(
             submitted_by_name=submitted_by_name,
         )
     except IntegrityError as exc:
+        if repos.get_successful_attempt_for_bill(engine, pos_bill_id):
+            raise PaymentServiceError(
+                "Bill already has a completed payment",
+                code="payment_already_completed",
+            ) from exc
         raise PaymentServiceError(
             "Bill already has an active payment attempt",
             code="active_attempt_exists",
@@ -300,6 +370,25 @@ def send_payment_for_bill(
             payment_type=cleaned_type,
         )
     except TigerPayOpenApiError as exc:
+        if exc.no_response:
+            repos.insert_payment_event(
+                engine,
+                payment_attempt_id=attempt_id,
+                source="api",
+                status="sending",
+                payload={
+                    "action": "create_unconfirmed",
+                    "error": exc.message,
+                    "status_code": exc.status_code,
+                    "payload": exc.payload,
+                },
+                event_key=f"api:create_unconfirmed:{attempt_id}",
+            )
+            raise PaymentServiceError(
+                f"Tiger create payment unconfirmed: {exc.message}",
+                code="tiger_create_unconfirmed",
+                details={"status_code": exc.status_code, "tiger": exc.payload},
+            ) from exc
         repos.update_payment_attempt(
             engine,
             attempt_id,
@@ -529,6 +618,7 @@ def reconcile_from_tiger_payment(
         engine,
         tiger_payment_id=tiger_payment_id,
         ref_no_2=ref_no_2,
+        created_after=parse_payment_id_epoch(get_tiger_pay_settings().tiger_pay_id_epoch),
     )
     if not attempt:
         logger.info(
@@ -540,10 +630,70 @@ def reconcile_from_tiger_payment(
         return None
 
     raw_status = str(payment.get("status") or payment.get("raw_status") or "unknown")
+    incoming = normalize_status(raw_status)
     payment_no = payment.get("paymentNo") or payment.get("payment_no") or attempt.get(
         "tiger_payment_no"
     )
     key = event_key or f"{source}:{attempt['id']}:{tiger_payment_id}:{raw_status}"
+    current_status = str(attempt.get("status") or "")
+
+    if not can_replace_status(current_status, incoming):
+        logger.warning(
+            "Ignoring %s status downgrade attempt_id=%s current=%s incoming=%s",
+            source,
+            attempt["id"],
+            current_status,
+            incoming,
+        )
+        repos.insert_payment_event(
+            engine,
+            payment_attempt_id=str(attempt["id"]),
+            source=source,
+            status=current_status,
+            payload={
+                "action": f"{source}_ignored_downgrade",
+                "current_status": current_status,
+                "incoming_status": incoming,
+                "payment": omit_qr_images(payment),
+            },
+            event_key=f"{key}:ignored",
+        )
+        return repos.update_payment_attempt(
+            engine,
+            str(attempt["id"]),
+            tiger_payment_id=None,
+            touch_last_polled=touch_last_polled,
+        )
+
+    if incoming == "success" and not tiger_amount_compatible(attempt, payment):
+        logger.warning(
+            "Ignoring %s success amount mismatch attempt_id=%s pos=%s tiger=%s type=%s",
+            source,
+            attempt["id"],
+            attempt.get("amount"),
+            payment.get("amount"),
+            payment.get("type") or payment.get("payment_type"),
+        )
+        repos.insert_payment_event(
+            engine,
+            payment_attempt_id=str(attempt["id"]),
+            source=source,
+            status=current_status,
+            payload={
+                "action": f"{source}_amount_mismatch",
+                "pos_amount": str(attempt.get("amount")),
+                "tiger_amount": payment.get("amount"),
+                "payment": omit_qr_images(payment),
+            },
+            event_key=f"{key}:amount_mismatch",
+        )
+        return repos.update_payment_attempt(
+            engine,
+            str(attempt["id"]),
+            error_message="tiger amount mismatch; success not applied",
+            touch_last_polled=touch_last_polled,
+        )
+
     return apply_status_update(
         engine,
         attempt_id=str(attempt["id"]),
@@ -570,6 +720,10 @@ def reconcile_from_webhook_transaction(
         "status": transaction.get("status"),
         "refNo2": transaction.get("ref_no_2"),
         "ref_no_2": transaction.get("ref_no_2"),
+        "amount": transaction.get("amount"),
+        "totalPay": transaction.get("total_pay"),
+        "type": transaction.get("payment_type"),
+        "payment_type": transaction.get("payment_type"),
     }
     return reconcile_from_tiger_payment(
         engine,
@@ -740,15 +894,87 @@ def poll_attempt_once(
     )
 
 
+def recover_sending_attempts(
+    engine: Engine,
+    *,
+    open_api: TigerPayOpenApiClient | None = None,
+) -> list[dict[str, Any]]:
+    """Attach or fail `sending` rows that never got a Tiger payment id."""
+    settings = get_tiger_pay_settings()
+    stale_after = float(settings.tiger_pay_sending_stale_seconds)
+    client = open_api or get_open_api_client()
+    recovered: list[dict[str, Any]] = []
+    now = datetime.now(timezone.utc)
+
+    for attempt in repos.list_sending_without_tiger_id(engine):
+        attempt_id = str(attempt.get("id") or "")
+        if not attempt_id:
+            continue
+        payment: dict[str, Any] | None = None
+        try:
+            payment = client.find_payment_by_ref_no_2(attempt_id)
+        except TigerPayOpenApiError as exc:
+            logger.warning(
+                "Sending recovery lookup failed attempt_id=%s error=%s",
+                attempt_id,
+                exc.message,
+            )
+        if payment:
+            updated = reconcile_from_tiger_payment(
+                engine,
+                payment,
+                source="polling",
+                event_key=f"polling:recover:{attempt_id}:{payment.get('id')}:{payment.get('status')}",
+                touch_last_polled=True,
+            )
+            recovered.append(updated or attempt)
+            continue
+
+        created_raw = attempt.get("created_at")
+        created_at: datetime | None = None
+        if isinstance(created_raw, datetime):
+            created_at = created_raw
+        elif isinstance(created_raw, str):
+            try:
+                created_at = datetime.fromisoformat(created_raw)
+            except ValueError:
+                created_at = None
+        if created_at is not None and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age = (now - created_at).total_seconds() if created_at is not None else 0.0
+        if age < stale_after:
+            recovered.append(attempt)
+            continue
+
+        repos.update_payment_attempt(
+            engine,
+            attempt_id,
+            status="failed",
+            raw_status="failed",
+            error_message="create unconfirmed; marked failed after stale timeout",
+            touch_last_polled=True,
+        )
+        repos.insert_payment_event(
+            engine,
+            payment_attempt_id=attempt_id,
+            source="polling",
+            status="failed",
+            payload={"action": "create_unconfirmed_expired", "age_seconds": age},
+            event_key=f"polling:create_unconfirmed_expired:{attempt_id}",
+        )
+        recovered.append(repos.get_payment_attempt(engine, attempt_id) or attempt)
+    return recovered
+
+
 def recover_active_attempts(
     engine: Engine,
     *,
     open_api: TigerPayOpenApiClient | None = None,
 ) -> list[dict[str, Any]]:
+    epoch = parse_payment_id_epoch(get_tiger_pay_settings().tiger_pay_id_epoch)
     to_poll = [
         *repos.list_active_payment_attempts(engine),
-        # Historical bug: raw status "change" was stored as unknown → poller stopped.
-        *repos.list_unknown_attempts_with_tiger_id(engine),
+        *repos.list_unknown_attempts_with_tiger_id(engine, created_after=epoch),
     ]
     seen: set[str] = set()
     recovered: list[dict[str, Any]] = []
@@ -759,4 +985,5 @@ def recover_active_attempts(
         seen.add(attempt_id)
         updated = poll_attempt_once(engine, attempt, open_api=open_api)
         recovered.append(updated or attempt)
+    recovered.extend(recover_sending_attempts(engine, open_api=open_api))
     return recovered

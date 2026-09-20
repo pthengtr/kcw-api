@@ -5,12 +5,15 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from datetime import datetime
+
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from src.tiger_pay.status import ACTIVE_STATUSES
+from src.tiger_pay.status import ACTIVE_STATUSES, TERMINAL_STATUSES
 
 ACTIVE_STATUS_SQL = ", ".join(f"'{status}'" for status in sorted(ACTIVE_STATUSES))
+TERMINAL_STATUS_SQL = ", ".join(f"'{status}'" for status in sorted(TERMINAL_STATUSES))
 
 
 def _row_to_attempt(row: Any) -> dict[str, Any]:
@@ -155,14 +158,38 @@ def list_active_payment_attempts(engine: Engine) -> list[dict[str, Any]]:
     return [_row_to_attempt(row) for row in rows]
 
 
-def list_unknown_attempts_with_tiger_id(engine: Engine) -> list[dict[str, Any]]:
-    """Stuck rows: Tiger moved to status=change (mapped unknown historically) then success."""
+def list_unknown_attempts_with_tiger_id(
+    engine: Engine,
+    *,
+    created_after: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Stuck rows: Tiger moved to status=change (mapped unknown historically) then success.
+
+    ``created_after`` skips pre-reset device ids so poller does not attach
+    recycled Open API ids to July attempts.
+    """
     sql = text(
         """
         select *
         from tiger_pay.payment_attempt
         where status = 'unknown'
           and tiger_payment_id is not null
+          and (:created_after is null or created_at >= :created_after)
+        order by created_at asc
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"created_after": created_after}).all()
+    return [_row_to_attempt(row) for row in rows]
+
+
+def list_sending_without_tiger_id(engine: Engine) -> list[dict[str, Any]]:
+    sql = text(
+        """
+        select *
+        from tiger_pay.payment_attempt
+        where status = 'sending'
+          and tiger_payment_id is null
         order by created_at asc
         """
     )
@@ -196,32 +223,39 @@ def find_attempt_by_tiger_or_ref(
     *,
     tiger_payment_id: int | None,
     ref_no_2: str | None,
+    created_after: datetime | None = None,
 ) -> dict[str, Any] | None:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
+    """Match Companion attempt by RefNo2 (attempt id) first, then Tiger id.
 
-    if tiger_payment_id is not None:
-        clauses.append("tiger_payment_id = :tiger_payment_id")
-        params["tiger_payment_id"] = tiger_payment_id
+    Tiger payment ids were reset on the device; ``created_after`` ignores
+    pre-epoch rows when falling back to ``tiger_payment_id``.
+    """
+    if ref_no_2:
+        found = get_payment_attempt(engine, ref_no_2)
+        if found:
+            return found
 
-    if ref_no_2 is not None:
-        clauses.append("id = :ref_no_2")
-        params["ref_no_2"] = ref_no_2
-
-    if not clauses:
+    if tiger_payment_id is None:
         return None
 
     sql = text(
-        f"""
+        """
         select *
         from tiger_pay.payment_attempt
-        where {" or ".join(clauses)}
+        where tiger_payment_id = :tiger_payment_id
+          and (:created_after is null or created_at >= :created_after)
         order by updated_at desc
         limit 1
         """
     )
     with engine.connect() as conn:
-        row = conn.execute(sql, params).first()
+        row = conn.execute(
+            sql,
+            {
+                "tiger_payment_id": tiger_payment_id,
+                "created_after": created_after,
+            },
+        ).first()
     return _row_to_attempt(row) if row else None
 
 
@@ -242,11 +276,34 @@ def update_payment_attempt(
     params: dict[str, Any] = {"id": attempt_id}
 
     if status is not None:
-        sets.append("status = :status")
+        # Terminal statuses are sticky at the SQL layer so a missed service
+        # guard cannot reopen a completed bill.
+        sets.append(
+            f"""
+            status = case
+                when status in ({TERMINAL_STATUS_SQL})
+                     and status is distinct from :status
+                then status
+                else :status
+            end
+            """
+        )
         params["status"] = status
     if raw_status is not None:
-        sets.append("raw_status = :raw_status")
+        sets.append(
+            f"""
+            raw_status = case
+                when status in ({TERMINAL_STATUS_SQL})
+                     and :status is not null
+                     and status is distinct from :status
+                then raw_status
+                else :raw_status
+            end
+            """
+        )
         params["raw_status"] = raw_status
+        if status is None:
+            params["status"] = None
     if tiger_payment_id is not None:
         sets.append("tiger_payment_id = :tiger_payment_id")
         params["tiger_payment_id"] = tiger_payment_id
@@ -340,3 +397,12 @@ def list_payment_events(
             {"payment_attempt_id": payment_attempt_id},
         ).all()
     return [_row_to_event(row) for row in rows]
+
+
+def latest_webhook_received_at(engine: Engine) -> datetime | None:
+    sql = text("select max(received_at) from tiger_pay.webhook_event")
+    with engine.connect() as conn:
+        value = conn.execute(sql).scalar()
+    if isinstance(value, datetime):
+        return value
+    return None

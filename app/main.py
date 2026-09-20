@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 import json
+import os
 import time
 import logging
 
@@ -44,6 +45,17 @@ from src.access.helper import build_access_denied_message
 from src.ai.openai_kb import handle_kb_select_postback, openai_result_to_line_response
 
 
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+_ENABLE_DOCS = _env_flag("KCW_ENABLE_DOCS", default=False)
+_EXPOSE_INTERNAL_ROUTES = _env_flag("KCW_EXPOSE_INTERNAL_ROUTES", default=False)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_tiger_pay_settings()
@@ -55,7 +67,12 @@ async def lifespan(_: FastAPI):
         await payment_status_poller.stop()
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url="/docs" if _ENABLE_DOCS else None,
+    redoc_url="/redoc" if _ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if _ENABLE_DOCS else None,
+)
 app.include_router(health_router)
 app.include_router(tiger_pay_router)
 app.include_router(companion_router)
@@ -75,7 +92,6 @@ async def view_printout(token: str):
     return HTMLResponse(content=html)
 
 
-@app.post("/table-printout/extract")
 async def extract_table_printout(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
@@ -95,7 +111,6 @@ async def extract_table_printout(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Could not extract table from image")
 
 
-@app.post("/kcw-peak/sync")
 async def kcw_peak_sync(request: Request):
     try:
         body = await request.json()
@@ -112,6 +127,15 @@ async def kcw_peak_sync(request: Request):
     except Exception as e:
         print("KCW PEAK ERROR:", e)
         raise HTTPException(status_code=400, detail="Invalid payload")
+
+
+if _EXPOSE_INTERNAL_ROUTES:
+    app.add_api_route(
+        "/table-printout/extract",
+        extract_table_printout,
+        methods=["POST"],
+    )
+    app.add_api_route("/kcw-peak/sync", kcw_peak_sync, methods=["POST"])
 
 
 @app.post("/line-webhook")

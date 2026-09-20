@@ -36,8 +36,10 @@ SESSION_COOKIE = "kcw_companion_token"
 
 
 def _line_auth_required() -> bool:
-    raw = (os.getenv("COMPANION_REQUIRE_LINE_AUTH") or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    raw = os.getenv("COMPANION_REQUIRE_LINE_AUTH")
+    if raw is None or not str(raw).strip():
+        return True
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _http_error(exc: PaymentServiceError | VoucherServiceError) -> HTTPException:
@@ -56,6 +58,8 @@ def _http_error(exc: PaymentServiceError | VoucherServiceError) -> HTTPException
         status = 409
     elif exc.code in {"invalid_payment_type", "missing_voucher_num", "missing_tiger_id"}:
         status = 400
+    elif exc.code in {"tiger_create_unconfirmed", "tiger_cancel_unconfirmed"}:
+        status = 503
     detail: dict = {"message": exc.message, "code": exc.code}
     if exc.details:
         detail["details"] = exc.details

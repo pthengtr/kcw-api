@@ -191,6 +191,28 @@ def test_open_api_get_current_none_and_create(monkeypatch):
     post = next(c for c in calls if c[0] == "POST")
     auth = jwt.decode(post[3]["Authorization"].split(" ", 1)[1], "secret", algorithms=["HS256"])
     assert "messageDigest" in auth
+    assert sum(1 for c in calls if c[0] == "GET") == 1
+
+
+def test_open_api_reuses_http_client(monkeypatch):
+    settings = MagicMock()
+    settings.tiger_pay_client_id = "cid"
+    settings.tiger_pay_client_secret = "secret"
+    settings.tiger_pay_api_host = "http://tiger.local/"
+    created = []
+
+    class FakeHttpClient:
+        def __init__(self, *args, **kwargs):
+            created.append(1)
+
+        def request(self, method, url, content=None, headers=None):
+            return _FakeResponse(404, {"data": None, "message": "No current payment exists."})
+
+    monkeypatch.setattr("src.tiger_pay.open_api.httpx.Client", FakeHttpClient)
+    client = TigerPayOpenApiClient(settings=settings)
+    assert client.get_current() is None
+    assert client.get_current() is None
+    assert created == [1]
 
 
 def test_open_api_error_on_create_failure(monkeypatch):
@@ -220,6 +242,8 @@ def test_open_api_error_on_create_failure(monkeypatch):
 
 def test_send_payment_rejects_when_bill_has_active_attempt():
     engine = MagicMock()
+    open_api = MagicMock()
+    open_api.get_current.return_value = None
     with (
         patch(
             "src.tiger_pay.payment_service.get_open_bill",
@@ -235,12 +259,14 @@ def test_send_payment_rejects_when_bill_has_active_attempt():
         ),
     ):
         with pytest.raises(PaymentServiceError) as exc:
-            send_payment_for_bill(engine, "bill-1001")
+            send_payment_for_bill(engine, "bill-1001", open_api=open_api)
         assert exc.value.code == "active_attempt_exists"
 
 
 def test_send_payment_rejects_when_bill_already_completed():
     engine = MagicMock()
+    open_api = MagicMock()
+    open_api.get_current.return_value = None
     with (
         patch(
             "src.tiger_pay.payment_service.get_open_bill",
@@ -252,7 +278,7 @@ def test_send_payment_rejects_when_bill_already_completed():
         ),
     ):
         with pytest.raises(PaymentServiceError) as exc:
-            send_payment_for_bill(engine, "bill-1001")
+            send_payment_for_bill(engine, "bill-1001", open_api=open_api)
         assert exc.value.code == "payment_already_completed"
 
 
@@ -331,6 +357,43 @@ def test_send_payment_rejects_when_tiger_busy():
         with pytest.raises(PaymentServiceError) as exc:
             send_payment_for_bill(engine, "bill-1001", open_api=open_api)
         assert exc.value.code == "tiger_busy"
+
+
+def test_send_payment_overlaps_get_current_with_bill_lookup():
+    import time
+
+    engine = MagicMock()
+    open_api = MagicMock()
+
+    def slow_current():
+        time.sleep(0.08)
+        return {"id": 1, "status": "pending"}
+
+    def slow_bill(_pos_bill_id):
+        time.sleep(0.08)
+        return MOCK_OPEN_BILL
+
+    open_api.get_current.side_effect = slow_current
+    started = time.perf_counter()
+    with (
+        patch(
+            "src.tiger_pay.payment_service.get_open_bill",
+            side_effect=slow_bill,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_successful_attempt_for_bill",
+            return_value=None,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.get_active_attempt_for_bill",
+            return_value=None,
+        ),
+    ):
+        with pytest.raises(PaymentServiceError) as exc:
+            send_payment_for_bill(engine, "bill-1001", open_api=open_api)
+    elapsed = time.perf_counter() - started
+    assert exc.value.code == "tiger_busy"
+    assert elapsed < 0.12
 
 
 def test_send_payment_happy_path():
@@ -722,10 +785,12 @@ def test_companion_pay_passes_line_submitter(monkeypatch):
 
 
 def test_webhook_still_succeeds_when_reconcile_errors():
+    from src.tiger_pay.config import get_tiger_pay_settings
     from tests.test_tiger_pay_webhook import cash_payload, compact_json, make_authorization
 
     payload = cash_payload()
     body = compact_json(payload)
+    secret = get_tiger_pay_settings().tiger_pay_client_secret
     with (
         patch(
             "src.tiger_pay.service.ingest_webhook_sync",
@@ -746,7 +811,7 @@ def test_webhook_still_succeeds_when_reconcile_errors():
             content=body,
             headers={
                 "Content-Type": "application/json",
-                "Authorization": make_authorization(body),
+                "Authorization": make_authorization(body, secret=secret),
             },
         )
     assert response.status_code == 200

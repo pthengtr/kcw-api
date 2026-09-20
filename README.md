@@ -193,22 +193,14 @@ export TIGER_PAY_WEBHOOK_TEST_URL=http://127.0.0.1:8000/webhooks/tiger-pay
 python scripts/send_tiger_pay_webhook.py
 ```
 
-### Troubleshooting `Webhook processing failed` (HTTP 500)
+### Troubleshooting missing Tiger rows after a 200 webhook
 
-This means JWT auth and payload validation succeeded, but the Supabase RPC step failed.
+HQ returns `200` as soon as the JWT and payload are valid. Supabase ingest runs afterward (with a few retries). If kcw-v2 is missing a row, check HQ logs for `tiger_pay webhook ingest failed after retries` and:
 
 1. In Supabase Dashboard → **Settings → API → Exposed schemas**, add `tiger_pay`.
-2. Confirm Railway `SUPABASE_URL` is the project API URL (`https://<ref>.supabase.co`), not the Postgres host.
-3. Confirm Railway `SUPABASE_SERVICE_ROLE_KEY` is the **service role** key.
-4. Check Railway logs for `error_category=supabase_rpc_failed` and `supabase_code=...`.
-5. Run the direct RPC diagnostic:
-
-```bash
-export TIGER_PAY_CLIENT_SECRET=your-dev-secret
-export SUPABASE_URL=https://<ref>.supabase.co
-export SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-python scripts/diagnose_tiger_pay_supabase.py
-```
+2. Confirm `SUPABASE_URL` is the project API URL (`https://<ref>.supabase.co`), not the Postgres host.
+3. Confirm `SUPABASE_SERVICE_ROLE_KEY` is the **service role** key.
+4. Companion status can still recover via the Open API poller even if ingest failed.
 
 ## Cursor Cloud checks
 

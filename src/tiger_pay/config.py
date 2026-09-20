@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_PAYMENT_ID_EPOCH = "2026-09-01"
 
 DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +35,10 @@ class TigerPaySettings(BaseSettings):
         default=1.5,
         validation_alias="TIGER_PAY_POLL_INTERVAL_SECONDS",
     )
+    tiger_pay_poll_webhook_quiet_seconds: float = Field(
+        default=20.0,
+        validation_alias="TIGER_PAY_POLL_WEBHOOK_QUIET_SECONDS",
+    )
     tiger_pay_qr_gateway: str = Field(
         default="KBANK",
         validation_alias="TIGER_PAY_QR_GATEWAY",
@@ -41,6 +48,18 @@ class TigerPaySettings(BaseSettings):
     tiger_pay_max_body_bytes: int = Field(
         default=DEFAULT_MAX_BODY_BYTES,
         validation_alias="TIGER_PAY_MAX_BODY_BYTES",
+    )
+    tiger_pay_id_epoch: str = Field(
+        default=DEFAULT_PAYMENT_ID_EPOCH,
+        validation_alias="TIGER_PAY_ID_EPOCH",
+    )
+    tiger_pay_sending_stale_seconds: float = Field(
+        default=45.0,
+        validation_alias="TIGER_PAY_SENDING_STALE_SECONDS",
+    )
+    tiger_pay_webhook_stale_hours: float = Field(
+        default=24.0,
+        validation_alias="TIGER_PAY_WEBHOOK_STALE_HOURS",
     )
     tiger_voucher_api_host: str = Field(
         default="https://api.tigercashbox.com",
@@ -125,6 +144,39 @@ class TigerPaySettings(BaseSettings):
         if value <= 0:
             raise ValueError("must be greater than zero")
         return value
+
+    @field_validator("tiger_pay_id_epoch")
+    @classmethod
+    def payment_id_epoch(cls, value: str) -> str:
+        stripped = value.strip() or DEFAULT_PAYMENT_ID_EPOCH
+        parse_payment_id_epoch(stripped)
+        return stripped
+
+    @field_validator("tiger_pay_sending_stale_seconds", "tiger_pay_webhook_stale_hours")
+    @classmethod
+    def positive_duration(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("must be greater than zero")
+        return value
+
+    @field_validator("tiger_pay_poll_webhook_quiet_seconds")
+    @classmethod
+    def non_negative_quiet_seconds(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("must not be negative")
+        return value
+
+
+def parse_payment_id_epoch(value: str) -> datetime:
+    """Device payment ids were reset around Sep 2026; ignore older ids."""
+    text = (value or "").strip() or DEFAULT_PAYMENT_ID_EPOCH
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError("must be an ISO date or datetime") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 @lru_cache

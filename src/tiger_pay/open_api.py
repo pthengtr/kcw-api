@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -20,10 +22,12 @@ class TigerPayOpenApiError(Exception):
         *,
         status_code: int | None = None,
         payload: Any = None,
+        no_response: bool = False,
     ) -> None:
         self.message = message
         self.status_code = status_code
         self.payload = payload
+        self.no_response = no_response
         super().__init__(message)
 
 
@@ -97,6 +101,14 @@ class TigerPayOpenApiClient:
     ) -> None:
         self.settings = settings or get_tiger_pay_settings()
         self.timeout_seconds = timeout_seconds
+        self._http: httpx.Client | None = None
+        self._http_lock = threading.Lock()
+
+    def _http_client(self) -> httpx.Client:
+        with self._http_lock:
+            if self._http is None:
+                self._http = httpx.Client(timeout=self.timeout_seconds)
+            return self._http
 
     def _request(
         self,
@@ -124,13 +136,25 @@ class TigerPayOpenApiClient:
         )
         headers["Authorization"] = authorization
 
-        with httpx.Client(timeout=self.timeout_seconds) as client:
-            response = client.request(
+        try:
+            response = self._http_client().request(
                 method,
                 url,
                 content=raw_body,
                 headers=headers,
             )
+        except httpx.TimeoutException as exc:
+            raise TigerPayOpenApiError(
+                "Tiger Pay request timed out",
+                payload={"url": url, "method": method},
+                no_response=True,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise TigerPayOpenApiError(
+                f"Tiger Pay request failed: {exc}",
+                payload={"url": url, "method": method},
+                no_response=True,
+            ) from exc
 
         try:
             payload = response.json()
@@ -282,6 +306,39 @@ class TigerPayOpenApiClient:
         data = _parse_envelope(payload)
         return {"data": data, "message": payload.get("message"), "raw": payload}
 
+    def list_payments(self, *, page: int = 1, limit: int = 50) -> list[dict[str, Any]]:
+        status_code, payload = self._request(
+            "GET",
+            f"api/open/v2/payment?page={int(page)}&limit={int(limit)}",
+        )
+        if status_code >= 400:
+            raise TigerPayOpenApiError(
+                _tiger_error_message(payload, "Failed to list payments"),
+                status_code=status_code,
+                payload=payload,
+            )
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict):
+            items = data.get("items")
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        return []
 
+    def find_payment_by_ref_no_2(self, ref_no_2: str) -> dict[str, Any] | None:
+        wanted = str(ref_no_2 or "").strip()
+        if not wanted:
+            return None
+        current = self.get_current()
+        if isinstance(current, dict) and str(current.get("refNo2") or "").strip() == wanted:
+            return current
+        for item in self.list_payments(page=1, limit=50):
+            if str(item.get("refNo2") or "").strip() == wanted:
+                return item
+        return None
+
+
+@lru_cache
 def get_open_api_client() -> TigerPayOpenApiClient:
     return TigerPayOpenApiClient()
