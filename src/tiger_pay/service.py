@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import json
 import logging
@@ -6,13 +5,13 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import Request
+from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from src.db import get_engine
 from src.tiger_pay.auth import TigerPayAuthError, verify_webhook_authorization
-from src.tiger_pay.client import TigerPayIngestError, ingest_webhook_sync
+from src.tiger_pay.client import ingest_webhook_sync
 from src.tiger_pay.config import get_tiger_pay_settings
 from src.tiger_pay.digest import compute_body_sha256
 from src.tiger_pay.models import TigerPayIngestResult, TigerPayWebhookPayload
@@ -27,6 +26,9 @@ from src.tiger_pay.payload import sanitize_webhook_payload
 from src.tiger_pay.payment_service import reconcile_from_webhook_transaction
 
 logger = logging.getLogger("kcw.tiger_pay")
+
+_INGEST_ATTEMPTS = 3
+_INGEST_RETRY_DELAYS = (0.25, 0.5)
 
 
 class TigerPayWebhookError(Exception):
@@ -92,6 +94,93 @@ def build_transaction(payload: TigerPayWebhookPayload) -> dict[str, str | int | 
     }
 
 
+def persist_accepted_webhook(
+    *,
+    request_id: str,
+    event_key: str,
+    body_sha256: str,
+    transaction: dict[str, str | int | None],
+    sanitized_payload: dict[str, Any],
+    started_at: float,
+) -> None:
+    """Supabase ingest + companion reconcile after the cashbox already got 200."""
+    ingest_result = None
+    last_error: BaseException | None = None
+    for attempt in range(1, _INGEST_ATTEMPTS + 1):
+        try:
+            ingest_result = ingest_webhook_sync(
+                event_key,
+                body_sha256,
+                transaction,
+                sanitized_payload,
+            )
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "tiger_pay webhook ingest attempt failed request_id=%s "
+                "tiger_payment_id=%s attempt=%s/%s",
+                request_id,
+                transaction.get("tiger_payment_id"),
+                attempt,
+                _INGEST_ATTEMPTS,
+                exc_info=True,
+            )
+            if attempt < _INGEST_ATTEMPTS:
+                time.sleep(_INGEST_RETRY_DELAYS[min(attempt - 1, len(_INGEST_RETRY_DELAYS) - 1)])
+
+    duplicate = False
+    transaction_updated = False
+    if ingest_result is not None:
+        try:
+            parsed = TigerPayIngestResult.model_validate(ingest_result)
+            duplicate = parsed.duplicate
+            transaction_updated = parsed.transaction_updated
+        except ValidationError:
+            logger.error(
+                "tiger_pay webhook ingest result invalid request_id=%s tiger_payment_id=%s",
+                request_id,
+                transaction.get("tiger_payment_id"),
+            )
+    elif last_error is not None:
+        logger.error(
+            "tiger_pay webhook ingest failed after retries request_id=%s "
+            "tiger_payment_id=%s error_category=%s",
+            request_id,
+            transaction.get("tiger_payment_id"),
+            getattr(last_error, "category", type(last_error).__name__),
+        )
+
+    try:
+        reconcile_from_webhook_transaction(
+            get_engine(),
+            transaction,
+            event_key=f"webhook:{event_key}",
+        )
+    except Exception:
+        logger.exception(
+            "tiger_pay webhook attempt reconcile failed request_id=%s tiger_payment_id=%s",
+            request_id,
+            transaction.get("tiger_payment_id"),
+        )
+
+    logger.info(
+        "tiger_pay webhook persisted request_id=%s tiger_payment_id=%s payment_no=%s "
+        "payment_type=%s payment_status=%s duplicate=%s transaction_updated=%s "
+        "ingest_ok=%s duration_ms=%.1f",
+        request_id,
+        transaction.get("tiger_payment_id"),
+        transaction.get("payment_no"),
+        transaction.get("payment_type"),
+        transaction.get("status"),
+        duplicate,
+        transaction_updated,
+        ingest_result is not None,
+        (time.perf_counter() - started_at) * 1000,
+    )
+
+
 def parse_webhook_payload(raw_body: bytes) -> tuple[dict[str, Any], TigerPayWebhookPayload]:
     try:
         parsed = json.loads(raw_body)
@@ -109,7 +198,10 @@ def parse_webhook_payload(raw_body: bytes) -> tuple[dict[str, Any], TigerPayWebh
     return parsed, validated
 
 
-async def process_tiger_pay_webhook(request: Request) -> JSONResponse:
+async def process_tiger_pay_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
     started_at = time.perf_counter()
     request_id = _request_id(request)
     settings = get_tiger_pay_settings()
@@ -150,44 +242,27 @@ async def process_tiger_pay_webhook(request: Request) -> JSONResponse:
             body_sha256,
         )
 
-        ingest_result = await asyncio.to_thread(
-            ingest_webhook_sync,
-            event_key,
-            body_sha256,
-            transaction,
-            sanitized_payload,
+        background_tasks.add_task(
+            persist_accepted_webhook,
+            request_id=request_id,
+            event_key=event_key,
+            body_sha256=body_sha256,
+            transaction=transaction,
+            sanitized_payload=sanitized_payload,
+            started_at=started_at,
         )
-        result = TigerPayIngestResult.model_validate(ingest_result)
-
-        try:
-            await asyncio.to_thread(
-                reconcile_from_webhook_transaction,
-                get_engine(),
-                transaction,
-                event_key=f"webhook:{event_key}",
-            )
-        except Exception:
-            # Ingest already succeeded; attempt reconcile is best-effort so
-            # polling can still recover if matching/update fails.
-            logger.exception(
-                "tiger_pay webhook attempt reconcile failed request_id=%s tiger_payment_id=%s",
-                request_id,
-                payment.id,
-            )
-
         logger.info(
-            "tiger_pay webhook processed request_id=%s tiger_payment_id=%s payment_no=%s "
-            "payment_type=%s payment_status=%s duplicate=%s transaction_updated=%s duration_ms=%.1f",
+            "tiger_pay webhook accepted request_id=%s tiger_payment_id=%s payment_no=%s "
+            "payment_type=%s payment_status=%s duration_ms=%.1f",
             request_id,
             payment.id,
             payment.paymentNo,
             transaction["payment_type"],
             transaction["status"],
-            result.duplicate,
-            result.transaction_updated,
             (time.perf_counter() - started_at) * 1000,
         )
-        return _success_response(result.duplicate, result.transaction_updated)
+        # ACK before Supabase. Body flags are placeholders; persist logs the real ones.
+        return _success_response(duplicate=False, transaction_updated=True)
 
     except TigerPayWebhookError as exc:
         logger.warning(
@@ -197,24 +272,6 @@ async def process_tiger_pay_webhook(request: Request) -> JSONResponse:
             (time.perf_counter() - started_at) * 1000,
         )
         return _error_response(exc.status_code, exc.error)
-
-    except TigerPayIngestError as exc:
-        logger.error(
-            "tiger_pay webhook ingest failed request_id=%s error_category=%s supabase_code=%s duration_ms=%.1f",
-            request_id,
-            exc.category,
-            exc.supabase_code or "-",
-            (time.perf_counter() - started_at) * 1000,
-        )
-        return _error_response(500, "Webhook processing failed")
-
-    except ValidationError:
-        logger.error(
-            "tiger_pay webhook ingest failed request_id=%s error_category=ingest_result_invalid duration_ms=%.1f",
-            request_id,
-            (time.perf_counter() - started_at) * 1000,
-        )
-        return _error_response(500, "Webhook processing failed")
 
     except Exception:
         logger.exception(

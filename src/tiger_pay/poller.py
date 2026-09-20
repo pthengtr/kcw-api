@@ -2,14 +2,41 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from datetime import datetime, timezone
 
 from src.db import get_engine
 from src.tiger_pay.config import get_tiger_pay_settings
-from src.tiger_pay.payment_service import poll_attempt_once, recover_active_attempts
+from src.tiger_pay.payment_service import (
+    poll_attempt_once,
+    recover_active_attempts,
+    recover_sending_attempts,
+)
 from src.tiger_pay import repos
 from src.tiger_pay.status import is_active_status
 
 logger = logging.getLogger("kcw.tiger_pay.poller")
+
+_WEBHOOK_WARN_INTERVAL_SECONDS = 15 * 60
+
+
+def webhook_received_recently(
+    last_received_at: datetime | None,
+    *,
+    quiet_seconds: float,
+    now: datetime | None = None,
+) -> bool:
+    """True when a webhook landed inside ``quiet_seconds`` (skip device GETs)."""
+    if quiet_seconds <= 0 or last_received_at is None:
+        return False
+    now_utc = now or datetime.now(timezone.utc)
+    last_utc = (
+        last_received_at
+        if last_received_at.tzinfo
+        else last_received_at.replace(tzinfo=timezone.utc)
+    )
+    age_seconds = (now_utc - last_utc.astimezone(timezone.utc)).total_seconds()
+    return age_seconds < quiet_seconds
 
 
 class PaymentStatusPoller:
@@ -17,6 +44,7 @@ class PaymentStatusPoller:
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
         self._failure_backoff_seconds = 0.0
+        self._last_webhook_warn_at = 0.0
 
     async def start(self) -> None:
         if self._task and not self._task.done():
@@ -69,11 +97,59 @@ class PaymentStatusPoller:
                 continue
 
     async def _poll_active_once(self, engine) -> None:
-        active = await asyncio.to_thread(repos.list_active_payment_attempts, engine)
-        for attempt in active:
-            if not is_active_status(str(attempt.get("status") or "")):
-                continue
-            await asyncio.to_thread(poll_attempt_once, engine, attempt)
+        skip_device = await asyncio.to_thread(self._webhook_quiet_for_device_poll, engine)
+        if skip_device:
+            logger.debug("Tiger Pay skip device poll; webhook is fresh")
+        else:
+            active = await asyncio.to_thread(repos.list_active_payment_attempts, engine)
+            for attempt in active:
+                if not is_active_status(str(attempt.get("status") or "")):
+                    continue
+                await asyncio.to_thread(poll_attempt_once, engine, attempt)
+        await asyncio.to_thread(recover_sending_attempts, engine)
+        await asyncio.to_thread(self._warn_if_webhooks_stale, engine)
+
+    def _webhook_quiet_for_device_poll(self, engine) -> bool:
+        settings = get_tiger_pay_settings()
+        quiet_seconds = float(settings.tiger_pay_poll_webhook_quiet_seconds)
+        if quiet_seconds <= 0:
+            return False
+        try:
+            last = repos.latest_webhook_received_at(engine)
+        except Exception:
+            logger.debug("webhook_event table not readable for poll skip", exc_info=True)
+            return False
+        return webhook_received_recently(last, quiet_seconds=quiet_seconds)
+
+    def _warn_if_webhooks_stale(self, engine) -> None:
+        settings = get_tiger_pay_settings()
+        stale_hours = float(settings.tiger_pay_webhook_stale_hours)
+        now_mono = time.monotonic()
+        if now_mono - self._last_webhook_warn_at < _WEBHOOK_WARN_INTERVAL_SECONDS:
+            return
+        try:
+            last = repos.latest_webhook_received_at(engine)
+        except Exception:
+            logger.debug("webhook_event table not readable", exc_info=True)
+            return
+
+        age_hours: float | None
+        if last is None:
+            age_hours = None
+        else:
+            last_utc = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+            age_hours = (
+                datetime.now(timezone.utc) - last_utc.astimezone(timezone.utc)
+            ).total_seconds() / 3600
+            if age_hours < stale_hours:
+                return
+        self._last_webhook_warn_at = now_mono
+        logger.warning(
+            "Tiger Pay webhooks look stale last_received_at=%s stale_after_hours=%s "
+            "(companion is poller-only until the device posts /webhooks/tiger-pay)",
+            last.isoformat() if last is not None else None,
+            stale_hours,
+        )
 
 
 payment_status_poller = PaymentStatusPoller()

@@ -50,3 +50,17 @@ def is_active_status(status: str) -> bool:
 
 def is_terminal_status(status: str) -> bool:
     return status in TERMINAL_STATUSES
+
+
+def can_replace_status(current: str | None, incoming: str | None) -> bool:
+    """Terminal companion statuses are sticky.
+
+    Late poll/webhook rows must not move ``success`` / ``cancelled`` / ``failed``
+    back to an active state (that unlocked a second payment on the same bill).
+    Same-status refresh is allowed so ids / timestamps can still update.
+    """
+    current_n = normalize_status(current)
+    incoming_n = normalize_status(incoming)
+    if current_n not in TERMINAL_STATUSES:
+        return True
+    return incoming_n == current_n

@@ -11,6 +11,9 @@ from sqlalchemy.engine import Engine
 VOUCHER_ACTIVE_STATUSES = frozenset({"creating", "pending"})
 VOUCHER_TERMINAL_STATUSES = frozenset({"used", "cancelled", "expired", "failed"})
 VOUCHER_ACTIVE_STATUS_SQL = ", ".join(f"'{status}'" for status in sorted(VOUCHER_ACTIVE_STATUSES))
+VOUCHER_TERMINAL_STATUS_SQL = ", ".join(
+    f"'{status}'" for status in sorted(VOUCHER_TERMINAL_STATUSES)
+)
 
 
 def is_voucher_active_status(status: str | None) -> bool:
@@ -203,11 +206,32 @@ def update_voucher_attempt(
     params: dict[str, Any] = {"id": attempt_id}
 
     if status is not None:
-        sets.append("status = :status")
+        sets.append(
+            f"""
+            status = case
+                when status in ({VOUCHER_TERMINAL_STATUS_SQL})
+                     and status is distinct from :status
+                then status
+                else :status
+            end
+            """
+        )
         params["status"] = status
     if raw_status is not None:
-        sets.append("raw_status = :raw_status")
+        sets.append(
+            f"""
+            raw_status = case
+                when status in ({VOUCHER_TERMINAL_STATUS_SQL})
+                     and :status is not null
+                     and status is distinct from :status
+                then raw_status
+                else :raw_status
+            end
+            """
+        )
         params["raw_status"] = raw_status
+        if status is None:
+            params["status"] = None
     if voucher_num is not None:
         sets.append("voucher_num = :voucher_num")
         params["voucher_num"] = voucher_num

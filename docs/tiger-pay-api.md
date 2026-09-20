@@ -280,6 +280,7 @@ CN / cash-return bill selection: any cashed row with negative `AFTERTAX` (includ
 | `TIGER_PAY_CLIENT_ID` | Open API JWT `clientId` |
 | `TIGER_PAY_CLIENT_SECRET` | Open API JWT secret (+ webhook auth) |
 | `TIGER_PAY_POLL_INTERVAL_SECONDS` | Companion poller |
+| `TIGER_PAY_POLL_WEBHOOK_QUIET_SECONDS` | Skip device GETs this many seconds after a webhook (default `20`, `0` disables) |
 | `TIGER_PAY_MAX_BODY_BYTES` | Webhook body limit |
 | `TIGER_VOUCHER_API_HOST` | Voucher API host (default `https://api.tigercashbox.com`) |
 | `TIGER_VOUCHER_USERNAME` | Voucher login username |
@@ -299,3 +300,17 @@ Original uploads for this summary:
 - Tiger Voucher Postman collection
 
 If you add the JSON files under `docs/postman/`, keep secrets out of committed variable values (`client_id`, `client_secret`, passwords).
+
+---
+
+## 5. Production notes (HQ companion)
+
+Cash Open API still **floors satang to whole baht**. That is an accepted vendor limit, not a Companion bug.
+
+**POS `PAID` is not written back.** SIMAS close-out stays with the cashier. Companion uses `tiger_pay.payment_attempt` as the payment source of truth.
+
+**Webhooks** should hit HQ `POST /webhooks/tiger-pay` (LAN or Tailscale, JWT + body digest). HQ ACKs `200` after auth/parse, then writes Supabase in the background so the cashbox is not blocked on ingest. If persist fails, Companion still has the 1.5s poller. After a webhook, the poller skips device GETs for `TIGER_PAY_POLL_WEBHOOK_QUIET_SECONDS` (default 20s). `/health/ready` reports webhook recency.
+
+**Device payment ids were reset** around 1 Sep 2026 (`TIGER_PAY_ID_EPOCH`). Pre-epoch `unknown` rows are not polled by id.
+
+Rotate `TIGER_VOUCHER_PASSWORD` to 8+ characters before unattended voucher use.

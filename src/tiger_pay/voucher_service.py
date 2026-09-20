@@ -160,6 +160,11 @@ def create_voucher_for_bill(
             submitted_by_name=submitted_by_name,
         )
     except IntegrityError as exc:
+        if voucher_repos.get_used_voucher_for_bill(engine, pos_bill_id):
+            raise VoucherServiceError(
+                "Bill already has a completed voucher",
+                code="voucher_already_completed",
+            ) from exc
         raise VoucherServiceError(
             "Bill already has an active voucher attempt",
             code="active_attempt_exists",
@@ -415,12 +420,101 @@ def cancel_voucher_attempt(
         ) from exc
 
     raw = cancel_result.get("raw") or cancel_result
+    show_raw: Any = raw
+    show_status = "cancelled"
+    try:
+        show_result = client.show_voucher(str(voucher_num))
+        show_raw = show_result.get("raw") or show_result
+        display = extract_voucher_display(show_raw)
+        show_status = normalize_voucher_status(display.get("raw_status"))
+        if show_status == "unknown":
+            show_status = "cancelled"
+    except TigerVoucherApiError as exc:
+        logger.warning(
+            "voucher cancel show failed attempt_id=%s voucher_num=%s error=%s",
+            attempt_id,
+            voucher_num,
+            exc.message,
+        )
+        voucher_repos.update_voucher_attempt(
+            engine,
+            attempt_id,
+            error_message=exc.message,
+            raw_last_show=raw if isinstance(raw, dict) else {"raw": raw},
+        )
+        voucher_repos.insert_voucher_event(
+            engine,
+            voucher_attempt_id=attempt_id,
+            source="api",
+            status=str(attempt.get("status") or "pending"),
+            payload={
+                "action": "cancel_unconfirmed",
+                "cancel_response": raw,
+                "error": exc.message,
+            },
+            event_key=f"api:cancel_unconfirmed:{attempt_id}",
+        )
+        raise VoucherServiceError(
+            "Tiger cancel returned but voucher show failed; not marking cancelled",
+            code="tiger_cancel_unconfirmed",
+            details={"status_code": exc.status_code, "tiger": exc.payload},
+        ) from exc
+
+    if show_status == "used":
+        updated = voucher_repos.update_voucher_attempt(
+            engine,
+            attempt_id,
+            status="used",
+            raw_status="used",
+            raw_last_show=show_raw if isinstance(show_raw, dict) else {"raw": show_raw},
+            clear_error=True,
+        )
+        voucher_repos.insert_voucher_event(
+            engine,
+            voucher_attempt_id=attempt_id,
+            source="api",
+            status="used",
+            payload={"action": "cancel_show_used", "show_response": show_raw},
+            event_key=f"api:cancel_show_used:{attempt_id}",
+        )
+        return {
+            "attempt": _public_attempt(updated or attempt),
+            "cancel_response": cancel_result,
+            "voucher": companion_voucher_from_attempt(updated or attempt),
+        }
+
+    if show_status not in {"cancelled", "expired", "failed"}:
+        voucher_repos.update_voucher_attempt(
+            engine,
+            attempt_id,
+            error_message="Tiger cancel did not confirm cancelled status",
+            raw_last_show=show_raw if isinstance(show_raw, dict) else {"raw": show_raw},
+        )
+        voucher_repos.insert_voucher_event(
+            engine,
+            voucher_attempt_id=attempt_id,
+            source="api",
+            status=str(attempt.get("status") or "pending"),
+            payload={
+                "action": "cancel_unconfirmed",
+                "cancel_response": raw,
+                "show_response": show_raw,
+                "show_status": show_status,
+            },
+            event_key=f"api:cancel_unconfirmed:{attempt_id}",
+        )
+        raise VoucherServiceError(
+            "Tiger cancel did not confirm cancelled status",
+            code="tiger_cancel_unconfirmed",
+            details={"show_status": show_status},
+        )
+
     updated = voucher_repos.update_voucher_attempt(
         engine,
         attempt_id,
         status="cancelled",
         raw_status="cancelled",
-        raw_last_show=raw if isinstance(raw, dict) else {"raw": raw},
+        raw_last_show=show_raw if isinstance(show_raw, dict) else {"raw": show_raw},
         clear_error=True,
     )
     voucher_repos.insert_voucher_event(

@@ -23,7 +23,7 @@ def compact_json(payload: dict) -> bytes:
 def make_authorization(
     body: bytes,
     *,
-    secret: str = TEST_SECRET,
+    secret: str | None = None,
     digest: str | None = None,
     algorithm: str = "HS256",
     claims: dict | None = None,
@@ -31,7 +31,8 @@ def make_authorization(
     payload = {"messageDigest": digest or compute_body_sha256(body)}
     if claims:
         payload.update(claims)
-    token = jwt.encode(payload, secret, algorithm=algorithm)
+    key = secret if secret is not None else get_tiger_pay_settings().tiger_pay_client_secret
+    token = jwt.encode(payload, key, algorithm=algorithm)
     return f"Bearer {token}"
 
 
@@ -109,7 +110,11 @@ def client():
 
 @pytest.fixture
 def mock_ingest():
-    with patch("src.tiger_pay.service.ingest_webhook_sync") as mocked:
+    with (
+        patch("src.tiger_pay.service.ingest_webhook_sync") as mocked,
+        patch("src.tiger_pay.service.reconcile_from_webhook_transaction"),
+        patch("src.tiger_pay.service.time.sleep"),
+    ):
         mocked.return_value = {
             "event_id": 1,
             "duplicate": False,
@@ -320,7 +325,7 @@ def test_z_timestamp_is_handled_correctly():
     assert normalized.endswith("+00:00")
 
 
-def test_duplicate_rpc_result_returns_duplicate_true(client, mock_ingest):
+def test_duplicate_rpc_still_acks_ok(client, mock_ingest):
     mock_ingest.return_value = {
         "event_id": 2,
         "duplicate": True,
@@ -331,12 +336,13 @@ def test_duplicate_rpc_result_returns_duplicate_true(client, mock_ingest):
     assert response.status_code == 200
     assert response.json() == {
         "ok": True,
-        "duplicate": True,
-        "transaction_updated": False,
+        "duplicate": False,
+        "transaction_updated": True,
     }
+    mock_ingest.assert_called_once()
 
 
-def test_older_event_rpc_result_returns_transaction_updated_false(client, mock_ingest):
+def test_older_event_rpc_still_acks_ok(client, mock_ingest):
     mock_ingest.return_value = {
         "event_id": 3,
         "duplicate": False,
@@ -348,20 +354,32 @@ def test_older_event_rpc_result_returns_transaction_updated_false(client, mock_i
     assert response.json() == {
         "ok": True,
         "duplicate": False,
-        "transaction_updated": False,
+        "transaction_updated": True,
     }
+    mock_ingest.assert_called_once()
 
 
-def test_supabase_failure_returns_500(client):
-    with patch("src.tiger_pay.service.ingest_webhook_sync", side_effect=RuntimeError("db down")):
+def test_supabase_failure_still_returns_200(client):
+    with (
+        patch(
+            "src.tiger_pay.service.ingest_webhook_sync",
+            side_effect=RuntimeError("db down"),
+        ) as ingest,
+        patch("src.tiger_pay.service.reconcile_from_webhook_transaction"),
+        patch("src.tiger_pay.service.time.sleep"),
+    ):
         body = compact_json(cash_payload())
         response = post_webhook(client, body, authorization=make_authorization(body))
-        assert response.status_code == 500
-        assert response.json() == {"ok": False, "error": "Webhook processing failed"}
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert ingest.call_count == 3
 
 
 def test_ingest_rpc_single_object_response_shape(client):
-    with patch("src.tiger_pay.service.ingest_webhook_sync") as mocked:
+    with (
+        patch("src.tiger_pay.service.ingest_webhook_sync") as mocked,
+        patch("src.tiger_pay.service.reconcile_from_webhook_transaction"),
+    ):
         mocked.return_value = {
             "event_id": 9,
             "duplicate": False,

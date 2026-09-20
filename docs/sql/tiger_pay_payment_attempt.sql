@@ -63,6 +63,15 @@ create unique index if not exists payment_event_attempt_event_key_idx
 create index if not exists payment_event_attempt_id_created_at_idx
     on tiger_pay.payment_event (payment_attempt_id, created_at);
 
+-- One completed or in-flight payment per bill (blocks a second send after success).
+create unique index if not exists payment_attempt_one_blocking_per_bill_idx
+    on tiger_pay.payment_attempt (pos_bill_id)
+    where status in ('sending', 'pending', 'paying', 'changing', 'cancelling', 'success');
+
+create unique index if not exists payment_attempt_one_success_per_bill_idx
+    on tiger_pay.payment_attempt (pos_bill_id)
+    where status = 'success';
+
 -- Force-convert earlier uuid PK installs to text.
 do $$
 declare

@@ -18,6 +18,8 @@ create table tiger_pay.payment_attempt (
     raw_status text null,
     raw_create_response jsonb null,
     error_message text null,
+    submitted_by text null,
+    submitted_by_name text null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     last_polled_at timestamptz null,
@@ -28,6 +30,10 @@ create table tiger_pay.payment_attempt (
 create unique index payment_attempt_one_active_per_bill_idx
     on tiger_pay.payment_attempt (pos_bill_id)
     where status in ('sending', 'pending', 'paying', 'changing', 'cancelling');
+
+create unique index payment_attempt_one_blocking_per_bill_idx
+    on tiger_pay.payment_attempt (pos_bill_id)
+    where status in ('sending', 'pending', 'paying', 'changing', 'cancelling', 'success');
 
 create index payment_attempt_tiger_payment_id_idx
     on tiger_pay.payment_attempt (tiger_payment_id);

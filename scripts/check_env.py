@@ -58,6 +58,19 @@ def main() -> int:
         print("  - If process_env=empty, clear that Windows environment variable")
         return 1
 
+    voucher_password = (file_vals.get("TIGER_VOUCHER_PASSWORD") or "").strip()
+    if voucher_password and len(voucher_password) < 8:
+        print(
+            "WARNING: TIGER_VOUCHER_PASSWORD is shorter than 8 characters; "
+            "rotate the Tiger cloud login before unattended voucher use."
+        )
+    for key in (
+        "TIGER_VOUCHER_USERNAME",
+        "TIGER_VOUCHER_PASSWORD",
+        "TIGER_VOUCHER_MOBILE",
+    ):
+        print(f"  {key}: {_source_label(key, file_vals)}")
+
     # Also prove pydantic settings can load the same values.
     try:
         from src.tiger_pay.config import get_tiger_pay_settings

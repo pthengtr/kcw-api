@@ -291,6 +291,10 @@ class TigerVoucherApiClient:
                 "Tiger voucher login did not return a token",
                 payload=payload,
             )
+        if len(password) < 8:
+            logger.warning(
+                "TIGER_VOUCHER_PASSWORD is shorter than 8 characters; rotate the cloud login"
+            )
         self._token = token
         # Tokens are opaque; refresh proactively every 30 minutes.
         self._token_expires_at = now + 30 * 60
