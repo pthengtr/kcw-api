@@ -334,6 +334,48 @@ def update_payment_attempt(
     return _row_to_attempt(row) if row else None
 
 
+def force_payment_transaction_success(
+    engine: Engine,
+    tiger_payment_id: int,
+    *,
+    payment: dict[str, Any] | None = None,
+) -> bool:
+    """Repair a raced confirm fail so daily totals count the paid QR.
+
+    Only rewrites rows currently in fail/failed (or still carrying the Tiger
+    confirm-mismatch remark). Leaves genuine success rows untouched.
+    """
+    payload_sql = ""
+    params: dict[str, Any] = {"tiger_payment_id": tiger_payment_id}
+    if payment is not None:
+        # Keep shop wrapper if present; otherwise store payment object only.
+        payload_sql = ", payload = coalesce(payload, '{}'::jsonb) || cast(:payload as jsonb)"
+        params["payload"] = json.dumps({"payment": payment})
+
+    sql = text(
+        f"""
+        update tiger_pay.payment_transaction
+        set
+            status = 'success',
+            remark = case
+                when remark ilike '%does not match the expected value%'
+                then null
+                else remark
+            end
+            {payload_sql}
+        where tiger_payment_id = :tiger_payment_id
+          and (
+            lower(status) in ('fail', 'failed')
+            or remark ilike '%does not match the expected value%'
+          )
+        returning tiger_payment_id
+        """
+    )
+    with engine.begin() as conn:
+        row = conn.execute(sql, params).first()
+    return row is not None
+
+
 def insert_payment_event(
     engine: Engine,
     *,

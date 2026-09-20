@@ -336,6 +336,79 @@ def test_poll_confirms_paid_qr():
     assert update.call_args.kwargs["status"] == "success"
 
 
+def test_poll_confirm_race_recovers_when_already_success():
+    """Confirm 400 after webhook success must not leave the attempt errored."""
+    engine = MagicMock()
+    open_api = MagicMock()
+    open_api.get_payment.side_effect = [
+        {
+            "id": 139,
+            "type": "qr",
+            "status": "pending",
+            "amount": 830,
+            "totalPay": 830,
+            "refNo2": "att-race",
+            "dynamicQR": {"status": "C"},
+            "updatedAt": "t1",
+        },
+        {
+            "id": 139,
+            "type": "qr",
+            "status": "fail",
+            "amount": 830,
+            "totalPay": 830,
+            "remark": "Payment status does not match the expected value.",
+            "refNo2": "att-race",
+            "dynamicQR": {"status": "C"},
+            "updatedAt": "t2",
+        },
+    ]
+    open_api.confirm_payment.side_effect = TigerPayOpenApiError(
+        "Failed to confirm payment: Payment status does not match the expected value.",
+        status_code=400,
+        payload={"message": "Payment status does not match the expected value."},
+    )
+    attempt = {"id": "att-race", "status": "pending", "tiger_payment_id": 139}
+
+    with (
+        patch(
+            "src.tiger_pay.payment_service.repos.insert_payment_event",
+            return_value={"id": 1},
+        ) as insert_event,
+        patch(
+            "src.tiger_pay.payment_service.repos.find_attempt_by_tiger_or_ref",
+            return_value=attempt,
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={**attempt, "status": "success"},
+        ) as update,
+        patch(
+            "src.tiger_pay.payment_service.repos.force_payment_transaction_success",
+            return_value=True,
+        ) as force_tx,
+    ):
+        poll_attempt_once(engine, attempt, open_api=open_api)
+
+    open_api.confirm_payment.assert_called_once_with(139)
+    assert open_api.get_payment.call_count == 2
+    force_tx.assert_called_once()
+    assert any(
+        call.kwargs.get("payload", {}).get("action") == "confirm_race_recovered"
+        or (call.args and False)
+        for call in insert_event.call_args_list
+    ) or any(
+        (call.kwargs.get("payload") or {}).get("action") == "confirm_race_recovered"
+        for call in insert_event.call_args_list
+    )
+    # Final attempt update from reconcile should be success without sticky error.
+    assert update.call_args_list[-1].kwargs.get("status") == "success"
+    clear_calls = [
+        c for c in update.call_args_list if c.kwargs.get("clear_error") is True
+    ]
+    assert clear_calls
+
+
 def test_poll_cash_does_not_confirm():
     engine = MagicMock()
     open_api = MagicMock()
