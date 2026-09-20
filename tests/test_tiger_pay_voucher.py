@@ -87,6 +87,30 @@ def test_normalize_voucher_status_and_extract():
     assert display["voucher_num"] == "V1"
     assert display["qr_image"] == "img"
     assert display["raw_status"] == "N"
+    cancelled = extract_voucher_display(
+        {
+            "success": "true",
+            "voucher": {
+                "note": "cancelled",
+                "used": 1,
+                "amount": 620,
+                "balance": 620,
+                "voucher_num": "611337555359",
+            },
+        }
+    )
+    assert normalize_voucher_status(cancelled["raw_status"]) == "cancelled"
+    redeemed = extract_voucher_display(
+        {
+            "voucher": {
+                "note": "CN bill KCN6908-0267",
+                "used": 1,
+                "amount": 120,
+                "balance": 0,
+            }
+        }
+    )
+    assert normalize_voucher_status(redeemed["raw_status"]) == "used"
 
 
 def test_companion_voucher_renders_qr_from_numeric_code():
@@ -331,3 +355,45 @@ def test_cancel_voucher_marks_cancelled_when_show_confirms():
     ):
         result = cancel_voucher_attempt(engine, "v1", voucher_api=voucher_api)
     assert result["attempt"]["status"] == "cancelled"
+
+
+def test_cancel_voucher_treats_note_cancelled_used_1_as_cancelled():
+    engine = MagicMock()
+    voucher_api = MagicMock()
+    voucher_api.cancel_voucher.return_value = {"raw": {"ok": True}}
+    voucher_api.show_voucher.return_value = {
+        "raw": {
+            "success": "true",
+            "voucher": {
+                "note": "cancelled",
+                "used": 1,
+                "amount": 620,
+                "balance": 620,
+                "voucher_num": "V100",
+            },
+        }
+    }
+    attempt = {
+        "id": "v1",
+        "status": "pending",
+        "voucher_num": "V100",
+        "raw_create_response": {},
+    }
+    with (
+        patch(
+            "src.tiger_pay.voucher_service.voucher_repos.get_voucher_attempt",
+            return_value=attempt,
+        ),
+        patch("src.tiger_pay.voucher_service.voucher_repos.insert_voucher_event"),
+        patch(
+            "src.tiger_pay.voucher_service.voucher_repos.update_voucher_attempt",
+            return_value={**attempt, "status": "cancelled"},
+        ) as update,
+        patch(
+            "src.tiger_pay.voucher_service.companion_voucher_from_attempt",
+            return_value={"voucher_num": "V100", "status": "cancelled"},
+        ),
+    ):
+        result = cancel_voucher_attempt(engine, "v1", voucher_api=voucher_api)
+    assert result["attempt"]["status"] == "cancelled"
+    assert update.call_args.kwargs["status"] == "cancelled"

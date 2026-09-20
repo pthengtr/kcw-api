@@ -171,12 +171,19 @@ def extract_voucher_display(payload: Any) -> dict[str, Any]:
                 used = value
                 break
 
+    # Tiger sets used=1 for both redeemed and cancelled. Cancelled keeps
+    # note="cancelled" (and usually the original balance).
+    note = data.get("note") if isinstance(data, dict) else None
+    raw_status = used
+    if isinstance(note, str) and normalize_voucher_status(note) == "cancelled":
+        raw_status = "cancelled"
+
     return {
         "voucher_num": voucher_num,
         "code": code or voucher_num,
         "qr_image": image,
         "qr_raw": raw,
-        "raw_status": used,
+        "raw_status": raw_status,
     }
 
 
