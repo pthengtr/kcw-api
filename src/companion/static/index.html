@@ -332,6 +332,35 @@
     .btn-qr { background: var(--request); color: #f4f8fc; }
     .btn-cancel { background: var(--danger); color: var(--btn-cancel-text); }
     .btn-refresh, .btn-theme { background: var(--btn-secondary); color: var(--text); min-width: var(--touch); }
+    .btn-hopper {
+      background: var(--btn-secondary);
+      color: var(--text);
+      min-width: var(--touch);
+      position: relative;
+    }
+    .btn-hopper.green { color: var(--ok-fg); background: var(--ok-bg); }
+    .btn-hopper.orange { color: var(--warn-fg); background: var(--warn-bg); }
+    .btn-hopper.red { color: var(--bad-fg); background: var(--bad-bg); }
+    .btn-hopper .hopper-dot {
+      position: absolute;
+      top: 0.35rem;
+      right: 0.35rem;
+      width: 0.45rem;
+      height: 0.45rem;
+      border-radius: 999px;
+      background: currentColor;
+    }
+    .hopper-table {
+      width: 100%;
+      margin-top: 0.75rem;
+      font-size: 0.92rem;
+    }
+    .hopper-table th, .hopper-table td {
+      padding: 0.4rem 0.2rem;
+      white-space: nowrap;
+    }
+    .hopper-table td:last-child, .hopper-table th:last-child { text-align: right; }
+    .hopper-reasons { margin-top: 0.6rem; color: var(--muted); font-size: 0.9rem; }
     .btn-link {
       background: transparent;
       color: var(--muted);
@@ -805,6 +834,24 @@
       <button type="button" class="btn-dialog-secondary" id="qrDialogClose">ปิด</button>
     </div>
   </dialog>
+  <dialog class="alert-dialog" id="hopperDialog" aria-labelledby="hopperDialogTitle">
+    <div class="alert-dialog-inner">
+      <div class="alert-dialog-icon info" id="hopperDialogIcon" aria-hidden="true"></div>
+      <h3 id="hopperDialogTitle">สถานะเงินทอนในเครื่อง</h3>
+      <p id="hopperDialogMeta"></p>
+      <p id="hopperDialogError"></p>
+      <table class="hopper-table" id="hopperDialogTable">
+        <thead>
+          <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="hopper-reasons" id="hopperDialogReasons"></p>
+    </div>
+    <div class="alert-dialog-actions">
+      <button type="button" class="btn-dialog-ok" id="hopperDialogOk">ปิด</button>
+    </div>
+  </dialog>
   <header>
     <div class="header-copy">
       <h1>
@@ -814,6 +861,10 @@
       <div class="muted">บิลเงินสด POS → เครื่อง Tiger Pay / QR KBank</div>
     </div>
     <div class="header-actions">
+      <button class="btn-hopper" id="hopperBtn" type="button" aria-label="สถานะเงินทอน" title="สถานะเงินทอน">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="16" cy="16" r="6"/></svg>
+        <span class="hopper-dot" id="hopperDot" hidden></span>
+      </button>
       <button class="btn-theme" id="themeBtn" type="button" aria-label="สลับธีม">ธีม</button>
       <button class="btn-refresh" id="refreshBtn" type="button">รีเฟรช</button>
     </div>
@@ -952,6 +1003,7 @@
       info: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
       sun: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`,
       moon: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`,
+      coins: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="16" cy="16" r="6"/></svg>`,
       inbox: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
     };
     const ACTIVE_STATUSES = new Set([
@@ -1909,6 +1961,85 @@
       });
     }
 
+    function hopperLevelClass(level) {
+      if (level === "red" || level === "orange" || level === "green") return level;
+      return "";
+    }
+
+    function applyHopperIcon(snapshot) {
+      const btn = document.getElementById("hopperBtn");
+      const dot = document.getElementById("hopperDot");
+      if (!btn) return;
+      const level = snapshot && snapshot.change_level;
+      btn.classList.remove("green", "orange", "red");
+      const klass = hopperLevelClass(level);
+      if (klass) btn.classList.add(klass);
+      if (dot) dot.hidden = !klass || klass === "green";
+      const ready = snapshot && snapshot.change_ready === false ? "ทอนไม่ได้" : (klass === "red" ? "เงินทอนใกล้หมด" : klass === "orange" ? "เงินทอนเริ่มน้อย" : "เงินทอนพร้อม");
+      btn.title = snapshot ? ready : "สถานะเงินทอน";
+      btn.setAttribute("aria-label", btn.title);
+    }
+
+    function renderHopperDialog(payload) {
+      const snapshot = payload && payload.snapshot;
+      const error = (payload && payload.error) || "";
+      const iconEl = document.getElementById("hopperDialogIcon");
+      const metaEl = document.getElementById("hopperDialogMeta");
+      const errorEl = document.getElementById("hopperDialogError");
+      const reasonsEl = document.getElementById("hopperDialogReasons");
+      const tbody = document.querySelector("#hopperDialogTable tbody");
+      const level = snapshot && snapshot.change_level;
+      iconEl.className = `alert-dialog-icon ${level === "red" ? "error" : level === "green" ? "success" : "info"}`;
+      iconEl.innerHTML = ICONS.coins;
+      if (!snapshot) {
+        metaEl.textContent = "ยังไม่มีภาพ hopper ที่บันทึกไว้";
+        errorEl.textContent = error || "";
+        tbody.innerHTML = "";
+        reasonsEl.textContent = "";
+        return;
+      }
+      const when = snapshot.captured_at ? new Date(snapshot.captured_at).toLocaleString("th-TH") : "—";
+      const ready = snapshot.change_ready === false ? "ทอนไม่ได้" : snapshot.change_ready === true ? "ทอนได้" : "ไม่ทราบ";
+      const live = payload.live ? "สดจากเครื่อง" : "จาก snapshot ล่าสุด";
+      metaEl.textContent = `${live} · ${when}\nสถานะทอน: ${ready}`;
+      errorEl.textContent = error || "";
+      const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+      tbody.innerHTML = items.map((item) => {
+        const kind = item.type === "Coin" ? "เหรียญ" : "ธนบัตร";
+        return `<tr><td>${escapeHtml(kind)}</td><td>${escapeHtml(String(item.value))}</td><td>${escapeHtml(String(item.amount))}</td></tr>`;
+      }).join("") || `<tr><td colspan="3">ไม่มีรายการ</td></tr>`;
+      const reasons = Array.isArray(snapshot.change_reasons) ? snapshot.change_reasons : [];
+      reasonsEl.textContent = reasons.join("\n");
+    }
+
+    async function refreshHopperIcon() {
+      try {
+        const data = await api("/companion/cash");
+        applyHopperIcon(data.snapshot);
+        return data;
+      } catch (err) {
+        applyHopperIcon(null);
+        return null;
+      }
+    }
+
+    async function openHopperDialog() {
+      const dialog = document.getElementById("hopperDialog");
+      renderHopperDialog({ snapshot: null, live: false, error: "กำลังอ่านเครื่อง…" });
+      dialog.showModal();
+      try {
+        const data = await api("/companion/cash?live=true");
+        applyHopperIcon(data.snapshot);
+        renderHopperDialog(data);
+      } catch (err) {
+        renderHopperDialog({
+          snapshot: null,
+          live: false,
+          error: err.message || "อ่านสถานะเงินทอนไม่สำเร็จ",
+        });
+      }
+    }
+
     function escapeHtml(text) {
       return String(text)
         .replaceAll("&", "&amp;")
@@ -1937,6 +2068,7 @@
         maybeNotifyStatusTransitions(state.bills);
         syncToolbar();
         renderBills();
+        refreshHopperIcon().catch(() => {});
         if (state.selectedAttemptId) {
           const selected = state.bills.find((b) => b.id === state.selectedBillId);
           await loadTimeline(state.selectedAttemptId, { payout: isPayoutBill(selected) });
@@ -1980,6 +2112,16 @@
         state.pollTimer = null;
       }
     }
+
+    document.getElementById("hopperBtn").onclick = () => {
+      openHopperDialog().catch(() => {});
+    };
+    document.getElementById("hopperDialogOk").onclick = () => {
+      document.getElementById("hopperDialog").close();
+    };
+    document.getElementById("hopperDialog").addEventListener("cancel", (event) => {
+      event.stopPropagation();
+    });
 
     document.getElementById("themeBtn").onclick = () => {
       applyTheme(state.theme === "light" ? "dark" : "light");

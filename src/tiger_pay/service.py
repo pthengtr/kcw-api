@@ -24,6 +24,7 @@ from src.tiger_pay.normalize import (
 )
 from src.tiger_pay.payload import sanitize_webhook_payload
 from src.tiger_pay.payment_service import reconcile_from_webhook_transaction
+from src.tiger_pay.cash_inventory import maybe_snapshot_after_webhook
 
 logger = logging.getLogger("kcw.tiger_pay")
 
@@ -164,6 +165,21 @@ def persist_accepted_webhook(
             request_id,
             transaction.get("tiger_payment_id"),
         )
+
+    if ingest_result is not None:
+        try:
+            maybe_snapshot_after_webhook(
+                transaction,
+                sanitized_payload,
+                duplicate=duplicate,
+            )
+        except Exception:
+            logger.exception(
+                "tiger_pay hopper snapshot after webhook failed request_id=%s "
+                "tiger_payment_id=%s",
+                request_id,
+                transaction.get("tiger_payment_id"),
+            )
 
     logger.info(
         "tiger_pay webhook persisted request_id=%s tiger_payment_id=%s payment_no=%s "

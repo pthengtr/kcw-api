@@ -16,6 +16,11 @@ from src.tiger_pay.payment_service import (
     recover_sending_attempts,
 )
 from src.tiger_pay import repos
+from src.tiger_pay.cash_inventory import (
+    capture_snapshot,
+    maybe_run_eod,
+    process_pending_commands,
+)
 from src.tiger_pay.status import is_active_status
 
 logger = logging.getLogger("kcw.tiger_pay.poller")
@@ -118,6 +123,11 @@ class PaymentStatusPoller:
             logger.exception("Tiger Pay startup recovery failed")
             self._failure_backoff_seconds = max(5.0, interval)
 
+        try:
+            await asyncio.to_thread(capture_snapshot, engine, trigger="startup")
+        except Exception:
+            logger.exception("Tiger Pay startup hopper snapshot failed")
+
         while not self._stop.is_set():
             try:
                 await self._poll_active_once(engine)
@@ -151,6 +161,14 @@ class PaymentStatusPoller:
                 await asyncio.to_thread(poll_attempt_once, engine, attempt)
         await asyncio.to_thread(recover_sending_attempts, engine)
         await asyncio.to_thread(self._warn_if_webhooks_stale, engine)
+        try:
+            await asyncio.to_thread(process_pending_commands, engine)
+        except Exception:
+            logger.exception("Tiger Pay cash_command processing failed")
+        try:
+            await asyncio.to_thread(maybe_run_eod, engine)
+        except Exception:
+            logger.exception("Tiger Pay EOD hopper close failed")
 
     def _webhook_quiet_for_device_poll(self, engine) -> bool:
         settings = get_tiger_pay_settings()
