@@ -18,6 +18,7 @@ from src.tiger_pay.open_api import TigerPayOpenApiClient, TigerPayOpenApiError, 
 from src.tiger_pay.payload import omit_qr_images
 from src.tiger_pay.qr import (
     companion_qr_from_attempt,
+    dynamic_qr_is_paid,
     extract_companion_qr,
     has_displayable_qr,
     merge_qr_payload_into_payment,
@@ -782,6 +783,36 @@ def _ensure_qr_on_create(
     return updated
 
 
+def _confirm_mismatch_already_paid(payment: dict[str, Any] | None) -> bool:
+    """True when Tiger rejected confirm because the QR was already settled.
+
+    Race: webhook flips payment to success while we still PUT /confirm on a
+    pending snapshot. Tiger returns 400 \"status does not match\" and may even
+    emit a late fail webhook — but dynamicQR is already paid (C) and totalPay
+    covers the amount.
+    """
+    if not isinstance(payment, dict):
+        return False
+    status = normalize_status(str(payment.get("status") or ""))
+    if status == "success":
+        return True
+    remark = str(payment.get("remark") or "").lower()
+    if "does not match the expected value" not in remark:
+        return False
+    qr = payment.get("dynamicQR") if isinstance(payment.get("dynamicQR"), dict) else None
+    if not dynamic_qr_is_paid(qr):
+        return False
+    return status in {"failed", "pending", "unknown"}
+
+
+def _payment_as_success(payment: dict[str, Any]) -> dict[str, Any]:
+    fixed = dict(payment)
+    fixed["status"] = "success"
+    if fixed.get("remark") and "does not match the expected value" in str(fixed["remark"]).lower():
+        fixed["remark"] = None
+    return fixed
+
+
 def _confirm_qr_if_paid(
     engine: Engine,
     *,
@@ -808,6 +839,57 @@ def _confirm_qr_if_paid(
     try:
         confirm_result = client.confirm_payment(tiger_payment_id)
     except TigerPayOpenApiError as exc:
+        refreshed: dict[str, Any] | None
+        try:
+            got = client.get_payment(tiger_payment_id)
+            refreshed = got if isinstance(got, dict) else None
+        except TigerPayOpenApiError:
+            refreshed = None
+
+        if _confirm_mismatch_already_paid(refreshed):
+            logger.info(
+                "QR confirm race recovered attempt_id=%s tiger_payment_id=%s "
+                "confirm_error=%s refreshed_status=%s",
+                attempt_id,
+                tiger_payment_id,
+                exc.message,
+                refreshed.get("status") if refreshed else None,
+            )
+            repos.insert_payment_event(
+                engine,
+                payment_attempt_id=attempt_id,
+                source="api",
+                status="success",
+                payload={
+                    "action": "confirm_race_recovered",
+                    "error": exc.message,
+                    "status_code": exc.status_code,
+                    "confirm_payload": omit_qr_images(exc.payload),
+                    "payment": omit_qr_images(refreshed),
+                },
+                event_key=f"api:confirm_race_recovered:{attempt_id}",
+            )
+            repos.update_payment_attempt(
+                engine,
+                attempt_id,
+                clear_error=True,
+                touch_last_polled=True,
+            )
+            assert refreshed is not None
+            recovered = _payment_as_success(refreshed)
+            try:
+                repos.force_payment_transaction_success(
+                    engine,
+                    int(tiger_payment_id),
+                    payment=recovered,
+                )
+            except Exception:
+                logger.exception(
+                    "QR confirm race tx repair failed tiger_payment_id=%s",
+                    tiger_payment_id,
+                )
+            return recovered
+
         logger.warning(
             "QR confirm failed attempt_id=%s tiger_payment_id=%s error=%s",
             attempt_id,
@@ -824,6 +906,7 @@ def _confirm_qr_if_paid(
                 "error": exc.message,
                 "status_code": exc.status_code,
                 "payload": omit_qr_images(exc.payload),
+                "refreshed_payment": omit_qr_images(refreshed) if refreshed else None,
             },
             event_key=f"api:confirm_failed:{attempt_id}:{exc.status_code}",
         )
