@@ -2104,9 +2104,10 @@
     function maybeStartPolling() {
       const anyActive = state.bills.some((b) => b.payment_attempt_active);
       if (anyActive && !state.pollTimer) {
+        // 3s is enough for till UX; tighter polling stacked slow Tiger voucher shows.
         state.pollTimer = setInterval(async () => {
           try { await loadBills(); } catch (err) { setMessage(err.message || String(err)); }
-        }, 1500);
+        }, 3000);
       } else if (!anyActive && state.pollTimer) {
         clearInterval(state.pollTimer);
         state.pollTimer = null;

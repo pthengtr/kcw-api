@@ -93,12 +93,37 @@ def companion_voucher_from_attempt(attempt: dict[str, Any] | None) -> dict[str, 
     }
 
 
+def _voucher_polled_recently(
+    attempt: dict[str, Any],
+    *,
+    max_age_seconds: float = 8.0,
+) -> bool:
+    """True when last_polled_at is within max_age (skip redundant cloud show)."""
+    raw = attempt.get("last_polled_at")
+    if raw is None:
+        return False
+    try:
+        if hasattr(raw, "timestamp"):
+            polled_ts = float(raw.timestamp())
+        else:
+            text = str(raw).strip().replace("Z", "+00:00")
+            from datetime import datetime
+
+            polled_ts = datetime.fromisoformat(text).timestamp()
+    except Exception:
+        return False
+    return (time.time() - polled_ts) < max_age_seconds
+
+
 def get_voucher_attempt_detail(engine: Engine, attempt_id: str) -> dict[str, Any]:
     attempt = voucher_repos.get_voucher_attempt(engine, attempt_id)
     if not attempt:
         raise VoucherServiceError("Voucher attempt not found", code="not_found")
     if voucher_repos.is_voucher_active_status(str(attempt.get("status"))):
-        attempt = refresh_voucher_attempt(engine, attempt_id) or attempt
+        # Companion polls timeline every ~1.5s; Tiger cloud show is multi-second.
+        # Reuse a recent poll (from list refresh or a prior detail) instead.
+        if not _voucher_polled_recently(attempt):
+            attempt = refresh_voucher_attempt(engine, attempt_id) or attempt
     events = voucher_repos.list_voucher_events(engine, attempt_id)
     return {
         "attempt": _public_attempt(attempt),
@@ -344,15 +369,109 @@ def refresh_voucher_attempt(
     return updated or attempt
 
 
-_VOUCHER_REFRESH_MIN_INTERVAL_SECONDS = 1.5
+# Tiger voucher cloud show/login is often multi-second; keep list/poll paths
+# from stacking overlapping refreshes (UI polls when anything is active).
+_VOUCHER_REFRESH_MIN_INTERVAL_SECONDS = 15.0
 _refresh_lock = threading.Lock()
 _last_refresh_mono = 0.0
+_refresh_in_progress = False
+# Shared across uvicorn workers so concurrent tills don't each login+show.
+_CROSS_PROCESS_GATE_PATH = "/tmp/kcw-tiger-voucher-refresh.gate"
 
 
 def reset_voucher_refresh_gate_for_tests() -> None:
-    global _last_refresh_mono
+    global _last_refresh_mono, _refresh_in_progress
     with _refresh_lock:
         _last_refresh_mono = 0.0
+        _refresh_in_progress = False
+    try:
+        import os
+
+        os.unlink(_CROSS_PROCESS_GATE_PATH)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.debug("Could not clear voucher refresh gate file", exc_info=True)
+
+
+def _try_acquire_cross_process_gate(interval: float) -> object | None:
+    """Non-blocking flock + mtime throttle shared by all workers.
+
+    Returns an open file object holding LOCK_EX, or None if another worker
+    owns the refresh / interval has not elapsed.
+    """
+    import fcntl
+    import os
+
+    try:
+        fd = open(_CROSS_PROCESS_GATE_PATH, "a+", encoding="utf-8")
+    except OSError:
+        logger.debug("voucher refresh gate file unavailable", exc_info=True)
+        return object()  # sentinel: proceed with in-process gate only
+
+    try:
+        fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fd.close()
+        return None
+    except OSError:
+        fd.close()
+        return object()
+
+    try:
+        fd.seek(0)
+        raw = (fd.read() or "").strip()
+        last = float(raw) if raw else 0.0
+    except ValueError:
+        last = 0.0
+    now = time.time()
+    if interval > 0 and last > 0 and (now - last) < interval:
+        try:
+            fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
+        finally:
+            fd.close()
+        return None
+    try:
+        fd.seek(0)
+        fd.truncate()
+        fd.write(f"{now:.3f}\n")
+        fd.flush()
+        os.fsync(fd.fileno())
+    except OSError:
+        logger.debug("voucher refresh gate write failed", exc_info=True)
+    return fd
+
+
+def _release_cross_process_gate(handle: object | None) -> None:
+    if handle is None or type(handle) is object:
+        return
+    import fcntl
+
+    fd = handle  # open file
+    try:
+        fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        fd.close()
+    except OSError:
+        pass
+
+
+def schedule_refresh_active_vouchers(engine: Engine) -> None:
+    """Kick off a throttled voucher show-poll without blocking the caller."""
+
+    def _run() -> None:
+        try:
+            refresh_active_vouchers(engine)
+        except Exception:
+            logger.exception("Background active-voucher refresh failed")
+
+    threading.Thread(
+        target=_run,
+        daemon=True,
+        name="tiger-voucher-refresh",
+    ).start()
 
 
 def refresh_active_vouchers(
@@ -360,24 +479,48 @@ def refresh_active_vouchers(
     *,
     min_interval_seconds: float | None = None,
 ) -> None:
-    """Show-poll active CN vouchers, at most once per interval across callers."""
-    global _last_refresh_mono
+    """Show-poll active CN vouchers, at most once per interval across callers.
+
+    Overlapping calls are skipped while a refresh is already running so slow
+    Tiger cloud responses cannot pile up behind companion bill polling.
+    """
+    global _last_refresh_mono, _refresh_in_progress
     interval = (
         _VOUCHER_REFRESH_MIN_INTERVAL_SECONDS
         if min_interval_seconds is None
         else float(min_interval_seconds)
     )
+    cross_handle: object | None = None
     with _refresh_lock:
         now = time.monotonic()
+        if _refresh_in_progress:
+            return
         if interval > 0 and (now - _last_refresh_mono) < interval:
             return
+        cross_handle = _try_acquire_cross_process_gate(interval)
+        if cross_handle is None:
+            return
+        _refresh_in_progress = True
         _last_refresh_mono = now
+    try:
         attempts = voucher_repos.list_active_voucher_attempts(engine)
-    for attempt in attempts:
-        try:
-            refresh_voucher_attempt(engine, str(attempt["id"]))
-        except Exception:
-            logger.exception("Failed refreshing voucher attempt %s", attempt.get("id"))
+        # Reuse one HTTP client/token for the whole batch (login alone can be seconds).
+        client = get_voucher_api_client()
+        for attempt in attempts:
+            try:
+                refresh_voucher_attempt(
+                    engine,
+                    str(attempt["id"]),
+                    voucher_api=client,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed refreshing voucher attempt %s", attempt.get("id")
+                )
+    finally:
+        _release_cross_process_gate(cross_handle)
+        with _refresh_lock:
+            _refresh_in_progress = False
 
 
 def cancel_voucher_attempt(

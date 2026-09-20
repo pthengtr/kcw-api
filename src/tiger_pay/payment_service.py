@@ -27,7 +27,10 @@ from src.tiger_pay.qr import (
 from src.tiger_pay.status import can_replace_status, is_active_status, normalize_status
 from src.tiger_pay.submitter import normalize_submitter, submitter_payload
 from src.tiger_pay.voucher_repos import is_voucher_active_status
-from src.tiger_pay.voucher_service import companion_voucher_from_attempt, refresh_active_vouchers
+from src.tiger_pay.voucher_service import (
+    companion_voucher_from_attempt,
+    schedule_refresh_active_vouchers,
+)
 
 logger = logging.getLogger("kcw.tiger_pay.payment_service")
 
@@ -145,11 +148,13 @@ def list_bills_with_payment_status(
     mode: str | None = None,
     limit: int | str | None = None,
 ) -> list[dict[str, Any]]:
-    # Refresh pending CN vouchers so bill rows show used/cancelled promptly.
+    # Refresh pending CN vouchers in the background. Tiger cloud show/login is
+    # often multi-second; blocking here made /companion/bills feel stuck while
+    # the UI polls every ~1.5s with an active attempt.
     try:
-        refresh_active_vouchers(engine)
+        schedule_refresh_active_vouchers(engine)
     except Exception:
-        logger.exception("Failed refreshing active vouchers before bill list")
+        logger.exception("Failed scheduling active voucher refresh before bill list")
 
     collect_bills = list_open_bills(mode=mode, limit=limit)
     payout_bills = list_cn_bills(mode=mode, limit=limit)
