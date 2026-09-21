@@ -1,5 +1,12 @@
 ACTIVE_STATUSES = frozenset(
-    {"sending", "pending", "paying", "changing", "cancelling"}
+    {
+        "sending",
+        "pending",
+        "pendingapproval",
+        "paying",
+        "changing",
+        "cancelling",
+    }
 )
 TERMINAL_STATUSES = frozenset({"success", "cancelled", "failed"})
 KNOWN_STATUSES = frozenset(
@@ -7,6 +14,7 @@ KNOWN_STATUSES = frozenset(
         "ready",
         "sending",
         "pending",
+        "pendingapproval",
         "paying",
         "changing",
         "cancelling",
@@ -27,6 +35,9 @@ _RAW_STATUS_ALIASES = {
     "error": "failed",
     # Device uses "change" while dispensing overpayment change; keep polling.
     "change": "changing",
+    # QR / bank waiting on operator or gateway approval (not a failure).
+    "pending_approval": "pendingapproval",
+    "pending-approval": "pendingapproval",
 }
 
 

@@ -802,7 +802,7 @@ def _confirm_mismatch_already_paid(payment: dict[str, Any] | None) -> bool:
     qr = payment.get("dynamicQR") if isinstance(payment.get("dynamicQR"), dict) else None
     if not dynamic_qr_is_paid(qr):
         return False
-    return status in {"failed", "pending", "unknown"}
+    return status in {"failed", "pending", "pendingapproval", "unknown"}
 
 
 def _payment_as_success(payment: dict[str, Any]) -> dict[str, Any]:

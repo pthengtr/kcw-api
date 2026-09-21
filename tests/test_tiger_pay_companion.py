@@ -46,6 +46,9 @@ def test_normalize_status_aliases_and_unknown():
     assert normalize_status("canceled") == "cancelled"
     assert normalize_status("change") == "changing"
     assert is_active_status(normalize_status("change"))
+    assert normalize_status("pendingapproval") == "pendingapproval"
+    assert normalize_status("pending_approval") == "pendingapproval"
+    assert is_active_status(normalize_status("pendingapproval"))
     assert normalize_status("nope") == "unknown"
     assert is_active_status("paying")
     assert is_terminal_status("success")
