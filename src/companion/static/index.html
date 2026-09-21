@@ -330,6 +330,7 @@
     }
     .btn-send { background: var(--accent); color: var(--on-accent); }
     .btn-qr { background: var(--request); color: #f4f8fc; }
+    .btn-force { background: var(--ok-bg); color: var(--ok-fg); }
     .btn-cancel { background: var(--danger); color: var(--btn-cancel-text); }
     .btn-refresh, .btn-theme { background: var(--btn-secondary); color: var(--text); min-width: var(--touch); }
     .btn-hopper {
@@ -467,6 +468,10 @@
     }
     .bill-card-actions:has(> button:nth-child(3)) .btn-cancel {
       grid-column: 1 / -1;
+    }
+    .bill-card-actions:has(> button:nth-child(4)) .btn-cancel,
+    .bill-card-actions:has(> button:nth-child(4)) .btn-force {
+      grid-column: auto;
     }
     .btn-text-short { display: none; }
     @media (min-width: 420px) {
@@ -1139,9 +1144,10 @@
       bills: [],
       selectedBillId: null,
       selectedAttemptId: null,
-      actionInFlight: null, // { type: 'send'|'cancel', billId, attemptId, paymentType }
+      actionInFlight: null, // { type: 'send'|'cancel'|'force', billId, attemptId, paymentType }
       pollTimer: null,
       refreshing: false,
+      canForceComplete: false,
       mode: prefs.mode,
       limit: prefs.limit,
       theme: prefs.theme,
@@ -1332,9 +1338,14 @@
       return state.actionInFlight?.type === "cancel" && state.actionInFlight.attemptId === attemptId;
     }
 
+    function isForceLoading(attemptId) {
+      return state.actionInFlight?.type === "force" && state.actionInFlight.attemptId === attemptId;
+    }
+
     function busyLabel(kind) {
       const map = {
         cancel: { full: "กำลังยกเลิก…", short: "ยกเลิก…" },
+        force: { full: "กำลังตั้งสำเร็จ…", short: "สำเร็จ…" },
         cash: { full: "กำลังส่ง…", short: "ส่ง…" },
         qr: { full: "กำลังส่ง QR…", short: "QR…" },
         voucher: { full: "กำลังสร้าง…", short: "สร้าง…" },
@@ -1734,9 +1745,23 @@
         : (sendDisabled || qrLoading);
       const cashBusyAttr = cashLoading ? ` class="btn-send btn-busy" aria-busy="true"` : ` class="btn-send"`;
       const qrBusyAttr = qrLoading ? ` class="btn-qr btn-busy" aria-busy="true"` : ` class="btn-qr"`;
+      const showForce = state.canForceComplete
+        && bill.payment_attempt_active
+        && bill.payment_attempt_id
+        && bill.tiger_payment_status === "pendingapproval";
+      const forceLoading = isForceLoading(bill.payment_attempt_id);
+      const forceDisabled = !showForce || actionBlocked(forceLoading) || forceLoading;
+      const forceLabel = forceLoading
+        ? busyLabel("force")
+        : `${ICONS.check}<span class="btn-text-full"> ตั้งเป็นสำเร็จ</span><span class="btn-text-short"> สำเร็จ</span>`;
+      const forceBusyAttr = forceLoading ? ` class="btn-force btn-busy" aria-busy="true"` : ` class="btn-force"`;
+      const forceBtn = showForce
+        ? `<button${forceBusyAttr} type="button" data-action="force-success" data-attempt="${bill.payment_attempt_id || ""}" ${forceDisabled ? "disabled" : ""}>${forceLabel}</button>`
+        : "";
       return `
         <button${cashBusyAttr} type="button" data-action="send-cash" data-id="${bill.id}" ${cashDisabled ? "disabled" : ""}>${cashLabel}</button>
         <button${qrBusyAttr} type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
+        ${forceBtn}
         <button${cancelBusyAttr} type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
       `;
     }
@@ -1820,6 +1845,25 @@
                   message: `ส่งบิล ${bill.bill_number} ไปยังเครื่อง Tiger Pay แล้ว\nรอลูกค้าชำระที่เครื่อง`,
                 });
               }
+            } else if (action === "force-success") {
+              const attemptId = btn.getAttribute("data-attempt");
+              if (!attemptId) return;
+              const ok = window.confirm(
+                `ตั้งบิล ${bill.bill_number} เป็นสำเร็จ?\n\n`
+                + "ถ้า QR ยังไม่จ่าย ระบบจะบันทึกยอดจากบิล POS และอาจยืนยันที่ตู้เพื่อเคลียร์เครื่อง"
+              );
+              if (!ok) return;
+              state.actionInFlight = { type: "force", billId: bill.id, attemptId };
+              renderBills();
+              setMessage("กำลังตั้งเป็นสำเร็จ...");
+              await api(`/companion/payments/${attemptId}/force-success`, { method: "POST" });
+              state.selectedAttemptId = attemptId;
+              closeQrDialog();
+              showAlertDialog({
+                type: "success",
+                title: "ตั้งเป็นสำเร็จแล้ว",
+                message: `บิล ${bill.bill_number} ถูกตั้งเป็นสำเร็จแล้ว`,
+              });
             } else if (action === "cancel") {
               const attemptId = btn.getAttribute("data-attempt");
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
@@ -2229,9 +2273,20 @@
       }
     };
 
+    async function loadSession() {
+      try {
+        const me = await api("/companion/me");
+        state.canForceComplete = !!me.can_force_complete;
+      } catch (_) {
+        state.canForceComplete = false;
+      }
+    }
+
     applyTheme(state.theme);
     syncToolbar();
-    loadBills({ showRefresh: true }).catch((err) => setMessage(err.message || String(err)));
+    loadSession()
+      .then(() => loadBills({ showRefresh: true }))
+      .catch((err) => setMessage(err.message || String(err)));
   </script>
 </body>
 </html>
