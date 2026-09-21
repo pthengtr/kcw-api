@@ -64,7 +64,11 @@ Everyday **Take N** batch uses weighted ABC + risk pools (see below).
 2. Variance 0 → auto complete + audit mirror  
 3. Variance ≠ 0 → pending draft → **another operator** audits and posts SA/3SA (maker-checker: creator cannot approve own draft; owner can edit pending count)  
 4. Auditor **ปฏิเสธ** must enter a reason. The same draft returns to the original checker as **รอตรวจสอบใหม่** (`recheck`). They open the original item, recount, then **ส่งอนุมัติใหม่**. History stores who rejected, the reason, and when (`draft_rejections`). Owner **ยกเลิก** still withdraws the draft.  
-5. If system qty changes between count and audit, drift review shows intervening bills + current stock; auditor can still approve using `counted − live`  
+5. If system qty changes between count and audit, drift review shows intervening **sale / purchase / transfer** bills + current stock.  
+   - Bills that fully explain the change → approve may complete as `drift_matched` (no SA when count already equals live).  
+   - **Unexplained** change (no matching bills) → auditor must tick an explicit confirm; result is `completed_unexplained` / outcome `unexplained_drift` (keeps original system qty + variance; **not** marked correct).
+   - To attribute future OH changes on HQ: KSS `dbo.ICMAS_QTYOH2_AUDIT` (see kcw-docs `ops/icmas-qtyoh2-audit.md`).  
+   - Remaining variance vs live still posts SA/3SA as usual after confirm.  
 6. **จบงาน** releases unfinished leases immediately  
 7. Form submits show a full-screen busy spinner (blocks double-click)
 
