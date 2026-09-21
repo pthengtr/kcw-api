@@ -62,7 +62,7 @@ List endpoints put rows under `data.items` plus `page`, `limit`, `resultRows`. E
 | `category`, `tag`, `promptPay`, `drop` | Optional / often null in samples |
 | `createdAt`, `updatedAt` | Timestamps |
 
-**Statuses observed:** `pending`, `success`, `fail` (plus cancel flows via Cancel endpoint).
+**Statuses observed:** `pending`, `pendingapproval` (QR/bank awaiting approval), `success`, `fail` (plus cancel flows via Cancel endpoint). KCW keeps `pendingapproval` as an active companion status (not `unknown`).
 
 **QR sub-status (`dynamicQR.status`):** `I` (issued / waiting), `C` (completed / paid).
 
