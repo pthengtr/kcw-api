@@ -117,6 +117,7 @@ class TigerPayOpenApiClient:
         *,
         json_body: dict[str, Any] | None = None,
         include_digest: bool = False,
+        _rediscover_attempted: bool = False,
     ) -> tuple[int, Any]:
         client_id, client_secret, api_host = _require_open_api_credentials(self.settings)
         url = f"{api_host}{path.lstrip('/')}"
@@ -144,12 +145,28 @@ class TigerPayOpenApiClient:
                 headers=headers,
             )
         except httpx.TimeoutException as exc:
+            if self._try_rediscover_after_connect_failure(_rediscover_attempted):
+                return self._request(
+                    method,
+                    path,
+                    json_body=json_body,
+                    include_digest=include_digest,
+                    _rediscover_attempted=True,
+                )
             raise TigerPayOpenApiError(
                 "Tiger Pay request timed out",
                 payload={"url": url, "method": method},
                 no_response=True,
             ) from exc
         except httpx.RequestError as exc:
+            if self._try_rediscover_after_connect_failure(_rediscover_attempted):
+                return self._request(
+                    method,
+                    path,
+                    json_body=json_body,
+                    include_digest=include_digest,
+                    _rediscover_attempted=True,
+                )
             raise TigerPayOpenApiError(
                 f"Tiger Pay request failed: {exc}",
                 payload={"url": url, "method": method},
@@ -162,6 +179,19 @@ class TigerPayOpenApiClient:
             payload = {"raw": response.text}
 
         return response.status_code, payload
+
+    def _try_rediscover_after_connect_failure(self, already_attempted: bool) -> bool:
+        if already_attempted:
+            return False
+        if not (self.settings.tiger_pay_cashbox_mac or "").strip():
+            return False
+        from src.tiger_pay.cashbox_discovery import maybe_rediscover_cashbox_api_host
+
+        new_host = maybe_rediscover_cashbox_api_host(settings=self.settings)
+        if not new_host:
+            return False
+        self.settings = get_tiger_pay_settings()
+        return True
 
     def get_current(self) -> dict[str, Any] | None:
         status_code, payload = self._request("GET", "api/open/v2/payment/current")

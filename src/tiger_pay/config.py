@@ -1,9 +1,13 @@
+import os
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from src.tiger_pay.env_file import upsert_env_key
+from src.tiger_pay.mac_addr import normalize_mac
 
 DEFAULT_PAYMENT_ID_EPOCH = "2026-09-01"
 
@@ -30,6 +34,14 @@ class TigerPaySettings(BaseSettings):
     tiger_pay_api_host: str = Field(
         default="",
         validation_alias="TIGER_PAY_API_HOST",
+    )
+    tiger_pay_cashbox_mac: str = Field(
+        default="",
+        validation_alias="TIGER_PAY_CASHBOX_MAC",
+    )
+    tiger_pay_cashbox_rediscover_cooldown_seconds: float = Field(
+        default=60.0,
+        validation_alias="TIGER_PAY_CASHBOX_REDISCOVER_COOLDOWN_SECONDS",
     )
     tiger_pay_poll_interval_seconds: float = Field(
         default=1.5,
@@ -161,6 +173,7 @@ class TigerPaySettings(BaseSettings):
     @field_validator(
         "tiger_pay_client_id",
         "tiger_pay_api_host",
+        "tiger_pay_cashbox_mac",
         "tiger_voucher_api_host",
         "tiger_voucher_username",
         "tiger_voucher_password",
@@ -171,6 +184,21 @@ class TigerPaySettings(BaseSettings):
     @classmethod
     def strip_optional(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("tiger_pay_cashbox_mac")
+    @classmethod
+    def cashbox_mac_format(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            return ""
+        return normalize_mac(text)
+
+    @field_validator("tiger_pay_cashbox_rediscover_cooldown_seconds")
+    @classmethod
+    def non_negative_rediscover_cooldown(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("must not be negative")
+        return value
 
     @field_validator("tiger_voucher_expire_hours")
     @classmethod
@@ -238,3 +266,25 @@ def parse_payment_id_epoch(value: str) -> datetime:
 @lru_cache
 def get_tiger_pay_settings() -> TigerPaySettings:
     return TigerPaySettings()
+
+
+def clear_tiger_pay_settings_cache() -> None:
+    get_tiger_pay_settings.cache_clear()
+
+
+def persist_tiger_pay_api_host(api_host: str, *, env_file: Path | None = None) -> str:
+    """
+    Update process env + ``.env`` so a DHCP IP change sticks across workers/restarts.
+
+    Systemd loads ``EnvironmentFile`` once at start, so ``os.environ`` must be
+    updated for the current process; writing ``.env`` covers later restarts.
+    """
+    host = (api_host or "").strip()
+    if not host:
+        raise ValueError("TIGER_PAY_API_HOST must not be empty")
+    if not host.endswith("/"):
+        host = f"{host}/"
+    os.environ["TIGER_PAY_API_HOST"] = host
+    upsert_env_key(env_file or ENV_FILE, "TIGER_PAY_API_HOST", host)
+    clear_tiger_pay_settings_cache()
+    return host

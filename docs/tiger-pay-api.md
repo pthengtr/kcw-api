@@ -278,6 +278,8 @@ CN / cash-return bill selection: any cashed row with negative `AFTERTAX` (includ
 | Variable | Used for |
 | --- | --- |
 | `TIGER_PAY_API_HOST` | Open API host |
+| `TIGER_PAY_CASHBOX_MAC` | Optional cashbox MAC; on connect failure, LAN ARP scan updates `TIGER_PAY_API_HOST` |
+| `TIGER_PAY_CASHBOX_REDISCOVER_COOLDOWN_SECONDS` | Min seconds between rediscovery attempts (default `60`) |
 | `TIGER_PAY_CLIENT_ID` | Open API JWT `clientId` |
 | `TIGER_PAY_CLIENT_SECRET` | Open API JWT secret (+ webhook auth) |
 | `TIGER_PAY_POLL_INTERVAL_SECONDS` | Companion poller |
