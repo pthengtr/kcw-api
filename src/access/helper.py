@@ -33,6 +33,33 @@ def get_line_user_id(event: dict) -> str:
     return (source.get("userId") or "").strip()
 
 
+def get_line_access(engine, line_user_id: str) -> dict | None:
+    """Read-only lookup of ops.line_access. Does not create guest rows."""
+    uid = (line_user_id or "").strip()
+    if not uid:
+        return None
+
+    with engine.connect() as conn:
+        row = conn.exec_driver_sql(
+            """
+            select line_user_id, access_group, is_allowed, display_name
+            from ops.line_access
+            where line_user_id = %s
+            """,
+            (uid,),
+        ).fetchone()
+
+    if not row:
+        return None
+    return {
+        "line_user_id": row[0],
+        "access_group": row[1],
+        "is_allowed": row[2],
+        "display_name": row[3],
+        "is_new": False,
+    }
+
+
 def get_or_create_line_access(engine, line_user_id: str) -> dict:
     if not line_user_id:
         return {
@@ -42,26 +69,11 @@ def get_or_create_line_access(engine, line_user_id: str) -> dict:
             "is_new": False,
         }
 
+    existing = get_line_access(engine, line_user_id)
+    if existing:
+        return existing
+
     with engine.begin() as conn:
-
-        row = conn.exec_driver_sql(
-            """
-            select line_user_id, access_group, is_allowed, display_name
-            from ops.line_access
-            where line_user_id = %s
-            """,
-            (line_user_id,),
-        ).fetchone()
-
-        if row:
-            return {
-                "line_user_id": row[0],
-                "access_group": row[1],
-                "is_allowed": row[2],
-                "display_name": row[3],
-                "is_new": False,
-            }
-
         # ⭐ fetch display name from LINE
         display_name = fetch_line_display_name(line_user_id)
 

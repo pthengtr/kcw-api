@@ -249,6 +249,251 @@ def get_attempt_detail(engine: Engine, attempt_id: str) -> dict[str, Any]:
     }
 
 
+def _attempt_amount(attempt: dict[str, Any]) -> float:
+    try:
+        return float(attempt.get("amount") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _write_manual_success_records(
+    engine: Engine,
+    *,
+    attempt: dict[str, Any],
+    payment: dict[str, Any] | None,
+    actor_id: str | None,
+    actor_name: str | None,
+    branch: str,
+    remark: str,
+) -> dict[str, Any]:
+    """Mark attempt + transaction success with POS amount as total_pay."""
+    attempt_id = str(attempt["id"])
+    amount = _attempt_amount(attempt)
+    tiger_payment_id = attempt.get("tiger_payment_id")
+    if tiger_payment_id is None and isinstance(payment, dict):
+        tiger_payment_id = payment.get("id")
+    try:
+        tiger_payment_id_int = int(tiger_payment_id) if tiger_payment_id is not None else None
+    except (TypeError, ValueError):
+        tiger_payment_id_int = None
+
+    payment_no = None
+    payment_type = payment_type_from_attempt(attempt)
+    if isinstance(payment, dict):
+        payment_no = payment.get("paymentNo") or payment.get("payment_no")
+        payment_type = str(
+            payment.get("type") or payment.get("payment_type") or payment_type or "qr"
+        ).strip().lower()
+    payment_no = payment_no or attempt.get("tiger_payment_no")
+
+    tiger_total = None
+    if isinstance(payment, dict):
+        try:
+            tiger_total = float(payment.get("totalPay"))
+        except (TypeError, ValueError):
+            tiger_total = None
+    total_pay = tiger_total if tiger_total is not None and tiger_total > 0 else amount
+
+    actor = submitter_payload(submitted_by=actor_id, submitted_by_name=actor_name)
+    updated = apply_status_update(
+        engine,
+        attempt_id=attempt_id,
+        raw_status="success",
+        source="manual",
+        payload={
+            "action": "manual_force_success",
+            "branch": branch,
+            "remark": remark,
+            "payment": omit_qr_images(payment) if payment else None,
+            **actor,
+        },
+        event_key=f"manual:force_success:{attempt_id}:{branch}",
+        tiger_payment_id=tiger_payment_id_int,
+        tiger_payment_no=str(payment_no) if payment_no is not None else None,
+    )
+
+    if tiger_payment_id_int is not None:
+        settings = get_tiger_pay_settings()
+        repos.ensure_payment_transaction_success(
+            engine,
+            tiger_payment_id_int,
+            amount=amount,
+            total_pay=total_pay,
+            payment_no=str(payment_no) if payment_no else None,
+            payment_type=payment_type or "qr",
+            payment=omit_qr_images(payment) if isinstance(payment, dict) else None,
+            remark=remark,
+            manual_meta={
+                "action": "manual_force_success",
+                "branch": branch,
+                "attempt_id": attempt_id,
+                **actor,
+            },
+            shop_code=settings.tiger_pay_default_shop_code or None,
+            ref_no_1=attempt.get("pos_bill_number"),
+            ref_no_2=attempt_id,
+        )
+
+    return updated or repos.get_payment_attempt(engine, attempt_id) or attempt
+
+
+def force_complete_payment_attempt(
+    engine: Engine,
+    attempt_id: str,
+    *,
+    actor_id: str | None = None,
+    actor_name: str | None = None,
+    clear_device: bool = True,
+    open_api: TigerPayOpenApiClient | None = None,
+) -> dict[str, Any]:
+    """Admin force: pendingapproval → success with correct report totals.
+
+    Branch A (QR paid / totalPay covers amount): confirm on Tiger, reconcile,
+    then ensure total_pay is positive.
+
+    Branch B (unpaid / stuck): local success using POS attempt amount as
+    total_pay; optionally confirm afterward only to clear the cashbox.
+    """
+    actor_id, actor_name = normalize_submitter(
+        line_user_id=actor_id,
+        display_name=actor_name,
+    )
+    attempt = repos.get_payment_attempt(engine, attempt_id)
+    if not attempt:
+        raise PaymentServiceError("Payment attempt not found", code="not_found")
+
+    current = normalize_status(str(attempt.get("status") or ""))
+    if current != "pendingapproval":
+        raise PaymentServiceError(
+            "Only pendingapproval payments can be force-completed",
+            code="not_pendingapproval",
+            details={"status": current},
+        )
+
+    tiger_payment_id = attempt.get("tiger_payment_id")
+    client = open_api or get_open_api_client()
+    payment: dict[str, Any] | None = None
+    if tiger_payment_id is not None:
+        try:
+            got = client.get_payment(tiger_payment_id)
+            payment = got if isinstance(got, dict) else None
+        except TigerPayOpenApiError as exc:
+            logger.warning(
+                "Force-complete get_payment failed attempt_id=%s tiger_payment_id=%s error=%s",
+                attempt_id,
+                tiger_payment_id,
+                exc.message,
+            )
+
+    paid_path = should_confirm_qr_payment(payment) if payment else False
+    confirm_error: str | None = None
+    branch = "paid_confirm" if paid_path else "unpaid_local"
+
+    if paid_path and tiger_payment_id is not None:
+        try:
+            confirmed = _confirm_qr_if_paid(
+                engine,
+                attempt=attempt,
+                payment=payment or {},
+                client=client,
+            )
+            if isinstance(confirmed, dict):
+                payment = confirmed
+            reconcile_from_tiger_payment(
+                engine,
+                payment or {},
+                source="manual",
+                event_key=f"manual:force_confirm:{attempt_id}",
+                touch_last_polled=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "Force-complete paid confirm failed attempt_id=%s", attempt_id
+            )
+            confirm_error = str(exc)
+            branch = "unpaid_local"
+
+    # Always ensure local success + correct totals (covers unpaid and paid
+    # confirm that left totalPay=0).
+    remark = (
+        "admin force success (QR paid; totals from Tiger/POS)"
+        if branch == "paid_confirm"
+        else "admin force success (pendingapproval unpaid/stuck; total_pay from POS)"
+    )
+    updated = _write_manual_success_records(
+        engine,
+        attempt=repos.get_payment_attempt(engine, attempt_id) or attempt,
+        payment=payment,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        branch=branch,
+        remark=remark,
+    )
+
+    # Unpaid path: optional confirm to clear device — ignore zero totals.
+    if branch == "unpaid_local" and clear_device and tiger_payment_id is not None:
+        try:
+            confirm_result = client.confirm_payment(tiger_payment_id)
+            confirmed = confirm_result.get("data") if isinstance(confirm_result, dict) else None
+            repos.insert_payment_event(
+                engine,
+                payment_attempt_id=attempt_id,
+                source="manual",
+                status="success",
+                payload={
+                    "action": "manual_force_clear_device_confirm",
+                    "confirm_response": omit_qr_images(
+                        confirm_result.get("raw") or confirm_result
+                    ),
+                    "submitted_by": actor_id,
+                    "submitted_by_name": actor_name,
+                },
+                event_key=f"manual:force_clear_device:{attempt_id}",
+            )
+            if isinstance(confirmed, dict):
+                payment = confirmed
+            # Re-apply POS totals so a confirm webhook with totalPay=0 cannot
+            # leave the report understated (ingest also protects zeros).
+            _write_manual_success_records(
+                engine,
+                attempt=repos.get_payment_attempt(engine, attempt_id) or updated,
+                payment=payment,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                branch="unpaid_local_cleared",
+                remark="admin force success after clear-device confirm; total_pay from POS",
+            )
+            updated = repos.get_payment_attempt(engine, attempt_id) or updated
+        except TigerPayOpenApiError as exc:
+            confirm_error = exc.message
+            logger.warning(
+                "Force-complete clear-device confirm failed attempt_id=%s error=%s",
+                attempt_id,
+                exc.message,
+            )
+            repos.insert_payment_event(
+                engine,
+                payment_attempt_id=attempt_id,
+                source="manual",
+                status="success",
+                payload={
+                    "action": "manual_force_clear_device_failed",
+                    "error": exc.message,
+                    "status_code": exc.status_code,
+                    "payload": omit_qr_images(exc.payload),
+                },
+                event_key=f"manual:force_clear_device_failed:{attempt_id}:{exc.status_code}",
+            )
+
+    detail = get_attempt_detail(engine, attempt_id)
+    detail["force"] = {
+        "branch": branch,
+        "clear_device": clear_device,
+        "confirm_error": confirm_error,
+    }
+    return detail
+
+
 def send_payment_for_bill(
     engine: Engine,
     pos_bill_id: str,

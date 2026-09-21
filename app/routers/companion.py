@@ -16,6 +16,7 @@ from src.stock_check.config import get_stock_check_settings
 from src.tiger_pay.payment_service import (
     PaymentServiceError,
     cancel_payment_attempt,
+    force_complete_payment_attempt,
     get_attempt_detail,
     list_bills_with_payment_status,
     send_payment_for_bill,
@@ -29,6 +30,7 @@ from src.tiger_pay.voucher_service import (
 from src.tiger_pay import repos
 from src.tiger_pay import voucher_repos
 from src.tiger_pay.cash_inventory import cached_or_live_cash
+from src.tiger_pay.force_auth import can_force_complete
 from src.tiger_pay.submitter import submitter_from_identity
 
 router = APIRouter(prefix="/companion", tags=["companion"])
@@ -56,6 +58,7 @@ def _http_error(exc: PaymentServiceError | VoucherServiceError) -> HTTPException
         "not_payout_bill",
         "payment_already_completed",
         "voucher_already_completed",
+        "not_pendingapproval",
     }:
         status = 409
     elif exc.code in {"invalid_payment_type", "missing_voucher_num", "missing_tiger_id"}:
@@ -160,6 +163,18 @@ def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
     return HTMLResponse(content=_UI_PATH.read_text(encoding="utf-8"))
 
 
+@router.get("/me")
+def companion_me(request: Request) -> dict:
+    ident = _require_companion_user(request)
+    engine = get_engine()
+    submitted_by, submitted_by_name = submitter_from_identity(ident)
+    return {
+        "submitted_by": submitted_by,
+        "submitted_by_name": submitted_by_name,
+        "can_force_complete": can_force_complete(engine, ident),
+    }
+
+
 @router.get("/bills")
 def companion_bills(
     request: Request,
@@ -238,6 +253,33 @@ async def companion_cancel_payment(request: Request, attempt_id: str) -> dict:
             engine,
             attempt_id,
             **_submitter_kwargs(ident),
+        )
+    except PaymentServiceError as exc:
+        raise _http_error(exc) from exc
+    return result
+
+
+@router.post("/payments/{attempt_id}/force-success")
+async def companion_force_success(request: Request, attempt_id: str) -> dict:
+    ident = _require_companion_user(request)
+    engine = get_engine()
+    if not can_force_complete(engine, ident):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "ต้องเป็น Tailscale หรือบัญชี admin/exec",
+                "code": "force_forbidden",
+            },
+        )
+    submitted_by, submitted_by_name = submitter_from_identity(ident)
+    try:
+        result = await asyncio.to_thread(
+            force_complete_payment_attempt,
+            engine,
+            attempt_id,
+            actor_id=submitted_by,
+            actor_name=submitted_by_name,
+            clear_device=True,
         )
     except PaymentServiceError as exc:
         raise _http_error(exc) from exc

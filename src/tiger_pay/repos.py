@@ -5,8 +5,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from datetime import datetime
-
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
@@ -373,6 +371,132 @@ def force_payment_transaction_success(
     )
     with engine.begin() as conn:
         row = conn.execute(sql, params).first()
+    return row is not None
+
+
+def ensure_payment_transaction_success(
+    engine: Engine,
+    tiger_payment_id: int,
+    *,
+    amount: Decimal | float | int | str,
+    total_pay: Decimal | float | int | str,
+    payment_no: str | None = None,
+    payment_type: str | None = None,
+    payment: dict[str, Any] | None = None,
+    remark: str | None = None,
+    manual_meta: dict[str, Any] | None = None,
+    shop_code: str | None = None,
+    ref_no_1: str | None = None,
+    ref_no_2: str | None = None,
+) -> bool:
+    """Upsert payment_transaction as success with explicit money fields.
+
+    Used by admin force-complete so v2 ``qrPromptpayIn`` (total_pay) stays
+    correct even when Tiger confirm returns totalPay=0 on an unpaid QR.
+    """
+    payment_snapshot = dict(payment) if isinstance(payment, dict) else {}
+    if payment_snapshot:
+        payment_snapshot["status"] = "success"
+        payment_snapshot["amount"] = float(amount)
+        payment_snapshot["totalPay"] = float(total_pay)
+        if payment_no and not payment_snapshot.get("paymentNo"):
+            payment_snapshot["paymentNo"] = payment_no
+        if payment_type and not payment_snapshot.get("type"):
+            payment_snapshot["type"] = payment_type
+
+    payload: dict[str, Any] = {"payment": payment_snapshot} if payment_snapshot else {}
+    if manual_meta:
+        payload["manual_force"] = {
+            **manual_meta,
+            "protect_total_pay": True,
+        }
+
+    sql = text(
+        """
+        insert into tiger_pay.payment_transaction as current_payment (
+            tiger_payment_id,
+            payment_no,
+            payment_type,
+            status,
+            amount,
+            total_pay,
+            change_amount,
+            ref_no_1,
+            ref_no_2,
+            remark,
+            shop_code,
+            first_received_at,
+            last_received_at,
+            payload
+        )
+        values (
+            :tiger_payment_id,
+            coalesce(:payment_no, 'MANUAL-' || :tiger_payment_id::text),
+            coalesce(:payment_type, 'qr'),
+            'success',
+            :amount,
+            :total_pay,
+            0,
+            :ref_no_1,
+            :ref_no_2,
+            :remark,
+            :shop_code,
+            now(),
+            now(),
+            cast(:payload as jsonb)
+        )
+        on conflict (tiger_payment_id)
+        do update
+        set
+            status = 'success',
+            amount = excluded.amount,
+            total_pay = greatest(
+                coalesce(current_payment.total_pay, 0),
+                coalesce(excluded.total_pay, 0)
+            ),
+            payment_no = coalesce(excluded.payment_no, current_payment.payment_no),
+            payment_type = coalesce(excluded.payment_type, current_payment.payment_type),
+            remark = coalesce(excluded.remark, current_payment.remark),
+            ref_no_1 = coalesce(excluded.ref_no_1, current_payment.ref_no_1),
+            ref_no_2 = coalesce(excluded.ref_no_2, current_payment.ref_no_2),
+            shop_code = coalesce(current_payment.shop_code, excluded.shop_code),
+            last_received_at = greatest(current_payment.last_received_at, now()),
+            payload = coalesce(current_payment.payload, '{}'::jsonb)
+                || cast(:payload as jsonb)
+                || jsonb_build_object(
+                    'payment',
+                    coalesce(current_payment.payload -> 'payment', '{}'::jsonb)
+                        || coalesce(cast(:payload as jsonb) -> 'payment', '{}'::jsonb)
+                        || jsonb_build_object(
+                            'status', 'success',
+                            'amount', to_jsonb(excluded.amount),
+                            'totalPay', to_jsonb(
+                                greatest(
+                                    coalesce(current_payment.total_pay, 0),
+                                    coalesce(excluded.total_pay, 0)
+                                )
+                            )
+                        )
+                )
+        returning tiger_payment_id
+        """
+    )
+    with engine.begin() as conn:
+        row = conn.execute(
+            sql,
+            {
+                "tiger_payment_id": tiger_payment_id,
+                "payment_no": payment_no,
+                "payment_type": payment_type,
+                "amount": str(amount),
+                "total_pay": str(total_pay),
+                "remark": remark,
+                "shop_code": shop_code,
+                "ref_no_1": ref_no_1,
+                "ref_no_2": ref_no_2,
+                "payload": json.dumps(payload),
+            },
+        ).first()
     return row is not None
 
 
