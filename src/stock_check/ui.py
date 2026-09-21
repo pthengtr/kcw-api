@@ -1279,6 +1279,7 @@ def drift_review_page(
     user: dict[str, Any],
     review: dict[str, Any],
     browser_entry_url: str | None = None,
+    flash_error: str | None = None,
 ) -> str:
     draft = review["draft"]
     loc = " / ".join(x for x in [draft.get("location1"), draft.get("location2")] if x) or "-"
@@ -1289,6 +1290,7 @@ def drift_review_page(
     new_var = float(review["new_variance"])
     explained = float(review.get("explained_delta") or 0)
     unexplained = float(review.get("unexplained_delta") or 0)
+    has_unexplained = bool(review.get("has_unexplained") or abs(unexplained) > 1e-6)
     var_color = "var(--danger)" if new_var < 0 else "var(--ok)"
 
     bill_rows = ""
@@ -1301,20 +1303,52 @@ def drift_review_page(
             f"<b style='color:{q_color}'>{q:+.3g}</b></div>"
         )
     if not bill_rows:
-        bill_rows = "<div class='muted'>ไม่พบบิลในช่วงนี้</div>"
+        bill_rows = "<div class='muted'>ไม่พบบิลขาย/ซื้อ/โอนในช่วงนี้</div>"
+
+    err_flash = ""
+    if flash_error:
+        err_flash = f"<div class='flash err' style='margin-bottom:10px'>{escape(flash_error)}</div>"
 
     explain_note = ""
-    if review.get("drift_fully_explained"):
-        explain_note = "<div class='flash' style='margin-top:10px'>สอดคล้องกับบิลขาย/ซื้อระหว่างนับกับอนุมัติ</div>"
-    elif abs(drift) > 1e-6:
+    confirm_extra = ""
+    submit_label = "อนุมัติต่อ (ใช้สต็อกปัจจุบัน)"
+    if review.get("drift_fully_explained") and abs(drift) > 1e-6:
+        explain_note = (
+            "<div class='flash' style='margin-top:10px'>"
+            "สอดคล้องกับบิลขาย/ซื้อ/โอนระหว่างนับกับอนุมัติ"
+            "</div>"
+        )
+    elif has_unexplained:
         explain_note = (
             f"<div class='flash err' style='margin-top:10px'>"
-            f"สต็อกเปลี่ยน {drift:+.3g} · จากบิล {explained:+.3g} · คงเหลือไม่อธิบาย {unexplained:+.3g}"
-            f" — ยังอนุมัติต่อได้</div>"
+            f"<b>สต็อกเปลี่ยนโดยไม่มีบิลอธิบายครบ</b><br/>"
+            f"เปลี่ยน {drift:+.3g} · จากบิล {explained:+.3g} · "
+            f"ไม่อธิบาย {unexplained:+.3g}<br/>"
+            f"ถ้าอนุมัติต่อ ระบบจะบันทึกเป็น "
+            f"<b>completed_unexplained</b> (ไม่โพสต์ SA เมื่อนับตรงสต็อกปัจจุบัน) "
+            f"— ไม่ถือว่าตรวจถูกต้องตามปกติ"
+            f"</div>"
+        )
+        confirm_extra = (
+            "<label style='display:flex;gap:8px;align-items:flex-start;"
+            "margin:12px 0;font-size:.9rem'>"
+            "<input type='checkbox' name='confirm_unexplained' value='1' required "
+            "style='width:auto;margin-top:3px'/>"
+            "<span>ยืนยันว่าทราบว่าสต็อกเปลี่ยนโดยไม่พบบิลขาย/ซื้อครบ "
+            "และต้องการอนุมัติต่อ</span>"
+            "</label>"
+        )
+        submit_label = "ยืนยันอนุมัติ (สต็อกเปลี่ยนไม่อธิบาย)"
+    elif abs(drift) > 1e-6:
+        explain_note = (
+            f"<div class='flash' style='margin-top:10px'>"
+            f"สต็อกเปลี่ยน {drift:+.3g} ระหว่างนับกับอนุมัติ"
+            f"</div>"
         )
 
     body = f"""
     <div class="card">
+      {err_flash}
       <div class="loc">{escape(loc)}</div>
       <div class="bcode" style="margin-top:8px">{escape(draft['bcode'])}</div>
       <div class="descr">{escape(draft.get('descr') or '')}</div>
@@ -1328,11 +1362,12 @@ def drift_review_page(
         สต็อกเปลี่ยน {drift:+.3g} ระหว่างนับกับอนุมัติ · SA ที่จะโพสต์ <b style="color:{var_color}">{new_var:+.3g}</b>
       </div>
       {explain_note}
-      <div class="section-title" style="margin-top:14px">บิลระหว่างนับกับอนุมัติ</div>
+      <div class="section-title" style="margin-top:14px">บิลระหว่างนับกับอนุมัติ (ขาย / ซื้อ / โอน)</div>
       {bill_rows}
       <form method="post" action="/stock-check/approve/{escape(draft['id'])}" style="margin-top:14px">
         <input type="hidden" name="confirm_drift" value="1"/>
-        <button type="submit">อนุมัติต่อ (ใช้สต็อกปัจจุบัน)</button>
+        {confirm_extra}
+        <button type="submit">{escape(submit_label)}</button>
       </form>
       <a class="btn danger" href="/stock-check/reject/{escape(draft['id'])}" style="margin-top:8px">ปฏิเสธ ส่งกลับตรวจใหม่</a>
       <a href="/stock-check/approve" class="ghost" style="display:block;text-align:center;padding:10px;margin-top:8px">กลับ</a>

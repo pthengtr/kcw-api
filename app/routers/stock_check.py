@@ -379,6 +379,7 @@ def approve_review(request: Request, draft_id: str):
                 user=user,
                 review=review,
                 browser_entry_url=_browser_entry_url(user),
+                flash_error=request.query_params.get("err"),
             )
         )
     except Exception as exc:  # noqa: BLE001
@@ -386,7 +387,12 @@ def approve_review(request: Request, draft_id: str):
 
 
 @router.post("/approve/{draft_id}")
-def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
+def approve_one(
+    request: Request,
+    draft_id: str,
+    confirm_drift: str = Form(""),
+    confirm_unexplained: str = Form(""),
+):
     service = _service()
     user, err = _require_user(request, service)
     if err:
@@ -396,10 +402,19 @@ def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
             draft_id=draft_id,
             approver_session=user,
             confirm_drift=confirm_drift == "1",
+            confirm_unexplained=confirm_unexplained == "1",
         )
         if not result.get("ok") and result.get("code") == "qty_drift":
             return RedirectResponse(
                 url=f"/stock-check/approve/{draft_id}/review",
+                status_code=303,
+            )
+        if not result.get("ok") and result.get("code") == "unexplained_drift":
+            return RedirectResponse(
+                url=(
+                    f"/stock-check/approve/{draft_id}/review"
+                    f"?err={_q('ต้องยืนยันว่าทราบว่าสต็อกเปลี่ยนโดยไม่พบบิลครบ')}"
+                ),
                 status_code=303,
             )
         if not result.get("ok"):
@@ -408,7 +423,13 @@ def approve_one(request: Request, draft_id: str, confirm_drift: str = Form("")):
                 status_code=303,
             )
         bill = result.get("billno")
-        msg = f"โพสต์แล้ว {bill}" if bill else "เสร็จสิ้น"
+        status = result.get("status")
+        if bill:
+            msg = f"โพสต์แล้ว {bill}"
+        elif status == "completed_unexplained":
+            msg = "บันทึกแล้ว (สต็อกเปลี่ยนไม่อธิบาย — ไม่โพสต์ SA)"
+        else:
+            msg = "เสร็จสิ้น"
         _flush_outboxes(service)
         return RedirectResponse(url=f"/stock-check/approve?ok={_q(msg)}", status_code=303)
     except Exception as exc:  # noqa: BLE001

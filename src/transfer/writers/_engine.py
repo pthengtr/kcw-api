@@ -192,6 +192,7 @@ def _writer_odbc_url(*, site: str) -> str:
         f"PWD={settings.pos_mssql_writer_password};"
         "TrustServerCertificate=yes;"
         "Connection Timeout=8;"
+        "APP=kcw-transfer;"
     )
     return "mssql+pyodbc:///?odbc_connect=" + quote_plus(odbc)
 

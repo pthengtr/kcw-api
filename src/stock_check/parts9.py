@@ -56,6 +56,7 @@ def _odbc_url(settings: StockCheckSettings, *, writer: bool = False) -> str:
     if writer and settings.pos_mssql_writer_username:
         user = settings.pos_mssql_writer_username
         password = settings.pos_mssql_writer_password
+    app = "kcw-stock-check" if writer else "kcw-stock-check-ro"
     odbc = (
         f"DRIVER={{{settings.pos_mssql_driver}}};"
         f"SERVER={pick_mssql_server(settings.pos_mssql_server)};"
@@ -63,6 +64,7 @@ def _odbc_url(settings: StockCheckSettings, *, writer: bool = False) -> str:
         f"UID={user};"
         f"PWD={password};"
         "TrustServerCertificate=yes;"
+        f"APP={app};"
     )
     return "mssql+pyodbc:///?odbc_connect=" + quote_plus(odbc)
 
@@ -279,11 +281,18 @@ class StockMovement:
     billtype: str
     qty_delta: float
     jourtype: str
+    # sale = SIMAS/SIDET (ขาย/SA/TF); purchase = PIMAS/PIDET (ซื้อ/รับเข้า)
+    source: str = "sale"
 
     @property
     def kind_label(self) -> str:
+        if (self.source or "").strip().lower() == "purchase":
+            return "ซื้อ/รับเข้า"
+        billno_u = (self.billno or "").upper()
+        if billno_u.startswith(("TF", "TFV")):
+            return "โอน"
         jt = (self.jourtype or "").strip().upper()
-        if jt in {"SJ", "SA"} or (self.billno or "").upper().startswith(("SA", "3SA")):
+        if jt in {"SJ", "SA"} or billno_u.startswith(("SA", "3SA")):
             return "ปรับสต็อก"
         bt = (self.billtype or "").strip()
         if bt == "1":
@@ -291,6 +300,12 @@ class StockMovement:
         if bt == "2":
             return "รับ/เข้า"
         return "เคลื่อนไหว"
+
+
+def _movement_billdate(raw: Any) -> datetime:
+    if isinstance(raw, datetime):
+        return raw
+    return datetime.fromisoformat(str(raw)[:19])
 
 
 def list_stock_movements(
@@ -301,21 +316,26 @@ def list_stock_movements(
     limit: int = 30,
     engine: Engine | None = None,
 ) -> list[StockMovement]:
-    """SIDET lines for one SKU between timestamps (for drift review)."""
+    """Sales/SA/TF (SIDET) + purchase receives (PIDET) for drift review."""
     code = (bcode or "").strip()
     if not code:
         return []
     eng = engine or get_parts9_engine(writer=False)
     limit = max(1, min(int(limit), 100))
-    sql = text(
+    # Fetch extra from each source then merge/sort so purchases are not starved by sales.
+    per_source = max(limit, min(limit * 2, 100))
+    params = {"bcode": code, "since": since, "until": until}
+    sale_sql = text(
         f"""
-        SELECT TOP {limit}
+        SELECT TOP {per_source}
           LTRIM(RTRIM(m.BILLNO)) AS billno,
           m.BILLDATE AS billdate,
           LTRIM(RTRIM(COALESCE(m.BILLTIME, ''))) AS billtime,
           LTRIM(RTRIM(COALESCE(m.BILLTYPE, ''))) AS billtype,
           LTRIM(RTRIM(COALESCE(m.JOURTYPE, ''))) AS jourtype,
-          d.QTY AS qty_raw
+          d.QTY AS qty_raw,
+          d.MTP AS mtp_raw,
+          'sale' AS src
         FROM dbo.SIDET d WITH (NOLOCK)
         INNER JOIN dbo.SIMAS m WITH (NOLOCK)
           ON d.BILLNO = m.BILLNO
@@ -330,35 +350,65 @@ def list_stock_movements(
         ORDER BY m.BILLDATE DESC, m.BILLTIME DESC, m.BILLNO DESC
         """
     )
+    # Purchases: PIDET qty is inbound to on-hand (ignore BILLTYPE sign conventions from sales).
+    purchase_sql = text(
+        f"""
+        SELECT TOP {per_source}
+          LTRIM(RTRIM(d.BILLNO)) AS billno,
+          d.BILLDATE AS billdate,
+          LTRIM(RTRIM(COALESCE(m.BILLTIME, ''))) AS billtime,
+          LTRIM(RTRIM(COALESCE(d.BILLTYPE, ''))) AS billtype,
+          LTRIM(RTRIM(COALESCE(d.JOURTYPE, ''))) AS jourtype,
+          d.QTY AS qty_raw,
+          d.MTP AS mtp_raw,
+          'purchase' AS src
+        FROM dbo.PIDET d WITH (NOLOCK)
+        LEFT JOIN dbo.PIMAS m WITH (NOLOCK)
+          ON d.BILLNO = m.BILLNO
+         AND d.BILLDATE = m.BILLDATE
+         AND d.BILLTYPE = m.BILLTYPE
+         AND d.JOURMODE = m.JOURMODE
+        WHERE LTRIM(RTRIM(d.BCODE)) = :bcode
+          AND UPPER(LTRIM(RTRIM(COALESCE(d.CANCELED,'')))) <> 'Y'
+          AND LTRIM(RTRIM(COALESCE(d.JOURMODE,''))) <> '0'
+          AND d.BILLDATE >= :since
+          AND (:until IS NULL OR d.BILLDATE <= :until)
+        ORDER BY d.BILLDATE DESC, d.BILLNO DESC
+        """
+    )
     with eng.connect() as conn:
-        rows = conn.execute(
-            sql,
-            {"bcode": code, "since": since, "until": until},
-        ).mappings().fetchall()
+        sale_rows = conn.execute(sale_sql, params).mappings().fetchall()
+        try:
+            purchase_rows = conn.execute(purchase_sql, params).mappings().fetchall()
+        except Exception:
+            # Older DBs / missing PIMAS join — still return sales.
+            purchase_rows = []
 
     out: list[StockMovement] = []
-    for row in rows:
+    for row in list(sale_rows) + list(purchase_rows):
         qty = _parse_qty(row.get("qty_raw"))
+        mtp = _parse_qty(row.get("mtp_raw")) or 1.0
+        units = abs(qty) * abs(mtp)
         billtype = str(row.get("billtype") or "").strip()
-        if billtype == "1":
-            qty_delta = -abs(qty)
+        src = str(row.get("src") or "sale").strip().lower()
+        if src == "purchase":
+            qty_delta = units
+        elif billtype == "1":
+            qty_delta = -units
         elif billtype == "2":
-            qty_delta = abs(qty)
+            qty_delta = units
         else:
-            qty_delta = qty
-        bd = row.get("billdate")
-        if isinstance(bd, datetime):
-            billdate = bd
-        else:
-            billdate = datetime.fromisoformat(str(bd)[:19])
+            qty_delta = qty * mtp
         out.append(
             StockMovement(
                 billno=str(row.get("billno") or "").strip(),
-                billdate=billdate,
+                billdate=_movement_billdate(row.get("billdate")),
                 billtime=str(row.get("billtime") or "").strip(),
                 billtype=billtype,
                 qty_delta=qty_delta,
                 jourtype=str(row.get("jourtype") or "").strip(),
+                source=src,
             )
         )
-    return out
+    out.sort(key=lambda m: (m.billdate, m.billtime, m.billno), reverse=True)
+    return out[:limit]

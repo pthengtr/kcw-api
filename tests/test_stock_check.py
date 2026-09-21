@@ -711,6 +711,132 @@ def test_drift_redirects_to_review(tmp_path: Path, monkeypatch):
     assert f"/stock-check/approve/{draft_id}/review" in resp.headers["location"]
 
 
+def test_unexplained_drift_requires_confirm_and_preserves_history(tmp_path: Path, monkeypatch):
+    """Live moved to match count with no bills → not 'correct'; keep original variance."""
+    from src.stock_check.parts9 import ProductRow, StockMovement
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "unexplained.sqlite3")
+    # system 10, counted 8 at create — then live becomes 8 with no bills
+    draft_id = store.create_draft(_pending_draft(system_qty=10.0, counted_qty=8.0, variance=-2.0))
+    svc = StockCheckService(store=store)
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: ProductRow(
+            bcode="P1",
+            descr="Test",
+            pcode="",
+            mcode="",
+            location1="A1",
+            location2="",
+            qtyoh2=8.0,
+            ui1="",
+            mtp2=1.0,
+            canceled="N",
+        ),
+    )
+    monkeypatch.setattr(
+        "src.stock_check.service.list_stock_movements",
+        lambda *a, **k: [],
+    )
+    checker = {"line_user_id": "U2", "display_name": "Bob", "id": "s2"}
+
+    blocked = svc.approve_draft(
+        draft_id=draft_id,
+        approver_session=checker,
+        confirm_drift=True,
+        confirm_unexplained=False,
+    )
+    assert blocked["ok"] is False
+    assert blocked["code"] == "unexplained_drift"
+
+    result = svc.approve_draft(
+        draft_id=draft_id,
+        approver_session=checker,
+        confirm_drift=True,
+        confirm_unexplained=True,
+    )
+    assert result["ok"] is True
+    assert result["status"] == "completed_unexplained"
+    assert result["outcome"] == "unexplained_drift"
+    draft = store.get_draft(draft_id)
+    assert draft["status"] == "completed_unexplained"
+    assert draft["system_qty"] == 10.0
+    assert draft["variance"] == pytest.approx(-2.0)
+    assert draft["posted_billno"] is None
+    audit = store.get_local_audits(["P1"])["P1"]
+    assert audit["last_outcome"] == "unexplained_drift"
+
+
+def test_explained_drift_completes_as_drift_matched(tmp_path: Path, monkeypatch):
+    from datetime import datetime
+
+    from src.stock_check.parts9 import ProductRow, StockMovement
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "explained.sqlite3")
+    draft_id = store.create_draft(_pending_draft(system_qty=10.0, counted_qty=8.0, variance=-2.0))
+    svc = StockCheckService(store=store)
+    monkeypatch.setattr(
+        "src.stock_check.service.get_product_by_bcode",
+        lambda bcode: ProductRow(
+            bcode="P1",
+            descr="Test",
+            pcode="",
+            mcode="",
+            location1="A1",
+            location2="",
+            qtyoh2=8.0,
+            ui1="",
+            mtp2=1.0,
+            canceled="N",
+        ),
+    )
+    monkeypatch.setattr(
+        "src.stock_check.service.list_stock_movements",
+        lambda *a, **k: [
+            StockMovement(
+                billno="8K69-1",
+                billdate=datetime(2026, 9, 21),
+                billtime="1200",
+                billtype="1",
+                qty_delta=-2.0,
+                jourtype="SJ",
+                source="sale",
+            )
+        ],
+    )
+    checker = {"line_user_id": "U2", "display_name": "Bob", "id": "s2"}
+    result = svc.approve_draft(
+        draft_id=draft_id,
+        approver_session=checker,
+        confirm_drift=True,
+    )
+    assert result["ok"] is True
+    assert result["status"] == "completed"
+    assert result["outcome"] == "drift_matched"
+    draft = store.get_draft(draft_id)
+    assert draft["system_qty"] == 10.0
+    assert draft["variance"] == pytest.approx(-2.0)
+
+
+def test_purchase_movement_kind_label():
+    from datetime import datetime
+
+    from src.stock_check.parts9 import StockMovement
+
+    m = StockMovement(
+        billno="DC260902589",
+        billdate=datetime(2026, 9, 4),
+        billtime="",
+        billtype="1",
+        qty_delta=1.0,
+        jourtype="PJ",
+        source="purchase",
+    )
+    assert m.kind_label == "ซื้อ/รับเข้า"
+
+
 def test_sa_writer_always_posts_mtp_one_for_pack_skus():
     """SIDET.MTP must be 1 even when ICMAS.MTP2 is a large pack factor."""
     from unittest.mock import MagicMock

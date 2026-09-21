@@ -427,6 +427,34 @@ class StockCheckService:
             "system_qty": live_qty,
         }
 
+    @staticmethod
+    def _drift_since_ts(draft: dict[str, Any]) -> float:
+        """Baseline time for movement lookup: last edit if edited, else create."""
+        if int(draft.get("edit_count") or 0) > 0 and draft.get("updated_at"):
+            return float(draft["updated_at"])
+        return float(draft["created_at"])
+
+    def _analyze_drift(
+        self,
+        draft: dict[str, Any],
+        *,
+        live_qty: float,
+        expected_system: float,
+    ) -> dict[str, Any]:
+        drift = live_qty - expected_system
+        since = datetime.fromtimestamp(self._drift_since_ts(draft), tz=BANGKOK)
+        movements = list_stock_movements(draft["bcode"], since=since)
+        explained = sum(m.qty_delta for m in movements)
+        unexplained = drift - explained
+        return {
+            "drift": drift,
+            "movements": movements,
+            "explained_delta": explained,
+            "unexplained_delta": unexplained,
+            "drift_fully_explained": abs(unexplained) < 1e-6 if movements else abs(drift) < 1e-6,
+            "has_unexplained": abs(unexplained) > 1e-6,
+        }
+
     def drift_review(self, draft_id: str) -> dict[str, Any]:
         draft = self.store.get_draft(draft_id)
         if not draft:
@@ -445,13 +473,10 @@ class StockCheckService:
         live_qty = float(product.qtyoh2)
         expected_system = float(draft["system_qty"])
         counted = float(draft["counted_qty"])
-        drift = live_qty - expected_system
         new_variance = counted - live_qty
-
-        since = datetime.fromtimestamp(float(draft["created_at"]), tz=BANGKOK)
-        movements = list_stock_movements(draft["bcode"], since=since)
-        explained = sum(m.qty_delta for m in movements)
-        drift_gap = drift - explained
+        analysis = self._analyze_drift(
+            draft, live_qty=live_qty, expected_system=expected_system
+        )
 
         return {
             "draft": draft,
@@ -459,7 +484,7 @@ class StockCheckService:
             "draft_system_qty": expected_system,
             "live_qty": live_qty,
             "counted_qty": counted,
-            "drift": drift,
+            "drift": analysis["drift"],
             "new_variance": new_variance,
             "movements": [
                 {
@@ -468,12 +493,15 @@ class StockCheckService:
                     "billtime": m.billtime,
                     "kind_label": m.kind_label,
                     "qty_delta": m.qty_delta,
+                    "source": m.source,
                 }
-                for m in movements
+                for m in analysis["movements"]
             ],
-            "explained_delta": explained,
-            "unexplained_delta": drift_gap,
-            "drift_fully_explained": abs(drift_gap) < 1e-6 if movements else False,
+            "explained_delta": analysis["explained_delta"],
+            "unexplained_delta": analysis["unexplained_delta"],
+            "drift_fully_explained": analysis["drift_fully_explained"],
+            "has_unexplained": analysis["has_unexplained"],
+            "requires_unexplained_confirm": analysis["has_unexplained"],
         }
 
     def skip_item(self, session_id: str, bcode: str) -> None:
@@ -486,6 +514,7 @@ class StockCheckService:
         draft_id: str,
         approver_session: dict[str, Any],
         confirm_drift: bool = False,
+        confirm_unexplained: bool = False,
     ) -> dict[str, Any]:
         draft = self.store.get_draft(draft_id)
         if not draft:
@@ -500,7 +529,9 @@ class StockCheckService:
 
         live_qty = float(product.qtyoh2)
         expected_system = float(draft["system_qty"])
-        if abs(live_qty - expected_system) > 1e-6 and not confirm_drift:
+        original_variance = float(draft["variance"])
+        drifted = abs(live_qty - expected_system) > 1e-6
+        if drifted and not confirm_drift:
             return {
                 "ok": False,
                 "code": "qty_drift",
@@ -508,17 +539,61 @@ class StockCheckService:
                 "draft_id": draft_id,
                 "draft_system_qty": expected_system,
                 "live_qty": live_qty,
-                "variance": float(draft["variance"]),
+                "variance": original_variance,
+            }
+
+        analysis = (
+            self._analyze_drift(
+                draft, live_qty=live_qty, expected_system=expected_system
+            )
+            if drifted
+            else {
+                "drift": 0.0,
+                "explained_delta": 0.0,
+                "unexplained_delta": 0.0,
+                "has_unexplained": False,
+                "drift_fully_explained": True,
+            }
+        )
+        if analysis["has_unexplained"] and not confirm_unexplained:
+            return {
+                "ok": False,
+                "code": "unexplained_drift",
+                "message": "stock changed without matching sale/purchase bills",
+                "draft_id": draft_id,
+                "draft_system_qty": expected_system,
+                "live_qty": live_qty,
+                "drift": analysis["drift"],
+                "explained_delta": analysis["explained_delta"],
+                "unexplained_delta": analysis["unexplained_delta"],
+                "variance": original_variance,
             }
 
         counted = float(draft["counted_qty"])
         variance = counted - live_qty
         if abs(variance) < 1e-9:
+            if analysis["has_unexplained"]:
+                # Keep original system/variance for forensics — do not rewrite as "correct".
+                status = "completed_unexplained"
+                outcome = "unexplained_drift"
+                stored_variance = original_variance
+                stored_system = expected_system
+            elif drifted:
+                status = "completed"
+                outcome = "drift_matched"
+                stored_variance = original_variance
+                stored_system = expected_system
+            else:
+                status = "completed"
+                outcome = "correct"
+                stored_variance = 0.0
+                stored_system = live_qty
+
             self.store.update_draft(
                 draft_id,
-                status="completed",
-                variance=0.0,
-                system_qty=live_qty,
+                status=status,
+                variance=stored_variance,
+                system_qty=stored_system,
                 completed_at=time.time(),
                 approver_line_user_id=self._line_id(approver_session),
                 approver_name=approver_session["display_name"],
@@ -527,14 +602,14 @@ class StockCheckService:
             self.store.upsert_local_audit(
                 bcode=product.bcode,
                 audited_by=draft["operator_name"],
-                outcome="correct",
+                outcome=outcome,
             )
             self._enqueue_mirror(
                 bcode=product.bcode,
                 operator_id=draft["operator_line_user_id"],
                 operator_name=draft["operator_name"],
-                outcome="correct",
-                variance=0.0,
+                outcome=outcome,
+                variance=stored_variance,
                 source=draft["source"],
                 billno=None,
                 approver_id=self._line_id(approver_session),
@@ -545,10 +620,16 @@ class StockCheckService:
                 "audit_approve",
                 bcode=product.bcode,
                 draft_id=draft_id,
-                variance=0.0,
+                variance=stored_variance,
                 source=draft["source"],
             )
-            return {"ok": True, "status": "completed", "variance": 0.0}
+            return {
+                "ok": True,
+                "status": status,
+                "outcome": outcome,
+                "variance": stored_variance,
+                "unexplained_delta": analysis["unexplained_delta"],
+            }
 
         product.qtyoh2 = live_qty
         try:

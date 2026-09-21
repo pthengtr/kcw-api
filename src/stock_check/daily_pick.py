@@ -207,7 +207,8 @@ def build_flags(
     sales_days = int(signals.sales_days_90.get(bcode, 0))
     klass = abc_class(sales_days)
     negative = product.qtyoh2 < 0
-    mismatch = bool(audit and str(audit.get("last_outcome") or "").lower() == "adjusted")
+    outcome = str((audit or {}).get("last_outcome") or "").lower()
+    mismatch = outcome in {"adjusted", "unexplained_drift"}
     prior_sa = bcode in signals.sa_bcodes
     yesterday = bcode in signals.yesterday_bcodes
     never = last_count is None
@@ -444,7 +445,7 @@ def pick_daily_products(
     mismatch_bcodes = {
         b
         for b, row in audits.items()
-        if str(row.get("last_outcome") or "").lower() == "adjusted"
+        if str(row.get("last_outcome") or "").lower() in {"adjusted", "unexplained_drift"}
     }
 
     seed_bcodes: set[str] = set()
