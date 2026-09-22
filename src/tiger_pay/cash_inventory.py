@@ -30,7 +30,10 @@ def parse_cash_items(raw: Any) -> list[dict[str, Any]]:
         amount = _as_number(entry.get("amount") if "amount" in entry else entry.get("quantity"))
         if value is None or amount is None:
             continue
-        kind = str(entry.get("type") or "").strip() or _infer_kind(value)
+        kind = (
+            str(entry.get("type") or entry.get("denominationType") or "").strip()
+            or _infer_kind(value)
+        )
         items.append(
             {
                 "type": kind,
@@ -163,6 +166,12 @@ def capture_snapshot(
         return None
 
     items = parse_cash_items(raw_items)
+    cash_box_items: list[dict[str, Any]] = []
+    try:
+        cash_box_items = parse_cash_items(client.get_cash_box())
+    except TigerPayOpenApiError:
+        logger.exception("cash_box snapshot device GET failed trigger=%s", trigger)
+
     level, reasons = score_change_level(
         items,
         change_ready=change_ready,
@@ -183,6 +192,8 @@ def capture_snapshot(
             change_reasons=reasons,
             items=items,
             total_baht=items_total_baht(items),
+            cash_box_items=cash_box_items,
+            cash_box_total_baht=items_total_baht(cash_box_items),
             tiger_payment_id=tiger_payment_id,
             payment_no=payment_no,
             payment_status=payment_status,

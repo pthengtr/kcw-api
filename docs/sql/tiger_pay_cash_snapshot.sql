@@ -17,6 +17,8 @@ create table if not exists tiger_pay.cash_snapshot (
     change_reasons jsonb not null default '[]'::jsonb,
     items jsonb not null default '[]'::jsonb,
     total_baht numeric(14, 2) not null default 0,
+    cash_box_items jsonb not null default '[]'::jsonb,
+    cash_box_total_baht numeric(14, 2) not null default 0,
     shop_code text not null default '1',
     constraint cash_snapshot_trigger_check
         check (trigger in ('webhook', 'startup', 'eod', 'manual')),
@@ -24,8 +26,12 @@ create table if not exists tiger_pay.cash_snapshot (
         check (change_level in ('green', 'orange', 'red')),
     constraint cash_snapshot_total_non_negative
         check (total_baht >= 0),
+    constraint cash_snapshot_cash_box_total_non_negative
+        check (cash_box_total_baht >= 0),
     constraint cash_snapshot_items_array
         check (jsonb_typeof(items) = 'array'),
+    constraint cash_snapshot_cash_box_items_array
+        check (jsonb_typeof(cash_box_items) = 'array'),
     constraint cash_snapshot_reasons_array
         check (jsonb_typeof(change_reasons) = 'array')
 );

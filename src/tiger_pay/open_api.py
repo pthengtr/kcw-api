@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from functools import lru_cache
 from typing import Any
 
@@ -13,6 +14,9 @@ from src.tiger_pay.config import TigerPaySettings, get_tiger_pay_settings
 from src.tiger_pay.digest import compute_body_sha256
 
 logger = logging.getLogger("kcw.tiger_pay.open_api")
+
+# Refresh device-admin JWT this many ms before expiresAt.
+_ADMIN_TOKEN_SKEW_MS = 60_000
 
 
 class TigerPayOpenApiError(Exception):
@@ -103,6 +107,9 @@ class TigerPayOpenApiClient:
         self.timeout_seconds = timeout_seconds
         self._http: httpx.Client | None = None
         self._http_lock = threading.Lock()
+        self._admin_token: str | None = None
+        self._admin_token_expires_at_ms: int | None = None
+        self._admin_lock = threading.Lock()
 
     def _http_client(self) -> httpx.Client:
         with self._http_lock:
@@ -110,32 +117,25 @@ class TigerPayOpenApiClient:
                 self._http = httpx.Client(timeout=self.timeout_seconds)
             return self._http
 
-    def _request(
+    def _raw_request(
         self,
         method: str,
         path: str,
         *,
+        authorization: str,
         json_body: dict[str, Any] | None = None,
-        include_digest: bool = False,
         _rediscover_attempted: bool = False,
     ) -> tuple[int, Any]:
-        client_id, client_secret, api_host = _require_open_api_credentials(self.settings)
+        api_host = _normalize_api_host(self.settings.tiger_pay_api_host)
         url = f"{api_host}{path.lstrip('/')}"
 
         raw_body: bytes | None = None
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", "Authorization": authorization}
         if json_body is not None:
             raw_body = json.dumps(json_body, separators=(",", ":"), ensure_ascii=False).encode(
                 "utf-8"
             )
             headers["Content-Type"] = "application/json"
-
-        authorization = build_open_api_authorization(
-            client_id=client_id,
-            client_secret=client_secret,
-            raw_body=raw_body if include_digest else None,
-        )
-        headers["Authorization"] = authorization
 
         try:
             response = self._http_client().request(
@@ -146,11 +146,11 @@ class TigerPayOpenApiClient:
             )
         except httpx.TimeoutException as exc:
             if self._try_rediscover_after_connect_failure(_rediscover_attempted):
-                return self._request(
+                return self._raw_request(
                     method,
                     path,
+                    authorization=authorization,
                     json_body=json_body,
-                    include_digest=include_digest,
                     _rediscover_attempted=True,
                 )
             raise TigerPayOpenApiError(
@@ -160,11 +160,11 @@ class TigerPayOpenApiClient:
             ) from exc
         except httpx.RequestError as exc:
             if self._try_rediscover_after_connect_failure(_rediscover_attempted):
-                return self._request(
+                return self._raw_request(
                     method,
                     path,
+                    authorization=authorization,
                     json_body=json_body,
-                    include_digest=include_digest,
                     _rediscover_attempted=True,
                 )
             raise TigerPayOpenApiError(
@@ -180,6 +180,34 @@ class TigerPayOpenApiClient:
 
         return response.status_code, payload
 
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+        include_digest: bool = False,
+        _rediscover_attempted: bool = False,
+    ) -> tuple[int, Any]:
+        client_id, client_secret, _api_host = _require_open_api_credentials(self.settings)
+        raw_body: bytes | None = None
+        if json_body is not None:
+            raw_body = json.dumps(json_body, separators=(",", ":"), ensure_ascii=False).encode(
+                "utf-8"
+            )
+        authorization = build_open_api_authorization(
+            client_id=client_id,
+            client_secret=client_secret,
+            raw_body=raw_body if include_digest else None,
+        )
+        return self._raw_request(
+            method,
+            path,
+            authorization=authorization,
+            json_body=json_body,
+            _rediscover_attempted=_rediscover_attempted,
+        )
+
     def _try_rediscover_after_connect_failure(self, already_attempted: bool) -> bool:
         if already_attempted:
             return False
@@ -192,6 +220,91 @@ class TigerPayOpenApiClient:
             return False
         self.settings = get_tiger_pay_settings()
         return True
+
+    def _require_device_admin_credentials(self) -> tuple[str, str]:
+        username = self.settings.tiger_voucher_username.strip()
+        pin = self.settings.tiger_voucher_password.strip()
+        api_host = self.settings.tiger_pay_api_host.strip()
+        if not api_host:
+            raise TigerPayOpenApiError("TIGER_PAY_API_HOST is not configured")
+        if not username:
+            raise TigerPayOpenApiError("TIGER_VOUCHER_USERNAME is not configured")
+        if not pin:
+            raise TigerPayOpenApiError("TIGER_VOUCHER_PASSWORD is not configured")
+        return username, pin
+
+    def _admin_token_valid(self) -> bool:
+        if not self._admin_token or self._admin_token_expires_at_ms is None:
+            return False
+        return time.time() * 1000 < (self._admin_token_expires_at_ms - _ADMIN_TOKEN_SKEW_MS)
+
+    def login_device_admin(self, *, force: bool = False) -> str:
+        """POST api/user/login → device admin JWT (cash_box). Uses voucher username/PIN."""
+        with self._admin_lock:
+            if not force and self._admin_token_valid() and self._admin_token:
+                return self._admin_token
+            username, pin = self._require_device_admin_credentials()
+            # Login itself needs a host; Open API client id is not required.
+            api_host = _normalize_api_host(self.settings.tiger_pay_api_host)
+            url = f"{api_host}api/user/login"
+            body = {"username": username, "pin": pin}
+            raw_body = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
+            try:
+                response = self._http_client().request(
+                    "POST",
+                    url,
+                    content=raw_body,
+                    headers=headers,
+                )
+            except httpx.TimeoutException as exc:
+                raise TigerPayOpenApiError(
+                    "Tiger Pay device login timed out",
+                    payload={"url": url},
+                    no_response=True,
+                ) from exc
+            except httpx.RequestError as exc:
+                raise TigerPayOpenApiError(
+                    f"Tiger Pay device login failed: {exc}",
+                    payload={"url": url},
+                    no_response=True,
+                ) from exc
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {"raw": response.text}
+            if response.status_code >= 400:
+                raise TigerPayOpenApiError(
+                    _tiger_error_message(payload, "Failed to login device admin"),
+                    status_code=response.status_code,
+                    payload=payload,
+                )
+            data = _parse_envelope(payload)
+            if not isinstance(data, dict):
+                raise TigerPayOpenApiError(
+                    "Device admin login returned empty data",
+                    status_code=response.status_code,
+                    payload=payload,
+                )
+            token = data.get("accessToken")
+            if not isinstance(token, str) or not token.strip():
+                raise TigerPayOpenApiError(
+                    "Device admin login missing accessToken",
+                    status_code=response.status_code,
+                    payload=payload,
+                )
+            expires_raw = data.get("expiresAt")
+            expires_ms: int | None = None
+            if isinstance(expires_raw, (int, float)):
+                expires_ms = int(expires_raw)
+            elif isinstance(expires_raw, str) and expires_raw.strip().isdigit():
+                expires_ms = int(expires_raw.strip())
+            self._admin_token = token.strip()
+            self._admin_token_expires_at_ms = expires_ms
+            return self._admin_token
 
     def get_current(self) -> dict[str, Any] | None:
         status_code, payload = self._request("GET", "api/open/v2/payment/current")
@@ -348,6 +461,36 @@ class TigerPayOpenApiClient:
         if not isinstance(data, list):
             raise TigerPayOpenApiError(
                 "Cash inventory not found in response",
+                status_code=status_code,
+                payload=payload,
+            )
+        return [item for item in data if isinstance(item, dict)]
+
+    def get_cash_box(self) -> list[dict[str, Any]]:
+        """GET api/cash_box with device-admin JWT (drop/cassette inventory)."""
+        token = self.login_device_admin()
+        status_code, payload = self._raw_request(
+            "GET",
+            "api/cash_box",
+            authorization=f"Bearer {token}",
+        )
+        if status_code == 401:
+            token = self.login_device_admin(force=True)
+            status_code, payload = self._raw_request(
+                "GET",
+                "api/cash_box",
+                authorization=f"Bearer {token}",
+            )
+        if status_code >= 400:
+            raise TigerPayOpenApiError(
+                _tiger_error_message(payload, "Failed to get cash box inventory"),
+                status_code=status_code,
+                payload=payload,
+            )
+        data = _parse_envelope(payload)
+        if not isinstance(data, list):
+            raise TigerPayOpenApiError(
+                "Cash box inventory not found in response",
                 status_code=status_code,
                 payload=payload,
             )

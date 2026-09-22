@@ -23,12 +23,14 @@ def test_parse_cash_items_value_amount_and_aliases():
         [
             {"type": "Banknote", "value": 1000, "amount": 2},
             {"denomination": 20, "quantity": 3},
+            {"denominationType": "Banknote", "value": 500, "amount": 1},
             {"value": "nope"},
         ]
     )
     assert items == [
         {"type": "Banknote", "value": 1000, "amount": 2},
         {"type": "Banknote", "value": 20, "amount": 3},
+        {"type": "Banknote", "value": 500, "amount": 1},
     ]
 
 
@@ -186,6 +188,7 @@ def test_open_api_get_cash_and_change_status(monkeypatch):
     settings.tiger_pay_client_id = "cid"
     settings.tiger_pay_client_secret = "secret"
     settings.tiger_pay_api_host = "http://tiger.local/"
+    settings.tiger_pay_cashbox_mac = ""
     client = TigerPayOpenApiClient(settings=settings)
     calls = []
 
@@ -208,6 +211,74 @@ def test_open_api_get_cash_and_change_status(monkeypatch):
     assert client.get_cash() == [{"type": "Banknote", "value": 20, "amount": 4}]
     assert client.get_change_status() is True
 
+
+def test_open_api_get_cash_box_uses_device_admin_jwt(monkeypatch):
+    settings = MagicMock()
+    settings.tiger_pay_client_id = "cid"
+    settings.tiger_pay_client_secret = "secret"
+    settings.tiger_pay_api_host = "http://tiger.local/"
+    settings.tiger_voucher_username = "10001"
+    settings.tiger_voucher_password = "1234"
+    settings.tiger_pay_cashbox_mac = ""
+    client = TigerPayOpenApiClient(settings=settings)
+    calls: list[tuple[str, str, dict | None]] = []
+
+    class FakeHttp:
+        def request(self, method, url, content=None, headers=None):
+            auth = (headers or {}).get("Authorization")
+            calls.append((method, url, auth))
+            if url.endswith("api/user/login"):
+                assert method == "POST"
+                assert content is not None
+                body = json.loads(content.decode("utf-8"))
+                assert body == {"username": "10001", "pin": "1234"}
+                return _FakeResponse(
+                    200,
+                    {
+                        "data": {
+                            "accessToken": "admin-jwt",
+                            "expiresAt": 9_999_999_999_999,
+                        },
+                        "message": "Success",
+                    },
+                )
+            if url.endswith("api/cash_box"):
+                assert method == "GET"
+                assert auth == "Bearer admin-jwt"
+                return _FakeResponse(
+                    200,
+                    {
+                        "data": [
+                            {
+                                "id": 1,
+                                "currency": "THB",
+                                "denominationType": "Banknote",
+                                "value": 1000,
+                                "amount": 228,
+                            }
+                        ],
+                        "message": "Success",
+                    },
+                )
+            raise AssertionError(url)
+
+    monkeypatch.setattr(client, "_http_client", lambda: FakeHttp())
+    assert client.get_cash_box() == [
+        {
+            "id": 1,
+            "currency": "THB",
+            "denominationType": "Banknote",
+            "value": 1000,
+            "amount": 228,
+        }
+    ]
+    assert any(url.endswith("api/user/login") for _, url, _ in calls)
+    assert any(url.endswith("api/cash_box") for _, url, _ in calls)
+    # Cached admin token — second call should not login again.
+    calls.clear()
+    client.get_cash_box()
+    assert not any(url.endswith("api/user/login") for _, url, _ in calls)
+    assert any(url.endswith("api/cash_box") for _, url, _ in calls)
 
 def test_companion_cash_cached_endpoint():
     with patch(
