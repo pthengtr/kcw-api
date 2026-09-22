@@ -351,6 +351,46 @@
       border-radius: 999px;
       background: currentColor;
     }
+    .hopper-tabs {
+      display: inline-flex;
+      margin-top: 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      max-width: 100%;
+    }
+    .hopper-tabs button {
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      min-height: 2.4rem;
+      padding: 0.35rem 0.9rem;
+      white-space: nowrap;
+      font-size: 0.92rem;
+    }
+    .hopper-tabs button.active {
+      background: var(--seg-active);
+      color: var(--text);
+    }
+    .hopper-panel { display: none; margin-top: 0.75rem; }
+    .hopper-panel.active { display: block; }
+    .hopper-total {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+      background: var(--btn-secondary);
+    }
+    .hopper-total-label {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .hopper-total-value {
+      margin-top: 0.2rem;
+      font-size: 1.45rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.25;
+    }
     .hopper-table {
       width: 100%;
       margin-top: 0.75rem;
@@ -360,8 +400,8 @@
       padding: 0.4rem 0.2rem;
       white-space: nowrap;
     }
-    .hopper-table td:last-child, .hopper-table th:last-child { text-align: right; }
-    .hopper-reasons { margin-top: 0.6rem; color: var(--muted); font-size: 0.9rem; }
+    .hopper-table td:nth-child(n+3), .hopper-table th:nth-child(n+3) { text-align: right; }
+    .hopper-reasons { margin-top: 0.6rem; color: var(--muted); font-size: 0.9rem; white-space: pre-wrap; }
     .btn-link {
       background: transparent;
       color: var(--muted);
@@ -768,6 +808,9 @@
     dialog.qr-dialog {
       max-width: min(420px, calc(100vw - 2rem));
     }
+    dialog.hopper-dialog {
+      max-width: min(480px, calc(100vw - 2rem));
+    }
     .qr-dialog-image-wrap {
       display: flex;
       justify-content: center;
@@ -839,19 +882,37 @@
       <button type="button" class="btn-dialog-secondary" id="qrDialogClose">ปิด</button>
     </div>
   </dialog>
-  <dialog class="alert-dialog" id="hopperDialog" aria-labelledby="hopperDialogTitle">
+  <dialog class="alert-dialog hopper-dialog" id="hopperDialog" aria-labelledby="hopperDialogTitle">
     <div class="alert-dialog-inner">
       <div class="alert-dialog-icon info" id="hopperDialogIcon" aria-hidden="true"></div>
-      <h3 id="hopperDialogTitle">สถานะเงินทอนในเครื่อง</h3>
+      <h3 id="hopperDialogTitle">สถานะเงินในเครื่อง</h3>
       <p id="hopperDialogMeta"></p>
       <p id="hopperDialogError"></p>
-      <table class="hopper-table" id="hopperDialogTable">
-        <thead>
-          <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-      <p class="hopper-reasons" id="hopperDialogReasons"></p>
+      <div class="hopper-tabs" id="hopperTabs" role="tablist" aria-label="มุมมองเงินในเครื่อง">
+        <button type="button" role="tab" data-hopper-tab="change" class="active" aria-selected="true">เงินทอน</button>
+        <button type="button" role="tab" data-hopper-tab="cashbox" aria-selected="false">เงินในตู้</button>
+      </div>
+      <div class="hopper-panel active" data-hopper-panel="change" role="tabpanel">
+        <p class="hopper-reasons" id="hopperDialogReasons"></p>
+        <table class="hopper-table" id="hopperDialogChangeTable">
+          <thead>
+            <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="hopper-panel" data-hopper-panel="cashbox" role="tabpanel" hidden>
+        <div class="hopper-total">
+          <div class="hopper-total-label">รวมเงินในตู้</div>
+          <div class="hopper-total-value" id="hopperDialogTotal">—</div>
+        </div>
+        <table class="hopper-table" id="hopperDialogCashboxTable">
+          <thead>
+            <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th><th>รวม</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
     <div class="alert-dialog-actions">
       <button type="button" class="btn-dialog-ok" id="hopperDialogOk">ปิด</button>
@@ -2012,6 +2073,36 @@
       return "";
     }
 
+    function formatHopperBaht(value) {
+      const n = typeof value === "number" ? value : Number(value);
+      if (!Number.isFinite(n)) return "—";
+      return `${n.toLocaleString("th-TH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} บาท`;
+    }
+
+    function hopperItemKind(item) {
+      if (item && item.type === "Coin") return "เหรียญ";
+      if (item && item.type === "Banknote") return "ธนบัตร";
+      const value = Number(item && item.value);
+      return Number.isFinite(value) && value < 20 ? "เหรียญ" : "ธนบัตร";
+    }
+
+    function setHopperTab(tab) {
+      const next = tab === "cashbox" ? "cashbox" : "change";
+      document.querySelectorAll("#hopperTabs [data-hopper-tab]").forEach((btn) => {
+        const active = btn.getAttribute("data-hopper-tab") === next;
+        btn.classList.toggle("active", active);
+        btn.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      document.querySelectorAll("#hopperDialog [data-hopper-panel]").forEach((panel) => {
+        const active = panel.getAttribute("data-hopper-panel") === next;
+        panel.classList.toggle("active", active);
+        panel.hidden = !active;
+      });
+    }
+
     function applyHopperIcon(snapshot) {
       const btn = document.getElementById("hopperBtn");
       const dot = document.getElementById("hopperDot");
@@ -2033,15 +2124,19 @@
       const metaEl = document.getElementById("hopperDialogMeta");
       const errorEl = document.getElementById("hopperDialogError");
       const reasonsEl = document.getElementById("hopperDialogReasons");
-      const tbody = document.querySelector("#hopperDialogTable tbody");
+      const changeBody = document.querySelector("#hopperDialogChangeTable tbody");
+      const cashboxBody = document.querySelector("#hopperDialogCashboxTable tbody");
+      const totalEl = document.getElementById("hopperDialogTotal");
       const level = snapshot && snapshot.change_level;
       iconEl.className = `alert-dialog-icon ${level === "red" ? "error" : level === "green" ? "success" : "info"}`;
       iconEl.innerHTML = ICONS.coins;
       if (!snapshot) {
         metaEl.textContent = "ยังไม่มีภาพ hopper ที่บันทึกไว้";
         errorEl.textContent = error || "";
-        tbody.innerHTML = "";
         reasonsEl.textContent = "";
+        changeBody.innerHTML = "";
+        cashboxBody.innerHTML = "";
+        totalEl.textContent = "—";
         return;
       }
       const when = snapshot.captured_at ? new Date(snapshot.captured_at).toLocaleString("th-TH") : "—";
@@ -2050,12 +2145,18 @@
       metaEl.textContent = `${live} · ${when}\nสถานะทอน: ${ready}`;
       errorEl.textContent = error || "";
       const items = Array.isArray(snapshot.items) ? snapshot.items : [];
-      tbody.innerHTML = items.map((item) => {
-        const kind = item.type === "Coin" ? "เหรียญ" : "ธนบัตร";
-        return `<tr><td>${escapeHtml(kind)}</td><td>${escapeHtml(String(item.value))}</td><td>${escapeHtml(String(item.amount))}</td></tr>`;
+      changeBody.innerHTML = items.map((item) => {
+        return `<tr><td>${escapeHtml(hopperItemKind(item))}</td><td>${escapeHtml(String(item.value))}</td><td>${escapeHtml(String(item.amount))}</td></tr>`;
       }).join("") || `<tr><td colspan="3">ไม่มีรายการ</td></tr>`;
+      cashboxBody.innerHTML = items.map((item) => {
+        const line = Number(item.value) * Number(item.amount);
+        return `<tr><td>${escapeHtml(hopperItemKind(item))}</td><td>${escapeHtml(String(item.value))}</td><td>${escapeHtml(String(item.amount))}</td><td>${escapeHtml(formatHopperBaht(line))}</td></tr>`;
+      }).join("") || `<tr><td colspan="4">ไม่มีรายการ</td></tr>`;
+      totalEl.textContent = formatHopperBaht(snapshot.total_baht);
       const reasons = Array.isArray(snapshot.change_reasons) ? snapshot.change_reasons : [];
-      reasonsEl.textContent = reasons.join("\n");
+      reasonsEl.textContent = reasons.length
+        ? reasons.join("\n")
+        : "ไม่มีคำเตือนระดับเงินทอน";
     }
 
     async function refreshHopperIcon() {
@@ -2071,6 +2172,7 @@
 
     async function openHopperDialog() {
       const dialog = document.getElementById("hopperDialog");
+      setHopperTab("change");
       renderHopperDialog({ snapshot: null, live: false, error: "กำลังอ่านเครื่อง…" });
       dialog.showModal();
       try {
@@ -2162,6 +2264,11 @@
 
     document.getElementById("hopperBtn").onclick = () => {
       openHopperDialog().catch(() => {});
+    };
+    document.getElementById("hopperTabs").onclick = (event) => {
+      const btn = event.target.closest("[data-hopper-tab]");
+      if (!btn || !document.getElementById("hopperTabs").contains(btn)) return;
+      setHopperTab(btn.getAttribute("data-hopper-tab"));
     };
     document.getElementById("hopperDialogOk").onclick = () => {
       document.getElementById("hopperDialog").close();
