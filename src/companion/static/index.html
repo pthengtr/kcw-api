@@ -889,26 +889,28 @@
       <p id="hopperDialogMeta"></p>
       <p id="hopperDialogError"></p>
       <div class="hopper-tabs" id="hopperTabs" role="tablist" aria-label="มุมมองเงินในเครื่อง">
-        <button type="button" role="tab" data-hopper-tab="change" class="active" aria-selected="true">เงินทอน</button>
-        <button type="button" role="tab" data-hopper-tab="cashbox" aria-selected="false">เงินในตู้</button>
+        <button type="button" role="tab" data-hopper-tab="cashbox" class="active" aria-selected="true">เงินในตู้</button>
+        <button type="button" role="tab" data-hopper-tab="change" aria-selected="false">เงินทอน</button>
       </div>
-      <div class="hopper-panel active" data-hopper-panel="change" role="tabpanel">
-        <p class="hopper-reasons" id="hopperDialogReasons"></p>
-        <table class="hopper-table" id="hopperDialogChangeTable">
+      <div class="hopper-panel active" data-hopper-panel="cashbox" role="tabpanel">
+        <div class="hopper-total">
+          <div class="hopper-total-label">เงินคงเหลือในตู้ (ทุกชนิด)</div>
+          <div class="hopper-total-value" id="hopperDialogTotal">—</div>
+        </div>
+        <p class="hopper-reasons" id="hopperDialogCashboxHint">ยอดจาก inventory ในเครื่อง ไม่ใช่รับเข้า/ทอนออกของบิล</p>
+        <table class="hopper-table" id="hopperDialogCashboxTable">
           <thead>
-            <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th></tr>
+            <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th><th>รวม</th></tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
-      <div class="hopper-panel" data-hopper-panel="cashbox" role="tabpanel" hidden>
-        <div class="hopper-total">
-          <div class="hopper-total-label">รวมเงินในตู้</div>
-          <div class="hopper-total-value" id="hopperDialogTotal">—</div>
-        </div>
-        <table class="hopper-table" id="hopperDialogCashboxTable">
+      <div class="hopper-panel" data-hopper-panel="change" role="tabpanel" hidden>
+        <p class="hopper-reasons" id="hopperDialogChangeStatus"></p>
+        <p class="hopper-reasons" id="hopperDialogReasons"></p>
+        <table class="hopper-table" id="hopperDialogChangeTable">
           <thead>
-            <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th><th>รวม</th></tr>
+            <tr><th>ชนิด</th><th>มูลค่า</th><th>จำนวน</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -2068,6 +2070,8 @@
       });
     }
 
+    const HOPPER_CHANGE_DENOMS = new Set([100, 50, 20, 10, 5, 1]);
+
     function hopperLevelClass(level) {
       if (level === "red" || level === "orange" || level === "green") return level;
       return "";
@@ -2089,8 +2093,12 @@
       return Number.isFinite(value) && value < 20 ? "เหรียญ" : "ธนบัตร";
     }
 
+    function sortHopperItems(items) {
+      return items.slice().sort((a, b) => Number(b.value) - Number(a.value));
+    }
+
     function setHopperTab(tab) {
-      const next = tab === "cashbox" ? "cashbox" : "change";
+      const next = tab === "change" ? "change" : "cashbox";
       document.querySelectorAll("#hopperTabs [data-hopper-tab]").forEach((btn) => {
         const active = btn.getAttribute("data-hopper-tab") === next;
         btn.classList.toggle("active", active);
@@ -2123,6 +2131,7 @@
       const iconEl = document.getElementById("hopperDialogIcon");
       const metaEl = document.getElementById("hopperDialogMeta");
       const errorEl = document.getElementById("hopperDialogError");
+      const changeStatusEl = document.getElementById("hopperDialogChangeStatus");
       const reasonsEl = document.getElementById("hopperDialogReasons");
       const changeBody = document.querySelector("#hopperDialogChangeTable tbody");
       const cashboxBody = document.querySelector("#hopperDialogCashboxTable tbody");
@@ -2133,6 +2142,7 @@
       if (!snapshot) {
         metaEl.textContent = "ยังไม่มีภาพ hopper ที่บันทึกไว้";
         errorEl.textContent = error || "";
+        if (changeStatusEl) changeStatusEl.textContent = "";
         reasonsEl.textContent = "";
         changeBody.innerHTML = "";
         cashboxBody.innerHTML = "";
@@ -2142,10 +2152,12 @@
       const when = snapshot.captured_at ? new Date(snapshot.captured_at).toLocaleString("th-TH") : "—";
       const ready = snapshot.change_ready === false ? "ทอนไม่ได้" : snapshot.change_ready === true ? "ทอนได้" : "ไม่ทราบ";
       const live = payload.live ? "สดจากเครื่อง" : "จาก snapshot ล่าสุด";
-      metaEl.textContent = `${live} · ${when}\nสถานะทอน: ${ready}`;
+      metaEl.textContent = `${live} · ${when}`;
       errorEl.textContent = error || "";
-      const items = Array.isArray(snapshot.items) ? snapshot.items : [];
-      changeBody.innerHTML = items.map((item) => {
+      if (changeStatusEl) changeStatusEl.textContent = `สถานะทอน: ${ready}`;
+      const items = sortHopperItems(Array.isArray(snapshot.items) ? snapshot.items : []);
+      const changeItems = items.filter((item) => HOPPER_CHANGE_DENOMS.has(Math.trunc(Number(item.value))));
+      changeBody.innerHTML = changeItems.map((item) => {
         return `<tr><td>${escapeHtml(hopperItemKind(item))}</td><td>${escapeHtml(String(item.value))}</td><td>${escapeHtml(String(item.amount))}</td></tr>`;
       }).join("") || `<tr><td colspan="3">ไม่มีรายการ</td></tr>`;
       cashboxBody.innerHTML = items.map((item) => {
@@ -2172,7 +2184,7 @@
 
     async function openHopperDialog() {
       const dialog = document.getElementById("hopperDialog");
-      setHopperTab("change");
+      setHopperTab("cashbox");
       renderHopperDialog({ snapshot: null, live: false, error: "กำลังอ่านเครื่อง…" });
       dialog.showModal();
       try {
@@ -2183,7 +2195,7 @@
         renderHopperDialog({
           snapshot: null,
           live: false,
-          error: err.message || "อ่านสถานะเงินทอนไม่สำเร็จ",
+          error: err.message || "อ่านสถานะเงินในตู้ไม่สำเร็จ",
         });
       }
     }
