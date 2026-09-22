@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import PurePosixPath
 from typing import Any
@@ -8,6 +9,7 @@ from src.pay_notes.config import get_pay_notes_settings
 
 # Supabase Storage rejects keys with spaces, "+", non-ASCII, etc. (InvalidKey).
 _UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+_SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def safe_storage_filename(filename: str | None, *, default: str = "upload.jpg") -> str:
@@ -28,14 +30,35 @@ def safe_storage_filename(filename: str | None, *, default: str = "upload.jpg") 
     return f"{stem}{suffix}"
 
 
+def safe_storage_segment(value: str | None, *, default: str = "note") -> str:
+    """Normalize acctno/noteno/voucno into a Supabase-safe path segment.
+
+    ASCII-safe values keep identity so existing object keys stay addressable.
+    Thai / spaces / other unsafe chars get a stable slug + short hash (avoids
+    collisions when different labels sanitize to the same slug).
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return default
+    raw = raw.replace("\\", "/").replace("/", "_")
+    if _SAFE_SEGMENT_RE.fullmatch(raw):
+        return raw[:120]
+    slug = _UNSAFE_KEY_CHARS.sub("_", raw)
+    slug = re.sub(r"_+", "_", slug).strip("._-") or default
+    if len(slug) > 40:
+        slug = slug[:40].rstrip("._-") or default
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"{slug}_{digest}"
+
+
 def bill_image_prefix(acctno: str, noteno: str) -> str:
-    acct = (acctno or "").strip()
-    note = (noteno or "").strip()
+    acct = safe_storage_segment(acctno, default="acct")
+    note = safe_storage_segment(noteno, default="note")
     return f"public/pay_note/bill/{acct}/{note}"
 
 
 def payment_image_prefix(voucno: str) -> str:
-    return f"public/pay_note/payment/{(voucno or '').strip()}"
+    return f"public/pay_note/payment/{safe_storage_segment(voucno, default='vouc')}"
 
 
 def public_url(path: str) -> str | None:

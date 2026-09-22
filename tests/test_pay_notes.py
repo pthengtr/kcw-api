@@ -6,7 +6,12 @@ from src.pay_notes.config import PayNotesSettings
 from src.pay_notes.noteno import display_noteno, format_suffixed_noteno, noteno_meta, parse_noteno_suffix
 from src.pay_notes.parts9 import attach_pidet_lines, infer_settle_method, list_note_bills_with_lines, resolve_stored_noteno
 from src.pay_notes.baht_text import baht_text
-from src.pay_notes.storage import safe_storage_filename
+from src.pay_notes.storage import (
+    bill_image_prefix,
+    payment_image_prefix,
+    safe_storage_filename,
+    safe_storage_segment,
+)
 from app.routers.pay_notes import (
     _note_totals,
     _normalize_note_pay_method,
@@ -32,6 +37,27 @@ def test_safe_storage_filename_defaults_and_paths():
     assert safe_storage_filename("โฟลเดอร์/สลิป.png", default="proof.jpg") == "proof.png"
     assert safe_storage_filename("a\\b\\ok-file_01.JPEG") == "ok-file_01.jpeg"
     assert safe_storage_filename("evil/../x.pdf") == "x.pdf"
+
+
+def test_safe_storage_segment_keeps_ascii_identity():
+    assert safe_storage_segment("INV-001_1") == "INV-001_1"
+    assert safe_storage_segment("7GP") == "7GP"
+    assert bill_image_prefix("7GP", "NOTE01") == "public/pay_note/bill/7GP/NOTE01"
+    assert payment_image_prefix("PV25001") == "public/pay_note/payment/PV25001"
+
+
+def test_safe_storage_segment_thai_noteno_is_ascii_stable():
+    # Operator-reported NOTENO with Thai characters — must not land raw in the key.
+    note = "7รกชน_ด6"
+    seg = safe_storage_segment(note)
+    assert seg.isascii()
+    assert all(c.isalnum() or c in "._-" for c in seg)
+    assert seg == safe_storage_segment(note)
+    assert seg != safe_storage_segment("7มขญ_ด6")  # different Thai → different hash
+    prefix = bill_image_prefix("7GP", note)
+    assert prefix.startswith("public/pay_note/bill/7GP/")
+    assert "รกชน" not in prefix
+    assert note not in prefix
 
 
 def test_pay_notes_commands():
