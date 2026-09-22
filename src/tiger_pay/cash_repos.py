@@ -38,6 +38,8 @@ def insert_cash_snapshot(
     change_reasons: list[str],
     items: list[dict[str, Any]],
     total_baht: Decimal | float | int,
+    cash_box_items: list[dict[str, Any]] | None = None,
+    cash_box_total_baht: Decimal | float | int = 0,
     tiger_payment_id: int | None = None,
     payment_no: str | None = None,
     payment_status: str | None = None,
@@ -56,6 +58,8 @@ def insert_cash_snapshot(
             change_reasons,
             items,
             total_baht,
+            cash_box_items,
+            cash_box_total_baht,
             shop_code
         )
         values (
@@ -70,6 +74,8 @@ def insert_cash_snapshot(
             cast(:change_reasons as jsonb),
             cast(:items as jsonb),
             :total_baht,
+            cast(:cash_box_items as jsonb),
+            :cash_box_total_baht,
             :shop_code
         )
         returning *
@@ -90,6 +96,8 @@ def insert_cash_snapshot(
                 "change_reasons": json.dumps(change_reasons),
                 "items": json.dumps(items),
                 "total_baht": str(total_baht),
+                "cash_box_items": json.dumps(cash_box_items or []),
+                "cash_box_total_baht": str(cash_box_total_baht),
                 "shop_code": shop_code,
             },
         ).one()
