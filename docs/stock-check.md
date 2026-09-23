@@ -23,6 +23,8 @@ POS_MSSQL_PASSWORD=...
 # Later:
 # POS_MSSQL_WRITER_USERNAME=python_writer
 # POS_MSSQL_WRITER_PASSWORD=...
+# Rebuild QTYOH2 from ledger on Take / product open (default on):
+# QTYOH2_SYNC_ON_READ=1
 WORKER_NAME=HQ-PC
 ```
 
@@ -67,8 +69,12 @@ Everyday **Take N** batch uses weighted ABC + risk pools (see below).
 5. If system qty changes between count and audit, drift review shows intervening **sale / purchase / transfer** bills + current stock.  
    - Bills that fully explain the change → approve may complete as `drift_matched` (no SA when count already equals live).  
    - **Unexplained** change (no matching bills) → auditor must tick an explicit confirm; result is `completed_unexplained` / outcome `unexplained_drift` (keeps original system qty + variance; **not** marked correct).
-   - To attribute future OH changes on HQ: KSS `dbo.ICMAS_QTYOH2_AUDIT` (see kcw-docs `ops/icmas-qtyoh2-audit.md`).  
-   - Remaining variance vs live still posts SA/3SA as usual after confirm.  
+   - **KAcc OH rebuild (important):** PARTS9 often leaves `QTYOH2` stale after a PI until someone **opens the product in KAcc**, which recomputes  
+     `QTYOH2 ≈ QTYBEG2 + ΣPIDET − ΣSIDET(JOURMODE≠0)` (line-only; no header cancel filter) and writes OH. That jump has **no new bill in the count→approve window**, so it looks like invisible drift. Posting SA for a gap that is really an unapplied PI **double-counts** when KAcc later rebuilds (or already did). Dictionary: [kcw-docs ICMAS §6.1](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-icmas-data-dictionary.md).  
+   - **Mitigation (app, not DB trigger):** on stock-check **Take** / product open and parts9-explorer product detail, kcw-api rebuilds `QTYOH2` with the same line-only formula (`src/db/qtyoh2_ledger.py`). Flag `QTYOH2_SYNC_ON_READ` (default on). Needs `POS_MSSQL_WRITER_*`. HQ worker → KSS; SYP worker / explorer site=SYP → kss-pc automatically — **no SQL trigger install on kss-pc**.  
+   - Legacy `trg_PIDET_sync_icmas_qtyoh2` on KSS stays **DISABLED** (aggressive; superseded by on-read sync).  
+   - To attribute OH writers on HQ: KSS `dbo.ICMAS_QTYOH2_AUDIT` (see kcw-docs `ops/icmas-qtyoh2-audit.md`).  
+   - Remaining variance vs live still posts SA/3SA as usual after confirm — SA **must** insert `SIMAS`/`SIDET` (not OH-only), or the next KAcc product open would wipe a bare qty write.  
 6. **จบงาน** releases unfinished leases immediately  
 7. Form submits show a full-screen busy spinner (blocks double-click)
 

@@ -95,6 +95,24 @@ def clear_parts9_engine_cache() -> None:
     _engines.clear()
 
 
+def sync_qtyoh2_for_bcodes(bcodes: set[str] | list[str]):
+    """Rebuild QTYOH2 from ledger for claimed/opened SKUs (no-op if flag/writer off)."""
+    from src.db.qtyoh2_ledger import (
+        qtyoh2_sync_on_read_enabled,
+        sync_qtyoh2_from_ledger_many,
+    )
+
+    if not qtyoh2_sync_on_read_enabled():
+        return []
+    settings = get_stock_check_settings()
+    if not settings.pos_mssql_writer_username:
+        return []
+    codes = [str(b).strip() for b in bcodes if str(b).strip()]
+    if not codes:
+        return []
+    return sync_qtyoh2_from_ledger_many(codes, engine=get_parts9_engine(writer=True))
+
+
 def _parse_qty(value: Any) -> float:
     if value is None:
         return 0.0

@@ -12,6 +12,7 @@ from src.stock_check.db_local import LocalStore
 from src.stock_check.parts9 import (
     get_product_by_bcode,
     get_products_by_bcodes,
+    sync_qtyoh2_for_bcodes,
     list_stock_movements,
     lookup_products,
 )
@@ -94,6 +95,13 @@ class StockCheckService:
             now=now,
         )
         self.store.extend_leases(session_id, lease_ttl=idle, now=now)
+        if claimed:
+            sync_qtyoh2_for_bcodes(claimed)
+            refreshed = {
+                p.bcode: p for p in get_products_by_bcodes(claimed)
+            }
+        else:
+            refreshed = {}
         by_code = {p.bcode: (p, flags) for p, flags in picked}
         cards: list[dict[str, Any]] = []
         for bcode in claimed:
@@ -101,6 +109,7 @@ class StockCheckService:
             if not item:
                 continue
             product, flags = item
+            product = refreshed.get(bcode, product)
             card = self._product_card(product, audits.get(bcode))
             card["pick_priority"] = flags.priority
             card["pick_reasons"] = list(flags.reasons)
@@ -231,6 +240,9 @@ class StockCheckService:
         return drafts
 
     def product_detail(self, bcode: str, *, session_id: str | None = None) -> dict[str, Any] | None:
+        code = (bcode or "").strip()
+        if code:
+            sync_qtyoh2_for_bcodes([code])
         product = get_product_by_bcode(bcode)
         if not product:
             return None
