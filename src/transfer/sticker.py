@@ -1,19 +1,20 @@
 """5×3.5 cm product barcode stickers for TSC TE310 / TTP-244 Pro (TSPL).
 
     [=========== CODE 128 (full width) ===========]
-                      12052328
-                14F-5-2.2 | HQ
-    ชุดยางไฮปั๊มขาว
-    F/6600
-    นอกแท้ • ชุด • 7MCP
+         07051647 | E6-3-9 | SYP
+    ไส้กรองเครื่อง กระดาษ
+    BT50 PRO,R/G 2012
+    แท้ • หน่วย • 7SSY1
     -----------------------------------------------
-    SK0013 | EDPN500B | OTSMXLTM
+    FL-2137 | JU2Z6-731B | OTMTXTCM
 
 Thai text is rasterized (TSC built-in fonts are ASCII-only) as BITMAP.
 Both printers are 2-across (SIZE 102×35 mm) and invert BITMAP polarity.
-Barcode is full-width (10 mm tall) for scanning; location | print-site
-branch (TRANSFER_SITE) sits under the human-readable BCODE.
-ชื่อย่อ (ACODE) is not printed. Location comes from that site's ICMAS.
+Barcode is full-width (10 mm tall) for scanning. The line under it is
+``{bcode} | {location} | {HQ|SYP}`` in one large row. The footer stays
+``{factory} | {genuine} | {price cipher}``; the price cipher is larger
+than the part numbers. ชื่อย่อ (ACODE) is not printed. Location comes
+from that site's ICMAS.
 """
 
 from __future__ import annotations
@@ -38,15 +39,20 @@ LABEL_PAD_MM = 2.2
 BODY_FONT_MM = 2.2
 NAME_FONT_MM = 3.5
 MODEL_FONT_MM = 3.1
-LOC_FONT_MM = 2.2
+# One line under the barcode: BCODE | location | print-site. Preferred size
+# shrinks down to IDENTITY_FONT_MIN_MM so a long bin code still fits.
+IDENTITY_FONT_MM = 3.8
+IDENTITY_FONT_MIN_MM = 2.5
 FOOT_FONT_MM = 2.3
+# Price cipher (OT…X…) is a bit larger than the factory / genuine numbers.
+PRICE_FONT_MM = 3.2
+PRICE_FONT_MIN_MM = 2.6
 # Full-width Code 128; taller bars for handheld scanners.
 BARCODE_HEIGHT_MM = 10.0
-BCODE_FONT_MM = 2.2
-# Gap under human-readable BCODE before location | branch.
-HEADER_GAP_AFTER_BCODE_MM = 0.35
-# Gap under location | branch before the Thai name.
-NAME_GAP_AFTER_HEADER_MM = 1.0
+# Gap under the identity line before the Thai name.
+NAME_GAP_AFTER_HEADER_MM = 0.7
+# Gap under the footer rule before factory | genuine | price.
+FOOT_TEXT_GAP_MM = 0.45
 FOOT_H_MM = 6.4
 TSPL_BIT0_PRINTS_MARK = "kcw_tspl_bit0_prints"
 MAX_QTY_PER_LINE = 200
@@ -277,6 +283,18 @@ def format_header_line(location: str, site: str = "") -> str:
     return loc or site_key
 
 
+def format_identity_line(bcode: str, location: str = "", site: str = "") -> str:
+    """``{bcode} | {location} | {HQ|SYP}`` on one line under the barcode."""
+    parts: list[str] = []
+    code = (bcode or "").strip()
+    if code:
+        parts.append(code)
+    header = format_header_line(location, site)
+    if header:
+        parts.append(header)
+    return " | ".join(parts)
+
+
 def format_meta_line(brand: str = "", unit: str = "", company: str = "") -> str:
     parts = [p.strip() for p in (brand, unit, company) if (p or "").strip()]
     return " • ".join(parts)
@@ -480,6 +498,128 @@ def sticker_name_lines(descr: str, *, printer_model: str = "te310") -> list[str]
     return _wrap_text(draw, descr, latin, thai, _name_max_width(dots_mm), max_lines=2)
 
 
+def _mm_steps(preferred_mm: float, minimum_mm: float):
+    """Preferred size down to the floor, in 0.1 mm steps."""
+    start = int(round(preferred_mm * 10))
+    stop = int(round(minimum_mm * 10))
+    if start < stop:
+        start = stop
+    for tenths in range(start, stop - 1, -1):
+        yield tenths / 10.0
+
+
+def _font_pair_for_mm(dots_mm: int, mm: float, *, bold: bool, min_px: int):
+    return _load_font_pair(max(min_px, _mm(dots_mm, mm)), bold=bold)
+
+
+def _run_metrics(latin: ImageFont.ImageFont, thai: ImageFont.ImageFont) -> tuple[int, int]:
+    latin_ascent, latin_descent = latin.getmetrics()
+    thai_ascent, thai_descent = thai.getmetrics()
+    return max(int(latin_ascent), int(thai_ascent)), max(int(latin_descent), int(thai_descent))
+
+
+def _fit_single_line(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    dots_mm: int,
+    max_width: int,
+    preferred_mm: float,
+    minimum_mm: float,
+    *,
+    bold: bool,
+    min_px: int,
+) -> tuple[str, ImageFont.ImageFont | None, ImageFont.ImageFont | None]:
+    """Largest font in [minimum, preferred] that fits; ellipsize only at the floor."""
+    raw = (text or "").strip()
+    if not raw:
+        return "", None, None
+    chosen: tuple[ImageFont.ImageFont, ImageFont.ImageFont] | None = None
+    for mm in _mm_steps(preferred_mm, minimum_mm):
+        latin, thai = _font_pair_for_mm(dots_mm, mm, bold=bold, min_px=min_px)
+        chosen = (latin, thai)
+        if _text_length(draw, raw, latin, thai) <= max_width:
+            return raw, latin, thai
+    assert chosen is not None
+    latin, thai = chosen
+    return _fit_text(draw, raw, latin, thai, max_width), latin, thai
+
+
+def _draw_baseline_runs(
+    draw: ImageDraw.ImageDraw,
+    x: float,
+    top: float,
+    runs: list[tuple[str, ImageFont.ImageFont, ImageFont.ImageFont]],
+) -> int:
+    """Draw runs on one baseline. ``top`` is the top of the tallest em box."""
+    if not runs:
+        return 0
+    metrics = [_run_metrics(latin, thai) for _, latin, thai in runs]
+    max_ascent = max(ascent for ascent, _ in metrics)
+    max_descent = max(descent for _, descent in metrics)
+    baseline = top + max_ascent
+    cursor = x
+    for (text, latin, thai), (ascent, _) in zip(runs, metrics):
+        _draw_mixed(draw, (cursor, baseline - ascent), text, latin, thai)
+        cursor += _text_length(draw, text, latin, thai)
+    return max_ascent + max_descent
+
+
+def _footer_runs(
+    draw: ImageDraw.ImageDraw,
+    label: StickerLabel,
+    dots_mm: int,
+    max_width: int,
+) -> list[tuple[str, ImageFont.ImageFont, ImageFont.ImageFont]]:
+    """``factory | genuine`` at the footer size, price cipher a bit larger."""
+    prefix = " | ".join(
+        part.strip()
+        for part in (label.factory_no, label.genuine_no)
+        if (part or "").strip()
+    )
+    price = (label.price_code or "").strip()
+    if not prefix and not price:
+        return []
+
+    foot_latin, foot_thai = _font_pair_for_mm(dots_mm, FOOT_FONT_MM, bold=True, min_px=12)
+    sep = " | " if prefix and price else ""
+    price_latin, price_thai = foot_latin, foot_thai
+    for mm in _mm_steps(PRICE_FONT_MM, PRICE_FONT_MIN_MM if price else FOOT_FONT_MM):
+        price_latin, price_thai = _font_pair_for_mm(dots_mm, mm, bold=True, min_px=12)
+        width = 0.0
+        if prefix:
+            width += _text_length(draw, prefix, foot_latin, foot_thai)
+        if sep:
+            width += _text_length(draw, sep, foot_latin, foot_thai)
+        if price:
+            width += _text_length(draw, price, price_latin, price_thai)
+        if width <= max_width:
+            break
+
+    price_w = _text_length(draw, price, price_latin, price_thai) if price else 0.0
+    sep_w = _text_length(draw, sep, foot_latin, foot_thai) if sep else 0.0
+    if price and price_w > max_width and not prefix:
+        price = _fit_text(draw, price, price_latin, price_thai, max_width)
+        price_w = _text_length(draw, price, price_latin, price_thai)
+    if prefix:
+        avail = int(max_width - price_w - sep_w)
+        if avail <= 0:
+            prefix = ""
+            sep = ""
+        else:
+            prefix = _fit_text(draw, prefix, foot_latin, foot_thai, avail)
+            if not prefix:
+                sep = ""
+
+    runs: list[tuple[str, ImageFont.ImageFont, ImageFont.ImageFont]] = []
+    if prefix:
+        runs.append((prefix, foot_latin, foot_thai))
+    if sep and prefix and price:
+        runs.append((sep, foot_latin, foot_thai))
+    if price:
+        runs.append((price, price_latin, price_thai))
+    return runs
+
+
 def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> Image.Image:
     """Rasterize one 50×35 mm sticker at the printer's native DPI."""
     profile = printer_profile(printer_model)
@@ -496,34 +636,28 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
     barcode_bottom = pad + _mm(dots_mm, BARCODE_HEIGHT_MM)
     full_w = width - pad * 2
 
-    latin_head, thai_head = _load_font_pair(max(11, _mm(dots_mm, LOC_FONT_MM)), bold=True)
     latin_name, thai_name = _load_font_pair(max(16, _mm(dots_mm, NAME_FONT_MM)), bold=True)
     latin_model, thai_model = _load_font_pair(max(15, _mm(dots_mm, MODEL_FONT_MM)), bold=True)
     latin_meta, thai_meta = _load_font_pair(max(11, _mm(dots_mm, BODY_FONT_MM)))
-    latin_bcode, thai_bcode = _load_font_pair(max(12, _mm(dots_mm, BCODE_FONT_MM)), bold=True)
-    latin_foot, thai_foot = _load_font_pair(max(12, _mm(dots_mm, FOOT_FONT_MM)), bold=True)
 
     _draw_code128(draw, label.bcode, (barcode_left, barcode_top, barcode_right, barcode_bottom))
-    y = barcode_bottom + _mm(dots_mm, 0.15)
-    bcode = _fit_text(draw, label.bcode, latin_bcode, thai_bcode, full_w)
-    if bcode:
-        bw = _text_length(draw, bcode, latin_bcode, thai_bcode)
-        bx = pad + max(0, (full_w - bw) / 2)
-        _draw_mixed(draw, (bx, y), bcode, latin_bcode, thai_bcode)
-        y += _mm(dots_mm, BCODE_FONT_MM) + _mm(dots_mm, HEADER_GAP_AFTER_BCODE_MM)
-
-    header = _fit_text(
+    y = barcode_bottom + _mm(dots_mm, 0.2)
+    identity, latin_id, thai_id = _fit_single_line(
         draw,
-        format_header_line(label.location, label.site),
-        latin_head,
-        thai_head,
+        format_identity_line(label.bcode, label.location, label.site),
+        dots_mm,
         full_w,
+        IDENTITY_FONT_MM,
+        IDENTITY_FONT_MIN_MM,
+        bold=True,
+        min_px=14,
     )
-    if header:
-        hw = _text_length(draw, header, latin_head, thai_head)
-        hx = pad + max(0, (full_w - hw) / 2)
-        _draw_mixed(draw, (hx, y), header, latin_head, thai_head)
-        y += _mm(dots_mm, LOC_FONT_MM) + _mm(dots_mm, NAME_GAP_AFTER_HEADER_MM)
+    if identity and latin_id is not None and thai_id is not None:
+        identity_w = _text_length(draw, identity, latin_id, thai_id)
+        identity_x = pad + max(0, (full_w - identity_w) / 2)
+        _draw_mixed(draw, (identity_x, y), identity, latin_id, thai_id)
+        ascent, descent = _run_metrics(latin_id, thai_id)
+        y += ascent + descent + _mm(dots_mm, NAME_GAP_AFTER_HEADER_MM)
 
     rule_y = height - _mm(dots_mm, FOOT_H_MM)
     draw.line(
@@ -531,21 +665,9 @@ def render_label_image(label: StickerLabel, *, printer_model: str = "te310") -> 
         fill=0,
         width=1,
     )
-    footer = _fit_text(
-        draw,
-        format_footer_line(label.factory_no, label.genuine_no, label.price_code),
-        latin_foot,
-        thai_foot,
-        full_w,
-    )
-    if footer:
-        _draw_mixed(
-            draw,
-            (pad, rule_y + _mm(dots_mm, 0.7)),
-            footer,
-            latin_foot,
-            thai_foot,
-        )
+    footer_runs = _footer_runs(draw, label, dots_mm, full_w)
+    if footer_runs:
+        _draw_baseline_runs(draw, pad, rule_y + _mm(dots_mm, FOOT_TEXT_GAP_MM), footer_runs)
 
     name_step = _mm(dots_mm, NAME_FONT_MM) + _mm(dots_mm, 0.15)
     for line in sticker_name_lines(label.descr, printer_model=printer_model):

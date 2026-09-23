@@ -17,6 +17,7 @@ from src.transfer.sticker import (
     encode_price_digits,
     format_footer_line,
     format_header_line,
+    format_identity_line,
     format_meta_line,
     format_price_code,
     format_unit_line,
@@ -35,6 +36,28 @@ from src.transfer.sticker import (
     _image_to_bitmap_bytes,
 )
 from src.transfer.ui import page
+
+
+def _ink_rows(img, x0: int, y0: int, x1: int, y1: int) -> list[int]:
+    px = img.load()
+    rows: list[int] = []
+    for y in range(max(0, y0), min(img.height, y1)):
+        if any(px[x, y] == 0 for x in range(max(0, x0), min(img.width, x1))):
+            rows.append(y)
+    return rows
+
+
+def _first_ink_run(img, x0: int, y0: int, x1: int, y1: int):
+    rows = _ink_rows(img, x0, y0, x1, y1)
+    if not rows:
+        return None
+    start = rows[0]
+    end = start
+    for y in rows[1:]:
+        if y > end + 1:
+            break
+        end = y
+    return start, end
 
 
 SAMPLE = StickerLabel(
@@ -167,6 +190,11 @@ def test_layout_line_helpers():
     assert format_header_line("14F-5-2.2", "") == "14F-5-2.2"
     assert format_header_line("", "syp") == "SYP"
     assert format_header_line("19P-1-3", "SYP") == "19P-1-3 | SYP"
+    assert format_identity_line("07051647", "E6-3-9", "SYP") == "07051647 | E6-3-9 | SYP"
+    assert format_identity_line("12052328", "14F-5-2.2", "HQ") == "12052328 | 14F-5-2.2 | HQ"
+    assert format_identity_line("13010754", "19P-1-3", "") == "13010754 | 19P-1-3"
+    assert format_identity_line("70010300", "", "HQ") == "70010300 | HQ"
+    assert format_identity_line("70010300", "", "") == "70010300"
     assert format_meta_line("นอกแท้", "ชุด", "7MCP") == "นอกแท้ • ชุด • 7MCP"
     assert format_meta_line("นอกแท้", "", "") == "นอกแท้"
     assert format_footer_line("SK0013", "EDPN500B", "OTSMXLTM") == "SK0013 | EDPN500B | OTSMXLTM"
@@ -213,9 +241,17 @@ def test_barcode_is_full_width_and_taller():
         for y in range(pad, barcode_bottom)
     )
     assert left_ink and right_ink
-    # Header (location | site) sits below the barcode band, not beside it.
-    mid_y = barcode_bottom + int(round(3.5 * dots_mm))
-    assert any(px[x, mid_y] == 0 for x in range(pad, img.width - pad))
+    # BCODE | location | site is one row directly under the barcode, not beside it.
+    identity = _first_ink_run(
+        img,
+        pad,
+        barcode_bottom + 1,
+        img.width - pad,
+        barcode_bottom + int(round(6 * dots_mm)),
+    )
+    assert identity is not None
+    identity_height = identity[1] - identity[0] + 1
+    assert int(round(2.0 * dots_mm)) <= identity_height <= int(round(4.2 * dots_mm))
 
 
 def test_tspl_job_uses_received_qty_and_label_size():
@@ -269,6 +305,61 @@ def test_244_pro_two_up_and_inverted_bitmap():
     assert b"REM kcw_tspl_bit0_prints" in te
     assert te.count(b"PRINT 1,") == 1
     assert b"PRINT 1,1" in te
+
+
+def test_identity_and_price_code_are_larger():
+    """BCODE | location | site is one large row; the price cipher is taller."""
+    label = StickerLabel(
+        bcode="07051647",
+        descr="ไส้กรองเครื่อง กระดาษ",
+        location="E6-3-9",
+        brand="แท้",
+        unit="หน่วย",
+        company="7SSY1",
+        model="BT50 PRO,R/G 2012",
+        factory_no="FL-2137",
+        genuine_no="JU2Z6-731B",
+        price_code="OTMTXTCM",
+        site="SYP",
+        qty=1,
+    )
+    assert format_identity_line(label.bcode, label.location, label.site) == (
+        "07051647 | E6-3-9 | SYP"
+    )
+    assert format_footer_line(label.factory_no, label.genuine_no, label.price_code) == (
+        "FL-2137 | JU2Z6-731B | OTMTXTCM"
+    )
+    img = render_label_image(label, printer_model="te310")
+    dots = 12
+    pad = int(round(LABEL_PAD_MM * dots))
+    barcode_bottom = pad + int(round(BARCODE_HEIGHT_MM * dots))
+    identity = _first_ink_run(
+        img,
+        pad,
+        barcode_bottom + 1,
+        img.width - pad,
+        barcode_bottom + int(round(6 * dots)),
+    )
+    assert identity is not None
+    # One row, larger than the old 2.2 mm code / location lines.
+    assert identity[1] - identity[0] + 1 >= int(round(2.4 * dots))
+
+    footer_top = img.height - int(round(FOOT_H_MM * dots))
+    px = img.load()
+    xs = [
+        x
+        for y in range(footer_top + 2, img.height - 1)
+        for x in range(4, img.width - 4)
+        if px[x, y] == 0
+    ]
+    assert xs
+    x0, x1 = min(xs), max(xs)
+    span = x1 - x0 + 1
+    # Factory digits sit at the left; J descends, so compare cap tops, not full boxes.
+    part_top = _ink_rows(img, x0, footer_top + 2, x0 + max(8, span // 6), img.height - 1)
+    price_top = _ink_rows(img, x1 - max(8, span // 4), footer_top + 2, x1 + 1, img.height - 1)
+    assert part_top and price_top
+    assert price_top[0] < part_top[0] - 2
 
 
 def test_price_lives_in_footer_not_on_barcode():
