@@ -22,6 +22,9 @@ class Parts9ExplorerSettings(BaseSettings):
     pos_mssql_username: str = Field(default="python_reader", validation_alias="POS_MSSQL_USERNAME")
     pos_mssql_password: str = Field(default="", validation_alias="POS_MSSQL_PASSWORD")
     pos_mssql_driver: str = Field(default="ODBC Driver 18 for SQL Server", validation_alias="POS_MSSQL_DRIVER")
+    # Optional writer for QTYOH2 ledger sync on product open (same login as stock-check/transfer).
+    pos_mssql_writer_username: str = Field(default="", validation_alias="POS_MSSQL_WRITER_USERNAME")
+    pos_mssql_writer_password: str = Field(default="", validation_alias="POS_MSSQL_WRITER_PASSWORD")
     # Optional dedicated HQ PARTS9 host (analytic-compatible). Empty → POS_MSSQL_*.
     # SYP boxes must set this to a reachable HQ host OR rely on transfer peer stock —
     # do not leave POS_MSSQL pointing at kss-pc and expect get_site_engine("hq") to be HQ.

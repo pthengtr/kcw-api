@@ -107,11 +107,75 @@ def get_site_engine(site: str) -> Engine:
         return engine
 
 
+_writer_engines: dict[str, Engine] = {}
+_writer_engines_lock = threading.Lock()
+
+
+def _writer_odbc_url(server: str, database: str) -> str:
+    settings = get_explorer_settings()
+    if not settings.pos_mssql_writer_username:
+        raise RuntimeError("POS_MSSQL_WRITER_USERNAME not configured")
+    picked = pick_mssql_server(server)
+    if not tcp_open(picked):
+        raise ConnectionError("SQL Server port 1433 not reachable on %s" % picked)
+    odbc = (
+        f"DRIVER={{{settings.pos_mssql_driver}}};"
+        f"SERVER={picked};"
+        f"DATABASE={database};"
+        f"UID={settings.pos_mssql_writer_username};"
+        f"PWD={settings.pos_mssql_writer_password};"
+        "TrustServerCertificate=yes;"
+        "Connection Timeout=8;"
+        "APP=kcw-qtyoh2-sync;"
+    )
+    return "mssql+pyodbc:///?odbc_connect=" + quote_plus(odbc)
+
+
+def get_site_writer_engine(site: str) -> Engine | None:
+    """Writer engine for QTYOH2 ledger sync. None when writer login is unset."""
+    settings = get_explorer_settings()
+    if not settings.pos_mssql_writer_username:
+        return None
+    key = (site or "hq").strip().lower()
+    if key not in ("hq", "syp"):
+        key = "hq"
+    cache_key = f"w:{key}"
+    with _writer_engines_lock:
+        existing = _writer_engines.get(cache_key)
+        if existing is not None:
+            return existing
+    if key == "syp":
+        url = _writer_odbc_url(settings.parts9_syp_server, settings.parts9_syp_database)
+    else:
+        url = _writer_odbc_url(_hq_server(settings), _hq_database(settings))
+    engine = create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=1,
+        pool_timeout=8,
+        connect_args={"timeout": 8},
+    )
+    with _writer_engines_lock:
+        existing = _writer_engines.get(cache_key)
+        if existing is not None:
+            try:
+                engine.dispose()
+            except Exception:
+                pass
+            return existing
+        _writer_engines[cache_key] = engine
+        return engine
+
+
 def clear_explorer_engines() -> None:
     with _engines_lock:
         engines = list(_engines.values())
         _engines.clear()
-    for eng in engines:
+    with _writer_engines_lock:
+        writers = list(_writer_engines.values())
+        _writer_engines.clear()
+    for eng in engines + writers:
         try:
             eng.dispose()
         except Exception:

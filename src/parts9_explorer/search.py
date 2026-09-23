@@ -400,6 +400,16 @@ def get_product(bcode: str, *, site: str):
         return None, None
     site_key = (site or "hq").strip().lower()
     try:
+        from src.db.qtyoh2_ledger import sync_qtyoh2_from_ledger
+        from src.parts9_explorer.db import get_site_writer_engine
+
+        writer = get_site_writer_engine(site_key)
+        if writer is not None:
+            sync_qtyoh2_from_ledger(code, engine=writer)
+    except Exception:
+        # Sync is best-effort; product read below still runs.
+        pass
+    try:
         engine = get_site_engine(site_key)
         sql = text(f"SELECT {PRODUCT_COLS} FROM dbo.ICMAS WHERE LTRIM(RTRIM(BCODE)) = :bcode")
         with engine.connect() as conn:
