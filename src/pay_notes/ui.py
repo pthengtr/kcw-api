@@ -1041,6 +1041,12 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <option value="cheque">เช็ค</option>
         </select>
       </div>
+      <div class="field" style="min-width:13rem">
+        <select id="pfSort" aria-label="เรียงลำดับ">
+          <option value="due">เรียงตามกำหนดชำระ</option>
+          <option value="kbiz">เรียงตามเตือนโอน KBIZ</option>
+        </select>
+      </div>
       <button type="button" class="btn soft" id="btnRefreshPending">↻ รีเฟรช</button>
     </div>
     <div class="kpis">
@@ -1070,6 +1076,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>เลขใบวางบิล</th>
               <th class="num">ยอดที่ต้องจ่าย</th>
               <th>กำหนดชำระ</th>
+              <th>เตือนโอน KBIZ</th>
               <th>วิธีชำระ</th>
               <th>หมายเหตุ</th>
               <th>สถานะ</th>
@@ -1420,7 +1427,14 @@ function fmtDateTime(iso) {
   if (!s) return '—';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short', hour12: false });
+  return d.toLocaleString('th-TH', {
+    dateStyle: 'short', timeStyle: 'short', hour12: false, timeZone: 'Asia/Bangkok',
+  });
+}
+function bangkokTodayISO() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
 }
 function toDatetimeLocal(iso) {
   const s = String(iso || '').trim();
@@ -1431,6 +1445,38 @@ function toDatetimeLocal(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 function remKbiz(r) { return String(((r.reminder || {}).kbiz_datetime) || '').trim(); }
+function pendingSortMode() {
+  const el = $('pfSort');
+  return el && el.value === 'kbiz' ? 'kbiz' : 'due';
+}
+function comparePending(a, b) {
+  if (pendingSortMode() === 'kbiz') {
+    const ka = remKbiz(a);
+    const kb = remKbiz(b);
+    const ta = ka ? Date.parse(ka) : NaN;
+    const tb = kb ? Date.parse(kb) : NaN;
+    const ha = !Number.isNaN(ta);
+    const hb = !Number.isNaN(tb);
+    if (ha !== hb) return ha ? -1 : 1;
+    if (ha && hb && ta !== tb) return ta < tb ? -1 : 1;
+  }
+  const due = String(remDue(a)).localeCompare(String(remDue(b)));
+  if (due) return due;
+  return String(a.acctno || '').localeCompare(String(b.acctno || ''));
+}
+function kbizPendingCell(r) {
+  const raw = remKbiz(r);
+  if (!raw) return '<span class="muted">—</span>';
+  const day = raw.slice(0, 10);
+  const today = bangkokTodayISO();
+  let cls = '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    if (day < today) cls = 'b-overdue';
+    else if (day === today) cls = 'b-today';
+  }
+  const label = fmtDateTime(raw);
+  return cls ? `<span class="badge ${cls}">${esc(label)}</span>` : esc(label);
+}
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1673,12 +1719,12 @@ function slicePage(rows, page, size) {
 }
 
 async function loadPending() {
-  $('pendingBody').innerHTML = `<tr><td colspan="8" class="empty">กำลังโหลด…</td></tr>`;
+  $('pendingBody').innerHTML = `<tr><td colspan="9" class="empty">กำลังโหลด…</td></tr>`;
   try {
     pendingRows = await api('/pending');
     renderPending();
   } catch (e) {
-    $('pendingBody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`;
+    $('pendingBody').innerHTML = `<tr><td colspan="9" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function pendingNet(r) {
@@ -1701,7 +1747,7 @@ function filteredPending() {
     }
     return true;
   });
-  rows.sort((a, b) => String(remDue(a)).localeCompare(String(remDue(b))) || String(a.acctno).localeCompare(String(b.acctno)));
+  rows.sort(comparePending);
   return rows;
 }
 function renderKpis() {
@@ -1734,6 +1780,7 @@ function renderPending() {
       <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
       <td class="num" data-label="ยอดที่ต้องจ่าย">${fmtMoney(pendingNet(r))} บาท</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r))}</td>
+      <td data-label="เตือนโอน KBIZ">${kbizPendingCell(r)}</td>
       <td data-label="วิธีชำระ">${settleBadge(noteSettleMethod(r))}</td>
       <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
@@ -1754,11 +1801,18 @@ document.querySelectorAll('.kpi[data-bucket]').forEach(btn => {
   btn.onclick = () => { pendingBucket = btn.dataset.bucket; pendingPage = 1; renderPending(); };
 });
 $('btnRefreshPending').onclick = loadPending;
-['pfQ','pfDue','pfBillMonth','pfMethod'].forEach(id => {
+try {
+  const savedSort = localStorage.getItem('kcw.pay_notes.pendingSort');
+  if ($('pfSort') && (savedSort === 'kbiz' || savedSort === 'due')) $('pfSort').value = savedSort;
+} catch (e) {}
+['pfQ','pfDue','pfBillMonth','pfMethod','pfSort'].forEach(id => {
   const el = $(id);
   if (!el) return;
   const ev = (el.type === 'date' || el.type === 'month' || el.tagName === 'SELECT') ? 'change' : 'input';
   el.addEventListener(ev, () => { pendingPage = 1; renderPending(); });
+});
+$('pfSort')?.addEventListener('change', () => {
+  try { localStorage.setItem('kcw.pay_notes.pendingSort', pendingSortMode()); } catch (e) {}
 });
 $('pendingBody').addEventListener('click', (e) => {
   const edit = e.target.closest('[data-edit]');

@@ -960,7 +960,8 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         return JSONResponse({"error": "note not found in KSS"}, status_code=404)
     billamt = float(header.get("BILLAMT") or 0)
     disc = float(rem.get("discount_amount") or 0)
-    if disc < 0 or disc - billamt > 1e-9:
+    # Negative discount is a surcharge so the payable net can match the vendor bill (e.g. -0.01).
+    if disc - billamt > 1e-9:
         return JSONResponse({"error": "stored discount invalid"}, status_code=400)
     net = round(billamt - disc, 2)
 
