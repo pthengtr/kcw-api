@@ -9,7 +9,7 @@ Line-only (confirmed 2026-09-24, open test 12051563 → 215):
 No PIMAS/SIMAS header filter (header cancel with active line stays in the sum).
 Does not modify QTYBEG2.
 
-Used on stock-check take / product open and parts9-explorer product detail —
+Used on stock-check take / ondemand search / product open and parts9-explorer product detail —
 not a PIDET trigger. Flag: QTYOH2_SYNC_ON_READ (default on).
 """
 
