@@ -354,6 +354,7 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
 <div id="busy">กำลังดำเนินการ…</div>
 <div id="toast" class="toast"></div>
 <div id="modalBackdrop" class="modal-backdrop"><div class="modal" id="modalBox"></div></div>
+<div id="confirmBackdrop" class="modal-backdrop" style="z-index:65"><div class="modal" id="confirmBox" style="max-width:420px"></div></div>
 <div id="printSheet" aria-hidden="true"></div>
 <header class="hdr">
   <button id="btnBack" class="back-btn" style="display:none">← กลับ</button>
@@ -390,6 +391,7 @@ let statusSearch = "";
 /** Cached list for status view — avoids refetch while typing in search. */
 let statusItemsCache = null;
 let statusItemsScope = null;
+let statusSearchTimer = null;
 let editingDraftId = null;
 let receiveStep = 1;
 let receiveShipment = null;
@@ -753,6 +755,35 @@ function showModal(html){
   box.querySelectorAll("[data-close]").forEach(b=>b.onclick=close);
   return {close, box};
 }
+/** In-app confirm — window.confirm is unreliable in LINE WebView. */
+function uiConfirm(message){
+  return new Promise(resolve=>{
+    const layer = $("confirmBackdrop");
+    const box = $("confirmBox");
+    if(!layer || !box){
+      resolve(window.confirm(String(message||"")));
+      return;
+    }
+    box.innerHTML = `<p style="white-space:pre-line;margin:0 0 1rem;line-height:1.5">${escText(message)}</p>
+      <div class="row-actions" style="margin:0">
+        <button type="button" class="btn btn-ghost" data-no>ยกเลิก</button>
+        <button type="button" class="btn btn-primary" data-yes>ยืนยัน</button>
+      </div>`;
+    layer.classList.add("on");
+    const done = (ok)=>{
+      layer.classList.remove("on");
+      box.innerHTML = "";
+      layer.onclick = null;
+      resolve(!!ok);
+    };
+    box.querySelector("[data-no]").onclick = ()=>done(false);
+    box.querySelector("[data-yes]").onclick = ()=>done(true);
+    layer.onclick = e=>{ if(e.target===layer) done(false); };
+  });
+}
+function clearStatusSearchTimer(){
+  if(statusSearchTimer){ clearTimeout(statusSearchTimer); statusSearchTimer = null; }
+}
 async function api(path, opts){
   const o = Object.assign({}, opts||{});
   const quiet = !!o.quiet;
@@ -799,14 +830,14 @@ async function saveDraftLines(lines){
   return transferId;
 }
 async function deleteDraft(transferId){
-  if(!confirm("ลบร่างนี้?")) return;
+  if(!(await uiConfirm("ลบร่างนี้?"))) return;
   await api("/transfer/api/requests/"+transferId,{method:"DELETE"});
   if(editingDraftId === transferId) editingDraftId = null;
   showToast("ลบร่างแล้ว");
   render();
 }
 async function cancelRequest(transferId){
-  if(!confirm("ยกเลิกคำขอนี้? รายการจะกลับมาขอใหม่ได้ และจะคืนสถานะ ICLOW (ถ้ามี)")) return;
+  if(!(await uiConfirm("ยกเลิกคำขอนี้? รายการจะกลับมาขอใหม่ได้ และจะคืนสถานะ ICLOW (ถ้ามี)"))) return;
   try{
     await api("/transfer/api/requests/"+transferId+"/cancel",{method:"POST",body:"{}"});
     showToast("ยกเลิกคำขอแล้ว");
@@ -817,7 +848,7 @@ async function cancelRequest(transferId){
 }
 async function fulfillLine(transferId, lineId, bcode){
   const label = bcode ? `รหัส ${bcode}` : "รายการนี้";
-  if(!confirm(`ปิด ${label}?\nไม่ต้องการส่วนที่เหลือแล้ว (ไม่แก้จำนวน)\nถ้ายังไม่เคยจัด จะคืน ICLOW เป็นยังไม่สั่ง`)) return;
+  if(!(await uiConfirm(`ปิด ${label}?\nไม่ต้องการส่วนที่เหลือแล้ว (ไม่แก้จำนวน)\nถ้ายังไม่เคยจัด จะคืน ICLOW เป็นยังไม่สั่ง`))) return null;
   try{
     const r = await api("/transfer/api/requests/"+transferId+"/lines/"+lineId+"/fulfill",{method:"POST",body:"{}"});
     showToast(r.request_status==="complete" ? "ปิดรายการแล้ว — คำขอเสร็จสิ้น" : "ปิดรายการแล้ว");
@@ -1370,7 +1401,8 @@ async function openRequestDetail(transferId){
     btn.onclick = async (e)=>{
       e.stopPropagation();
       try{
-        await fulfillLine(transferId, btn.dataset.fulfill, btn.dataset.bcode||"");
+        const r = await fulfillLine(transferId, btn.dataset.fulfill, btn.dataset.bcode||"");
+        if(!r) return;
         modal.close();
         await openRequestDetail(transferId);
         render();
@@ -1395,8 +1427,9 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; statusSearch=""; statusItemsCache=null; statusItemsScope=null; render(); }
+function goHome(){ clearStatusSearchTimer(); view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; statusSearch=""; statusItemsCache=null; statusItemsScope=null; render(); }
 function goView(v){
+  clearStatusSearchTimer();
   view=v;
   if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; }
   if(v==="receive"){ receiveStep=1; receiveShipment=null; receiveFilter=""; }
@@ -2620,7 +2653,7 @@ async function renderStatus(el, {reuseItems=false}={}){
         <td class="row-actions" style="margin:0">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
           <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>
-          ${r.has_received || isDone ? `<button class="btn btn-ghost" data-stickers="${r.transfer_id}">บาร์โค้ด</button>` : ""}
+          ${r.has_received ? `<button class="btn btn-ghost" data-stickers="${r.transfer_id}">บาร์โค้ด</button>` : ""}
           ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
         </td>
       </tr>`;
@@ -2643,7 +2676,7 @@ async function renderStatus(el, {reuseItems=false}={}){
         <div class="item-card-actions">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
           <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>
-          ${r.has_received || isDone ? `<button class="btn btn-ghost" data-stickers="${r.transfer_id}">บาร์โค้ด</button>` : ""}
+          ${r.has_received ? `<button class="btn btn-ghost" data-stickers="${r.transfer_id}">บาร์โค้ด</button>` : ""}
           ${canCancel ? `<button class="btn btn-ghost" data-cancel="${r.transfer_id}">ยกเลิก</button>` : ""}
         </div>
       </div>`;
@@ -2656,10 +2689,10 @@ async function renderStatus(el, {reuseItems=false}={}){
   el.querySelectorAll("[data-sf]").forEach(b=>b.onclick=()=>{statusFilter=b.dataset.sf; statusItemsCache=null; statusItemsScope=null; renderStatus(el);});
   const searchEl = el.querySelector("#statusSearch");
   if(searchEl){
-    let searchTimer = null;
     const rerender = ()=>{
       const caret = searchEl.selectionStart;
       return withScrollPreserved(()=>renderStatus(el,{reuseItems:true}).then(()=>{
+        if(view !== "status") return;
         const again = el.querySelector("#statusSearch");
         if(again){
           again.focus();
@@ -2671,21 +2704,25 @@ async function renderStatus(el, {reuseItems=false}={}){
     };
     searchEl.oninput = ()=>{
       statusSearch = searchEl.value;
-      if(searchTimer) clearTimeout(searchTimer);
-      searchTimer = setTimeout(rerender, 280);
+      clearStatusSearchTimer();
+      statusSearchTimer = setTimeout(()=>{
+        statusSearchTimer = null;
+        if(view !== "status") return;
+        rerender();
+      }, 280);
     };
     searchEl.onkeydown = e=>{
       if(e.key==="Escape"){
         e.preventDefault();
-        if(searchTimer) clearTimeout(searchTimer);
+        clearStatusSearchTimer();
         statusSearch = "";
         searchEl.value = "";
-        rerender();
+        if(view === "status") rerender();
       } else if(e.key==="Enter"){
         e.preventDefault();
-        if(searchTimer) clearTimeout(searchTimer);
+        clearStatusSearchTimer();
         statusSearch = searchEl.value;
-        rerender();
+        if(view === "status") rerender();
       }
     };
   }
@@ -2709,6 +2746,7 @@ async function renderStatus(el, {reuseItems=false}={}){
 }
 
 async function render(){
+  if(view !== "status") clearStatusSearchTimer();
   updateHeader();
   document.body.classList.remove("request-picking");
   const el = $("content");
