@@ -88,6 +88,9 @@ def test_transfer_page_renders():
     assert 'ไม่สต็อก</span><br>${qtyHtml}' in html or "ไม่สต็อก</span><br>" in html
     assert "ตรวจสอบสถานะ" in html
     assert "ติดตาม" in html
+    assert "statusSearch" in html
+    assert "statusMatchesSearch" in html
+    assert "ค้นหาบิล TRF" in html
     assert "ขั้นตอนโอนสินค้า" not in html
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
     assert "info-toggle" in html

@@ -386,6 +386,10 @@ let view = "home";
 let requestStep = 1;
 let orderDirection = SITE === "SYP" ? "to_syp" : "to_hq";
 let statusFilter = "active";
+let statusSearch = "";
+/** Cached list for status view — avoids refetch while typing in search. */
+let statusItemsCache = null;
+let statusItemsScope = null;
 let editingDraftId = null;
 let receiveStep = 1;
 let receiveShipment = null;
@@ -1391,7 +1395,7 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; render(); }
+function goHome(){ view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; statusSearch=""; statusItemsCache=null; statusItemsScope=null; render(); }
 function goView(v){
   view=v;
   if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; }
@@ -2511,19 +2515,58 @@ function sortDoneByReceived(items){
     return bq.localeCompare(aq);
   });
 }
-async function renderStatus(el){
+/** Match TRF bill by short_id (incl. compact TRF-xxx), direction, or status. */
+function statusMatchesSearch(r, query){
+  const q = String(query||"").trim().toLowerCase();
+  if(!q) return true;
+  const qCompact = q.replace(/[\s\-_]/g,"");
+  const shortId = String(r.short_id||"").toLowerCase();
+  const shortCompact = shortId.replace(/[\s\-_]/g,"");
+  const tid = String(r.transfer_id||"").toLowerCase();
+  const dir = dirLabel(r.from_branch, r.to_branch).toLowerCase();
+  const status = String(r.status||"").toLowerCase();
+  return shortId.includes(q)
+    || (qCompact.length > 0 && shortCompact.includes(qCompact))
+    || tid.includes(q)
+    || dir.includes(q)
+    || status.includes(q);
+}
+async function renderStatus(el, {reuseItems=false}={}){
   const isDone = statusFilter === "done";
   const scope = isDone ? "done" : "active";
-  const data = await api("/transfer/api/requests?scope="+scope);
-  let items = data.items||[];
+  let items;
+  if(reuseItems && statusItemsCache && statusItemsScope === scope){
+    items = statusItemsCache.slice();
+  } else {
+    const data = await api("/transfer/api/requests?scope="+scope);
+    items = data.items||[];
+    statusItemsCache = items.slice();
+    statusItemsScope = scope;
+  }
   if(isDone) items = sortDoneByReceived(items.filter(isStatusDoneRow));
   else items = items.filter(r=>!isStatusDoneRow(r)&&r.status!=="cancelled");
-  const drafts = isDone ? [] : items.filter(r=>r.status==="draft");
-  const active = isDone ? items : items.filter(r=>r.status!=="draft");
+  let drafts = isDone ? [] : items.filter(r=>r.status==="draft");
+  let active = isDone ? items : items.filter(r=>r.status!=="draft");
+  const totalBeforeSearch = drafts.length + active.length;
+  const q = (statusSearch||"").trim();
+  if(q){
+    drafts = drafts.filter(r=>statusMatchesSearch(r, q));
+    active = active.filter(r=>statusMatchesSearch(r, q));
+  }
   el.innerHTML = `
     <div class="status-tabs">
       <button class="status-tab ${statusFilter==="active"?"on":""}" data-sf="active">กำลังดำเนินการ</button>
       <button class="status-tab ${statusFilter==="done"?"on":""}" data-sf="done">เสร็จสิ้น</button>
+    </div>
+    <div class="card" style="margin-top:.75rem;padding:.75rem 1rem">
+      <div class="search-bar" style="margin:0">
+        <input id="statusSearch" class="text-input" type="search" placeholder="ค้นหาบิล TRF (เลขที่ / ทิศทาง / สถานะ)" value="${escText(statusSearch)}" autocomplete="off" spellcheck="false"/>
+      </div>
+      <p id="statusSearchMeta" class="meta" style="margin:.5rem 0 0"${(q && (drafts.length + active.length)) ? "" : " hidden"}>${
+        (q && (drafts.length + active.length))
+          ? `แสดง ${drafts.length + active.length} จาก ${totalBeforeSearch} บิล`
+          : ""
+      }</p>
     </div>`;
   if(drafts.length){
     const draftTableRows = drafts.map(r=>`<tr class="row-clickable" data-detail="${r.transfer_id}">
@@ -2557,7 +2600,7 @@ async function renderStatus(el){
       )}</div>`;
   }
   if(!active.length && !drafts.length){
-    el.innerHTML += `<div class="card"><div class="empty">ไม่มีรายการ</div></div>`;
+    el.innerHTML += `<div class="card"><div class="empty">${q ? `ไม่พบบิลที่ตรงกับ "${escText(q)}"` : "ไม่มีรายการ"}</div></div>`;
   } else if(active.length){
     const dateHeads = isDone
       ? `<th>วันขอ</th><th>วันรับ</th>`
@@ -2610,7 +2653,42 @@ async function renderStatus(el){
       itemCards(activeCardRows)
     )}</div>`;
   }
-  el.querySelectorAll("[data-sf]").forEach(b=>b.onclick=()=>{statusFilter=b.dataset.sf; renderStatus(el);});
+  el.querySelectorAll("[data-sf]").forEach(b=>b.onclick=()=>{statusFilter=b.dataset.sf; statusItemsCache=null; statusItemsScope=null; renderStatus(el);});
+  const searchEl = el.querySelector("#statusSearch");
+  if(searchEl){
+    let searchTimer = null;
+    const rerender = ()=>{
+      const caret = searchEl.selectionStart;
+      return withScrollPreserved(()=>renderStatus(el,{reuseItems:true}).then(()=>{
+        const again = el.querySelector("#statusSearch");
+        if(again){
+          again.focus();
+          if(typeof caret === "number"){
+            try{ again.setSelectionRange(caret, caret); }catch(_){}
+          }
+        }
+      }));
+    };
+    searchEl.oninput = ()=>{
+      statusSearch = searchEl.value;
+      if(searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(rerender, 280);
+    };
+    searchEl.onkeydown = e=>{
+      if(e.key==="Escape"){
+        e.preventDefault();
+        if(searchTimer) clearTimeout(searchTimer);
+        statusSearch = "";
+        searchEl.value = "";
+        rerender();
+      } else if(e.key==="Enter"){
+        e.preventDefault();
+        if(searchTimer) clearTimeout(searchTimer);
+        statusSearch = searchEl.value;
+        rerender();
+      }
+    };
+  }
   el.querySelectorAll("[data-detail-btn]").forEach(b=>b.onclick=e=>{e.stopPropagation(); openRequestDetail(b.dataset.detailBtn);});
   bindDetailRows(el);
   el.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editDraft(b.dataset.edit));
