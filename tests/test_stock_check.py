@@ -455,6 +455,14 @@ def test_lookup_clears_expired_lease_flags(tmp_path: Path, monkeypatch):
         "src.stock_check.service.lookup_products",
         lambda q: [product],
     )
+    monkeypatch.setattr(
+        "src.stock_check.service.sync_qtyoh2_for_bcodes",
+        lambda bcodes: [],
+    )
+    monkeypatch.setattr(
+        "src.stock_check.service.get_products_by_bcodes",
+        lambda bcodes: [product],
+    )
     expired = base + 11
     monkeypatch.setattr("src.stock_check.service.time.time", lambda: expired)
     monkeypatch.setattr("src.stock_check.db_local.time.time", lambda: expired)

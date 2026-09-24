@@ -260,6 +260,12 @@ class StockCheckService:
     def lookup(self, query: str, *, session_id: str | None = None) -> list[dict[str, Any]]:
         self.expire()
         products = lookup_products(query)
+        if products:
+            codes = [p.bcode for p in products if p.bcode]
+            if codes:
+                sync_qtyoh2_for_bcodes(codes)
+                refreshed = {p.bcode: p for p in get_products_by_bcodes(codes)}
+                products = [refreshed.get(p.bcode, p) for p in products]
         audits = self.store.get_local_audits([p.bcode for p in products])
         out = []
         for product in products:
