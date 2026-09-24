@@ -479,8 +479,9 @@ def create_voucher(
                 raise PayNoteWriteError("note already vouchered", code="already_vouchered")
 
             billamt = float(header.get("BILLAMT") or 0)
-            netamt = billamt - disc
-            if netamt < 0:
+            # Negative discount is a surcharge (net above BILLAMT) so the voucher can match the vendor bill.
+            netamt = round(billamt - disc, 2)
+            if netamt < -1e-9:
                 raise PayNoteWriteError("discount exceeds BILLAMT", code="validation")
             if not bpdet_lines and netamt > 1e-9:
                 raise PayNoteWriteError("at least one BPDET line required", code="validation")

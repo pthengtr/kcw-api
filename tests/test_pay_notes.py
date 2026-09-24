@@ -119,10 +119,74 @@ def test_pay_notes_page_renders():
     assert 'id="editPayTransfer"' in html
     assert 'id="editPayCheque"' in html
     assert 'id="pfMethod"' in html
+    assert 'id="pfSort"' in html
+    assert "เรียงตามเตือนโอน KBIZ" in html
+    assert "<th>เตือนโอน KBIZ</th>" in html
+    assert "function comparePending" in html
+    assert "kcw.pay_notes.pendingSort" in html
+    assert "timeZone: 'Asia/Bangkok'" in html
     assert 'id="detPayMethodWrap"' in html
     assert 'function setNotePayMethod' in html
     assert 'settle_method: notePayMethod' in html
     assert 'formatRemarkShort' in html
+
+
+def test_pending_list_sorts_kbiz_reminders_soonest_first():
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    assert node, "node is required to check the pending-list sort"
+    html = page(user_name="ทดสอบ", site="HQ")
+    start = html.index("function remKbiz")
+    end = html.index("function kbizPendingCell")
+    due = html.index("function remDue")
+    due_end = html.index("function netAmt")
+    script = html[start:end] + "\n" + html[due:due_end]
+    rows = [
+        {"acctno": "B", "reminder": {"due_date": "2026-09-20"}},
+        {
+            "acctno": "A",
+            "reminder": {
+                "due_date": "2026-09-30",
+                "kbiz_datetime": "2026-09-25T15:00:00+07:00",
+            },
+        },
+        {
+            "acctno": "C",
+            "reminder": {
+                "due_date": "2026-09-28",
+                "kbiz_datetime": "2026-09-24T09:00:00+07:00",
+            },
+        },
+        {
+            "acctno": "E",
+            "reminder": {
+                "due_date": "2026-09-29",
+                "kbiz_datetime": "2026-09-24T02:00:00+00:00",
+            },
+        },
+        {"acctno": "D", "reminder": {"due_date": "2026-09-21", "kbiz_datetime": "not-a-date"}},
+    ]
+    program = (
+        "let sortMode = 'due';\n"
+        "function $(id) { return id === 'pfSort' ? { value: sortMode } : null; }\n"
+        f"{script}\n"
+        f"const rows = {json.dumps(rows)};\n"
+        "function order() { return rows.slice().sort(comparePending).map(r => r.acctno); }\n"
+        "sortMode = 'due';\n"
+        "const byDue = order();\n"
+        "sortMode = 'kbiz';\n"
+        "const byKbiz = order();\n"
+        "process.stdout.write(JSON.stringify({ byDue, byKbiz }));\n"
+    )
+    out = subprocess.check_output([node, "-e", program], text=True)
+    body = json.loads(out)
+    assert body["byDue"] == ["B", "D", "C", "E", "A"]
+    # Same instant (09:00 +07 and 02:00 +00) stays together; earlier due date first.
+    # Rows with no usable KBIZ time stay at the bottom, still by due date.
+    assert body["byKbiz"] == ["C", "E", "A", "B", "D"]
 
 
 def test_print_sheet_includes_numeric_net_amount():
@@ -496,6 +560,89 @@ def test_resolve_discount_allows_negative_percent():
     assert mode == "percent"
     assert raw == -1.0
     assert amount == -10.0
+
+
+def test_api_create_voucher_allows_negative_discount():
+    """Surcharge (discount -0.01) must record when CHKAMT matches bill + surcharge."""
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    settings = PayNotesSettings(pay_notes_write_enabled=True)
+    created = {
+        "acctno": "7LK",
+        "noteno": "BI260600041",
+        "voucno": "P6909-001",
+        "billamt": 57840.66,
+        "discount": -0.01,
+        "netamt": 57840.67,
+    }
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(_pay_notes_ident(), None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=object()),
+        patch(
+            "app.routers.pay_notes.get_reminder",
+            return_value={"bank_id": "b1", "discount_amount": -0.01, "settle_method": "transfer"},
+        ),
+        patch("app.routers.pay_notes.get_vendor_bank", return_value={"bank_id": "b1", "acctno": "7LK"}),
+        patch(
+            "app.routers.pay_notes.get_note_header",
+            return_value={"BILLAMT": 57840.66, "acctno": "7LK", "noteno": "BI260600041"},
+        ),
+        patch("app.routers.pay_notes.create_voucher", return_value=created) as create_m,
+        patch("app.routers.pay_notes.patch_reminder", return_value={"discount_amount": -0.01}),
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/vouchers",
+            json={
+                "acctno": "7LK",
+                "noteno": "BI260600041",
+                "settle_method": "transfer",
+                "chkamt": 57840.67,
+                "chkdate": "2026-09-24",
+                "pay_bank": "kbank_72355",
+            },
+        )
+    assert res.status_code == 200, res.text
+    assert create_m.call_args.kwargs["discount"] == -0.01
+    lines = create_m.call_args.kwargs["bpdet_lines"]
+    assert lines and lines[0]["chkamt"] == 57840.67
+    assert lines[0]["acctno"] == "2101.5"
+    assert res.json()["voucno"] == "P6909-001"
+
+
+def test_api_create_voucher_rejects_discount_above_bill():
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    settings = PayNotesSettings(pay_notes_write_enabled=True)
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(_pay_notes_ident(), None)),
+        patch("app.routers.pay_notes._settings", return_value=settings),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=object()),
+        patch(
+            "app.routers.pay_notes.get_reminder",
+            return_value={"bank_id": "b1", "discount_amount": 100},
+        ),
+        patch("app.routers.pay_notes.get_vendor_bank", return_value={"bank_id": "b1"}),
+        patch("app.routers.pay_notes.get_note_header", return_value={"BILLAMT": 50}),
+        patch("app.routers.pay_notes.create_voucher") as create_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/vouchers",
+            json={"acctno": "7LK", "noteno": "BI260600041", "chkamt": 1},
+        )
+    assert res.status_code == 400
+    assert res.json()["error"] == "stored discount invalid"
+    create_m.assert_not_called()
 
 
 def test_note_totals_prefers_voucher_net():
