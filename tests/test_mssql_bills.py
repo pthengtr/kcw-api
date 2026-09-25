@@ -123,7 +123,8 @@ def test_list_mssql_bills_excludes_negative_from_collect():
         mssql_bills.pd.read_sql = original
 
     sql_text = str(mocked.call_args.args[0])
-    assert "[AFTERTAX] >= 0" in sql_text
+    assert "[AFTERTAX] > 0" in sql_text
+    assert "[AFTERTAX] >= 0" not in sql_text
 
 
 def test_list_mssql_cn_bills_includes_negative_normal_bill():

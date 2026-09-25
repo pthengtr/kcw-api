@@ -101,8 +101,9 @@ def _base_where_sql(*, today_only: bool, payout: bool = False) -> str:
         clauses.extend(
             [
                 "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
-                # Collect = positive amounts only; negatives go to voucher/payout.
-                "[AFTERTAX] >= 0",
+                # Collect = positive amounts only. Zero is not payable
+                # (Tiger rejects QR amount 0); negatives go to voucher/payout.
+                "[AFTERTAX] > 0",
             ]
         )
     if today_only:
