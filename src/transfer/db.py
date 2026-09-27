@@ -10,15 +10,10 @@ from src.transfer.config import get_transfer_settings
 from datetime import datetime, timezone
 
 from src.transfer.state import (
-    can_action,
     derive_line_status,
     derive_request_status,
     make_short_id,
-    prep_recv_mismatch,
-    qty_open_prepare,
     qty_short_vs_order,
-    request_has_open_prepare,
-    summarize_request_progress,
 )
 from src.transfer.parts9 import enrich_transfer_lines
 
@@ -229,34 +224,38 @@ def list_requests(
     items = _rows(q.execute())
     if not role or not site:
         return items
-    if role_l == "prepare":
+    if role_l in ("prepare", "receive"):
+        # Derive from qty so a stale partial_* / complete row still lands in the right queue.
         candidates = [
             r
             for r in items
-            if (r.get("status") or "").lower() not in ("draft", "cancelled", "complete")
+            if (r.get("status") or "").lower() not in ("draft", "cancelled")
         ]
-        lines_by = list_lines_by_transfers(
-            client, [r["transfer_id"] for r in candidates]
-        )
+        ids = [r["transfer_id"] for r in candidates]
+        lines_by = list_lines_by_transfers(client, ids)
+        ships_by = list_shipments_by_transfers(client, ids)
+        want = "requested" if role_l == "prepare" else "prepared"
         out: list[dict[str, Any]] = []
         for r in candidates:
-            lines = lines_by.get(r["transfer_id"]) or []
-            if request_has_open_prepare(lines):
-                out.append(r)
+            lines = enrich_lines(lines_by.get(r["transfer_id"]) or [])
+            has_ships = bool(ships_by.get(r["transfer_id"]))
+            status = derive_request_status(
+                header_status=r.get("status") or "requested",
+                lines=lines,
+                has_shipments=has_ships,
+            )
+            if status == want:
+                row = dict(r)
+                row["status"] = status
+                out.append(row)
         return out
-    if role_l == "receive":
-        return [
-            r
-            for r in items
-            if (r.get("status") or "") not in ("draft", "cancelled", "complete")
-        ]
     if role_l == "mine":
         return items
     return items
 
 
 def count_prepare_open(client: Client, *, site: str) -> int:
-    """Open prepare requests for this ship-from site (no list enrichment)."""
+    """Open prepare requests for this ship-from site (status requested)."""
     return len(list_requests(client, role="prepare", site=site))
 
 
@@ -421,19 +420,6 @@ def enrich_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row["qty_short_order_receive"] = qty_short_vs_order(
             row.get("qty_requested", 0), row.get("qty_received", 0)
         )
-        row["prep_recv_mismatch"] = prep_recv_mismatch(
-            row.get("qty_prepared", 0), row.get("qty_received", 0)
-        )
-        fulfill = can_action(
-            "fulfill_line",
-            {
-                "cancelled_at": row.get("cancelled_at"),
-                "qty_prepared": row.get("qty_prepared", 0),
-                "qty_received": row.get("qty_received", 0),
-                "qty_requested": row.get("qty_requested", 0),
-            },
-        )
-        row["can_fulfill"] = fulfill.allowed
         out.append(row)
     return out
 
@@ -740,58 +726,3 @@ def cancel_request(client: Client, *, transfer_id: str) -> dict[str, Any]:
     )
 
     return _first_row(resp)
-
-
-def fulfill_line(
-    client: Client,
-    *,
-    transfer_id: str,
-    line_id: str,
-    reason: str = "no_longer_needed",
-) -> dict[str, Any]:
-    """Mark remaining line demand as fulfilled/cancelled (no qty edit).
-
-    Never-prepared → cancelled (+ caller may revert ICLOW).
-    Prepared with receive caught up → waived shortfall, line treated complete.
-    """
-    lines = enrich_lines(list_lines(client, transfer_id))
-    line = next((ln for ln in lines if ln.get("line_id") == line_id), None)
-    if not line:
-        raise ValueError("line ไม่พบ")
-    check = can_action(
-        "fulfill_line",
-        {
-            "cancelled_at": line.get("cancelled_at"),
-            "qty_prepared": line.get("qty_prepared", 0),
-            "qty_received": line.get("qty_received", 0),
-            "qty_requested": line.get("qty_requested", 0),
-        },
-    )
-    if not check.allowed:
-        raise ValueError(check.reason)
-
-    now = datetime.now(timezone.utc).isoformat()
-    prep = float(line.get("qty_prepared") or 0)
-    recv = float(line.get("qty_received") or 0)
-    # Persist computed status so list views without enrich stay consistent.
-    new_status = "complete" if prep > 0 and recv >= prep else "cancelled"
-    resp = (
-        _table(client, "lines")
-        .update(
-            {
-                "cancelled_at": now,
-                "cancel_reason": reason,
-                "line_status": new_status,
-                "updated_at": now,
-            }
-        )
-        .eq("line_id", line_id)
-        .eq("transfer_id", transfer_id)
-        .select("*")
-        .execute()
-    )
-    updated = _first_row(resp)
-    if not updated:
-        raise ValueError("อัปเดตรายการไม่สำเร็จ")
-    header = refresh_request_status(client, transfer_id)
-    return {"line": enrich_lines([updated])[0], "request": header}

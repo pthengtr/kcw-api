@@ -151,8 +151,7 @@ def test_suggest_hq_skips_iclow_to_be_ordered():
     assert items[0]["model"] == "M-9"
 
 
-def test_suggest_transfer_skus_includes_icmas_low_stock_without_iclow():
-    iclow_rows = {"rows": [], "count": 0}
+def test_suggest_syp_ignores_icmas_low_stock_without_iclow():
     icmas_low = {
         "02050663": {
             "bcode": "02050663",
@@ -167,22 +166,18 @@ def test_suggest_transfer_skus_includes_icmas_low_stock_without_iclow():
         }
     }
 
-    def fake_icmas_meta(engine, bcodes, include_blocked=False):
-        return {
-            "02050663": _meta(1.0, descr="สะดือแหนบหน้า", ui1="หน่วย"),
-        }
-
     with patch("src.transfer.parts9._fetch_all_iclow_to_be_ordered", return_value=[]):
         with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
             with patch("src.transfer.parts9.get_site_engine", return_value=MagicMock()):
-                with patch("src.transfer.parts9._suggest_from_icmas_low_stock", return_value=icmas_low):
-                    with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_icmas_meta):
+                with patch(
+                    "src.transfer.parts9._suggest_from_icmas_low_stock",
+                    return_value=icmas_low,
+                ) as mock_low:
+                    with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
                         items = suggest_transfer_skus(site="SYP", limit=50)
 
-    assert len(items) == 1
-    assert items[0]["bcode"] == "02050663"
-    assert items[0]["descr"] == "สะดือแหนบหน้า"
-    assert items[0]["source"] == "icmas"
+    mock_low.assert_not_called()
+    assert items == []
 
 
 def test_suggest_preserves_iclow_order_not_alphabetical():
@@ -201,7 +196,7 @@ def test_suggest_preserves_iclow_order_not_alphabetical():
     assert [i["bcode"] for i in items] == ["Z999", "A001"]
 
 
-def test_suggest_icmas_items_after_iclow_items():
+def test_suggest_syp_does_not_append_icmas_after_iclow():
     iclow_rows = [{"bcode": "IC01", "descr": "iclow", "qty": 1, "ordered_qty": 1}]
     icmas_low = {
         "IC02": {
@@ -224,9 +219,8 @@ def test_suggest_icmas_items_after_iclow_items():
                     with patch("src.transfer.parts9._fetch_icmas_meta", return_value={}):
                         items = suggest_transfer_skus(site="SYP", limit=50)
 
-    assert [i["bcode"] for i in items] == ["IC01", "IC02"]
+    assert [i["bcode"] for i in items] == ["IC01"]
     assert items[0]["source"] == "iclow"
-    assert items[1]["source"] == "icmas"
 
 
 def test_fetch_all_iclow_paginates():

@@ -28,7 +28,6 @@ from src.transfer.db import (
     delete_draft,
     delete_need,
     enrich_lines,
-    fulfill_line,
     get_receipt_by_token,
     get_request,
     get_shipment_by_token,
@@ -91,6 +90,7 @@ from src.transfer.sticker import (
 )
 from src.transfer.state import (
     can_action,
+    derive_request_status,
     last_received_at,
     shipment_lines_fully_received,
     summarize_request_progress,
@@ -529,15 +529,7 @@ def api_requests(
     client = get_transfer_supabase_client()
     items = list_requests(client, status=status, role=role, site=settings.site)
     scope_l = (scope or "").strip().lower()
-    if scope_l == "active":
-        # Drop terminal history early; receive_caught_up short-ships stay (not complete yet).
-        items = [
-            r
-            for r in items
-            if (r.get("status") or "").lower() not in ("complete", "cancelled")
-        ]
-    elif scope_l == "done":
-        # Need completes + short-ship caught-up (still non-complete until remainder ships).
+    if scope_l in ("active", "done"):
         items = [
             r
             for r in items
@@ -562,16 +554,20 @@ def api_requests(
         row["line_count"] = len(lines)
         row["shipment_count"] = len(ships)
         row["has_shipments"] = bool(ships)
+        row["status"] = derive_request_status(
+            header_status=req.get("status") or "draft",
+            lines=lines,
+            has_shipments=bool(ships),
+        )
         row["last_received_at"] = last_received_at(ships, receipts_by_ship)
         row.update(summarize_request_progress(lines))
         fb = row.get("from_branch") or "HQ"
         tb = row.get("to_branch") or "SYP"
         row["direction_label"] = direction_label(fb, tb)
-        if scope_l == "active" and row.get("receive_caught_up"):
+        status_l = (row.get("status") or "").lower()
+        if scope_l == "active" and status_l in ("received", "complete"):
             continue
-        if scope_l == "done" and not (
-            (row.get("status") or "").lower() == "complete" or row.get("receive_caught_up")
-        ):
+        if scope_l == "done" and status_l not in ("received", "complete"):
             continue
         out.append(row)
     return {"items": out}
@@ -614,6 +610,12 @@ def api_request_lines(
         ship["lines"] = ship_lines_by.get(ship["shipment_id"]) or []
         ship["fully_received"] = shipment_lines_fully_received(ship["lines"])
     progress = summarize_request_progress(lines)
+    header = dict(header)
+    header["status"] = derive_request_status(
+        header_status=header.get("status") or "draft",
+        lines=lines,
+        has_shipments=bool(shipments),
+    )
     return {
         "header": header,
         "items": lines,
@@ -758,6 +760,8 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
                 "tf_billno": billno,
                 "shipment_id": existing_shipment["shipment_id"],
             }
+    if list_shipments(client, transfer_id=transfer_id):
+        return JSONResponse({"error": "จัดได้ครั้งเดียวต่อคำขอ"}, status_code=400)
     lines = enrich_lines(list_lines(client, transfer_id))
     header_status = header.get("status") or "requested"
     other_request_bcodes = {
@@ -831,6 +835,7 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
                 "qty_requested": line_info.get("qty_requested", 0),
                 "qty_prepared": line_info.get("qty_prepared", 0),
                 "cancelled_at": line_info.get("cancelled_at"),
+                "has_shipments": False,
             },
         )
         if not check.allowed:
@@ -1188,82 +1193,6 @@ def api_cancel(transfer_id: str, request: Request):
     cancel_request(client, transfer_id=transfer_id)
     return {"status": "canceled"}
 
-
-@router.post("/api/requests/{transfer_id}/lines/{line_id}/fulfill")
-def api_fulfill_line(transfer_id: str, line_id: str, request: Request):
-    """Requester marks remaining line demand as no longer needed / fulfilled."""
-    ident, err = _require_api(request)
-    if err:
-        return err
-    client = get_transfer_supabase_client()
-    header = get_request(client, transfer_id)
-    if not header:
-        return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
-    settings = _settings()
-    to_branch = (header.get("to_branch") or "SYP").upper()
-    if not can_submit_at_site(settings.site, to_branch):
-        return JSONResponse({"error": "ปิดรายการได้เฉพาะสาขาที่ขอโอน"}, status_code=400)
-
-    lines = enrich_lines(list_lines(client, transfer_id))
-    line = next((ln for ln in lines if ln.get("line_id") == line_id), None)
-    if not line:
-        return JSONResponse({"error": "line ไม่พบ"}, status_code=404)
-
-    check = can_action(
-        "fulfill_line",
-        {
-            "cancelled_at": line.get("cancelled_at"),
-            "qty_prepared": line.get("qty_prepared", 0),
-            "qty_received": line.get("qty_received", 0),
-            "qty_requested": line.get("qty_requested", 0),
-        },
-    )
-    if not check.allowed:
-        return JSONResponse({"error": check.reason}, status_code=400)
-
-    # Never prepared: put ICLOW back to not-ordered so it reappears on รอสั่ง.
-    revert_iclow = float(line.get("qty_prepared") or 0) <= 0 and bool(line.get("iclow_id"))
-    if revert_iclow and should_stamp_iclow(
-        enabled=settings.transfer_iclow_stamp_enabled,
-        site=settings.site,
-        from_branch=(header.get("from_branch") or "HQ"),
-        to_branch=to_branch,
-    ):
-        try:
-            revert_on_cancel(iclow_id=str(line["iclow_id"]))
-        except ICLOWStampError as exc:
-            return JSONResponse({"error": f"Failed to revert ICLOW stamp: {exc}"}, status_code=500)
-
-    try:
-        result = fulfill_line(
-            client,
-            transfer_id=transfer_id,
-            line_id=line_id,
-            reason="no_longer_needed",
-        )
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-
-    insert_event(
-        client,
-        transfer_id=transfer_id,
-        event_type="line_fulfilled",
-        actor=getattr(ident, "display_name", None) or getattr(ident, "user_id", None),
-        payload={
-            "line_id": line_id,
-            "bcode": line.get("bcode"),
-            "qty_requested": line.get("qty_requested"),
-            "qty_prepared": line.get("qty_prepared"),
-            "qty_received": line.get("qty_received"),
-            "iclow_reverted": bool(revert_iclow),
-        },
-    )
-    return {
-        "status": "fulfilled",
-        "line": result["line"],
-        "request_status": (result.get("request") or {}).get("status"),
-        "iclow_reverted": bool(revert_iclow),
-    }
 
 def _sticker_labels_from_body(body: StickerPrintRequest):
     settings = _settings()
