@@ -47,6 +47,73 @@ def _rows(resp) -> list[dict[str, Any]]:
     return [dict(r) for r in (resp.data or [])]
 
 
+# Hosted PostgREST stops a response at 1000 rows. The status list loads lines
+# for every open request in one filter; past that cap the newest lines never
+# arrive. A bill that was already received then has a shipment and no lines,
+# so it is labeled จัดแล้ว on the list while its own detail page (one bill,
+# under the cap) is รับแล้ว.
+_PAGE_SIZE = 1000
+_IN_CHUNK = 80
+
+
+def _execute_all(build_query) -> list[dict[str, Any]]:
+    """Read every row, one PostgREST page at a time.
+
+    build_query() must return a fresh builder. range() adds offset/limit
+    instead of replacing them, so each page starts from a new query.
+    range() end is inclusive.
+    """
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        resp = build_query().range(offset, offset + _PAGE_SIZE - 1).execute()
+        batch = _rows(resp)
+        # A server that ignores offset would repeat page 1 forever.
+        if offset and batch and rows and batch[0] == rows[0]:
+            return rows
+        rows.extend(batch)
+        if len(batch) < _PAGE_SIZE:
+            return rows
+        offset += _PAGE_SIZE
+
+
+def _fetch_matching(
+    client: Client,
+    table: str,
+    *,
+    column: str,
+    ids: list[str],
+    order: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
+    """Rows where column is in ids. Chunks the IN list and pages each chunk."""
+    unique = list(dict.fromkeys(i for i in ids if i))
+    if not unique:
+        return []
+    rows: list[dict[str, Any]] = []
+    for start in range(0, len(unique), _IN_CHUNK):
+        chunk = unique[start : start + _IN_CHUNK]
+
+        def build_query(chunk: list[str] = chunk):
+            query = _table(client, table).select("*").in_(column, chunk)
+            for col in order:
+                query = query.order(col)
+            return query
+
+        rows.extend(_execute_all(build_query))
+    return rows
+
+
+def _group_by(
+    rows: list[dict[str, Any]], key: str, ids: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    by: dict[str, list[dict[str, Any]]] = {i: [] for i in ids if i}
+    for row in rows:
+        parent = row.get(key)
+        if parent:
+            by.setdefault(parent, []).append(row)
+    return by
+
+
 def list_need(client: Client) -> list[dict[str, Any]]:
     resp = _table(client, "need_list").select("*").order("created_at", desc=True).execute()
     return _rows(resp)
@@ -119,19 +186,14 @@ def list_lines_by_transfers(
     ids = [t for t in transfer_ids if t]
     if not ids:
         return {}
-    resp = (
-        _table(client, "lines")
-        .select("*")
-        .in_("transfer_id", ids)
-        .order("created_at")
-        .execute()
+    rows = _fetch_matching(
+        client,
+        "lines",
+        column="transfer_id",
+        ids=ids,
+        order=("created_at", "line_id"),
     )
-    by: dict[str, list[dict[str, Any]]] = {tid: [] for tid in ids}
-    for row in _rows(resp):
-        tid = row.get("transfer_id")
-        if tid:
-            by.setdefault(tid, []).append(row)
-    return by
+    return _group_by(rows, "transfer_id", ids)
 
 
 def list_shipments_by_transfers(
@@ -140,19 +202,14 @@ def list_shipments_by_transfers(
     ids = [t for t in transfer_ids if t]
     if not ids:
         return {}
-    resp = (
-        _table(client, "shipments")
-        .select("*")
-        .in_("transfer_id", ids)
-        .order("created_at")
-        .execute()
+    rows = _fetch_matching(
+        client,
+        "shipments",
+        column="transfer_id",
+        ids=ids,
+        order=("created_at", "shipment_id"),
     )
-    by: dict[str, list[dict[str, Any]]] = {tid: [] for tid in ids}
-    for row in _rows(resp):
-        tid = row.get("transfer_id")
-        if tid:
-            by.setdefault(tid, []).append(row)
-    return by
+    return _group_by(rows, "transfer_id", ids)
 
 
 def list_receipts_by_shipments(
@@ -161,19 +218,14 @@ def list_receipts_by_shipments(
     ids = [s for s in shipment_ids if s]
     if not ids:
         return {}
-    resp = (
-        _table(client, "receipts")
-        .select("*")
-        .in_("shipment_id", ids)
-        .order("created_at")
-        .execute()
+    rows = _fetch_matching(
+        client,
+        "receipts",
+        column="shipment_id",
+        ids=ids,
+        order=("created_at", "receipt_id"),
     )
-    by: dict[str, list[dict[str, Any]]] = {sid: [] for sid in ids}
-    for row in _rows(resp):
-        sid = row.get("shipment_id")
-        if sid:
-            by.setdefault(sid, []).append(row)
-    return by
+    return _group_by(rows, "shipment_id", ids)
 
 
 def list_shipment_lines_by_shipments(
@@ -182,18 +234,14 @@ def list_shipment_lines_by_shipments(
     ids = [s for s in shipment_ids if s]
     if not ids:
         return {}
-    resp = (
-        _table(client, "shipment_lines")
-        .select("*")
-        .in_("shipment_id", ids)
-        .execute()
+    rows = _fetch_matching(
+        client,
+        "shipment_lines",
+        column="shipment_id",
+        ids=ids,
+        order=("shipment_line_id",),
     )
-    by: dict[str, list[dict[str, Any]]] = {sid: [] for sid in ids}
-    for row in _rows(resp):
-        sid = row.get("shipment_id")
-        if sid:
-            by.setdefault(sid, []).append(row)
-    return by
+    return _group_by(rows, "shipment_id", ids)
 
 
 def list_requests(
@@ -205,23 +253,30 @@ def list_requests(
     role: str | None = None,
     site: str | None = None,
 ) -> list[dict[str, Any]]:
-    q = _table(client, "requests").select("*").order("created_at", desc=True)
-    if status:
-        q = q.eq("status", status)
-    if from_branch:
-        q = q.eq("from_branch", from_branch.upper())
-    if to_branch:
-        q = q.eq("to_branch", to_branch.upper())
-
     site_u = (site or "").upper()
     role_l = (role or "").lower()
-    # Push branch filter into the query when role implies it and caller didn't set it.
-    if site_u and role_l == "prepare" and not from_branch:
-        q = q.eq("from_branch", site_u)
-    elif site_u and role_l in ("receive", "mine") and not to_branch:
-        q = q.eq("to_branch", site_u)
 
-    items = _rows(q.execute())
+    def build_query():
+        q = (
+            _table(client, "requests")
+            .select("*")
+            .order("created_at", desc=True)
+            .order("transfer_id")
+        )
+        if status:
+            q = q.eq("status", status)
+        if from_branch:
+            q = q.eq("from_branch", from_branch.upper())
+        if to_branch:
+            q = q.eq("to_branch", to_branch.upper())
+        # Push branch filter into the query when role implies it and caller didn't set it.
+        if site_u and role_l == "prepare" and not from_branch:
+            q = q.eq("from_branch", site_u)
+        elif site_u and role_l in ("receive", "mine") and not to_branch:
+            q = q.eq("to_branch", site_u)
+        return q
+
+    items = _execute_all(build_query)
     if not role or not site:
         return items
     if role_l in ("prepare", "receive"):
