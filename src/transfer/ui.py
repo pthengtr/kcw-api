@@ -632,40 +632,24 @@ function receiveBillNoteHtml(fromB, toB, shipBillno){
 function orderFlowText(){
   return OTHER_LABEL + " จัดส่ง → " + SITE_LABEL + " รับเข้า";
 }
-function badge(status, fromB, toB, hasMismatch, receiveCaughtUp){
-  const m={draft:"b-requested",requested:"b-requested",partial_prepared:"b-await",awaiting_receive:"b-await",partial_received:"b-await",complete:"b-done",cancelled:"b-requested"};
+function badge(status, fromB){
+  const m={draft:"b-requested",requested:"b-requested",prepared:"b-await",received:"b-done",complete:"b-done",cancelled:"b-requested"};
   const fb = branchLabel(fromB||"HQ");
-  const partialRecv = receiveCaughtUp ? "รับครบที่จัดแล้ว" : "รับไม่ครบตามขอ";
-  const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",partial_prepared:"จัดไม่ครบตามขอ",awaiting_receive:"รอรับ",partial_received:partialRecv,complete:"เสร็จสิ้น",cancelled:"ยกเลิก"};
-  const waveDone = !!receiveCaughtUp && status==="partial_received";
-  // Sky (b-wave) vs green (b-done) so "รับครบที่จัดแล้ว" stays distinct on the Done tab.
-  const cls = hasMismatch ? "b-alert" : (waveDone ? "b-wave" : (m[status]||"b-requested"));
-  const label = hasMismatch ? "จัด≠รับ" : (t[status]||status||"-");
-  const title = hasMismatch ? "จำนวนจัดกับรับไม่ตรงกัน" : (waveDone ? "รับครบตามที่จัดแล้ว — ยังค้างจัดตามคำขอได้" : "");
-  return `<span class="badge ${cls}" title="${title}">${label}</span>`;
+  const t={draft:"ร่าง",requested:"รอ "+fb+" จัด",prepared:"จัดแล้ว",received:"รับแล้ว",complete:"รับแล้ว",cancelled:"ยกเลิก"};
+  const cls = m[status]||"b-requested";
+  const label = t[status]||status||"-";
+  return `<span class="badge ${cls}">${label}</span>`;
 }
-function pipeline(status, hasMismatch, receiveCaughtUp){
-  const idx = status==="complete" || receiveCaughtUp ? 3 : status==="awaiting_receive"||status==="partial_received" ? 2 : status==="partial_prepared" ? 1 : 0;
-  const labels = ["ขอแล้ว","จัดแล้ว","รับแล้ว","เสร็จ"];
-  const warn = hasMismatch ? `<span class="flag-mismatch" title="จัด≠รับ"> ⚠</span>` : "";
-  return `<div class="pipeline">${labels.map((l,i)=>`<span class="pipe-dot ${i<idx?"done":i===idx?"on":""}"></span><span>${l}</span>`).join("")}${warn}</div>`;
+function pipeline(status){
+  const st = status==="complete" ? "received" : status;
+  const idx = st==="received" ? 2 : st==="prepared" ? 1 : 0;
+  const labels = ["ขอแล้ว","จัดแล้ว","รับแล้ว"];
+  return `<div class="pipeline">${labels.map((l,i)=>`<span class="pipe-dot ${i<idx?"done":i===idx?"on":""}"></span><span>${l}</span>`).join("")}</div>`;
 }
 function lineStatusLabel(ln){
   const status = ln.line_status || ln.status || "";
-  const t={open:"รอจัด",partial_prepared:"จัดไม่ครบตามขอ",prepared:"จัดครบ รอรับ",partial_received:"รับไม่ครบตามขอ",complete:"เสร็จ",cancelled:"ไม่ต้องการแล้ว"};
-  const base = t[status]||status||"-";
-  if(ln.cancelled_at && status==="complete") return `<span title="ปิดรายการ — ไม่ต้องการส่วนที่เหลือ">ปิดแล้ว (รับครบที่จัด)</span>`;
-  if(ln.prep_recv_mismatch) return `<span class="flag-mismatch" title="จัด ${fmtQty(ln.qty_prepared)} ≠ รับ ${fmtQty(ln.qty_received)}">⚠ ${base}</span>`;
-  return base;
-}
-function mismatchBanner(progress){
-  if(!progress || !progress.prep_recv_mismatch) return "";
-  const n = progress.prep_recv_mismatch_count || 0;
-  return `<div class="alert-banner"><strong>⚠ จัดกับรับไม่ตรงกัน</strong> — ${n} รายการ (เริ่มรับแล้ว แต่รับไม่เท่าที่จัด)</div>`;
-}
-function qtyCell(qty, mismatch){
-  const q = fmtQty(qty);
-  return mismatch ? `<span class="qty-mismatch">${q}</span>` : q;
+  const t={open:"รอจัด",prepared:"จัดแล้ว",received:"รับแล้ว",cancelled:"ยกเลิก"};
+  return t[status]||status||"-";
 }
 function fmtDateTime(iso){
   return iso ? String(iso).slice(0,16).replace("T"," ") : "—";
@@ -846,34 +830,12 @@ async function cancelRequest(transferId){
     alert(e.message || "ยกเลิกไม่สำเร็จ");
   }
 }
-async function fulfillLine(transferId, lineId, bcode){
-  const label = bcode ? `รหัส ${bcode}` : "รายการนี้";
-  if(!(await uiConfirm(`ปิด ${label}?\nไม่ต้องการส่วนที่เหลือแล้ว (ไม่แก้จำนวน)\nถ้ายังไม่เคยจัด จะคืน ICLOW เป็นยังไม่สั่ง`))) return null;
-  try{
-    const r = await api("/transfer/api/requests/"+transferId+"/lines/"+lineId+"/fulfill",{method:"POST",body:"{}"});
-    showToast(r.request_status==="complete" ? "ปิดรายการแล้ว — คำขอเสร็จสิ้น" : "ปิดรายการแล้ว");
-    return r;
-  }catch(e){
-    alert(e.message || "ปิดรายการไม่สำเร็จ");
-    throw e;
-  }
-}
-function canFulfillLine(ln, toBranch){
-  if((toBranch||"").toUpperCase() !== SITE) return false;
-  if(ln && ln.can_fulfill === true) return true;
-  if(ln && ln.can_fulfill === false) return false;
-  if(ln && ln.cancelled_at) return false;
-  const prep = Number(ln.qty_prepared||0);
-  const recv = Number(ln.qty_received||0);
-  const req = Number(ln.qty_requested||0);
-  return prep <= recv && recv < req;
-}
 function canCancelRequest(status, toBranch, hasShipments){
   // Requester only; match API — allowed until any ship bill exists.
   if((toBranch||"").toUpperCase() !== SITE) return false;
   if(hasShipments) return false;
   const st = status || "";
-  if(["draft","complete","cancelled"].includes(st)) return false;
+  if(["draft","received","complete","cancelled"].includes(st)) return false;
   return true;
 }
 function apCounterpartyLabel(writingBranch, counterpartyBranch){
@@ -1223,7 +1185,7 @@ function printRequestBill(detail){
     <h1 style="margin:0 0 .35rem;font-size:18pt">ใบคำขอโอนสินค้า</h1>
     <p style="margin:0 0 .75rem;font-size:12pt"><strong>TRF-${String(shortId).replace(/^TRF-/,"")}</strong>
       · ${dirLabel(fromB,toB)}
-      · สถานะ ${badge(detail.status||"", fromB, toB, detail.prep_recv_mismatch, detail.receive_caught_up)}</p>
+      · สถานะ ${badge(detail.status||"", fromB)}</p>
     <p class="meta" style="margin:0 0 .75rem">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)} · พิมพ์โดย ${USER}</p>
     <p class="meta" style="margin:0 0 .75rem">AP จัดออก (${branchLabel(fromB)}): ${shipAp||"—"} · AP รับเข้า (${branchLabel(toB)}): ${recvAp||"—"}</p>
     <table><thead><tr><th class="num">#</th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th></tr></thead>
@@ -1287,7 +1249,6 @@ async function openRequestDetail(transferId){
   const status = detail.status || (detail.header && detail.header.status) || "";
   const fromB = detail.from_branch;
   const toB = detail.to_branch;
-  const progress = {prep_recv_mismatch: detail.prep_recv_mismatch, prep_recv_mismatch_count: detail.prep_recv_mismatch_count};
   const stickerLines = lines.filter(ln=>Number(ln.qty_received||0)>0).map(ln=>({
     bcode: ln.bcode,
     descr: ln.descr || "",
@@ -1297,18 +1258,14 @@ async function openRequestDetail(transferId){
   const lineRows = lines.map(ln=>{
     const si = stickerIndex[ln.bcode];
     const pick = si!=null ? `<input type="checkbox" class="pick-check stk-pick" data-i="${si}" title="พิมพ์บาร์โค้ด"/>` : "";
-    const fulfill = canFulfillLine(ln, toB)
-      ? `<button class="btn btn-ghost btn-tiny" data-fulfill="${ln.line_id}" data-bcode="${ln.bcode||""}">ไม่ต้องการแล้ว</button>`
-      : "";
-    return `<tr class="${ln.prep_recv_mismatch?"row-mismatch":""}">
+    return `<tr>
     <td>${pick}</td>
     <td><code>${ln.bcode}</code></td>
     <td>${fmtDescr(ln)}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
-    <td class="num">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</td>
-    <td class="num">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</td>
+    <td class="num">${fmtQty(ln.qty_prepared)}</td>
+    <td class="num">${fmtQty(ln.qty_received)}</td>
     <td>${lineStatusLabel(ln)}</td>
-    <td>${fulfill}</td>
   </tr>`;
   }).join("");
   let shipHtml = "";
@@ -1318,8 +1275,7 @@ async function openRequestDetail(transferId){
       const recvBill = ship.receive_billno || "";
       const slines = (ship.lines||[]).map(sl=>{
         const open = Math.max(Number(sl.qty_shipped||0)-Number(sl.qty_received||0),0);
-        const mm = open > 0 && Number(sl.qty_received||0) > 0;
-        return `<tr><td><code>${sl.bcode||""}</code></td><td class="num">${fmtQty(sl.qty_shipped)}</td><td class="num">${qtyCell(sl.qty_received, mm)}</td><td class="num">${mm ? `<span class="flag-mismatch">${fmtQty(open)}</span>` : fmtQty(open)}</td></tr>`;
+        return `<tr><td><code>${sl.bcode||""}</code></td><td class="num">${fmtQty(sl.qty_shipped)}</td><td class="num">${fmtQty(sl.qty_received)}</td><td class="num">${fmtQty(open)}</td></tr>`;
       }).join("");
       return `<div style="margin-top:.65rem">
         <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · <code>${shipBill}</code>${recvBill ? ` · ใบรับ <code>${recvBill}</code>` : ""}</p>
@@ -1335,30 +1291,25 @@ async function openRequestDetail(transferId){
   const lineCards = lines.map(ln=>{
     const si = stickerIndex[ln.bcode];
     const pick = si!=null ? `<label style="display:flex;align-items:center;gap:.35rem"><input type="checkbox" class="pick-check stk-pick" data-i="${si}"/><code>${ln.bcode}</code></label>` : `<code>${ln.bcode}</code>`;
-    const fulfill = canFulfillLine(ln, toB)
-      ? `<button class="btn btn-ghost btn-tiny" data-fulfill="${ln.line_id}" data-bcode="${ln.bcode||""}">ไม่ต้องการแล้ว</button>`
-      : "";
-    return `<div class="item-card ${ln.prep_recv_mismatch?"row-mismatch":""}">
+    return `<div class="item-card">
     <div class="item-card-head">${pick}${lineStatusLabel(ln)}</div>
     <div class="item-card-desc">${fmtDescr(ln)}</div>
     <div class="item-card-grid">
       <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
-      <div class="item-field num"><span class="lbl">จัด</span><span class="val">${qtyCell(ln.qty_prepared, ln.prep_recv_mismatch)}</span></div>
-      <div class="item-field num"><span class="lbl">รับ</span><span class="val">${qtyCell(ln.qty_received, ln.prep_recv_mismatch)}</span></div>
+      <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
+      <div class="item-field num"><span class="lbl">รับ</span><span class="val">${fmtQty(ln.qty_received)}</span></div>
     </div>
-    ${fulfill ? `<div class="row-actions" style="margin-top:.35rem">${fulfill}</div>` : ""}
   </div>`;
   }).join("");
   const modal = showModal(`<h2>รายละเอียด · <code>${detail.short_id||transferId}</code></h2>
     <p class="dir">${dirLabel(fromB, toB)}</p>
-    <p style="margin:.35rem 0">${badge(status, fromB, toB, detail.prep_recv_mismatch, detail.receive_caught_up)} ${pipeline(status, detail.prep_recv_mismatch, detail.receive_caught_up)}</p>
-    ${mismatchBanner(detail)}
+    <p style="margin:.35rem 0">${badge(status, fromB)} ${pipeline(status)}</p>
     <p class="meta">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)}</p>
     <p class="meta">AP จัดออก: ${shipAp||"—"} · AP รับเข้า: ${recvAp||"—"}</p>
     ${stickerLines.length ? `<p class="meta" style="margin:.65rem 0 0">ติ๊กสินค้าที่ต้องการพิมพ์บาร์โค้ด — จำนวนดวง = จำนวนที่รับ</p>` : ""}
     ${dualView(
-      `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th><th></th></tr></thead><tbody>
-        ${lineRows || '<tr><td colspan="8" class="empty">ไม่มีรายการ</td></tr>'}
+      `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th></th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th><th>สถานะ</th></tr></thead><tbody>
+        ${lineRows || '<tr><td colspan="7" class="empty">ไม่มีรายการ</td></tr>'}
       </tbody></table></div>`,
       itemCards(lineCards || '<div class="empty">ไม่มีรายการ</div>')
     )}
@@ -1397,18 +1348,6 @@ async function openRequestDetail(transferId){
   if(cancelBtn) cancelBtn.onclick = async()=>{ modal.close(); await cancelRequest(transferId); };
   const editBtn = modal.box.querySelector("#btnDetailEdit");
   if(editBtn) editBtn.onclick = ()=>{ modal.close(); editDraft(transferId); };
-  modal.box.querySelectorAll("[data-fulfill]").forEach(btn=>{
-    btn.onclick = async (e)=>{
-      e.stopPropagation();
-      try{
-        const r = await fulfillLine(transferId, btn.dataset.fulfill, btn.dataset.bcode||"");
-        if(!r) return;
-        modal.close();
-        await openRequestDetail(transferId);
-        render();
-      }catch(_e){}
-    };
-  });
 }
 async function editDraft(transferId){
   const detail = await api("/transfer/api/requests/"+transferId+"/lines");
@@ -1620,7 +1559,7 @@ async function renderHome(el){
         <p class="action-group-label">ติดตาม</p>
         <button class="action-card" data-go="status">
           <p class="title">📋 ตรวจสอบสถานะ</p>
-          <p class="desc">ดูคำขอที่ส่งแล้ว กำลังจัด รอรับ หรือเสร็จสิ้น</p>
+          <p class="desc">ดูคำขอที่ขอแล้ว จัดแล้ว หรือรับแล้ว</p>
         </button>
       </div>
     </div>`;
@@ -1709,7 +1648,7 @@ async function renderRequest(el, opts){
     <div class="card card-table">
       <p class="meta" style="margin:0">${SITE === "HQ"
         ? "รายการ <strong>สต๊อกต่ำ (ICMAS)</strong> ที่สนญ. — ไม่ดึง ICLOW รอสั่งซื้อ (เก็บไว้สั่งจากเจ้าหนี้) · เพิ่มรหัสเองได้ด้านบน"
-        : "รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ด้านล่าง (ถ้ามี) คือสต๊อกต่ำ ICMAS หลังโอนครั้งก่อน"}</p>`;
+        : "รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ถ้าหลังรับเข้าสต๊อกยังไม่เกินจุดต่ำสุด ระบบเดิมจะเปิด ICLOW ใหม่"}</p>`;
 
     if(!suggestItems.length){
       html += `<div class="empty">ไม่พบรายการแนะนำ — ใช้เพิ่มรหัสเองด้านบน</div>`;
@@ -2359,14 +2298,14 @@ async function renderPrepare(el){
           ${items.map((r,i)=>`<tr class="row-clickable" data-prep-idx="${i}">
             <td><code>${r.short_id}</code></td>
             <td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-            <td>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch,!!r.receive_caught_up)}</td>
+            <td>${badge(r.status,r.from_branch)}</td>
             <td>${(r.requested_at||r.created_at||"").slice(0,10)}</td>
             <td class="num">${r.line_count||0}</td>
             <td><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></td>
           </tr>`).join("")}
         </tbody></table></div>`,
         itemCards(items.map((r,i)=>`<div class="item-card row-clickable" data-prep-idx="${i}">
-          <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,!!r.prep_recv_mismatch,!!r.receive_caught_up)}</div>
+          <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch)}</div>
           <div class="item-card-grid">
             <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
             <div class="item-field"><span class="lbl">วันที่</span><span class="val">${(r.requested_at||r.created_at||"").slice(0,10)}</span></div>
@@ -2532,8 +2471,7 @@ async function openPrepareRequest(summary){
 }
 
 function isStatusDoneRow(r){
-  // Complete orders, or short-ship waves where everything prepared so far was received.
-  return r.status==="complete" || !!r.receive_caught_up;
+  return r.status==="received" || r.status==="complete";
 }
 function dateOnly(iso){
   return (iso||"").slice(0,10) || "—";
@@ -2640,15 +2578,13 @@ async function renderStatus(el, {reuseItems=false}={}){
       : `<th>วันที่</th>`;
     const activeTableRows = active.map(r=>{
       const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
-      const mm = !!r.prep_recv_mismatch;
-      const caught = !!r.receive_caught_up;
       const dateCells = isDone
         ? `<td>${dateOnly(r.requested_at||r.created_at)}</td><td>${dateOnly(r.last_received_at)}</td>`
         : `<td>${dateOnly(r.requested_at||r.created_at)}</td>`;
-      return `<tr class="row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
+      return `<tr class="row-clickable" data-detail="${r.transfer_id}">
         <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
-        <td>${badge(r.status,r.from_branch,r.to_branch,mm,caught)}</td>
-        <td>${pipeline(r.status,mm,caught)}</td>
+        <td>${badge(r.status,r.from_branch)}</td>
+        <td>${pipeline(r.status)}</td>
         ${dateCells}
         <td class="row-actions" style="margin:0">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
@@ -2660,19 +2596,17 @@ async function renderStatus(el, {reuseItems=false}={}){
     }).join("");
     const activeCardRows = active.map(r=>{
       const canCancel = canCancelRequest(r.status, r.to_branch, !!r.has_shipments);
-      const mm = !!r.prep_recv_mismatch;
-      const caught = !!r.receive_caught_up;
       const dateFields = isDone
         ? `<div class="item-field"><span class="lbl">วันขอ</span><span class="val">${dateOnly(r.requested_at||r.created_at)}</span></div>
            <div class="item-field"><span class="lbl">วันรับ</span><span class="val">${dateOnly(r.last_received_at)}</span></div>`
         : `<div class="item-field"><span class="lbl">วันที่</span><span class="val">${dateOnly(r.requested_at||r.created_at)}</span></div>`;
-      return `<div class="item-card row-clickable ${mm?"row-mismatch":""}" data-detail="${r.transfer_id}">
-        <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch,r.to_branch,mm,caught)}</div>
+      return `<div class="item-card row-clickable" data-detail="${r.transfer_id}">
+        <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch)}</div>
         <div class="item-card-grid">
           <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
           ${dateFields}
         </div>
-        ${pipeline(r.status,mm,caught)}
+        ${pipeline(r.status)}
         <div class="item-card-actions">
           <button class="btn btn-ghost" data-detail-btn="${r.transfer_id}">ดู</button>
           <button class="btn btn-ghost" data-print="${r.transfer_id}">พิมพ์</button>

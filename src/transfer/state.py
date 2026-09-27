@@ -16,14 +16,13 @@ def qty_short_vs_order(qty_requested: float, qty_actual: float) -> float:
     return max(float(qty_requested or 0) - float(qty_actual or 0), 0.0)
 
 
-def prep_recv_mismatch(qty_prepared: float, qty_received: float) -> bool:
-    """True when receive has started but qty does not match prepared.
-
-    Prepared with zero received is normal awaiting_receive — not a mismatch.
-    """
-    prep = float(qty_prepared or 0)
-    recv = float(qty_received or 0)
-    return prep > 0 and recv > 0 and prep != recv
+def _line_cancelled_unprepared(line: dict[str, Any]) -> bool:
+    """True when the line was closed before anything was prepared."""
+    if float(line.get("qty_prepared") or 0) > 0:
+        return False
+    if line.get("cancelled_at"):
+        return True
+    return (line.get("line_status") or "") == "cancelled"
 
 
 def shipment_lines_fully_received(shipment_lines: list[dict[str, Any]]) -> bool:
@@ -52,22 +51,20 @@ def derive_line_status(
     qty_received: float,
     cancelled: bool = False,
 ) -> str:
+    """open → prepared → received. Cancelled only when nothing was prepared.
+
+    qty_requested is not a status input: a short ship is received once the
+    prepared qty has been received.
+    """
+    del qty_requested  # kept for callers; status follows prepared vs received
     prep = float(qty_prepared or 0)
     recv = float(qty_received or 0)
-    if cancelled:
-        # Waived remainder after receive caught up on what was prepared.
-        if prep > 0 and recv >= prep:
-            return "complete"
+    if cancelled and prep <= 0:
         return "cancelled"
-    req = float(qty_requested or 0)
-    if recv >= req:
-        return "complete"
-    if recv > 0:
-        return "partial_received"
-    if prep >= req:
-        return "prepared"
+    if prep > 0 and recv >= prep:
+        return "received"
     if prep > 0:
-        return "partial_prepared"
+        return "prepared"
     return "open"
 
 
@@ -92,43 +89,19 @@ def last_received_at(
 
 
 def summarize_request_progress(lines: list[dict[str, Any]]) -> dict[str, Any]:
-    """Order-centric progress + prep/receive mismatch flags for UI alerts."""
-    active = [ln for ln in lines if not ln.get("cancelled_at")]
-    mismatch_lines: list[str] = []
-    short_prepare = 0.0
-    short_receive = 0.0
+    """Receive totals for lists (barcode button). Status is separate."""
+    active = [ln for ln in lines if not _line_cancelled_unprepared(ln)]
     qty_received_total = 0.0
     received_line_count = 0
-    any_open_recv = False
     for ln in active:
-        req = float(ln.get("qty_requested") or 0)
-        prep = float(ln.get("qty_prepared") or 0)
         recv = float(ln.get("qty_received") or 0)
-        short_prepare += qty_short_vs_order(req, prep)
-        short_receive += qty_short_vs_order(req, recv)
         qty_received_total += max(recv, 0.0)
         if recv > 0:
             received_line_count += 1
-        if qty_open_receive(prep, recv) > 0:
-            any_open_recv = True
-        if prep_recv_mismatch(prep, recv):
-            bcode = str(ln.get("bcode") or "").strip()
-            if bcode:
-                mismatch_lines.append(bcode)
-    has_received = received_line_count > 0
-    # Wave done: everything prepared so far has been received (short-ship OK).
-    # Still may have open prepare — HQ can ship the rest later.
-    receive_caught_up = has_received and not any_open_recv
     return {
-        "prep_recv_mismatch": bool(mismatch_lines),
-        "prep_recv_mismatch_count": len(mismatch_lines),
-        "prep_recv_mismatch_bcodes": mismatch_lines,
-        "qty_short_order_prepare": short_prepare,
-        "qty_short_order_receive": short_receive,
         "qty_received_total": qty_received_total,
         "received_line_count": received_line_count,
-        "has_received": has_received,
-        "receive_caught_up": receive_caught_up,
+        "has_received": received_line_count > 0,
     }
 
 
@@ -138,45 +111,31 @@ def derive_request_status(
     lines: list[dict[str, Any]],
     has_shipments: bool,
 ) -> str:
+    """requested → prepared → received.
+
+    received means every prepared qty is in. Shortfall versus qty_requested
+    does not keep the request open — a new ICLOW covers stock still at the low.
+    """
     if header_status == "draft":
         return "draft"
     if header_status == "cancelled":
         return "cancelled"
 
-    # Pure cancels (never prepared) drop out; waived short-ship lines stay as complete.
-    active = [ln for ln in lines if (ln.get("line_status") or "") != "cancelled"]
-    if not active:
+    considered = [ln for ln in lines if not _line_cancelled_unprepared(ln)]
+    if lines and not considered:
         return "cancelled"
 
-    if all(ln.get("line_status") == "complete" for ln in active):
-        return "complete"
-
-    # Ignore cancelled_at rows for open-qty checks (remainder already waived).
-    open_lines = [ln for ln in active if not ln.get("cancelled_at")]
-    any_recv = any(float(ln.get("qty_received") or 0) > 0 for ln in open_lines)
-    any_short_order_prep = any(
-        qty_short_vs_order(ln.get("qty_requested", 0), ln.get("qty_prepared", 0)) > 0
-        for ln in open_lines
-    )
-    any_short_order_recv = any(
-        qty_short_vs_order(ln.get("qty_requested", 0), ln.get("qty_received", 0)) > 0
-        for ln in open_lines
-    )
+    any_prepared = any(float(ln.get("qty_prepared") or 0) > 0 for ln in considered)
     any_open_recv = any(
         qty_open_receive(ln.get("qty_prepared", 0), ln.get("qty_received", 0)) > 0
-        for ln in open_lines
+        for ln in considered
     )
-
-    # Partial received = ordered qty not fully received yet (receive started).
-    if any_short_order_recv and any_recv:
-        return "partial_received"
-    if has_shipments and any_open_recv:
-        return "awaiting_receive"
-    # Partial prepared = ordered qty not fully prepared yet.
-    if any_short_order_prep:
-        return "partial_prepared"
+    if any_open_recv or (has_shipments and not any_prepared):
+        return "prepared"
+    if any_prepared:
+        return "received"
     if has_shipments:
-        return "awaiting_receive"
+        return "prepared"
     return "requested"
 
 
@@ -209,7 +168,7 @@ def can_action(action: str, ctx: dict[str, Any]) -> ActionResult:
         status = ctx.get("status") or ""
         if status == "requested":
             return ActionResult(True)
-        if status in ("draft", "complete", "cancelled"):
+        if status in ("draft", "received", "complete", "cancelled"):
             return ActionResult(False, "สถานะนี้ยกเลิกไม่ได้")
         # No shipments yet — allow cancel even if status drifted.
         return ActionResult(True)
@@ -224,25 +183,13 @@ def can_action(action: str, ctx: dict[str, Any]) -> ActionResult:
             return ActionResult(False, "แก้ไขได้เฉพาะร่างที่ยังไม่ส่ง")
         return ActionResult(True)
 
-    if action in ("cancel_line", "fulfill_line"):
-        # Requester closes remaining demand (no qty edit): cancel never-prepared, or
-        # waive shortfall after everything prepared so far has been received.
-        if ctx.get("cancelled_at"):
-            return ActionResult(False, "รายการนี้ปิดแล้ว")
-        prep = float(ctx.get("qty_prepared") or 0)
-        recv = float(ctx.get("qty_received") or 0)
-        req = float(ctx.get("qty_requested") or 0)
-        if qty_open_receive(prep, recv) > 0:
-            return ActionResult(False, "ยังค้างรับของที่จัดแล้ว — รับเข้าก่อน")
-        if recv >= req:
-            return ActionResult(False, "รายการนี้เสร็จแล้ว")
-        return ActionResult(True)
-
     if action in ("hq_prepare", "prepare_ship"):
         if ctx.get("cancelled_at"):
             return ActionResult(False, "รายการนี้ปิดแล้ว")
         header_status = ctx.get("status") or "requested"
-        if header_status not in ("requested", "partial_prepared", "awaiting_receive", "partial_received"):
+        if ctx.get("has_shipments") or float(ctx.get("qty_prepared") or 0) > 0:
+            return ActionResult(False, "จัดได้ครั้งเดียวต่อคำขอ")
+        if header_status != "requested":
             return ActionResult(False, "สถานะคำขอไม่พร้อมจัด")
         qty_ship = float(ctx.get("qty_ship") or 0)
         if qty_ship <= 0:

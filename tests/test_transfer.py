@@ -93,7 +93,9 @@ def test_transfer_page_renders():
     assert "ค้นหาบิล TRF" in html
     assert "uiConfirm" in html
     assert "confirmBackdrop" in html
-    assert "ไม่ต้องการแล้ว" in html
+    assert "จัดแล้ว" in html
+    assert "รับแล้ว" in html
+    assert "ไม่ต้องการแล้ว" not in html
     assert "ขั้นตอนโอนสินค้า" not in html
     assert "ใบ TF ถูกสร้างเมื่อไหร่" in html
     assert "info-toggle" in html

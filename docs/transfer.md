@@ -20,7 +20,7 @@ Requester is always **`to_branch`** (branch that needs stock). Shipper is **`fro
 | **SYP → HQ** | HQ | SYP (3TF SIMAS on kss-pc) | HQ (3TF PIMAS on KSS) |
 
 1. **Requester** — draft with direction picker → submit
-2. **Shipper** (`from_branch`) — prepare queue → one click = one ship bill (partial prepare allowed)
+2. **Shipper** (`from_branch`) — prepare queue → one click = one ship bill (partial qty on that bill is allowed; no second TF on the same request)
 3. **Receiver** (`to_branch`) — receive against shipment → PIMAS bill (stock in)
 
 Supabase `transfer.*` owns workflow; PARTS9 owns inventory at ship (SIMAS) + receive (PIMAS).
@@ -72,7 +72,7 @@ Ship (SIMAS) and receive (PIMAS) bills set `ACCTNO`/`ACCTNAME` from APMAS like m
 - Print: **พิมพ์ใบคำขอ** on request detail / status list — browser print of TRF lines + AP labels.
 - Prepare pick sheet: **พิมพ์ใบจัด** on prepare steps 2–3 (after opening a TRF) — browser print of open lines only (ที่เก็บ, คงเหลือ ship-branch, ค้างจัด + tick boxes) so shippers can walk the warehouse before confirming TF.
 - Barcode stickers: after **ยืนยันรับเข้า**, or later from **ตรวจสอบสถานะ** (history) / request detail. Operators pick which received SKUs to print (one sticker per received unit). Primary output is a **TSPL `.prn` download** for shop TSC printers (TE310 / 244 Pro) — send the file raw to the printer (e.g. port 9100). Optional LAN send if `TRANSFER_STICKER_PRINTER_HOST` is set. Browser print is not used for stickers.
-- **เสร็จสิ้น (Done) tab** lists `complete` orders **and** short-ship waves where everything prepared so far has been received (`receive_caught_up`) — so receivers can print barcodes even when HQ still owes more qty on the same request. When HQ ships the remainder, the request returns to Active as `awaiting_receive`. Done rows show **วันขอ** + **วันรับ** (`last_received_at`) and sort by **วันรับ** (newest first).
+- **เสร็จสิ้น (Done) tab** lists `received` orders (prepared qty has been received, including a short ship). Done rows show **วันขอ** + **วันรับ** (`last_received_at`) and sort by **วันรับ** (newest first). A later shortage is a new request when PARTS9 opens another ICLOW row.
 
 ```env
 TRANSFER_STICKER_PRINTER_MODEL=te310   # or ttp244pro; both 2-across 50×35 + invert BITMAP
@@ -123,7 +123,7 @@ Migrations: `20260829120000_transfer_schema.sql`, `20260830120000_transfer_direc
 
 ## Replaces old `/po`
 
-kcw-v2 `/po` and kcw-ops (`สถานะใบสั่งซื้อ`) are retired. Operators use this transfer service instead. ICLOW is stamped on submit at SYP when `to_branch=SYP` so leftover PO/ICLOW rows are not double-ordered.
+kcw-v2 `/po` and kcw-ops (`สถานะใบสั่งซื้อ`) are retired. Operators use this transfer service instead. ICLOW is stamped on submit at SYP when `to_branch=SYP` so the open รอสั่ง row is not double-ordered while this request is in flight.
 
 ## ICLOW Stamping
 
@@ -131,15 +131,8 @@ When `TRANSFER_ICLOW_STAMP_ENABLED=true` and submit happens at SYP (`to_branch=S
 
 - **On Submit**: stamp open ICLOW (`ORDERED=Y`, `DOCNO=TRF-{short_id}`)
 - **On Cancel**: revert if no shipments
-- **On Receive**: `RECEIVED=Y`, `RCVDNO=left12(ship_billno)` on **any** successful receive qty &gt; 0 (partial or complete; matches PARTS9). Do not wait for full requested qty.
-- **On line fulfill** (`POST .../lines/{line_id}/fulfill`): requester marks remaining demand as no longer needed. If the line was **never prepared**, revert ICLOW to `ORDERED=N` so it returns to รอสั่ง. If prepare/receive already happened, leave ICLOW alone (already received stamp).
+- **On Receive**: `RECEIVED=Y`, `RCVDNO=left12(ship_billno)` on **any** successful receive qty &gt; 0 so the row does not stay in ค้างรับ
 
 SYP→HQ requests (submit at HQ) do not stamp SYP ICLOW.
 
-## Close remaining line demand
-
-Requester site only. No qty edit — button **ไม่ต้องการแล้ว** on request detail when receive has caught up on what was prepared (or the line was never prepared):
-
-- Unprepared line → cancelled + ICLOW revert (HQ→SYP)
-- Short-ship remainder (prep == recv &lt; req) → line treated complete
-- When every line is complete/cancelled appropriately → request status → **complete** (or **cancelled** if nothing was ever prepared)
+Transfer status is only **requested → prepared → received**. `received` means the prepared qty is in, even when that is less than `qty_requested`. kcw-api does not insert a replacement ICLOW row. After the receive bill raises `QTYOH2`, PARTS9 opens the next รอสั่ง row when on-hand is still at or below `QTYMIN`.

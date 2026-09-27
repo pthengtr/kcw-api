@@ -348,7 +348,7 @@ def _enrich_suggest_item(
 
 
 def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, dict[str, Any]]:
-    """Requester-site ICMAS rows at/below min — covers re-order after ICLOW already stamped."""
+    """HQ ICMAS rows at/below min. SYP re-order comes from a new ICLOW row."""
     sql = text(
         """
         SELECT TOP (:lim)
@@ -410,7 +410,8 @@ def suggest_transfer_skus(
 ) -> list[dict[str, Any]]:
     """Suggest pick list for transfer request.
 
-    SYP: ICLOW รอสั่งซื้อ (same as /po) + ICMAS low-stock extras.
+    SYP: ICLOW รอสั่งซื้อ only. After receive, PARTS9 opens a new ICLOW row when
+    QTYOH2 is still at or below QTYMIN.
     HQ: ICMAS low-stock only — HQ ICLOW is for supplier PO, not branch transfer.
 
     Substitute hints are off by default so the pick table can paint quickly; use
@@ -452,9 +453,11 @@ def suggest_transfer_skus(
             "iclow_line_count": 1,
         }
 
-    icmas_candidates = _suggest_from_icmas_low_stock(
-        get_site_engine(site_key), limit=_ICMAS_EXTRA_LIMIT
-    )
+    icmas_candidates: dict[str, dict[str, Any]] = {}
+    if not include_iclow:
+        icmas_candidates = _suggest_from_icmas_low_stock(
+            get_site_engine(site_key), limit=_ICMAS_EXTRA_LIMIT
+        )
     icmas_bcodes = [b for b in icmas_candidates if b not in by_bcode]
 
     all_bcodes = list(dict.fromkeys([*iclow_order, *icmas_bcodes]))
