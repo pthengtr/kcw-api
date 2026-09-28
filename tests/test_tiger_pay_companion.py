@@ -104,11 +104,59 @@ def test_list_bills_combined_limit_caps_collect_plus_cn():
             "src.tiger_pay.payment_service.voucher_repos.list_latest_vouchers_by_bill_ids",
             return_value={},
         ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_voucher_attempts_for_biz_day",
+            return_value=[],
+        ),
     ):
         bills = list_bills_with_payment_status(MagicMock(), mode="latest", limit=3)
     assert len(bills) == 3
     # Newest first across both kinds (payout 11:4, 11:3, 11:2 …)
     assert [b["bill_number"] for b in bills] == ["KCN-4", "KCN-3", "KCN-2"]
+
+
+def test_list_bills_keeps_paid_non_kcn_voucher_visible():
+    from src.tiger_pay.payment_service import list_bills_with_payment_status
+
+    attempt = {
+        "id": "8fde274bff4f44c7afc9",
+        "pos_bill_id": "574142",
+        "pos_bill_number": "6K69-0011467",
+        "amount": 1600.0,
+        "status": "used",
+        "raw_status": "1",
+        "voucher_num": "262510640075",
+        "created_at": "2026-09-28T03:57:35+00:00",
+        "submitted_by": None,
+        "submitted_by_name": "M",
+        "raw_create_response": None,
+        "raw_last_show": None,
+    }
+    with (
+        patch("src.tiger_pay.payment_service.list_open_bills", return_value=[]),
+        patch("src.tiger_pay.payment_service.list_cn_bills", return_value=[]),
+        patch("src.tiger_pay.payment_service.schedule_refresh_active_vouchers"),
+        patch(
+            "src.tiger_pay.payment_service.repos.list_latest_attempts_by_bill_ids",
+            return_value={},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_latest_vouchers_by_bill_ids",
+            return_value={},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_voucher_attempts_for_biz_day",
+            return_value=[attempt],
+        ),
+    ):
+        bills = list_bills_with_payment_status(MagicMock(), mode="today", limit=10)
+
+    assert len(bills) == 1
+    assert bills[0]["bill_number"] == "6K69-0011467"
+    assert bills[0]["kind"] == "payout"
+    assert bills[0]["amount"] == 1600.0
+    assert bills[0]["tiger_payment_status"] == "used"
+    assert bills[0]["payment_attempt_active"] is False
 
 
 def test_build_open_api_authorization_with_and_without_digest():

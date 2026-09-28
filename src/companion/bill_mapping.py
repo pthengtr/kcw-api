@@ -46,10 +46,11 @@ def is_excluded_bill_number(bill_number: object) -> bool:
 
 
 def is_cn_payout_bill_number(bill_number: object) -> bool:
-    """Shop credit notes shown as the Tiger Pay CN bill type.
+    """True for shop credit-note numbers (``KCN*``).
 
-    Only bill numbers that start with ``KCN`` (e.g. ``KCN6908-0268``).
-    Plain ``CN*`` / ``3CN*`` and other negative bills (``5K`` / ``8K``) are not CN.
+    Cashed bills with a negative ``AFTERTAX`` are also payouts, including
+    normal sale numbers such as ``6K`` / ``5K`` / ``8K``. That check lives
+    in ``row_to_bill`` because it depends on the amount, not the prefix.
     """
     text = blank(bill_number).upper()
     return text.startswith("KCN")
@@ -148,17 +149,19 @@ def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
     resolved_kind = kind
     if resolved_kind is None:
         resolved_kind = (
-            "payout" if is_cn_payout_bill_number(bill_number) else "collect"
+            "payout"
+            if amount < 0 or is_cn_payout_bill_number(bill_number)
+            else "collect"
         )
-    if resolved_kind == "payout":
-        # CN list is KCN-prefixed credit notes only, even when the caller
-        # forces kind="payout" (MSSQL CN query).
-        if not is_cn_payout_bill_number(bill_number):
+    if resolved_kind == "collect":
+        if amount <= 0:
+            return None
+    else:
+        # Negative cashed bills are cash returns, including 6K/5K/8K.
+        if amount > 0 and not is_cn_payout_bill_number(bill_number):
             return None
         amount = abs(amount)
-    elif amount < 0:
-        # Collect list should not include negative rows.
-        return None
+        resolved_kind = "payout"
 
     try:
         created_at = parse_bill_datetime(row.get("BILLDATE"), row.get("BILLTIME"))

@@ -168,6 +168,24 @@ def list_active_voucher_attempts(engine: Engine) -> list[dict[str, Any]]:
     return [_row_to_attempt(row) for row in rows]
 
 
+def list_voucher_attempts_for_biz_day(
+    engine: Engine,
+    biz_day: Any,
+) -> list[dict[str, Any]]:
+    """Voucher rows created on a Bangkok calendar day, oldest first."""
+    sql = text(
+        """
+        select *
+        from tiger_pay.voucher_attempt
+        where (timezone('Asia/Bangkok', created_at))::date = :biz_day
+        order by created_at asc
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"biz_day": biz_day}).all()
+    return [_row_to_attempt(row) for row in rows]
+
+
 def list_latest_vouchers_by_bill_ids(
     engine: Engine,
     pos_bill_ids: list[str],

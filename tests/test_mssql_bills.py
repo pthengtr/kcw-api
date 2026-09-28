@@ -127,7 +127,9 @@ def test_list_mssql_bills_excludes_negative_from_collect():
     assert "[AFTERTAX] >= 0" not in sql_text
 
 
-def test_list_mssql_cn_bills_excludes_non_kcn():
+def test_list_mssql_cn_bills_includes_negative_cashed():
+    from decimal import Decimal
+
     from src.companion.mssql_bills import list_mssql_cn_bills
 
     frame = pd.DataFrame(
@@ -164,12 +166,14 @@ def test_list_mssql_cn_bills_excludes_non_kcn():
     finally:
         mssql_bills.pd.read_sql = original
 
-    assert bills == []
+    assert [bill.bill_number for bill in bills] == ["5K69-0001265", "CN6908-007"]
+    assert bills[0].kind == "payout"
+    assert bills[0].amount == Decimal("400.00")
+    assert bills[1].amount == Decimal("150.00")
     sql_text = str(mocked.call_args.args[0])
     assert "[AFTERTAX] < 0" in sql_text
-    assert "LIKE 'KCN%'" in sql_text
-    assert "LIKE 'CN%'" not in sql_text
-    assert "LIKE '3CN%'" not in sql_text
+    assert "LIKE 'KCN%'" not in sql_text
+    assert "NOT LIKE 'CNTF%'" in sql_text
 
 
 def test_list_mssql_cn_bills_includes_kcn_cashed():
@@ -206,7 +210,7 @@ def test_list_mssql_cn_bills_includes_kcn_cashed():
     sql_text = str(mocked.call_args.args[0])
     assert "[AFTERTAX] < 0" in sql_text
     assert "CASHED" in sql_text
-    assert "LIKE 'KCN%'" in sql_text
+    assert "LIKE 'KCN%'" not in sql_text
 
 
 def test_get_mssql_bill():

@@ -36,24 +36,29 @@ def test_is_cn_payout_bill_number():
     assert not is_cn_payout_bill_number("5K69-0001265")
 
 
-def test_row_to_bill_negative_normal_bill_is_not_cn():
+def test_row_to_bill_negative_normal_bill_is_payout():
+    from decimal import Decimal
+
     from src.companion.bill_mapping import row_to_bill
     import pandas as pd
 
     row = pd.Series(
         {
-            "ID": "572593",
-            "BILLNO": "5K69-0001265",
-            "AFTERTAX": "-400.00",
-            "BILLDATE": "2026-09-18",
-            "BILLTIME": "15:01:00",
+            "ID": "574142",
+            "BILLNO": "6K69-0011467",
+            "AFTERTAX": "-1600.00",
+            "BILLDATE": "2026-09-28",
+            "BILLTIME": "10:50:00",
             "PAID": "Y",
             "CASHED": "Y",
             "SALE": "toon",
         }
     )
     bill = row_to_bill(row)
-    assert bill is None
+    assert bill is not None
+    assert bill.kind == "payout"
+    assert bill.bill_number == "6K69-0011467"
+    assert bill.amount == Decimal("1600.00")
 
 
 def test_normalize_voucher_status_and_extract():

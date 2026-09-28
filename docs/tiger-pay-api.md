@@ -269,7 +269,7 @@ Bearer auth, `multipart/form-data`:
 | Cancel voucher | `POST /companion/vouchers/{attempt_id}/cancel` |
 | Query vouchers | Client method only (not exposed in UI yet) |
 
-CN / cash-return bill selection: cashed rows with negative `AFTERTAX` whose bill number starts with `KCN` (for example `KCN6908-0268`). Plain `CN*` / `3CN*` and other negative bills (`5K` / `8K`) are not included. Amount = `abs(AFTERTAX)`. Stored in `tiger_pay.voucher_attempt` + `voucher_event` (see `docs/sql/tiger_pay_voucher_attempt.sql`).
+CN / cash-return bill selection: cashed rows with negative `AFTERTAX`, including `KCN*` and normal sale numbers such as `6K69-0011467`. Transfer and online subtypes (`CNTF*` / `CNTAD*`) stay off the list. Amount = `abs(AFTERTAX)`. Stored in `tiger_pay.voucher_attempt` + `voucher_event` (see `docs/sql/tiger_pay_voucher_attempt.sql`).
 
 ---
 

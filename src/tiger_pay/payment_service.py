@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 
+from src.companion.bill_mapping import BANGKOK_TZ
 from src.companion.bills import get_open_bill, list_cn_bills, list_open_bills
 from src.tiger_pay import repos
 from src.tiger_pay import voucher_repos
@@ -205,13 +206,68 @@ def list_bills_with_payment_status(
             item["submitted_by_name"] = attempt.get("submitted_by_name") if attempt else None
         results.append(item)
 
+    # Paid returns on 6K/8K (and any non-KCN number) drop off the CN query.
+    # Keep those voucher rows on the till so the day's cash-out still lists them.
+    seen_ids = {str(row.get("id")) for row in results}
+    orphan_vouchers = _orphan_voucher_bill_rows(engine, seen_ids)
+    results.extend(orphan_vouchers)
+
     results.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
     # Collect + CN each use TOP(limit); without a combined cap the UI dropdown
-    # (e.g. 10) can show ~2× that many rows.
+    # (e.g. 10) can show ~2× that many rows. Paid non-KCN vouchers stay visible
+    # even when that cap would hide them.
     cap = _combined_bills_cap(limit)
     if cap is not None:
-        results = results[:cap]
+        kept = results[:cap]
+        kept_ids = {str(row.get("id")) for row in kept}
+        for row in orphan_vouchers:
+            if str(row.get("id")) not in kept_ids:
+                kept.append(row)
+        results = kept
     return results
+
+
+def _orphan_voucher_bill_rows(
+    engine: Engine,
+    seen_bill_ids: set[str],
+) -> list[dict[str, Any]]:
+    try:
+        attempts = voucher_repos.list_voucher_attempts_for_biz_day(
+            engine,
+            datetime.now(BANGKOK_TZ).date(),
+        )
+    except Exception:
+        logger.exception("Failed loading today's voucher attempts outside the CN list")
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for attempt in attempts:
+        bill_id = str(attempt.get("pos_bill_id") or "")
+        if not bill_id or bill_id in seen_bill_ids:
+            continue
+        seen_bill_ids.add(bill_id)
+        status = str(attempt.get("status") or "")
+        rows.append(
+            {
+                "id": bill_id,
+                "bill_number": attempt.get("pos_bill_number"),
+                "amount": float(attempt.get("amount") or 0),
+                "created_at": attempt.get("created_at"),
+                "pos_status": "Y",
+                "salesperson": attempt.get("submitted_by_name"),
+                "kind": "payout",
+                "tiger_payment_status": status or None,
+                "tiger_payment_no": attempt.get("voucher_num"),
+                "tiger_payment_id": None,
+                "payment_attempt_id": attempt.get("id"),
+                "payment_attempt_active": is_voucher_active_status(status),
+                "payment_type": "voucher",
+                "voucher": companion_voucher_from_attempt(attempt),
+                "submitted_by": attempt.get("submitted_by"),
+                "submitted_by_name": attempt.get("submitted_by_name"),
+            }
+        )
+    return rows
 
 
 def _combined_bills_cap(limit: int | str | None) -> int | None:
