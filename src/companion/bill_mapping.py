@@ -46,22 +46,13 @@ def is_excluded_bill_number(bill_number: object) -> bool:
 
 
 def is_cn_payout_bill_number(bill_number: object) -> bool:
-    """Counter CN cash-return bill prefixes (exclude transfer/online CN subtypes).
+    """Shop credit notes shown as the Tiger Pay CN bill type.
 
-    Shop credit notes use ``KCN*`` (e.g. ``KCN6908-0268``). Older / alternate
-    prefixes ``CN*`` / ``3CN*`` are also treated as payout.
-
-    Prefer amount-based classification in ``row_to_bill``: any negative
-    ``AFTERTAX`` (including normal ``5K`` / ``8K`` bills) is a voucher payout.
+    Only bill numbers that start with ``KCN`` (e.g. ``KCN6908-0268``).
+    Plain ``CN*`` / ``3CN*`` and other negative bills (``5K`` / ``8K``) are not CN.
     """
     text = blank(bill_number).upper()
-    if not text:
-        return False
-    if text.startswith("KCN"):
-        return True
-    if is_blocked_cn_subtype_bill_number(text):
-        return False
-    return bool(re.match(r"^(3)?CN", text))
+    return text.startswith("KCN")
 
 
 def is_blocked_cn_subtype_bill_number(bill_number: object) -> bool:
@@ -156,13 +147,14 @@ def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
 
     resolved_kind = kind
     if resolved_kind is None:
-        # Negative AFTERTAX = cash-return → Tiger voucher (KCN, CN, or normal 5K/8K).
         resolved_kind = (
-            "payout"
-            if amount < 0 or is_cn_payout_bill_number(bill_number)
-            else "collect"
+            "payout" if is_cn_payout_bill_number(bill_number) else "collect"
         )
     if resolved_kind == "payout":
+        # CN list is KCN-prefixed credit notes only, even when the caller
+        # forces kind="payout" (MSSQL CN query).
+        if not is_cn_payout_bill_number(bill_number):
+            return None
         amount = abs(amount)
     elif amount < 0:
         # Collect list should not include negative rows.

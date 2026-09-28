@@ -57,7 +57,7 @@ _MOCK_BILLS: tuple[PosBill, ...] = (
     ),
     PosBill(
         id="bill-cn-2001",
-        bill_number="CN2607140001",
+        bill_number="KCN2607140001",
         amount=Decimal("150.00"),
         created_at=datetime(2026, 7, 14, 12, 5, tzinfo=timezone.utc),
         pos_status="N",

@@ -27,8 +27,8 @@ from src.tiger_pay.voucher_service import (
 def test_is_cn_payout_bill_number():
     assert is_cn_payout_bill_number("KCN6908-0268")
     assert is_cn_payout_bill_number("kcn6908-0268")
-    assert is_cn_payout_bill_number("CN2607140001")
-    assert is_cn_payout_bill_number("3CN2607140001")
+    assert not is_cn_payout_bill_number("CN2607140001")
+    assert not is_cn_payout_bill_number("3CN2607140001")
     assert not is_cn_payout_bill_number("CNTF2607140001")
     assert not is_cn_payout_bill_number("3CNTF2607140001")
     assert not is_cn_payout_bill_number("CNTAD2607140001")
@@ -36,7 +36,7 @@ def test_is_cn_payout_bill_number():
     assert not is_cn_payout_bill_number("5K69-0001265")
 
 
-def test_row_to_bill_negative_normal_bill_is_payout():
+def test_row_to_bill_negative_normal_bill_is_not_cn():
     from src.companion.bill_mapping import row_to_bill
     import pandas as pd
 
@@ -53,10 +53,7 @@ def test_row_to_bill_negative_normal_bill_is_payout():
         }
     )
     bill = row_to_bill(row)
-    assert bill is not None
-    assert bill.kind == "payout"
-    assert bill.amount == Decimal("400.00")
-    assert bill.bill_number == "5K69-0001265"
+    assert bill is None
 
 
 def test_normalize_voucher_status_and_extract():

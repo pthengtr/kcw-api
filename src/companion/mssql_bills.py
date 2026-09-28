@@ -75,26 +75,13 @@ def _base_where_sql(*, today_only: bool, payout: bool = False) -> str:
         "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3SA%'",
     ]
     if payout:
-        # Cash-return / voucher candidates:
-        # - any negative AFTERTAX that is already CASHED (KCN, normal 5K/8K, …)
-        # - unpaid CN* / 3CN* (legacy path; exclude transfer/online subtypes)
+        # CN bill type: cashed credit notes whose bill number starts with KCN.
+        # Plain CN* / 3CN* and other negative bills (5K / 8K) stay off this list.
         clauses.extend(
             [
                 "[AFTERTAX] < 0",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTF%'",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTF%'",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTAD%'",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTAD%'",
-                "("
-                "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y' "
-                "OR ("
-                "("
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE 'CN%' "
-                "OR UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE '3CN%'"
-                ") "
-                "AND UPPER(LTRIM(RTRIM(COALESCE([PAID], '')))) <> 'Y'"
-                ")"
-                ")",
+                "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE 'KCN%'",
             ]
         )
     else:
@@ -102,7 +89,7 @@ def _base_where_sql(*, today_only: bool, payout: bool = False) -> str:
             [
                 "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
                 # Collect = positive amounts only. Zero is not payable
-                # (Tiger rejects QR amount 0); negatives go to voucher/payout.
+                # (Tiger rejects QR amount 0). KCN credit notes are the CN list.
                 "[AFTERTAX] > 0",
             ]
         )
