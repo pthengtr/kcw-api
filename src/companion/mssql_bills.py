@@ -75,13 +75,16 @@ def _base_where_sql(*, today_only: bool, payout: bool = False) -> str:
         "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3SA%'",
     ]
     if payout:
-        # CN bill type: cashed credit notes whose bill number starts with KCN.
-        # Plain CN* / 3CN* and other negative bills (5K / 8K) stay off this list.
+        # Cash returns: any cashed negative bill (KCN, 6K, 5K, 8K, …).
+        # Transfer and online CN subtypes stay off this list.
         clauses.extend(
             [
                 "[AFTERTAX] < 0",
                 "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
-                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) LIKE 'KCN%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTF%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTF%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE 'CNTAD%'",
+                "UPPER(LTRIM(RTRIM(COALESCE([BILLNO], '')))) NOT LIKE '3CNTAD%'",
             ]
         )
     else:
@@ -89,7 +92,7 @@ def _base_where_sql(*, today_only: bool, payout: bool = False) -> str:
             [
                 "UPPER(LTRIM(RTRIM(COALESCE([CASHED], '')))) = 'Y'",
                 # Collect = positive amounts only. Zero is not payable
-                # (Tiger rejects QR amount 0). KCN credit notes are the CN list.
+                # (Tiger rejects QR amount 0). Negatives are the payout list.
                 "[AFTERTAX] > 0",
             ]
         )
