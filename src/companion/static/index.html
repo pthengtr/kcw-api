@@ -797,6 +797,7 @@
     .alert-dialog-actions {
       display: flex;
       justify-content: flex-end;
+      gap: 0.5rem;
       padding: 0 1.25rem 1.15rem;
     }
     .btn-dialog-ok {
@@ -862,6 +863,17 @@
     </div>
     <div class="alert-dialog-actions">
       <button type="button" class="btn-dialog-ok" id="alertDialogOk">ตกลง</button>
+    </div>
+  </dialog>
+  <dialog class="alert-dialog" id="confirmDialog" aria-labelledby="confirmDialogTitle">
+    <div class="alert-dialog-inner">
+      <div class="alert-dialog-icon info" id="confirmDialogIcon" aria-hidden="true"></div>
+      <h3 id="confirmDialogTitle"></h3>
+      <p id="confirmDialogBody"></p>
+    </div>
+    <div class="alert-dialog-actions">
+      <button type="button" class="btn-dialog-secondary" id="confirmDialogNo">ไม่ยกเลิก</button>
+      <button type="button" class="btn-cancel" id="confirmDialogYes">ยืนยันยกเลิก</button>
     </div>
   </dialog>
   <dialog class="alert-dialog qr-dialog" id="qrDialog" aria-labelledby="qrDialogTitle">
@@ -1273,6 +1285,35 @@
       }
     }
 
+    function confirmCancel({ title, message }) {
+      const dialog = document.getElementById("confirmDialog");
+      if (!dialog || typeof dialog.showModal !== "function") {
+        return Promise.resolve(window.confirm(`${title || ""}\n${message || ""}`.trim()));
+      }
+      document.getElementById("confirmDialogTitle").textContent = title || "";
+      document.getElementById("confirmDialogBody").textContent = message || "";
+      const iconEl = document.getElementById("confirmDialogIcon");
+      iconEl.className = "alert-dialog-icon info";
+      iconEl.innerHTML = ICONS.alert;
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (ok) => {
+          if (settled) return;
+          settled = true;
+          if (dialog.open) dialog.close();
+          resolve(ok);
+        };
+        document.getElementById("confirmDialogYes").onclick = () => finish(true);
+        document.getElementById("confirmDialogNo").onclick = () => finish(false);
+        dialog.addEventListener("cancel", (event) => {
+          event.preventDefault();
+          finish(false);
+        }, { once: true });
+        dialog.addEventListener("close", () => finish(false), { once: true });
+        if (!dialog.open) dialog.showModal();
+      });
+    }
+
     function friendlyErrorMessage(err) {
       const raw = (err && err.message) || String(err || "");
       const cleaned = raw.replace(/^เกิดข้อผิดพลาด:\s*/i, "").trim();
@@ -1469,6 +1510,7 @@
         webhook_update: "อัปเดตจาก Webhook",
         polling_update: "อัปเดตจากโพลลิ่ง",
         show_polled: "อัปเดตสถานะ voucher",
+        status_corrected: "แก้สถานะเป็นจ่ายคืนแล้ว",
       };
       return map[action] || action;
     }
@@ -1858,6 +1900,11 @@
               });
             } else if (action === "cancel-voucher") {
               const attemptId = btn.getAttribute("data-attempt");
+              const confirmed = await confirmCancel({
+                title: "ยืนยันยกเลิก voucher",
+                message: `บิล ${bill.bill_number}\nถ้าลูกค้ากำลังรับเงินที่ตู้ อย่ายกเลิก การยกเลิกระหว่างจ่ายจะทำให้สถานะค้างเป็นยกเลิกทั้งที่จ่ายแล้ว`,
+              });
+              if (!confirmed) return;
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
               renderBills();
               syncDialogCancelButton();
@@ -1929,6 +1976,11 @@
               });
             } else if (action === "cancel") {
               const attemptId = btn.getAttribute("data-attempt");
+              const confirmed = await confirmCancel({
+                title: "ยืนยันยกเลิกการชำระ",
+                message: `บิล ${bill.bill_number}\nส่งคำขอยกเลิกไปที่ Tiger Pay เมื่อยืนยันเท่านั้น ถ้าลูกค้ากำลังชำระอยู่ อย่ายกเลิก`,
+              });
+              if (!confirmed) return;
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
               renderBills();
               syncDialogCancelButton();
@@ -2362,6 +2414,14 @@
       const kind = btn.dataset.kind || "payment";
       const bill = state.bills.find((b) => b.id === billId);
       if (!attemptId) return;
+      const billNo = bill?.bill_number || "";
+      const confirmed = await confirmCancel({
+        title: kind === "voucher" ? "ยืนยันยกเลิก voucher" : "ยืนยันยกเลิกการชำระ",
+        message: kind === "voucher"
+          ? `บิล ${billNo}\nถ้าลูกค้ากำลังรับเงินที่ตู้ อย่ายกเลิก การยกเลิกระหว่างจ่ายจะทำให้สถานะค้างเป็นยกเลิกทั้งที่จ่ายแล้ว`
+          : `บิล ${billNo}\nส่งคำขอยกเลิกไปที่ Tiger Pay เมื่อยืนยันเท่านั้น ถ้าลูกค้ากำลังชำระอยู่ อย่ายกเลิก`,
+      });
+      if (!confirmed) return;
       try {
         state.actionInFlight = { type: "cancel", billId, attemptId };
         renderBills();
