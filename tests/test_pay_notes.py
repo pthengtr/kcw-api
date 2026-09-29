@@ -217,6 +217,12 @@ def test_page_has_voucher_and_proof_tabs():
     assert "deleteProofImage" in html
     assert "ต้องมีอย่างน้อย 1 รูป" in html
     assert "/api/images/payment" in html
+    assert "deleteStoredBillImage" in html
+    assert "deleteEditBillImage" in html
+    assert "allowDeleteLast" in html
+    assert "data-scan-idx" in html
+    assert "ลบรูปใบวางบิลนี้?" in html
+    assert "กด × เพื่อลบรูปที่แนบผิด" in html
 
 
 def test_workflow_meta():
@@ -942,6 +948,208 @@ def test_delete_payment_image_allows_when_more_remain():
     assert body["deleted"].endswith("/a.jpg")
     assert body["has_proof"] is True
     rem.assert_called_once()
+
+
+def test_delete_bill_image_allows_last_image():
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock()
+    only = [
+        {
+            "name": "wrong.jpg",
+            "path": "public/pay_note/bill/7GP/N-001/wrong.jpg",
+            "url": "http://x/wrong.jpg",
+        }
+    ]
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes._settings", return_value=MagicMock(site="HQ")),
+        patch(
+            "app.routers.pay_notes.get_note_header",
+            return_value={"acctno": "7GP", "noteno": "N-001", "voucno": "", "VOUCED": "N"},
+        ),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", side_effect=[only, []]),
+        patch(
+            "app.routers.pay_notes.remove_paths",
+            return_value=["public/pay_note/bill/7GP/N-001/wrong.jpg"],
+        ) as rem,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete(
+            "/pay-notes/api/images/bill",
+            params={
+                "acctno": "7GP",
+                "noteno": "N-001",
+                "path": "public/pay_note/bill/7GP/N-001/wrong.jpg",
+            },
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["deleted"].endswith("/wrong.jpg")
+    assert body["remaining"] == []
+    rem.assert_called_once()
+
+
+def test_delete_bill_image_before_note_exists():
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock()
+    only = [
+        {
+            "name": "scan.jpg",
+            "path": "public/pay_note/bill/7GP/STK5-69/scan.jpg",
+            "url": "http://x/scan.jpg",
+        }
+    ]
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes._settings", return_value=MagicMock(site="HQ")),
+        patch("app.routers.pay_notes.get_note_header", return_value=None),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", side_effect=[only, []]),
+        patch("app.routers.pay_notes.remove_paths", return_value=[only[0]["path"]]) as rem,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete(
+            "/pay-notes/api/images/bill",
+            params={"acctno": "7GP", "noteno": "STK5-69", "path": only[0]["path"]},
+        )
+    assert res.status_code == 200
+    assert res.json()["remaining"] == []
+    rem.assert_called_once()
+
+
+def test_delete_bill_image_rejects_vouchered_note():
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock()
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes._settings", return_value=MagicMock(site="HQ")),
+        patch(
+            "app.routers.pay_notes.get_note_header",
+            return_value={"voucno": "KCPN6908-001", "VOUCED": "Y"},
+        ),
+        patch("app.routers.pay_notes.list_folder") as listed,
+        patch("app.routers.pay_notes.remove_paths") as rem,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete(
+            "/pay-notes/api/images/bill",
+            params={
+                "acctno": "7GP",
+                "noteno": "N-001",
+                "path": "public/pay_note/bill/7GP/N-001/a.jpg",
+            },
+        )
+    assert res.status_code == 409
+    assert res.json()["code"] == "already_vouchered"
+    listed.assert_not_called()
+    rem.assert_not_called()
+
+
+def test_delete_bill_image_rejects_foreign_path():
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock()
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_note_header") as header,
+        patch("app.routers.pay_notes.remove_paths") as rem,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete(
+            "/pay-notes/api/images/bill",
+            params={
+                "acctno": "7GP",
+                "noteno": "N-001",
+                "path": "public/pay_note/payment/KCPN6908-001/slip.jpg",
+            },
+        )
+    assert res.status_code == 400
+    header.assert_not_called()
+    rem.assert_not_called()
+
+
+def test_delete_bill_image_not_found():
+    from unittest.mock import MagicMock, patch
+    from fastapi.testclient import TestClient
+
+    ident = MagicMock()
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes._settings", return_value=MagicMock(site="HQ")),
+        patch(
+            "app.routers.pay_notes.get_note_header",
+            return_value={"voucno": "", "VOUCED": "N"},
+        ),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", return_value=[]),
+        patch("app.routers.pay_notes.remove_paths") as rem,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.delete(
+            "/pay-notes/api/images/bill",
+            params={
+                "acctno": "7GP",
+                "noteno": "N-001",
+                "path": "public/pay_note/bill/7GP/N-001/missing.jpg",
+            },
+        )
+    assert res.status_code == 404
+    rem.assert_not_called()
+
+
+def test_bill_thumbs_allow_deleting_the_last_image():
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    assert node, "node is required to check bill image thumbs"
+    html = page(user_name="ทดสอบ", site="HQ", write_enabled=True)
+    start = html.index("function thumbsHtml")
+    end = html.index("function billMonthLabel")
+    script = html[start:end]
+    program = (
+        "function esc(s) { return String(s ?? ''); }\n"
+        f"{script}\n"
+        "const one = [{name:'wrong.jpg', path:'public/pay_note/bill/7GP/N-001/wrong.jpg', url:'http://x/wrong.jpg'}];\n"
+        "const two = one.concat([{name:'ok.jpg', path:'public/pay_note/bill/7GP/N-001/ok.jpg', url:'http://x/ok.jpg'}]);\n"
+        "const bill = thumbsHtml(one, {canDelete:true, allowDeleteLast:true});\n"
+        "const proof = thumbsHtml(one, {canDelete:true});\n"
+        "const plain = thumbsHtml(two);\n"
+        "const empty = thumbsHtml([], {emptyHtml:'<p class=\"muted\">none</p>'});\n"
+        "process.stdout.write(JSON.stringify({\n"
+        "  billHasDel: bill.includes('data-del-path'),\n"
+        "  billDisabled: bill.includes('disabled'),\n"
+        "  proofDisabled: proof.includes('disabled'),\n"
+        "  plainHasDel: plain.includes('thumb-del'),\n"
+        "  empty,\n"
+        "}));\n"
+    )
+    out = subprocess.check_output([node, "-e", program], text=True)
+    body = json.loads(out)
+    assert body["billHasDel"] is True
+    assert body["billDisabled"] is False
+    assert body["proofDisabled"] is True
+    assert body["plainHasDel"] is False
+    assert "none" in body["empty"]
 
 
 def test_list_note_bills_with_lines_unvouchered_only(monkeypatch):

@@ -11,7 +11,7 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 | Tab | What you do | Editable? | KSS / Supabase |
 |-----|-------------|-----------|----------------|
 | 1. สร้าง | Create note (vendor, bills, discount, **pay method โอนเงิน/เช็ค**, images) | yes (new) | `PVMAS` INSERT + `PIMAS` stamp; `pay_note.reminder` |
-| 2. รอชำระ | Pending payment board; edit note; **cancel mistaken note**; record payment | **yes** (bills, discount, due, bank, pay method, remark); cancel = soft | unvouchered `PVMAS` + reminder |
+| 2. รอชำระ | Pending payment board; edit note; **delete a wrong bill image**; **cancel mistaken note**; record payment | **yes** (bills, discount, due, bank, pay method, remark, bill images); cancel = soft | unvouchered `PVMAS` + reminder |
 | 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `PVMAS`; `payment/{VOUCNO}/` images |
 | 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view / **update** bill + proof images | proof images only (must keep ≥1) | vouchered `PVMAS` with proof |
 | 5. ค้นหาตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
@@ -51,6 +51,8 @@ Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key i
 - `PATCH /api/banks?bank_id=` — edit that AP’s account in place (`acctno` must match)
 - `GET /api/bills?acctno=&noteno=` — bills for edit UI (attached + pickable)
 - `GET /api/vouchered?proof=awaiting|done|all` — vouchered board (removed: `/api/awaiting-proof`, `/api/paid`)
+- `POST /api/images/bill` — upload a bill image for `acctno` + `noteno` (also used before the note is saved)
+- `DELETE /api/images/bill?acctno=&noteno=&path=` — remove one bill image, including the last one, while the note is still unvouchered (or not created yet). **409** after payment is recorded (`code: already_vouchered`)
 - `POST /api/images/payment` — upload/replace payment proof for a `voucno` (also allowed on completed vouchers)
 - `DELETE /api/images/payment?voucno=&path=` — remove one proof image; **400** if it would leave zero images (`code: last_image`)
 
