@@ -707,7 +707,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <div class="step-num">2</div>
           <div class="step-body">
             <h3>สแกนเอกสารจากเจ้าหนี้</h3>
-            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement · หลายหน้าจะอ่านทีละหน้าแล้วรวมรายการ · ไฟล์นี้จะเป็นเอกสารอ้างอิงและอัปโหลดอัตโนมัติเมื่อบันทึก</p>
+            <p class="date-hint">อ่านเลขบิลและยอดจากใบวางบิล/statement · หลายหน้าจะอ่านทีละหน้าแล้วรวมรายการ · ไฟล์นี้จะเป็นเอกสารอ้างอิงและอัปโหลดอัตโนมัติเมื่อบันทึก · กด × เพื่อเอาหน้าที่ดึงผิดออก</p>
             <div class="drop" id="dropScan" tabindex="0">
               <div style="font-size:1.4rem;margin-bottom:.25rem">📄</div>
               <div>คลิกหรือลากเอกสารมาวางที่นี่</div>
@@ -875,7 +875,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
             <div class="drop" id="dropBill" tabindex="0">
               <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
               <div>คลิกหรือลากไฟล์มาวางที่นี่</div>
-              <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB)</div>
+              <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB) · กด × เพื่อลบรูปที่แนบผิด</div>
             </div>
             <input id="billImages" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
             <div class="thumbs" id="billThumbs"></div>
@@ -1004,11 +1004,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <div class="pay-line pay-net"><span>ยอดสุทธิ</span><strong id="editDiscNetAmt">0.00</strong></div>
         </div>
       </div>
-      <label class="lbl">เพิ่มเอกสารแนบ (optional)</label>
+      <label class="lbl">เอกสารแนบ</label>
       <div class="drop" id="dropEditBill" tabindex="0">
         <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
         <div>คลิกหรือลากไฟล์มาวางที่นี่</div>
-        <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB)</div>
+        <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB) · กด × เพื่อลบรูปที่แนบผิด</div>
       </div>
       <input id="editBillImages" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
       <div class="thumbs" id="editBillThumbs"></div>
@@ -1368,6 +1368,7 @@ const ASSIST_MAX_STEP = 5;
 
 let picked = null;
 let uploadedPaths = [];
+let createBillImages = [];
 let payTarget = null;
 let discMode = 'amount';
 let editDiscMode = 'amount';
@@ -2040,8 +2041,9 @@ function findRow(key) {
 function thumbsHtml(images, opts) {
   opts = opts || {};
   const list = (images || []).filter(x => x && (x.url || x.path));
-  if (!list.length) return '<p class="muted">ไม่มีรูป</p>';
-  const canDelete = !!opts.canDelete && list.length > 0;
+  if (!list.length) return opts.emptyHtml != null ? opts.emptyHtml : '<p class="muted">ไม่มีรูป</p>';
+  const canDelete = !!opts.canDelete;
+  const allowLast = !!opts.allowDeleteLast;
   return list.map(img => {
     const url = esc(img.url || '');
     const name = String(img.name || img.path || '');
@@ -2050,10 +2052,10 @@ function thumbsHtml(images, opts) {
     if (/\.pdf$/i.test(name)) body = `<a class="file-chip" href="${url}" target="_blank" rel="noopener">${esc(name)}</a>`;
     else body = url ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""/></a>` : '';
     if (!body) return '';
-    if (!canDelete) return body;
-    const lastOnly = list.length <= 1;
+    if (!canDelete || !img.path) return body;
+    const lastOnly = !allowLast && list.length <= 1;
     const title = lastOnly ? 'ต้องมีอย่างน้อย 1 รูป' : 'ลบรูปนี้';
-    return `<span class="thumb-item">${body}<button type="button" class="thumb-del" data-del-path="${path}" title="${esc(title)}" ${lastOnly ? 'disabled' : ''}>×</button></span>`;
+    return `<span class="thumb-item">${body}<button type="button" class="thumb-del" data-del-path="${path}" title="${esc(title)}" aria-label="${esc(title)}" ${lastOnly ? 'disabled' : ''}>×</button></span>`;
   }).join('');
 }
 function billMonthLabel(bills) {
@@ -2408,7 +2410,11 @@ async function openDetailByKey(key, opts) {
     detailPayload = det;
     renderDetBills(det);
     renderNotenoReuseHint($('detReuseWrap'), {...row, ...det});
-    $('detBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
+    const canEditBills = WRITE_ENABLED && row.is_editable === true;
+    $('detBillThumbs').innerHTML = thumbsHtml(det.bill_images || [], {
+      canDelete: canEditBills,
+      allowDeleteLast: true,
+    });
     if (det.payment_images) {
       $('detProofThumbs').innerHTML = thumbsHtml(det.payment_images, {canDelete: canUpload});
     }
@@ -2435,13 +2441,38 @@ $('detCancelNoteBtn')?.addEventListener('click', () => {
     closeDetail: true,
   });
 });
-function appendUploadThumb(container, file, j) {
-  if (j.url && !/\.pdf$/i.test(file.name)) {
-    container.innerHTML += `<img src="${esc(j.url)}" alt=""/>`;
-  } else {
-    container.innerHTML += `<span class="file-chip">${esc(file.name)}</span>`;
+async function deleteStoredBillImage(acctno, noteno, path) {
+  if (!acctno || !noteno || !path) return null;
+  if (!confirm('ลบรูปใบวางบิลนี้?')) return null;
+  const qs = new URLSearchParams({acctno, noteno, path});
+  const r = await fetch('/pay-notes/api/images/bill?' + qs.toString(), {method:'DELETE'});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = j.code === 'already_vouchered'
+      ? 'บันทึกการจ่ายแล้ว ลบรูปใบวางบิลไม่ได้'
+      : (j.detail || j.error || 'ลบไม่สำเร็จ');
+    throw new Error(msg);
   }
+  return j;
 }
+$('detBillThumbs').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-del-path]');
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!detailRow || detailRow.is_editable !== true || !WRITE_ENABLED) return;
+  try {
+    const j = await deleteStoredBillImage(detailRow.acctno, detailRow.noteno, btn.dataset.delPath);
+    if (!j) return;
+    $('detBillThumbs').innerHTML = thumbsHtml(j.remaining || [], {
+      canDelete: true,
+      allowDeleteLast: true,
+    });
+    if (detailPayload) detailPayload.bill_images = j.remaining || [];
+  } catch (err) {
+    alert(err.message || 'ลบไม่สำเร็จ');
+  }
+});
 function wireDropZone(dropEl, inputEl, onFiles) {
   if (!dropEl || !inputEl) return;
   dropEl.onclick = () => inputEl.click();
@@ -2704,6 +2735,7 @@ async function pickVendor(acctno, acctname) {
   fillRemarkForm('note', {}, acctno);
   if (!$('dueDate').value) $('dueDate').value = todayISO();
   uploadedPaths = [];
+  createBillImages = [];
   $('billThumbs').innerHTML = '';
   scanResult = null;
   scanRefFiles = [];
@@ -2974,19 +3006,44 @@ function applyScanResult(result) {
   if ($('billMatchAck')) $('billMatchAck').checked = false;
 }
 
+let scanPreviewUrls = [];
 function renderScanRefPreview(files) {
   const box = $('scanThumbs');
   if (!box) return;
+  scanPreviewUrls.forEach(url => URL.revokeObjectURL(url));
+  scanPreviewUrls = [];
   const list = Array.isArray(files) ? files : (files ? [files] : []);
   if (!list.length) { box.innerHTML = ''; return; }
-  box.innerHTML = list.map(file => {
+  box.innerHTML = list.map((file, idx) => {
+    let body = '';
     if (file.type && file.type.startsWith('image/')) {
       const url = URL.createObjectURL(file);
-      return `<img src="${url}" alt="เอกสารอ้างอิง"/>`;
+      scanPreviewUrls.push(url);
+      body = `<img src="${esc(url)}" alt="เอกสารอ้างอิง"/>`;
+    } else {
+      body = `<span class="file-chip">${esc(file.name)}</span>`;
     }
-    return `<span class="file-chip">${esc(file.name)}</span>`;
+    return `<span class="thumb-item">${body}<button type="button" class="thumb-del" data-scan-idx="${idx}" title="เอาไฟล์นี้ออก" aria-label="เอาไฟล์นี้ออก">×</button></span>`;
   }).join('');
 }
+$('scanThumbs')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-scan-idx]');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const idx = Number(btn.dataset.scanIdx);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= scanRefFiles.length) return;
+  const name = scanRefFiles[idx] && scanRefFiles[idx].name ? scanRefFiles[idx].name : 'ไฟล์นี้';
+  if (!confirm(`เอา ${name} ออกจากเอกสารที่จะแนบ?`)) return;
+  scanRefFiles = scanRefFiles.filter((_, i) => i !== idx);
+  renderScanRefPreview(scanRefFiles);
+  if (!scanRefFiles.length) {
+    $('scanStatus').textContent = 'เอาเอกสารออกแล้ว · สแกนใหม่หรือข้ามไปเลือกบิลเอง';
+    $('btnScanSkip')?.classList.remove('hidden');
+  } else {
+    $('scanStatus').textContent = `เหลือเอกสาร ${scanRefFiles.length} ไฟล์ที่จะแนบเมื่อบันทึก · บิลที่เลือกไว้ยังอยู่ ตรวจก่อนบันทึก`;
+  }
+});
 
 async function scanBillDocument(files) {
   if (!picked) { alert('เลือกเจ้าหนี้ก่อน'); return false; }
@@ -3184,6 +3241,15 @@ $('btnSaveBank').onclick = async () => {
 };
 $('btnCancelBank').onclick = () => closeBankForm('create');
 
+function renderCreateBillThumbs() {
+  const box = $('billThumbs');
+  if (!box) return;
+  box.innerHTML = thumbsHtml(createBillImages, {
+    canDelete: true,
+    allowDeleteLast: true,
+    emptyHtml: '',
+  });
+}
 async function uploadBillFiles(files) {
   const noteno = $('noteno').value.trim();
   if (!picked || !noteno) { alert('เลือกเจ้าหนี้และกรอกเลขที่ใบวางบิลก่อน'); return; }
@@ -3197,9 +3263,30 @@ async function uploadBillFiles(files) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { alert(j.detail || j.error); continue; }
     uploadedPaths.push(j.path);
-    appendUploadThumb($('billThumbs'), file, j);
+    createBillImages.push({path: j.path, url: j.url || '', name: file.name || j.path});
+    renderCreateBillThumbs();
   }
 }
+async function deleteCreateBillImage(path) {
+  const noteno = $('noteno').value.trim();
+  if (!picked || !noteno || !path) return;
+  try {
+    const j = await deleteStoredBillImage(picked.acctno, noteno, path);
+    if (!j) return;
+    createBillImages = createBillImages.filter(img => img.path !== path);
+    uploadedPaths = uploadedPaths.filter(p => p !== path);
+    renderCreateBillThumbs();
+  } catch (e) {
+    alert(e.message || 'ลบไม่สำเร็จ');
+  }
+}
+$('billThumbs').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-del-path]');
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  deleteCreateBillImage(btn.dataset.delPath);
+});
 
 async function uploadScanRefBillImages(noteno) {
   if (!scanRefFiles.length || !picked || !noteno) return false;
@@ -3212,6 +3299,8 @@ async function uploadScanRefBillImages(noteno) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
     uploadedPaths.push(j.path);
+    createBillImages.push({path: j.path, url: j.url || '', name: file.name || j.path});
+    renderCreateBillThumbs();
   }
   return true;
 }
@@ -3274,6 +3363,7 @@ $('btnCreateNote').onclick = async () => {
       : '';
     $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel} · จ่าย ${fmtMoney(netShow)}${reuseNote}</p>`;
     uploadedPaths = [];
+    createBillImages = [];
     scanRefFiles = [];
     renderScanRefPreview([]);
     $('billThumbs').innerHTML = '';
@@ -3310,15 +3400,41 @@ async function openEditNote(key, returnTab) {
   $('editDiscInput').value = rem.discount_input != null ? rem.discount_input : (rem.discount_amount || 0);
   setEditDiscMode(editDiscMode);
   $('editMsg').innerHTML = '';
-  $('editBillThumbs').innerHTML = '';
+  $('editBillThumbs').innerHTML = '<p class="muted">กำลังโหลดรูป…</p>';
   if ($('btnCancelNote')) $('btnCancelNote').classList.toggle('hidden', !WRITE_ENABLED);
   closeBankForm('edit');
   await loadEditBanks(rem.bank_id);
   await loadEditBills();
   const det = await api(`/notes${noteQs(row.acctno, row.noteno)}`);
-  $('editBillThumbs').innerHTML = thumbsHtml(det.bill_images || []);
+  renderEditBillThumbs(det.bill_images || []);
   wireDatePickers($('panelEdit'));
 }
+function renderEditBillThumbs(images) {
+  const box = $('editBillThumbs');
+  if (!box) return;
+  box.innerHTML = thumbsHtml(images || [], {
+    canDelete: WRITE_ENABLED,
+    allowDeleteLast: true,
+    emptyHtml: '<p class="muted">ไม่มีรูปใบวางบิล · อัปโหลดรูปที่ถูกต้องได้ด้านบน</p>',
+  });
+}
+async function deleteEditBillImage(path) {
+  if (!editTarget || !path || !WRITE_ENABLED) return;
+  try {
+    const j = await deleteStoredBillImage(editTarget.acctno, editTarget.noteno, path);
+    if (!j) return;
+    renderEditBillThumbs(j.remaining || []);
+  } catch (e) {
+    alert(e.message || 'ลบไม่สำเร็จ');
+  }
+}
+$('editBillThumbs').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-del-path]');
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  deleteEditBillImage(btn.dataset.delPath);
+});
 async function loadEditBills() {
   if (!editTarget) return;
   $('editBillList').innerHTML = `<tr><td colspan="4" class="empty">กำลังโหลด…</td></tr>`;
@@ -3394,6 +3510,7 @@ $('btnEditSaveBank').onclick = async () => {
 $('btnEditCancelBank').onclick = () => closeBankForm('edit');
 async function uploadEditBillFiles(files) {
   if (!editTarget) return;
+  let uploaded = 0;
   for (const file of files) {
     if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); continue; }
     const fd = new FormData();
@@ -3403,7 +3520,14 @@ async function uploadEditBillFiles(files) {
     const r = await fetch('/pay-notes/api/images/bill', {method:'POST', body: fd});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { alert(j.detail || j.error); continue; }
-    appendUploadThumb($('editBillThumbs'), file, j);
+    uploaded += 1;
+  }
+  if (!uploaded) return;
+  try {
+    const images = await api('/images/bill' + noteQs(editTarget.acctno, editTarget.noteno));
+    renderEditBillThumbs(images);
+  } catch (e) {
+    alert(e.message || 'โหลดรูปไม่สำเร็จ');
   }
 }
 wireDropZone($('dropEditBill'), $('editBillImages'), uploadEditBillFiles);

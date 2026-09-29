@@ -553,6 +553,52 @@ def api_list_bill_images(request: Request, acctno: str = "", noteno: str = ""):
     return list_folder(client, bill_image_prefix(acctno, noteno))
 
 
+@router.delete("/api/images/bill")
+def api_delete_bill_image(
+    request: Request,
+    acctno: str = "",
+    noteno: str = "",
+    path: str = "",
+):
+    """Remove one bill image. Allowed before the note is vouchered, including the last image."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    rel = (path or "").strip().lstrip("/")
+    if not acct or not note:
+        return JSONResponse({"error": "acctno and noteno required"}, status_code=400)
+    if not rel:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    prefix = bill_image_prefix(acct, note).strip("/")
+    if not rel.startswith(prefix + "/"):
+        return JSONResponse({"error": "path not under this note"}, status_code=400)
+    settings = _settings()
+    try:
+        header = get_note_header(settings.site, acct, note)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    if header:
+        voucno = (header.get("voucno") or header.get("VOUCNO") or "").strip()
+        vouced = str(header.get("VOUCED") or "N").strip().upper() == "Y"
+        if voucno or vouced:
+            return JSONResponse(
+                {
+                    "error": "cannot remove bill image after payment is recorded",
+                    "code": "already_vouchered",
+                },
+                status_code=409,
+            )
+    client = get_pay_notes_supabase_client()
+    existing = list_folder(client, prefix)
+    if not any((item.get("path") or "").lstrip("/") == rel for item in existing):
+        return JSONResponse({"error": "image not found"}, status_code=404)
+    remove_paths(client, [rel])
+    remaining = list_folder(client, prefix)
+    return {"deleted": rel, "remaining": remaining}
+
+
 @router.post("/api/notes")
 def api_create_note(request: Request, body: NoteCreate):
     ident, err = _require_api(request)
