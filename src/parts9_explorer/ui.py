@@ -163,6 +163,7 @@ main { display:grid; grid-template-columns:1fr; max-width:1180px; margin:0 auto;
 .photos img { height:140px; border-radius:.5rem; background:var(--inset); }
 table { width:100%; border-collapse:collapse; font-size:.84rem; }
 th, td { border-bottom:1px solid var(--line); padding:.35rem .25rem; text-align:left; vertical-align:top; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .who { font-size:.75rem; color:var(--muted); margin-top:.35rem; }
 .empty { color:var(--muted); padding:1rem 0; }
 label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align-items:center; }
@@ -212,6 +213,25 @@ label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align
   padding:.8rem .85rem; box-shadow:0 1px 2px rgba(16,24,40,.04); margin:0 0 .65rem;
 }
 .pi-card h3 { margin:0 0 .55rem; font-size:1rem; color:var(--text); }
+.fifo-head { display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin:0 0 .55rem; }
+.fifo-head h3 { margin:0; }
+.fifo-info { position:relative; }
+.fifo-info summary {
+  list-style:none; cursor:pointer; width:1.4rem; height:1.4rem; border-radius:999px;
+  border:1px solid var(--line); background:var(--inset); color:var(--muted);
+  font:800 .78rem/1 inherit; display:inline-flex; align-items:center; justify-content:center;
+}
+.fifo-info summary::-webkit-details-marker { display:none; }
+.fifo-info[open] summary { color:var(--text); border-color:var(--acc); }
+.fifo-bubble {
+  position:absolute; right:0; top:1.75rem; z-index:6; width:min(24rem, 80vw);
+  background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:.75rem;
+  box-shadow:0 10px 28px rgba(16,24,40,.18); padding:.7rem .8rem;
+  font-size:.75rem; font-weight:500; line-height:1.45; text-align:left;
+}
+.fifo-bubble p { margin:0 0 .5rem; }
+.fifo-bubble p:last-child { margin:0; }
+.fifo-bubble strong { display:block; margin-bottom:.12rem; }
 .pi-summary-row {
   display:flex; gap:.75rem; justify-content:space-between; align-items:center;
 }
@@ -384,6 +404,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
+const CAN_SEE_COST = __CAN_SEE_COST__;
 const MODES = [
   {id:"all", label:"ทั้งหมด"},
   {id:"product", label:"สินค้า"},
@@ -408,7 +429,7 @@ const PLACE = {
   iclow: "เลข PO / รหัสสินค้า / ผู้ขาย — ว่าง = สรุปค้างรับ",
   ap: "รหัสเจ้าหนี้ / ชื่อ เช่น CRRK หรือ ชัยรุ่งเรือง — ว่าง = รายชื่อตัวอย่าง",
 };
-const STATUS_TH = {pending:"ค้างรับ", received:"รับแล้ว", canceled:"ยกเลิก", to_order:"รอสั่ง"};
+const STATUS_TH = {pending:"ค้างรับ", received:"รับแล้ว", canceled:"ยกเลิก", to_order:"รอสั่ง", OK:"ครบ", PARTIAL:"บางส่วน", UNCOSTED:"ไม่มีต้นทุน", HQ:"ต้นทุนสนญ"};
 const ORDER_STATUS_TH = {
   should_order: "ควรสั่ง",
   no_order_needed: "ไม่ต้องสั่ง",
@@ -429,12 +450,14 @@ const COL_TH = {
   CHKNO:"เลขเช็ค", CHKDATE:"วันที่เช็ค", BANKNAME:"ธนาคาร", PAYTYPE:"ประเภทจ่าย",
   STATUS:"สถานะ", CARDNAME:"ชื่อบัตร", ORDERED:"สั่งแล้ว", RECEIVED:"รับแล้ว",
   LINE:"ลำดับ", BCODE:"รหัสสินค้า", QTY:"จำนวน", UI:"หน่วย", PRICE:"ราคา", AMOUNT:"จำนวนเงิน",
+  FIFO_UNIT:"ต้นทุน FIFO", FIFO_EXT:"ต้นทุนรวม", FIFO_STATUS:"สถานะต้นทุน", MARGIN:"กำไร",
+  VS_LAST:"เทียบล่าสุด", VS_AVG:"เทียบซื้อ 12 ด.",
   status:"สถานะ",
   PRICE1:"ราคา 1", PRICE2:"ราคา 2", PRICE3:"ราคา 3", PRICE4:"ราคา 4", PRICE5:"ราคา 5",
   PRICEM1:"ราคาสมาชิก 1", PRICEM2:"ราคาสมาชิก 2", PRICEM3:"ราคาสมาชิก 3",
   PRICEM4:"ราคาสมาชิก 4", PRICEM5:"ราคาสมาชิก 5"
 };
-const MONEY_KEYS = new Set(["PRICE","AMOUNT","CHKAMT","AFTERTAX","BILLAMT","NETAMT","CASHAMT","PAYAMT"]);
+const MONEY_KEYS = new Set(["PRICE","AMOUNT","CHKAMT","AFTERTAX","BILLAMT","NETAMT","CASHAMT","PAYAMT","FIFO_UNIT","FIFO_EXT"]);
 const CODE1_LABELS = __CODE1_LABELS_JSON__;
 const SIZE_LABELS = __SIZE_LABELS_JSON__;
 const CATEGORY_LABELS = __CATEGORY_LABELS_JSON__;
@@ -783,13 +806,23 @@ function kvTable(obj) {
 function lineTable(rows, cols) {
   if (!rows || !rows.length) return "<p class='meta'>ไม่มีบรรทัด</p>";
   const use = cols || Object.keys(rows[0]);
-  const head = use.map(c => "<th>"+esc(colTh(c))+"</th>").join("");
+  const head = use.map(c => {
+    const num = (c === "FIFO_UNIT" || c === "FIFO_EXT" || c === "MARGIN" || c === "VS_LAST" || c === "VS_AVG");
+    return "<th"+(num ? " class='num'" : "")+">"+esc(colTh(c))+"</th>";
+  }).join("");
   const body = rows.map((row, i) => "<tr>"+use.map(c => {
     let v = row[c] || "";
     if (c === "LINE") return "<td>"+(i+1)+"</td>";
-    if (c === "status") return "<td>"+stBadge(v)+"</td>";
+    if (c === "status" || c === "FIFO_STATUS") return "<td>"+(row[c] ? stBadge(row[c]) : "—")+"</td>";
+    if (c === "MARGIN" || c === "VS_LAST" || c === "VS_AVG") {
+      const n = Number(row[c]);
+      if (row[c] == null || row[c] === "" || !isFinite(n)) return "<td class='num'>—</td>";
+      const sign = (c !== "MARGIN" && n > 0) ? "+" : "";
+      return "<td class='num'>"+sign+n.toLocaleString("th-TH", {maximumFractionDigits: 1})+"%</td>";
+    }
     if (c === "BCODE" && v) return "<td><button class='linkish' data-jump='product' data-q='"+esc(v)+"'>"+esc(v)+"</button></td>";
     if (c === "QTY") return "<td>"+qty(v)+"</td>";
+    if (c === "FIFO_UNIT" || c === "FIFO_EXT") return "<td class='num'>"+(row[c] == null || row[c] === "" ? "—" : money(row[c]))+"</td>";
     if (MONEY_KEYS.has(c)) return "<td>"+money(v)+"</td>";
     return "<td>"+esc(v)+"</td>";
   }).join("")+"</tr>").join("");
@@ -960,17 +993,17 @@ function showSummary() {
     +"<div class='kpis'>"
     +"<div class='kpi warn'><div class='n'>"+qty(t.pending_lines||0)+"</div><div class='l'>บรรทัดค้างรับ</div></div>"
     +"<div class='kpi warn'><div class='n'>"+qty(t.pending_pos||0)+"</div><div class='l'>ใบ PO ค้างรับ</div></div>"
-    +"<div class='kpi'><div class='n'>"+money(t.pending_amount)+"</div><div class='l'>มูลค่าค้างรับ</div></div>"
+    +(CAN_SEE_COST ? "<div class='kpi'><div class='n'>"+money(t.pending_amount)+"</div><div class='l'>มูลค่าค้างรับ</div></div>" : "")
     +"<div class='kpi ok'><div class='n'>"+qty(t.received_lines||0)+"</div><div class='l'>บรรทัดรับแล้ว</div></div>"
     +"</div>"
     +"<div class='meta'>รอสั่งซื้อ "+qty(t.to_order_lines||0)+" · ยกเลิก "+qty(t.canceled_lines||0)+" · ทั้งตาราง "+qty(t.total_lines||0)+"</div>"
     +"<h3>ผู้ขายค้างรับสูงสุด</h3>"
-    +(vendors.length ? "<table><thead><tr><th>ผู้ขาย</th><th>ชื่อ</th><th>บรรทัด</th><th>มูลค่า</th></tr></thead><tbody>"
+    +(vendors.length ? "<table><thead><tr><th>ผู้ขาย</th><th>ชื่อ</th><th>บรรทัด</th>"+(CAN_SEE_COST ? "<th>มูลค่า</th>" : "")+"</tr></thead><tbody>"
       +vendors.map(v => "<tr><td><button class='linkish' data-jump='iclow' data-q='"+esc(v.VENDOR)+"'>"+esc(v.VENDOR)+"</button></td>"
-        +"<td>"+esc(v.ACCTNAME)+"</td><td>"+qty(v.lines)+"</td><td>"+money(v.amount)+"</td></tr>").join("")
+        +"<td>"+esc(v.ACCTNAME)+"</td><td>"+qty(v.lines)+"</td>"+(CAN_SEE_COST ? "<td>"+money(v.amount)+"</td>" : "")+"</tr>").join("")
       +"</tbody></table>" : "<p class='meta'>—</p>")
     +"<h3>ค้างรับล่าสุด</h3>"
-    +lineTable(recent, ["DOCNO","DOCDATE","VENDOR","BCODE","DESCR","QTY","UI","AMOUNT"]);
+    +lineTable(recent, CAN_SEE_COST ? ["DOCNO","DOCDATE","VENDOR","BCODE","DESCR","QTY","UI","AMOUNT"] : ["DOCNO","DOCDATE","VENDOR","BCODE","DESCR","QTY","UI"]);
 }
 function showDoc(i) {
   const doc = DOCS[i];
@@ -989,7 +1022,7 @@ function showDoc(i) {
       const bh = b.header || {};
       extra += "<p class='meta'><button class='linkish' data-jump='pi' data-q='"+esc(b.docno || bh.BILLNO || "")+"'>"+esc(b.docno || bh.BILLNO || "")+"</button>"
         +" · "+esc(bh.BILLDATE||"")+" · "+money(bh.AFTERTAX)+" · "+esc(bh.ACCTNAME||"")+"</p>"
-        +lineTable(b.lines || [], ["LINE","BCODE","DETAIL","QTY","UI","PRICE","AMOUNT"]);
+        +lineTable(b.lines || [], CAN_SEE_COST ? ["LINE","BCODE","DETAIL","QTY","UI","PRICE","AMOUNT"] : ["LINE","BCODE","DETAIL","QTY","UI"]);
     });
   }
   const vouchers = doc.vouchers || [];
@@ -1010,12 +1043,12 @@ function showDoc(i) {
       +stBadge("canceled")+" "+(ic.counts.canceled||0)+"</p>";
   }
   const lineCols = rows[0] && rows[0].status
-    ? ["status","BCODE","DESCR","QTY","UI","AMOUNT","RCVDNO","RCVDDATE"]
-    : null;
+    ? (CAN_SEE_COST ? ["status","BCODE","DESCR","QTY","UI","AMOUNT","RCVDNO","RCVDDATE"] : ["status","BCODE","DESCR","QTY","UI","RCVDNO","RCVDDATE"])
+    : (CAN_SEE_COST || doc.kind === "si" || doc.kind === "pv" || doc.kind === "rv" ? null : ["LINE","BCODE","DETAIL","QTY","UI"]);
   $("detail").innerHTML = "<h2><span class='badge "+esc(doc.kind)+"'>"+esc(doc.kind_label||doc.kind)+"</span> "+esc(doc.docno)+"</h2>"
     +kvTable(h)+extra
     +"<h3>บรรทัด</h3>"+lineTable(rows, lineCols)
-    +(ic && ic.lines && doc.kind === "po" ? "<h3>ICLOW ของใบนี้</h3>"+lineTable(ic.lines, ["status","BCODE","DESCR","QTY","UI","AMOUNT","RCVDNO"]) : "");
+    +(ic && ic.lines && doc.kind === "po" ? "<h3>ICLOW ของใบนี้</h3>"+lineTable(ic.lines, CAN_SEE_COST ? ["status","BCODE","DESCR","QTY","UI","AMOUNT","RCVDNO"] : ["status","BCODE","DESCR","QTY","UI","RCVDNO"]) : "");
 }
 function jumpKind(kind, qv) {
   KIND = kind;
@@ -1026,6 +1059,88 @@ function jumpKind(kind, qv) {
   go();
 }
 function jumpPo(docno) { jumpKind("po", docno); }
+function renderFifo(fifo) {
+  if (!fifo) return "";
+  if (!fifo.found) return "<p class='meta'>ยังไม่มีต้นทุน FIFO</p>";
+  const p = fifo.product || {};
+  const yearly = fifo.yearly || [];
+  function nOrNull(v) {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+  function moneyOrDash(v) {
+    const n = nOrNull(v);
+    return n == null ? "—" : money(n);
+  }
+  function qtyOrDash(v) {
+    const n = nOrNull(v);
+    return n == null ? "—" : qty(n);
+  }
+  function sharePct(v) {
+    const n = nOrNull(v);
+    return n == null ? "—" : (n * 100).toLocaleString("th-TH", {maximumFractionDigits: 1}) + "%";
+  }
+  function vsPct(v) {
+    const n = nOrNull(v);
+    if (n == null) return "—";
+    const sign = n > 0 ? "+" : "";
+    return sign + n.toLocaleString("th-TH", {maximumFractionDigits: 1}) + "%";
+  }
+  const windowLabel = p.history_window === "5y" ? "หน้าต่าง 5 ปี" : (p.history_window === "full" ? "ทั้งประวัติ" : "");
+  const complete = p.cost_complete ? "ต้นทุนครบ" : "ต้นทุนไม่ครบ";
+  const covered = qtyOrDash(p.on_hand_covered_qty) + " / " + qtyOrDash(p.on_hand_qty);
+  let meta = complete;
+  if (windowLabel) meta += " · " + windowLabel;
+  if (p.qtyoh2_stale) meta += " · QTYOH2 ไม่ตรงบัญชี";
+  if (fifo.rebuilt_at) meta += " · สร้างเมื่อ " + fifo.rebuilt_at;
+  const yearRows = yearly.map(row => "<tr><td>"+esc(row.year)+"</td>"
+    +"<td class='num'>"+moneyOrDash(row.unit_cost)+"</td>"
+    +"<td class='num'>"+qtyOrDash(row.units)+"</td>"
+    +"<td class='num'>"+moneyOrDash(row.ext_cost)+"</td>"
+    +"<td class='num'>"+sharePct(row.uncosted_share)+"</td>"
+    +"<td class='num'>"+vsPct(row.vs_costlast_pct)+"</td>"
+    +"<td class='num'>"+vsPct(row.vs_costavg_pct)+"</td></tr>").join("");
+  const bench = fifo.benchmarks || {};
+  const vsHand = bench.vs_on_hand || {};
+  const benchRows = [
+    ["ต้นทุนล่าสุด", "COSTLAST บนสินค้า", bench.costlast, vsHand.costlast_pct],
+    ["ซื้อเฉลี่ย 12 เดือน", "บิลซื้อผู้ขาย 365 วัน", bench.insight_avg_buy, vsHand.insight_avg_buy_pct]
+  ].map(function(item) {
+    return "<tr><td>"+esc(item[0])+"<div class='meta'>"+esc(item[1])+"</div></td>"
+      +"<td class='num'>"+moneyOrDash(item[2])+"</td>"
+      +"<td class='num'>"+vsPct(item[3])+"</td></tr>";
+  }).join("");
+  const shared = fifo.shared_cost
+    ? "<p class='meta fifo-note'>สาขาใช้ต้นทุนเฉลี่ยรายปีของสนญ เพราะของซื้อเข้าที่สนญ</p>"
+    : "";
+  const info = "<details class='fifo-info'><summary aria-label='คำอธิบายต้นทุน'>i</summary>"
+    +"<div class='fifo-bubble'>"
+    +"<p><strong>FIFO</strong>ใบโอน TF, 3TF, TFV, 3TFV, CNTF, 3CNTF ไม่เป็นทั้งชั้นรับและรายการขาย "
+    +"ต้นทุนต่อหน่วย = ยอดเงินสุทธิ ÷ (จำนวน × ตัวคูณหน่วย) ถ้าบิลรวม VAT 7% จะเอา 100/107 ก่อน "
+    +"ของคงเหลือใช้ใบรับล่าสุด ของที่ขายใช้ใบรับที่เก่ากว่า โดยขายใบเก่าก่อน</p>"
+    +"<p><strong>ซื้อเฉลี่ย 12 เดือน</strong>Σ(ราคา × จำนวน) ÷ Σจำนวน "
+    +"จากบรรทัดบิลซื้อผู้ขาย ใน 365 วันย้อนจากวัน insight รวมวันนั้น "
+    +"ไม่รวมใบโอน ใช้ราคาบนบรรทัดตามที่บันทึก ไม่ถอด VAT และไม่คูณตัวคูณหน่วย</p>"
+    +"<p><strong>ทำไมไม่เท่ากัน</strong>12 เดือนคือราคาซื้อช่วงหลัง "
+    +"FIFO ของรายการขายคือต้นทุนใบรับเก่าที่ขายนั้นใช้ไป ของซื้อล่าสุดถูกกันไว้เป็นสต็อกคงเหลือ "
+    +"เทียบ FIFO = (FIFO − ต้นทุนเดิม) ÷ ต้นทุนเดิม</p>"
+    +"</div></details>";
+  return "<section class='pi-card'><div class='fifo-head'><h3>ต้นทุน FIFO</h3>"+info+"</div>"
+    +"<div class='pi-kpis'>"
+    +"<div class='pi-kpi'><div class='label'>ต้นทุนคงเหลือ</div><div class='value'>"+moneyOrDash(p.on_hand_unit_cost)+"</div></div>"
+    +"<div class='pi-kpi'><div class='label'>มูลค่าคงเหลือ</div><div class='value'>"+moneyOrDash(p.on_hand_value)+"</div></div>"
+    +"<div class='pi-kpi'><div class='label'>ครอบคลุม</div><div class='value'>"+covered+"</div></div>"
+    +"<div class='pi-kpi'><div class='label'>ไม่ได้จัดชั้น</div><div class='value'>"+qtyOrDash(p.unassigned_qty)+"</div></div>"
+    +"</div>"
+    +"<p class='meta' style='margin:.15rem 0 .55rem'>"+esc(meta)+"</p>"
+    +"<table><thead><tr><th>ต้นทุนเดิม</th><th class='num'>ต่อหน่วย</th><th class='num'>เทียบ FIFO คงเหลือ</th></tr></thead><tbody>"
+    +benchRows+"</tbody></table>"
+    +"<p class='meta'>เทียบ FIFO = (FIFO − ต้นทุนเดิม) / ต้นทุนเดิม</p>"
+    +"<table><thead><tr><th>ปี</th><th class='num'>ต้นทุน FIFO</th><th class='num'>จำนวนขายสนญ</th><th class='num'>ต้นทุนรวม</th><th class='num'>ไม่มีต้นทุน</th><th class='num'>เทียบล่าสุด</th><th class='num'>เทียบซื้อ 12 ด.</th></tr></thead><tbody>"
+    +yearRows+"</tbody></table>"
+    +shared+"</section>";
+}
 function showP(i) {
   const p = ITEMS[i];
   if (!p) return;
@@ -1095,9 +1210,14 @@ function showP(i) {
         if (!rows || !rows.length) return "<p class='meta'>"+title+": —</p>";
         return "<h3>"+title+"</h3>"+lineTable(rows, cols);
       }
-      $("more").innerHTML =
-        tbl("ประวัติการขาย", m.sales, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
-        tbl("ประวัติการซื้อ", m.pi, ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]) +
+      const saleCols = ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"];
+      if (CAN_SEE_COST && d.fifo && d.fifo.found) saleCols.push("FIFO_UNIT","FIFO_EXT","FIFO_STATUS","MARGIN","VS_LAST","VS_AVG");
+      const piCols = CAN_SEE_COST
+        ? ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]
+        : ["BILLNO","BILLDATE","QTY","UI"];
+      $("more").innerHTML = (CAN_SEE_COST ? renderFifo(d.fifo) : "") +
+        tbl("ประวัติการขาย", m.sales, saleCols) +
+        tbl("ประวัติการซื้อ", m.pi, piCols) +
         tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
       if (d.insight) renderInsight(d.insight, {
         qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
@@ -1381,12 +1501,15 @@ function renderInsight(ins, live) {
     ? "<div class='pi-reco'><strong>แนะนำ:</strong> Margin "+(marginPct != null ? esc(fmtQty(marginPct))+"%" : "")
       +" ค่อนข้างบาง ควรติดตามต้นทุนก่อนปรับราคา</div>"
     : "";
-  html += "<section class='pi-card'><h3>Price &amp; Margin</h3><table><tbody>"
+  html += CAN_SEE_COST
+    ? ("<section class='pi-card'><h3>Price &amp; Margin</h3><table><tbody>"
     +"<tr><td>ราคาซื้อเฉลี่ย</td><td class='num'><strong>"+esc(fmtMoney(avgBuy))+(avgBuy != null && unit ? " บาท/"+esc(unit) : "")+"</strong></td></tr>"
     +"<tr><td>ราคาขายเฉลี่ย</td><td class='num'><strong>"+esc(fmtMoney(avgSell))+(avgSell != null && unit ? " บาท/"+esc(unit) : "")+"</strong></td></tr>"
     +"<tr><td>Margin</td><td class='num'><strong>"+(marginPct != null ? esc(fmtQty(marginPct))+"%" : "—")+"</strong></td></tr>"
     +"<tr><td>แนวโน้ม Margin</td><td class='num'>"+esc("→ "+marginTrendTh(marginTrend))+"</td></tr>"
-    +"</tbody></table>"+marginReco+"</section></div>";
+    +"</tbody></table>"+marginReco+"</section>")
+    : "";
+  html += "</div>";
 
   const sypStatus = sypNeedTransfer
     ? "<span class='pi-badge down'>ควรโอน</span>"
@@ -1405,10 +1528,11 @@ function renderInsight(ins, live) {
     ? suppliers.map(s => {
         const nm = s.name || s.acctno || "—";
         return "<tr><td>"+esc(nm)+"</td><td class='num'><strong>"+qtyU(numOrNull(s.qty))+"</strong></td>"
-          +"<td class='num'>"+(numOrNull(s.avg_price) != null ? esc(fmtMoney(s.avg_price))+(unit ? " บาท/"+esc(unit) : "") : "—")+"</td></tr>";
+          +(CAN_SEE_COST ? "<td class='num'>"+(numOrNull(s.avg_price) != null ? esc(fmtMoney(s.avg_price))+(unit ? " บาท/"+esc(unit) : "") : "—")+"</td>" : "")
+          +"</tr>";
       }).join("")
-    : "<tr><td colspan='3' class='meta'>—</td></tr>";
-  html += "<section class='pi-card'><h3>Supplier หลัก</h3><table><thead><tr><th>Supplier</th><th class='num'>ยอดซื้อ</th><th class='num'>ราคาเฉลี่ย</th></tr></thead><tbody>"
+    : "<tr><td colspan='"+(CAN_SEE_COST ? "3" : "2")+"' class='meta'>—</td></tr>";
+  html += "<section class='pi-card'><h3>Supplier หลัก</h3><table><thead><tr><th>Supplier</th><th class='num'>ยอดซื้อ</th>"+(CAN_SEE_COST ? "<th class='num'>ราคาเฉลี่ย</th>" : "")+"</tr></thead><tbody>"
     +supRows+"</tbody></table></section>";
 
   let custRows = customers.length
@@ -1585,7 +1709,7 @@ def _sql_badge_text(probe: dict) -> str:
     return "down"
 
 
-def page(*, user_name: str, site: str, probes: dict) -> str:
+def page(*, user_name: str, site: str, probes: dict, can_see_cost: bool = False) -> str:
     hq = probes.get("hq") or {}
     syp = probes.get("syp") or {}
     return (
@@ -1601,6 +1725,7 @@ def page(*, user_name: str, site: str, probes: dict) -> str:
         .replace("__SYPBADGE__", "ok" if syp.get("ok") else "down")
         .replace("__HQSQL__", _sql_badge_text(hq))
         .replace("__SYPSQL__", _sql_badge_text(syp))
+        .replace("__CAN_SEE_COST__", "true" if can_see_cost else "false")
     )
 
 

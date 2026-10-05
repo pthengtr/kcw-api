@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 
 from src.parts9_explorer.db import get_site_engine
-from src.parts9_explorer.insights import _db_path
+from src.parts9_explorer.insights import _db_path, fetch_remote_insights
 from src.parts9_explorer.search import _iclow_status, _row
 
 
@@ -299,16 +299,42 @@ def _batch_live_stock(bcodes: list[str], *, site: str) -> dict[str, dict[str, An
 
 
 def _batch_insights(site: str, bcodes: list[str]) -> dict[str, dict[str, Any]]:
-    path = _db_path()
-    if not path or not path.is_file() or not bcodes:
+    if not bcodes:
         return {}
     site_l = (site or "hq").lower()
+    out: dict[str, dict[str, Any]] = {}
+    for b, row in fetch_remote_insights(site_l, bcodes).items():
+        summary = row.get("summary")
+        if not summary and row.get("insight_json"):
+            try:
+                raw = row["insight_json"]
+                j = raw if isinstance(raw, dict) else json.loads(raw or "{}")
+                summary = j.get("ai_action") or j.get("summary")
+            except Exception:
+                pass
+        out[b] = {
+            "status": "ready",
+            "generated_at": row.get("generated_at"),
+            "facts_as_of": row.get("facts_as_of"),
+            "summary": summary,
+            "order_ok": row.get("order_ok"),
+            "dead_stock": row.get("dead_stock"),
+            "suggested_order_qty": _f(row.get("suggested_order_qty")),
+            "order_unit": row.get("order_unit"),
+            "rec_qtymin": _f(row.get("rec_qtymin")),
+            "safe_holding_qty": _f(row.get("safe_holding_qty")),
+            "last_supplier": row.get("last_supplier"),
+            "last_buy_price": _f(row.get("last_buy_price")),
+            "last_buy_date": row.get("last_buy_date"),
+        }
+    path = _db_path()
+    if not path or not path.is_file():
+        return out
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
     except sqlite3.Error:
-        return {}
-    out: dict[str, dict[str, Any]] = {}
+        return out
     try:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(product_insights)")}
         want = [
@@ -342,6 +368,8 @@ def _batch_insights(site: str, bcodes: list[str]) -> dict[str, dict[str, Any]]:
             ).fetchall()
             for r in rows:
                 b = (r["bcode"] or "").strip()
+                if b in out:
+                    continue
                 summary = r["summary"] if "summary" in r.keys() else None
                 if not summary and "insight_json" in r.keys():
                     try:

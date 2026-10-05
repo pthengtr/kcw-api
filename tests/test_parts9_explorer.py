@@ -1,4 +1,15 @@
+from datetime import date
+
 from src.handlers.explorer_entry import is_explorer_command
+from src.parts9_explorer.cost_access import can_see_explorer_cost, redact_insight, redact_movement
+from src.parts9_explorer.fifo import (
+    annotate_yearly,
+    attach_line_costs,
+    build_benchmarks,
+    build_yearly,
+    insight_avg_buy,
+    last_calendar_years,
+)
 from src.parts9_explorer.net import is_tailscale_cg_nat
 from src.parts9_explorer.query import (
     format_size_line,
@@ -655,3 +666,116 @@ process.stdout.write(JSON.stringify({
     assert "<td>2</td>" in out["table"]
     assert "<td>10</td>" not in out["table"]
     assert "<td>20</td>" not in out["table"]
+
+
+def test_fifo_yearly_weighted_average_skips_uncosted():
+    yearly = build_yearly(
+        [
+            {"yr": 2024, "status": "OK", "units": 10, "ext": 100},
+            {"yr": 2024, "status": "PARTIAL", "units": 10, "ext": 50},
+            {"yr": 2024, "status": "UNCOSTED", "units": 5, "ext": None},
+            {"yr": 2023, "status": "OK", "units": 4, "ext": 20},
+        ],
+        years=[2023, 2024, 2025],
+    )
+    by_year = {row["year"]: row for row in yearly}
+    assert by_year[2024]["unit_cost"] == 7.5
+    assert by_year[2024]["units"] == 25
+    assert by_year[2024]["ext_cost"] == 150
+    assert by_year[2024]["uncosted_share"] == 0.2
+    assert by_year[2023]["unit_cost"] == 5
+    assert by_year[2025]["unit_cost"] is None
+    assert by_year[2025]["units"] == 0
+    assert last_calendar_years(5, today=date(2026, 10, 5)) == [2022, 2023, 2024, 2025, 2026]
+
+
+def test_fifo_hq_line_uses_rebuilt_cost_and_margin():
+    sales = [{"ID": "10", "BILLDATE": "2024-01-02", "QTY": "2", "AMOUNT": "100"}]
+    exact = {10: {"fifo_unit_cost": 20, "fifo_ext_cost": 40, "status": "OK"}}
+    out = attach_line_costs("hq", sales, exact, [{"year": 2024, "unit_cost": 1}], 9)
+    assert out[0]["FIFO_UNIT"] == 20
+    assert out[0]["FIFO_EXT"] == 40
+    assert out[0]["FIFO_STATUS"] == "OK"
+    assert out[0]["MARGIN"] == 60.0
+
+
+def test_fifo_syp_line_uses_hq_year_average_then_on_hand():
+    yearly = [{"year": 2024, "unit_cost": 12.5}, {"year": 2023, "unit_cost": None}]
+    sales = [
+        {"ID": "1", "BILLDATE": "2024-06-01", "QTY": "4", "AMOUNT": "100"},
+        {"ID": "2", "BILLDATE": "2023-06-01", "QTY": "2", "AMOUNT": "50"},
+    ]
+    exact = {1: {"fifo_unit_cost": 99, "fifo_ext_cost": 99, "status": "OK"}}
+    out = attach_line_costs("syp", sales, exact, yearly, 8)
+    assert out[0]["FIFO_UNIT"] == 12.5
+    assert out[0]["FIFO_EXT"] == 50
+    assert out[0]["FIFO_STATUS"] == "HQ"
+    assert out[0]["MARGIN"] == 50.0
+    assert out[1]["FIFO_UNIT"] == 8
+    assert out[1]["FIFO_EXT"] == 16
+    assert out[1]["FIFO_STATUS"] == "HQ"
+    assert out[1]["MARGIN"] == 68.0
+
+
+def test_fifo_benchmarks_compare_with_old_costs():
+    bench = build_benchmarks(110, 100, 90)
+    assert bench["costlast"] == 100
+    assert "costavg" not in bench
+    assert bench["insight_avg_buy"] == 90
+    assert bench["vs_on_hand"]["costlast_pct"] == 10.0
+    assert bench["vs_on_hand"]["insight_avg_buy_pct"] == 22.2
+    yearly = annotate_yearly([{"year": 2025, "unit_cost": 90}], 100, 80)
+    assert yearly[0]["vs_costlast_pct"] == -10.0
+    assert yearly[0]["vs_costavg_pct"] == 12.5
+    assert insight_avg_buy({"insight": {"dashboard": {"price_margin": {"avg_buy": 12.5}}}}) == 12.5
+
+
+def test_only_admin_sees_explorer_cost(monkeypatch):
+    def fake_access(_engine, uid):
+        return {"access_group": "admin" if uid == "Uadmin" else "exec"}
+
+    monkeypatch.setattr("src.access.helper.get_line_access", fake_access)
+    monkeypatch.setattr("src.db.engine.get_engine", lambda: object())
+    assert can_see_explorer_cost("Uadmin") is True
+    assert can_see_explorer_cost("Uexec") is False
+    assert can_see_explorer_cost("tailscale") is False
+    assert can_see_explorer_cost("") is False
+
+
+def test_redact_removes_cost_and_keeps_selling_price():
+    insight = redact_insight(
+        {
+            "policy": {"margin_pct_12m": 20, "sales_qty_12m": 5},
+            "insight": {"margin": {"avg_buy_12m": 10}, "summary": "คงที่"},
+        }
+    )
+    assert "margin_pct_12m" not in insight["policy"]
+    assert insight["policy"]["sales_qty_12m"] == 5
+    assert "margin" not in insight["insight"]
+    assert insight["insight"]["summary"] == "คงที่"
+    movement = redact_movement(
+        {"sales": [{"PRICE": "10", "AMOUNT": "20", "FIFO_UNIT": 1}], "pi": [{"PRICE": "8", "QTY": "1"}]}
+    )
+    assert movement["sales"][0]["PRICE"] == "10"
+    assert "FIFO_UNIT" not in movement["sales"][0]
+    assert "PRICE" not in movement["pi"][0]
+    assert movement["pi"][0]["QTY"] == "1"
+
+
+def test_explorer_page_has_fifo_card():
+    html = _explorer_html()
+    assert "function renderFifo" in html
+    assert "ต้นทุน FIFO" in html
+    assert "FIFO_UNIT" in html
+    assert "สาขาใช้ต้นทุนเฉลี่ยรายปีของสนญ" in html
+    assert "ยังไม่มีต้นทุน FIFO" in html
+    assert "COSTAVG" not in html
+    assert "ซื้อเฉลี่ย 12 เดือน" in html
+    assert "fifo-info" in html
+    assert "ทำไมไม่เท่ากัน" in html
+    assert "const CAN_SEE_COST = false" in page(
+        user_name="t", site="hq", probes={"hq": {"ok": True}, "syp": {}}, can_see_cost=False
+    )
+    assert "const CAN_SEE_COST = true" in page(
+        user_name="t", site="hq", probes={"hq": {"ok": True}, "syp": {}}, can_see_cost=True
+    )

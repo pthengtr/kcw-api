@@ -844,7 +844,7 @@ def recent_for_product(bcode: str, *, site: str, limit: int = 10) -> dict[str, A
     try:
         engine = get_site_engine(site_key)
         queries = {
-            "sales": f"SELECT TOP {row_limit} BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.SIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
+            "sales": f"SELECT TOP {row_limit} ID, BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.SIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
             "pi": f"SELECT TOP {row_limit} BILLNO, BILLDATE, QTY, UI, PRICE, AMOUNT FROM dbo.PIDET WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY BILLDATE DESC",
             "iclow": "SELECT TOP 15 DOCNO, DOCDATE, ORDERED, RECEIVED, CANCELED, RCVDNO, QTY, BCODE FROM dbo.ICLOW WHERE LTRIM(RTRIM(BCODE)) = :bcode ORDER BY DOCDATE DESC",
         }

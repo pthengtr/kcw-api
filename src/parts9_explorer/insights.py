@@ -149,6 +149,135 @@ def monthly_customer_sales(bcode: str, *, n_months: int = 11) -> list[dict[str, 
     return out
 
 
+_REMOTE_TABLE = "product_insight.product_insights"
+_POLICY_COLS = [
+    "typical_monthly_qty",
+    "suggested_cover_weeks",
+    "safe_holding_qty",
+    "safe_holding_reason",
+    "order_ok",
+    "order_ok_reason",
+    "dead_stock",
+    "dead_stock_reason",
+    "suggested_order_qty",
+    "suggested_order_qty_large",
+    "order_unit",
+    "order_unit_large",
+    "last_supplier",
+    "last_supplier_acct",
+    "last_buy_price",
+    "last_buy_date",
+    "rec_qtymin",
+    "rec_qtymin_reason",
+    "check_stock",
+    "stock_anomaly",
+    "qtyoh_hq",
+    "qtyoh_syp",
+    "qtymin_hq",
+    "qtymin_syp",
+    "rec_transfer_qty_to_syp",
+    "rec_transfer_reason",
+    "sales_qty_30d",
+    "sales_qty_90d",
+    "sales_qty_12m",
+    "trend_30d",
+    "trend_90d",
+    "trend_12m",
+    "trend_label",
+    "margin_pct_list",
+    "margin_pct_12m",
+    "margin_pct_prior_12m",
+    "margin_delta_pp",
+    "margin_flag",
+    "cost_change_pct_12m",
+    "price_change_pct_12m",
+]
+_CORE_COLS = [
+    "site",
+    "bcode",
+    "generated_at",
+    "facts_as_of",
+    "prompt_version",
+    "model_id",
+    "summary",
+    "insight_json",
+]
+
+
+def _pg_connect():
+    try:
+        from src.db.engine import get_conn
+
+        return get_conn()
+    except Exception:
+        return None
+
+
+def fetch_remote_insights(site: str, bcodes: list[str]) -> dict[str, dict[str, Any]]:
+    """Insights stored in product_insight.product_insights. Empty on any DB error."""
+    codes = [c.strip() for c in bcodes if c and c.strip()]
+    if not codes:
+        return {}
+    conn = _pg_connect()
+    if conn is None:
+        return {}
+    select = ", ".join(_CORE_COLS + _POLICY_COLS)
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for i in range(0, len(codes), 200):
+                    chunk = codes[i : i + 200]
+                    cur.execute(
+                        f"""
+                        SELECT {select}
+                        FROM {_REMOTE_TABLE}
+                        WHERE site = %s AND bcode = ANY(%s)
+                        """,
+                        ((site or "hq").lower(), chunk),
+                    )
+                    cols = [d[0] for d in cur.description]
+                    for raw in cur.fetchall():
+                        row = dict(zip(cols, raw))
+                        b = str(row.get("bcode") or "").strip()
+                        if b:
+                            out[b] = row
+    except Exception:
+        return {}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return out
+
+
+def _ready_from_row(row: dict[str, Any], *, monthly: bool) -> dict[str, Any]:
+    raw_json = row.get("insight_json")
+    insight = None
+    if isinstance(raw_json, dict):
+        insight = raw_json
+    else:
+        try:
+            insight = json.loads(raw_json or "{}")
+        except Exception:
+            insight = {"raw": raw_json}
+    code = str(row.get("bcode") or "").strip()
+    return {
+        "status": "ready",
+        "site": row.get("site"),
+        "bcode": code,
+        "generated_at": row.get("generated_at"),
+        "facts_as_of": row.get("facts_as_of"),
+        "prompt_version": row.get("prompt_version"),
+        "model_id": row.get("model_id"),
+        "summary": row.get("summary"),
+        "insight": insight,
+        "policy": {c: row.get(c) for c in _POLICY_COLS},
+        "monthly_sales": monthly_customer_sales(code) if monthly else [],
+    }
+
+
 def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
     """
     Return Explorer panel payload:
@@ -169,7 +298,14 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
         "policy": None,
         "monthly_sales": [],
     }
-    if not path or not path.is_file() or not code:
+    if not code:
+        return empty
+
+    remote = fetch_remote_insights(site_l, [code]).get(code)
+    if remote:
+        return _ready_from_row(remote, monthly=True)
+
+    if not path or not path.is_file():
         return empty
 
     import sqlite3
@@ -192,48 +328,7 @@ def lookup_insight(site: str, bcode: str) -> dict[str, Any]:
             "summary",
             "insight_json",
         ]
-        policy_cols = [
-            "typical_monthly_qty",
-            "suggested_cover_weeks",
-            "safe_holding_qty",
-            "safe_holding_reason",
-            "order_ok",
-            "order_ok_reason",
-            "dead_stock",
-            "dead_stock_reason",
-            "suggested_order_qty",
-            "suggested_order_qty_large",
-            "order_unit",
-            "order_unit_large",
-            "last_supplier",
-            "last_supplier_acct",
-            "last_buy_price",
-            "last_buy_date",
-            "rec_qtymin",
-            "rec_qtymin_reason",
-            "check_stock",
-            "stock_anomaly",
-            "qtyoh_hq",
-            "qtyoh_syp",
-            "qtymin_hq",
-            "qtymin_syp",
-            "rec_transfer_qty_to_syp",
-            "rec_transfer_reason",
-            "sales_qty_30d",
-            "sales_qty_90d",
-            "sales_qty_12m",
-            "trend_30d",
-            "trend_90d",
-            "trend_12m",
-            "trend_label",
-            "margin_pct_list",
-            "margin_pct_12m",
-            "margin_pct_prior_12m",
-            "margin_delta_pp",
-            "margin_flag",
-            "cost_change_pct_12m",
-            "price_change_pct_12m",
-        ]
+        policy_cols = list(_POLICY_COLS)
         for c in policy_cols:
             if c in cols:
                 select_cols.append(c)
