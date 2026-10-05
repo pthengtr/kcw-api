@@ -15,6 +15,15 @@ from src.parts9_explorer.search import (
     search_products,
 )
 from src.parts9_explorer.ap_reorder import ap_detail, search_ap
+from src.parts9_explorer.cost_access import (
+    can_see_explorer_cost,
+    redact_ap,
+    redact_documents,
+    redact_iclow_summary,
+    redact_insight,
+    redact_movement,
+)
+from src.parts9_explorer.fifo import fifo_for_product, insight_avg_buy
 from src.parts9_explorer.insights import lookup_insight
 from src.parts9_explorer.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
@@ -74,6 +83,10 @@ def _set_session(resp, identity) -> None:
     resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=86400 * 7, path="/parts9")
 
 
+def _see_cost(ident) -> bool:
+    return can_see_explorer_cost(getattr(ident, "line_user_id", None))
+
+
 def _require(request: Request):
     settings = _settings()
     if not settings.parts9_explorer_enabled:
@@ -108,7 +121,12 @@ def home(request: Request, t: str | None = None, site: str | None = None):
         err = None
     if err:
         return err
-    html = page(user_name=ident.display_name, site=(site or settings.site).lower(), probes=probe_sites())
+    html = page(
+        user_name=ident.display_name,
+        site=(site or settings.site).lower(),
+        probes=probe_sites(),
+        can_see_cost=_see_cost(ident),
+    )
     if t:
         redir = RedirectResponse(url="/parts9/", status_code=303)
         _set_session(redir, ident)
@@ -164,6 +182,10 @@ def api_search(
         documents, errd = lookup_documents(q, site=site, kinds=("pi", "pv"))
     if mode == "iclow":
         summary, errs = iclow_summary(site)
+    see_cost = _see_cost(ident)
+    if not see_cost:
+        documents = redact_documents(documents)
+        summary = redact_iclow_summary(summary)
     document = documents[0] if documents else None
     return {
         "q": q,
@@ -176,6 +198,7 @@ def api_search(
         "document": document,
         "documents": documents,
         "iclow_summary": summary,
+        "can_see_cost": see_cost,
         "error": errp or errd or errs,
     }
 
@@ -187,9 +210,12 @@ def api_iclow_summary(request: Request, site: str = "hq"):
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
     _ = ident
     data, err_s = iclow_summary(site)
+    see_cost = _see_cost(ident)
+    if not see_cost:
+        data = redact_iclow_summary(data)
     if err_s:
-        return {"site": site.upper(), "error": err_s, "iclow_summary": None}
-    return {"site": site.upper(), "iclow_summary": data, "error": None}
+        return {"site": site.upper(), "error": err_s, "iclow_summary": None, "can_see_cost": see_cost}
+    return {"site": site.upper(), "iclow_summary": data, "error": None, "can_see_cost": see_cost}
 
 
 @router.get("/api/product/{bcode}")
@@ -203,11 +229,27 @@ def api_product(request: Request, bcode: str, site: str = "hq"):
     other_p, _ = get_product(bcode, site=other)
     movement = recent_for_product(bcode, site=site)
     insight = lookup_insight(site, bcode)
+    see_cost = _see_cost(ident)
+    fifo = None
+    if see_cost:
+        fifo, fifo_sales = fifo_for_product(
+            bcode,
+            site=site,
+            sales=movement.get("sales") or [],
+            insight_avg_buy=insight_avg_buy(insight),
+        )
+        if fifo and fifo.get("found"):
+            movement = {**movement, "sales": fifo_sales}
+    else:
+        movement = redact_movement(movement)
+        insight = redact_insight(insight)
     return {
         "product": product,
         "other_site": other_p,
         "movement": movement,
         "insight": insight,
+        "fifo": fifo,
+        "can_see_cost": see_cost,
         "error": errp,
     }
 
@@ -217,8 +259,13 @@ def api_insight(request: Request, bcode: str, site: str = "hq"):
     ident, err = _require(request)
     if err:
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
-    _ = ident
-    return lookup_insight(site, bcode)
+    see_cost = _see_cost(ident)
+    insight = lookup_insight(site, bcode)
+    if not see_cost:
+        insight = redact_insight(insight)
+    if isinstance(insight, dict):
+        insight = {**insight, "can_see_cost": see_cost}
+    return insight
 
 
 @router.get("/api/ap/search")
@@ -228,7 +275,7 @@ def api_ap_search(request: Request, q: str = "", site: str = "hq"):
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
     _ = ident
     accounts, err_a = search_ap(q, site=site)
-    return {"q": q, "site": (site or "hq").lower(), "accounts": accounts, "error": err_a}
+    return {"q": q, "site": (site or "hq").lower(), "accounts": accounts, "can_see_cost": _see_cost(ident), "error": err_a}
 
 
 @router.get("/api/ap/{acctno}")
@@ -240,7 +287,13 @@ def api_ap_detail(request: Request, acctno: str, site: str = "hq", days: int = 3
     code = (acctno or "").strip()
     if not code:
         return JSONResponse({"detail": "acctno required"}, status_code=400)
-    return ap_detail(code, site=site, days=max(30, min(int(days or 365), 1825)))
+    detail = ap_detail(code, site=site, days=max(30, min(int(days or 365), 1825)))
+    see_cost = _see_cost(ident)
+    if not see_cost:
+        detail = redact_ap(detail)
+    if isinstance(detail, dict):
+        detail = {**detail, "can_see_cost": see_cost}
+    return detail
 
 
 @router.get("/api/health")
