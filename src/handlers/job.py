@@ -7,6 +7,7 @@ from src.jobs.tasks import (
     enqueue_sync_inventory_jobs,
     enqueue_sync_product_images_jobs,
     enqueue_sync_online_sales_jobs,
+    enqueue_link_online_statements_jobs,
     enqueue_sync_pomas_podet_jobs,
     enqueue_sync_iclow_jobs,
     enqueue_sync_icmas_jobs,
@@ -136,6 +137,18 @@ def text_response(text: str, quick_reply: dict | None = None) -> dict:
         response["quickReply"] = quick_reply
 
     return response
+
+def is_link_online_statement_request(text: str) -> bool:
+    t = (text or "").strip().lower()
+    compact = "".join(t.split())
+    return compact in {
+        "ลิงก์สเตทเมนต์",
+        "ลิงก์statement",
+        "linkstatement",
+        "linkonlinestatement",
+        "ลิงก์เงินเข้าออนไลน์",
+    }
+
 
 def is_sync_online_sales_request(text: str) -> bool:
     t = (text or "").strip().lower()
@@ -468,6 +481,7 @@ def is_job_request(text: str) -> bool:
         or is_worker_status_request(t)
         or is_update_menu_request(t)
         or is_sync_product_images_request(t)
+        or is_link_online_statement_request(t)
         or is_sync_online_sales_request(t)
         or is_sync_pomas_podet_request(t)
         or is_sync_po_related_request(t)
@@ -619,6 +633,31 @@ def handle_job_query(engine, user_text: str, access: dict) -> dict:
             "\n".join(lines),
             quick_reply=build_job_status_quick_reply(jobs),
         )
+
+    if is_link_online_statement_request(text_lower):
+        rows = get_all_worker_status(engine, offline_after_seconds=30)
+        online_workers = {
+            r["worker_name"]
+            for r in rows
+            if r["online_status"] == "online"
+        }
+        jobs = enqueue_link_online_statements_jobs(
+            engine=engine,
+            requested_by=access.get("line_user_id"),
+            source="line",
+            allowed_workers=online_workers,
+        )
+        if not jobs:
+            return text_response(
+                "ยังลิงก์สเตทเมนต์ออนไลน์ไม่ได้ครับ\n"
+                "ไม่พบ worker HQ ออนไลน์สำหรับงานนี้"
+            )
+        lines = ["ได้เลย เดี๋ยวไปจับคู่เงินเข้าออนไลน์กับบิล TAD ให้นะ"]
+        for job in jobs:
+            lines.append(
+                f"- job_id {job['id']} -> {job.get('worker_name', '-')}"
+            )
+        return text_response("\n".join(lines), quick_reply=build_job_status_quick_reply(jobs))
 
     # sync online sales
     # Must be checked before inventory sync because old inventory trigger accepts "sync ..." and "อัปเดต..."

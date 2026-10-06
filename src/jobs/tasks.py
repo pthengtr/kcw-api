@@ -94,6 +94,27 @@ def enqueue_sync_product_images_jobs(
 
     return jobs
 
+def enqueue_link_online_statements_jobs(
+    engine,
+    requested_by: str | None = None,
+    source: str | None = None,
+    allowed_workers: set[str] | None = None,
+) -> list[dict]:
+    hq = _hq_name(engine, allowed_workers)
+    if not hq:
+        return []
+    return _enqueue_single_worker_job(
+        engine,
+        job_type="link_online_statements",
+        site="HQ",
+        worker_name=hq,
+        task="link_online_statements",
+        requested_by=requested_by,
+        source=source,
+        allowed_workers=None,
+    )
+
+
 def enqueue_sync_online_sales_jobs(
     engine,
     requested_by: str | None = None,
