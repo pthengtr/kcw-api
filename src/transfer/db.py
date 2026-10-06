@@ -7,6 +7,7 @@ from uuid import uuid4
 from supabase import Client, create_client
 
 from src.transfer.config import get_transfer_settings
+from src.transfer.insight import clean_propose_meta
 from datetime import datetime, timezone
 
 from src.transfer.state import (
@@ -133,18 +134,26 @@ def upsert_need_many(
         bcode = (raw.get("bcode") or "").strip()
         if not bcode:
             continue
-        payload = {
-            "bcode": bcode,
-            "qty": raw.get("qty"),
-            "descr": (raw.get("descr") or None),
-            "suggest_qty": raw.get("suggest_qty")
-            if raw.get("suggest_qty") is not None
-            else raw.get("qty"),
-            "hq_qtyoh2": raw.get("hq_qtyoh2"),
-            "added_by": actor,
-        }
+        payload = _need_payload(raw, actor=actor)
         out.append(upsert_need(client, payload))
     return out
+
+
+def _need_payload(raw: dict[str, Any], *, actor: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "bcode": (raw.get("bcode") or "").strip(),
+        "qty": raw.get("qty"),
+        "descr": (raw.get("descr") or None),
+        "suggest_qty": raw.get("suggest_qty")
+        if raw.get("suggest_qty") is not None
+        else raw.get("qty"),
+        "hq_qtyoh2": raw.get("hq_qtyoh2"),
+        "added_by": actor,
+    }
+    meta = clean_propose_meta(raw.get("propose_meta"))
+    if meta:
+        payload["propose_meta"] = meta
+    return payload
 
 
 def delete_need(client: Client, need_id: str) -> None:
@@ -168,15 +177,7 @@ def replace_need_list(
         bcode = (raw.get("bcode") or "").strip()
         if not bcode:
             continue
-        payload = {
-            "bcode": bcode,
-            "qty": raw.get("qty"),
-            "descr": (raw.get("descr") or None),
-            "suggest_qty": raw.get("suggest_qty") if raw.get("suggest_qty") is not None else raw.get("qty"),
-            "hq_qtyoh2": raw.get("hq_qtyoh2"),
-            "added_by": actor,
-        }
-        out.append(upsert_need(client, payload))
+        out.append(upsert_need(client, _need_payload(raw, actor=actor)))
     return out
 
 
@@ -389,18 +390,20 @@ def set_request_lines(
     rows = []
     for ln in lines:
         qty = float(ln.get("qty_requested") or ln.get("qty") or 0)
-        rows.append(
-            {
-                "line_id": str(uuid4()),
-                "transfer_id": transfer_id,
-                "bcode": str(ln["bcode"]).strip(),
-                "descr": (ln.get("descr") or "").strip() or None,
-                "qty_requested": qty,
-                "qty_prepared": 0,
-                "qty_received": 0,
-                "line_status": "open",
-            }
-        )
+        row = {
+            "line_id": str(uuid4()),
+            "transfer_id": transfer_id,
+            "bcode": str(ln["bcode"]).strip(),
+            "descr": (ln.get("descr") or "").strip() or None,
+            "qty_requested": qty,
+            "qty_prepared": 0,
+            "qty_received": 0,
+            "line_status": "open",
+        }
+        meta = clean_propose_meta(ln.get("propose_meta"))
+        if meta:
+            row["propose_meta"] = meta
+        rows.append(row)
     resp = _table(client, "lines").insert(rows).select("*").execute()
     return _rows(resp)
 
