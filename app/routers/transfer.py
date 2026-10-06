@@ -51,6 +51,7 @@ from src.transfer.db import (
     upsert_need,
     upsert_need_many,
 )
+from src.transfer.insight import clean_propose_meta
 from src.transfer.direction import (
     branches_for_direction,
     can_prepare_at_site,
@@ -67,6 +68,7 @@ from src.transfer.parts9 import (
     fetch_sticker_catalog,
     lookup_transfer_product,
     suggest_transfer_skus,
+    transfer_insight_overlay,
 )
 from src.substitutes.ship_as import (
     NEEDS_CATALOG_CONFIRM,
@@ -119,6 +121,7 @@ class NeedCreate(BaseModel):
     descr: str = ""
     suggest_qty: float = 0
     hq_qtyoh2: float | None = None
+    propose_meta: dict[str, Any] | None = None
 
 
 class NeedReplace(BaseModel):
@@ -130,6 +133,10 @@ class NeedBulk(BaseModel):
 
 
 class SuggestHintsBody(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SuggestInsightBody(BaseModel):
     items: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -163,6 +170,28 @@ class StickerPrintRequest(BaseModel):
 
 def _settings():
     return get_transfer_settings()
+
+
+def _need_row(raw: dict[str, Any] | NeedCreate, *, actor: str | None = None) -> dict[str, Any]:
+    if isinstance(raw, NeedCreate):
+        data = raw.model_dump()
+    else:
+        data = raw
+    payload: dict[str, Any] = {
+        "bcode": str(data.get("bcode") or "").strip(),
+        "qty": data.get("qty"),
+        "descr": (data.get("descr") or None),
+        "suggest_qty": data.get("suggest_qty") or data.get("qty"),
+        "hq_qtyoh2": data.get("hq_qtyoh2"),
+    }
+    if isinstance(payload["descr"], str):
+        payload["descr"] = payload["descr"].strip() or None
+    meta = clean_propose_meta(data.get("propose_meta"))
+    if meta:
+        payload["propose_meta"] = meta
+    if actor:
+        payload["added_by"] = actor
+    return payload
 
 
 def _client_ip(request: Request) -> str:
@@ -376,6 +405,20 @@ def api_suggest_hints(body: SuggestHintsBody, request: Request):
     return {"items": hinted}
 
 
+@router.post("/api/suggest/insight")
+def api_suggest_insight(body: SuggestInsightBody, request: Request):
+    """AI qty on ICLOW rows, plus insight-only rows for the SYP pick tab."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    try:
+        overlay = transfer_insight_overlay(body.items or [], site_key=settings.site)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    return overlay
+
+
 @router.get("/api/product")
 def api_product(bcode: str, request: Request):
     _, err = _require_api(request)
@@ -430,14 +473,7 @@ def api_need_create(body: NeedCreate, request: Request):
     ident, err = _require_api(request)
     if err:
         return err
-    payload = {
-        "bcode": body.bcode.strip(),
-        "qty": body.qty,
-        "descr": body.descr.strip() or None,
-        "suggest_qty": body.suggest_qty or body.qty,
-        "hq_qtyoh2": body.hq_qtyoh2,
-        "added_by": ident.display_name,
-    }
+    payload = _need_row(body, actor=ident.display_name)
     if not payload["descr"]:
         try:
             product = lookup_transfer_product(bcode=payload["bcode"])
@@ -458,13 +494,7 @@ def api_need_bulk(body: NeedBulk, request: Request):
     if err:
         return err
     rows_in = [
-        {
-            "bcode": ln.bcode.strip(),
-            "qty": ln.qty,
-            "descr": (ln.descr or "").strip() or None,
-            "suggest_qty": ln.suggest_qty or ln.qty,
-            "hq_qtyoh2": ln.hq_qtyoh2,
-        }
+        _need_row(ln)
         for ln in (body.lines or [])
         if (ln.bcode or "").strip()
     ]

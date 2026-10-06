@@ -405,6 +405,82 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
     return out
 
 
+_INSIGHT_STOCK_CHUNK = 400
+_INSIGHT_ONLY_TTL_SEC = 300.0
+_insight_only_lock = threading.Lock()
+_insight_only_cache: tuple[float, frozenset[str], list[dict[str, Any]]] | None = None
+
+
+def _fetch_icmas_chunked(site_key: str, bcodes: list[str]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    codes = [b for b in bcodes if (b or "").strip()]
+    for start in range(0, len(codes), _INSIGHT_STOCK_CHUNK):
+        chunk = codes[start : start + _INSIGHT_STOCK_CHUNK]
+        out.update(_fetch_site_icmas(site_key, chunk, include_blocked=True))
+    return out
+
+
+def _compute_insight_only(
+    policies: dict[str, dict[str, Any]], iclow_bcodes: set[str]
+) -> list[dict[str, Any]]:
+    from src.transfer.insight import insight_only_lines
+
+    codes = [b for b in policies if b not in iclow_bcodes]
+    if not codes:
+        return []
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_hq = pool.submit(_fetch_icmas_chunked, "hq", codes)
+        fut_syp = pool.submit(_fetch_icmas_chunked, "syp", codes)
+        hq_icmas = fut_hq.result()
+        syp_icmas = fut_syp.result()
+    return insight_only_lines(
+        policies,
+        iclow_bcodes=iclow_bcodes,
+        hq_icmas=hq_icmas,
+        syp_icmas=syp_icmas,
+    )
+
+
+def _cached_insight_only(
+    policies: dict[str, dict[str, Any]], iclow_bcodes: set[str]
+) -> list[dict[str, Any]]:
+    """AI-only rows. Stock lookup is cached so the pick list does not rescan PARTS9 every open."""
+    global _insight_only_cache
+    key = frozenset(iclow_bcodes)
+    now_m = time.monotonic()
+    with _insight_only_lock:
+        cached = _insight_only_cache
+        if cached and (now_m - cached[0]) <= _INSIGHT_ONLY_TTL_SEC and cached[1] == key:
+            return list(cached[2])
+    lines = _compute_insight_only(policies, iclow_bcodes)
+    with _insight_only_lock:
+        _insight_only_cache = (time.monotonic(), key, lines)
+    return lines
+
+
+def transfer_insight_overlay(
+    items: list[dict[str, Any]], *, site_key: str
+) -> dict[str, Any]:
+    """SYP pick list only. ICLOW rows stay; insight adds a qty or an extra line."""
+    from src.transfer.insight import annotate_iclow_items, load_insight_policies
+
+    rows = [dict(item) for item in (items or [])]
+    site = (site_key or "").strip().lower()
+    if site != "syp":
+        return {"updates": rows, "insight_only": []}
+    policies = load_insight_policies()
+    annotate_iclow_items(rows, policies)
+    iclow_bcodes = {
+        (item.get("bcode") or "").strip()
+        for item in rows
+        if (item.get("source") or "") == "iclow" and (item.get("bcode") or "").strip()
+    }
+    return {
+        "updates": rows,
+        "insight_only": _cached_insight_only(policies, iclow_bcodes),
+    }
+
+
 def suggest_transfer_skus(
     *, site: str, limit: int = 200, include_suggestions: bool = False
 ) -> list[dict[str, Any]]:

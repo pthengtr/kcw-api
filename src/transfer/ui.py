@@ -225,6 +225,14 @@ body.busy #busy{display:flex}
 .status-tabs{display:flex;gap:.35rem;margin-bottom:.75rem;flex-wrap:wrap}
 .status-tab{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:999px;padding:.4rem .75rem;font-size:.8rem;cursor:pointer;font-family:inherit}
 .status-tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.seg-tabs{display:flex;gap:.4rem;margin:0 0 .75rem;flex-wrap:wrap}
+.seg-tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:.4rem .8rem;font-family:inherit;font-weight:700;cursor:pointer;color:var(--text)}
+.seg-tab.on{background:#5b21b6;color:#fff;border-color:#5b21b6}
+.badge-ai{background:#ede9fe;color:#5b21b6;margin-left:.2rem}
+.ai-date{display:block;margin-top:.15rem;font-size:.72rem;font-weight:600;color:#6d28d9;white-space:normal}
+.ai-note{display:block;margin-top:.15rem;font-size:.72rem;font-weight:700;color:#5b21b6}
+tr.row-ai td{background:#f5f3ff}
+.item-card.row-ai{border-color:#ddd6fe;background:#f5f3ff}
 .pipeline{display:flex;gap:.25rem;align-items:center;font-size:.68rem;color:var(--muted);margin-top:.35rem}
 .pipe-dot{width:.45rem;height:.45rem;border-radius:50%;background:#d1d5db;flex-shrink:0}
 .pipe-dot.on{background:var(--acc)}.pipe-dot.done{background:var(--ok)}
@@ -399,6 +407,10 @@ let prepareStep = 1;
 let prepareRequest = null;
 let suggestItems = [];
 let suggestFilter = "";
+let suggestTab = "iclow";
+let suggestInsightLoaded = false;
+let suggestInsightLoading = false;
+let suggestInsightError = "";
 let suggestHintsLoaded = false;
 /** Local picks on suggest list: bcode → {checked, unit, qty} — survives soft re-renders. */
 let suggestPick = {};
@@ -526,6 +538,58 @@ function fmtSubsHint(row){
 }
 function fmtDescr(row){
   return `${escText((row && row.descr) || "")}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}${fmtSubsHint(row)}`;
+}
+function proposeMeta(row){
+  const m = row && row.propose_meta;
+  if(!m || typeof m !== "object") return null;
+  const qty = Number(m.ai_qty);
+  if(!(qty > 0)) return null;
+  const source = String(m.source || "").toLowerCase();
+  if(source !== "insight" && source !== "both") return null;
+  return m;
+}
+function fmtAnalyzed(value){
+  const text = String(value || "").trim();
+  if(!text) return "";
+  const d = new Date(text);
+  if(Number.isNaN(d.getTime())) return "";
+  const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const parts = new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Bangkok",day:"numeric",month:"numeric",year:"numeric"}).formatToParts(d);
+  const day = Number((parts.find(p=>p.type==="day")||{}).value);
+  const month = Number((parts.find(p=>p.type==="month")||{}).value);
+  const year = (parts.find(p=>p.type==="year")||{}).value;
+  if(!day || !month || !year) return "";
+  return `${day} ${months[month-1]} ${year}`;
+}
+function aiBadgeHtml(row){
+  return proposeMeta(row) ? `<span class="badge badge-ai">AI</span>` : "";
+}
+function aiMetaHtml(row){
+  const m = proposeMeta(row);
+  if(!m) return "";
+  const date = fmtAnalyzed(m.generated_at);
+  let html = "";
+  if(date) html += `<span class="ai-date">วิเคราะห์ ${escText(date)}</span>`;
+  if(m.reason) html += `<span class="ai-date">${escText(m.reason)}</span>`;
+  if(m.source === "insight") html += `<span class="ai-note">ไม่แตะ ICLOW</span>`;
+  return html;
+}
+function aiQtyCell(row){
+  const m = proposeMeta(row);
+  if(!m) return "—";
+  return `${fmtStockDual(m.ai_qty, row)}${aiMetaHtml(row)}`;
+}
+function requestLinePayload(l){
+  const row = {bcode:l.bcode, qty:l.qty, descr:l.descr||""};
+  const m = proposeMeta(l);
+  if(m) row.propose_meta = {source:m.source, reason:m.reason||"", ai_qty:Number(m.ai_qty), generated_at:m.generated_at||""};
+  return row;
+}
+function suggestSourceLabel(r){
+  const src = r.source || "iclow";
+  if(src === "insight") return "AI";
+  if(src === "icmas") return "สต๊อกต่ำ";
+  return "รอสั่ง";
 }
 function qtyToSmall(qty, unitId, row){
   const choices = unitChoices(row);
@@ -794,7 +858,7 @@ async function submitTransferLines(lines, direction){
   }
   await api("/transfer/api/requests/"+transferId+"/lines",{
     method:"PUT",
-    body:JSON.stringify({lines:lines.map(l=>({bcode:l.bcode,qty:l.qty,descr:l.descr||""}))}),
+    body:JSON.stringify({lines:lines.map(requestLinePayload)}),
   });
   const submitted = await api("/transfer/api/requests/"+transferId+"/submit",{method:"POST",body:"{}"});
   editingDraftId = null;
@@ -809,7 +873,7 @@ async function saveDraftLines(lines){
   }
   await api("/transfer/api/requests/"+transferId+"/lines",{
     method:"PUT",
-    body:JSON.stringify({lines:lines.map(l=>({bcode:l.bcode,qty:l.qty,descr:l.descr||""}))}),
+    body:JSON.stringify({lines:lines.map(requestLinePayload)}),
   });
   return transferId;
 }
@@ -1260,8 +1324,8 @@ async function openRequestDetail(transferId){
     const pick = si!=null ? `<input type="checkbox" class="pick-check stk-pick" data-i="${si}" title="พิมพ์บาร์โค้ด"/>` : "";
     return `<tr>
     <td>${pick}</td>
-    <td><code>${ln.bcode}</code></td>
-    <td>${fmtDescr(ln)}</td>
+    <td><code>${escText(ln.bcode)}</code>${aiBadgeHtml(ln)}</td>
+    <td>${fmtDescr(ln)}${aiMetaHtml(ln)}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
     <td class="num">${fmtQty(ln.qty_prepared)}</td>
     <td class="num">${fmtQty(ln.qty_received)}</td>
@@ -1290,10 +1354,10 @@ async function openRequestDetail(transferId){
   const recvAp = apCounterpartyLabel(toB, fromB);
   const lineCards = lines.map(ln=>{
     const si = stickerIndex[ln.bcode];
-    const pick = si!=null ? `<label style="display:flex;align-items:center;gap:.35rem"><input type="checkbox" class="pick-check stk-pick" data-i="${si}"/><code>${ln.bcode}</code></label>` : `<code>${ln.bcode}</code>`;
+    const pick = si!=null ? `<label style="display:flex;align-items:center;gap:.35rem"><input type="checkbox" class="pick-check stk-pick" data-i="${si}"/><code>${escText(ln.bcode)}</code></label>` : `<code>${escText(ln.bcode)}</code>${aiBadgeHtml(ln)}`;
     return `<div class="item-card">
     <div class="item-card-head">${pick}${lineStatusLabel(ln)}</div>
-    <div class="item-card-desc">${fmtDescr(ln)}</div>
+    <div class="item-card-desc">${fmtDescr(ln)}${aiMetaHtml(ln)}</div>
     <div class="item-card-grid">
       <div class="item-field num"><span class="lbl">ขอ</span><span class="val">${fmtQty(ln.qty_requested)}</span></div>
       <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_prepared)}</span></div>
@@ -1359,6 +1423,7 @@ async function editDraft(transferId){
     body:JSON.stringify({
       lines: lines.map(ln=>({
         bcode:ln.bcode, qty:ln.qty_requested, descr:ln.descr||"", suggest_qty:ln.qty_requested,
+        propose_meta: ln.propose_meta || null,
       })),
     }),
   });
@@ -1366,11 +1431,11 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ clearStatusSearchTimer(); view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestFilter=""; receiveFilter=""; statusSearch=""; statusItemsCache=null; statusItemsScope=null; render(); }
+function goHome(){ clearStatusSearchTimer(); view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestTab="iclow"; suggestInsightLoaded=false; suggestInsightLoading=false; suggestInsightError=""; suggestFilter=""; receiveFilter=""; statusSearch=""; statusItemsCache=null; statusItemsScope=null; render(); }
 function goView(v){
   clearStatusSearchTimer();
   view=v;
-  if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; }
+  if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; suggestTab="iclow"; suggestInsightLoaded=false; suggestInsightLoading=false; suggestInsightError=""; }
   if(v==="receive"){ receiveStep=1; receiveShipment=null; receiveFilter=""; }
   if(v!=="stickers" && v!=="receive") receivePrintJob=null;
   if(v==="prepare"){ prepareStep=1; prepareRequest=null; }
@@ -1595,7 +1660,7 @@ async function renderRequest(el, opts){
 
   if(requestStep === 2){
     let cart;
-    if(reuseSuggest && Array.isArray(suggestItems) && suggestItems.length){
+    if(reuseSuggest && Array.isArray(suggestItems)){
       cart = await api("/transfer/api/need-list",{quiet:true});
     }else{
       const [rows, cartResp] = await Promise.all([
@@ -1604,12 +1669,22 @@ async function renderRequest(el, opts){
       ]);
       suggestItems = rows.items || [];
       suggestHintsLoaded = false;
+      suggestInsightLoaded = false;
+      suggestInsightLoading = false;
+      suggestInsightError = "";
+      window._suggestInsightGen = (window._suggestInsightGen || 0) + 1;
       cart = cartResp;
     }
     const cartItems = cart.items || [];
     const cartBcodes = new Set(cartItems.map(n=>(n.bcode||"").trim()).filter(Boolean));
+    const aiEnabled = SITE === "SYP";
+    const onAiTab = aiEnabled && suggestTab === "ai";
+    const tabPool = !aiEnabled ? suggestItems
+      : onAiTab ? suggestItems.filter(r => (r.source||"") === "insight")
+      : suggestItems.filter(r => (r.source||"") !== "insight");
+    const aiCount = suggestItems.filter(r => (r.source||"") === "insight").length;
     const q = (suggestFilter || "").trim().toLowerCase();
-    const filtered = q ? suggestItems.filter(r=>{
+    const filtered = q ? tabPool.filter(r=>{
       const b = (r.bcode||"").toLowerCase();
       const d = (r.descr||"").toLowerCase();
       const m = (r.model||"").toLowerCase();
@@ -1617,7 +1692,7 @@ async function renderRequest(el, opts){
       const pcode = (r.pcode||"").toLowerCase();
       const mcode = (r.mcode||"").toLowerCase();
       return b.includes(q) || d.includes(q) || m.includes(q) || brand.includes(q) || pcode.includes(q) || mcode.includes(q);
-    }) : suggestItems;
+    }) : tabPool;
     const nPicked = pickedCount();
 
     let html = stepBar(2) + `<div class="card">
@@ -1646,12 +1721,22 @@ async function renderRequest(el, opts){
     </div>
 
     <div class="card card-table">
+      ${aiEnabled ? `<div class="seg-tabs" role="tablist">
+        <button type="button" class="seg-tab ${onAiTab?"":"on"}" data-suggest-tab="iclow">รอสั่ง (ICLOW)</button>
+        <button type="button" class="seg-tab ${onAiTab?"on":""}" data-suggest-tab="ai">AI ${suggestInsightLoaded ? aiCount : "…"}</button>
+      </div>` : ""}
       <p class="meta" style="margin:0">${SITE === "HQ"
         ? "รายการ <strong>สต๊อกต่ำ (ICMAS)</strong> ที่สนญ. — ไม่ดึง ICLOW รอสั่งซื้อ (เก็บไว้สั่งจากเจ้าหนี้) · เพิ่มรหัสเองได้ด้านบน"
-        : "รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ถ้าหลังรับเข้าสต๊อกยังไม่เกินจุดต่ำสุด ระบบเดิมจะเปิด ICLOW ใหม่"}</p>`;
+        : onAiTab
+          ? "รายการที่ <strong>AI แนะนำ</strong> และยังไม่อยู่ในรอสั่ง (ICLOW) — จำนวนเริ่มจากช่องว่างถึงเป้า · ไม่สร้างแถว ICLOW"
+          : "รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ถ้าหลังรับเข้าสต๊อกยังไม่เกินจุดต่ำสุด ระบบเดิมจะเปิด ICLOW ใหม่"}</p>`;
 
-    if(!suggestItems.length){
-      html += `<div class="empty">ไม่พบรายการแนะนำ — ใช้เพิ่มรหัสเองด้านบน</div>`;
+    if(onAiTab && !suggestInsightLoaded){
+      html += `<div class="empty">กำลังโหลดรายการ AI…</div>`;
+    } else if(!tabPool.length){
+      html += onAiTab
+        ? `<div class="empty">${suggestInsightError || "ไม่มีรายการที่ AI แนะนำนอกเหนือจากรอสั่ง"}</div>`
+        : `<div class="empty">ไม่พบรายการแนะนำ — ใช้เพิ่มรหัสเองด้านบน</div>`;
     } else if(!filtered.length){
       html += `<div class="empty">ไม่พบ "${suggestFilter}" ในรายการ — ลองเพิ่มรหัสเองด้านบน</div>`;
       if(/^[0-9A-Za-z-]+$/.test(q)){
@@ -1663,12 +1748,15 @@ async function renderRequest(el, opts){
         const pick = readSuggestPick(r);
         const inCart = cartBcodes.has((r.bcode||"").trim());
         const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${escText(c.label)}</option>`).join("");
-        const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
+        const src = suggestSourceLabel(r);
         const srcTitle = src==="รอสั่ง" && Number(r.iclow_line_count||0)>1 ? ` title="รวม ${r.iclow_line_count} แถว ICLOW"` : "";
-        return `<tr class="${pick.checked?"row-picked":""}"><td><input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""} ${inCart?"title=\"มีในคำขอแล้ว — ติ๊กแล้วเพิ่มซ้ำได้\"":""}/></td>
-          <td><code>${escText(r.bcode)}</code>${inCart?` <span class="meta">ในคำขอ</span>`:""}</td><td class="meta"${srcTitle}>${src}</td><td>${fmtDescr(r)}</td>
+        const rowClass = [pick.checked?"row-picked":"", (r.source||"")==="insight"?"row-ai":""].filter(Boolean).join(" ");
+        const aiCol = (aiEnabled && !onAiTab) ? `<td class="num">${aiQtyCell(r)}</td>` : "";
+        const suggestCell = onAiTab ? `${fmtStockDual(r.suggest_qty,r)}${aiMetaHtml(r)}` : fmtStockDual(r.suggest_qty,r);
+        return `<tr class="${rowClass}"><td><input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""} ${inCart?"title=\"มีในคำขอแล้ว — ติ๊กแล้วเพิ่มซ้ำได้\"":""}/></td>
+          <td><code>${escText(r.bcode)}</code>${inCart?` <span class="meta">ในคำขอ</span>`:""}</td><td class="meta"${srcTitle}>${src}${aiBadgeHtml(r)}</td><td>${fmtDescr(r)}</td>
           <td class="num">${fmtHqStock(r)}</td><td class="num">${fmtStockDual(r.syp_qtyoh2,r)}</td>
-          <td class="num">${fmtStockDual(r.suggest_qty,r)}</td>
+          <td class="num">${suggestCell}</td>${aiCol}
           <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
           <td class="num"><input class="qty-input" type="number" min="0.01" step="any" value="${pick.qty}" data-qty="${idx}"/></td></tr>`;
       }).join("");
@@ -1677,12 +1765,14 @@ async function renderRequest(el, opts){
         const pick = readSuggestPick(r);
         const inCart = cartBcodes.has((r.bcode||"").trim());
         const unitOpts = unitChoices(r).map(c=>`<option value="${c.id}" ${c.id===pick.unit?"selected":""}>${escText(c.label)}</option>`).join("");
-        const src = (r.source||"iclow")==="icmas" ? "สต๊อกต่ำ" : "รอสั่ง";
-        return `<div class="item-card ${pick.checked?"row-picked":""}">
+        const src = suggestSourceLabel(r);
+        const cardClass = [pick.checked?"row-picked":"", (r.source||"")==="insight"?"row-ai":""].filter(Boolean).join(" ");
+        const suggestCell = onAiTab ? `${fmtStockDual(r.suggest_qty,r)}${aiMetaHtml(r)}` : fmtStockDual(r.suggest_qty,r);
+        return `<div class="item-card ${cardClass}">
           <div class="item-card-head">
             <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer">
               <input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""}/>
-              <code>${escText(r.bcode)}</code>
+              <code>${escText(r.bcode)}</code>${aiBadgeHtml(r)}
             </label>
             <span class="meta">${src}${inCart?" · ในคำขอ":""}</span>
           </div>
@@ -1690,7 +1780,8 @@ async function renderRequest(el, opts){
           <div class="item-card-grid">
             <div class="item-field num"><span class="lbl">คงเหลือ สำนักงานใหญ่</span><span class="val">${fmtHqStock(r)}</span></div>
             <div class="item-field num"><span class="lbl">คงเหลือ สาขา</span><span class="val">${fmtStockDual(r.syp_qtyoh2,r)}</span></div>
-            <div class="item-field num"><span class="lbl">แนะนำ</span><span class="val">${fmtStockDual(r.suggest_qty,r)}</span></div>
+            <div class="item-field num"><span class="lbl">แนะนำ</span><span class="val">${suggestCell}</span></div>
+            ${(aiEnabled && !onAiTab) ? `<div class="item-field num"><span class="lbl">AI แนะนำ</span><span class="val">${aiQtyCell(r)}</span></div>` : ""}
           </div>
           <div class="item-card-actions">
             <select class="unit-select" data-unit="${idx}">${unitOpts}</select>
@@ -1700,23 +1791,23 @@ async function renderRequest(el, opts){
       }).join("");
       html += dualView(
         `<div class="table-wrap table-wrap--tall"><table><thead><tr>
-          <th style="width:2.2rem"></th><th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ สำนักงานใหญ่</th><th class="num">คงเหลือ สาขา</th><th class="num">แนะนำ</th><th>หน่วย</th><th class="num">จำนวน</th>
+          <th style="width:2.2rem"></th><th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ สำนักงานใหญ่</th><th class="num">คงเหลือ สาขา</th><th class="num">แนะนำ</th>${(aiEnabled && !onAiTab) ? `<th class="num">AI แนะนำ</th>` : ""}<th>หน่วย</th><th class="num">จำนวน</th>
         </tr></thead><tbody>${suggestTableRows}</tbody></table></div>`,
         itemCards(suggestCardRows)
       );
       html += hqNoStockNoteHtml();
-      if(q) html += `<p class="meta" style="margin:.5rem 1rem 0">แสดง ${filtered.length} จาก ${suggestItems.length} รายการ</p>`;
+      if(q) html += `<p class="meta" style="margin:.5rem 1rem 0">แสดง ${filtered.length} จาก ${tabPool.length} รายการ</p>`;
     }
     html += `</div>`;
 
     html += `<div class="card card-table"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
     if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ — ติ๊กจากรายการแนะนำแล้วกดถัดไป</div>`;
     else {
-      const cartTableRows = cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td>
+      const cartTableRows = cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}</td><td>${fmtDescr(n)}${aiMetaHtml(n)}</td><td class="num">${fmtQty(n.qty)}</td>
         <td><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></td></tr>`).join("");
       const cartCardRows = cartItems.map(n=>`<div class="item-card">
-        <div class="item-card-head"><code>${escText(n.bcode)}</code><span class="num">${fmtQty(n.qty)}</span></div>
-        <div class="item-card-desc">${fmtDescr(n)}</div>
+        <div class="item-card-head"><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}<span class="num">${fmtQty(n.qty)}</span></div>
+        <div class="item-card-desc">${fmtDescr(n)}${aiMetaHtml(n)}</div>
         <div class="item-card-actions"><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></div>
       </div>`).join("");
       html += dualView(
@@ -1736,6 +1827,12 @@ async function renderRequest(el, opts){
     </div>`;
     el.innerHTML = html;
     document.body.classList.add("request-picking");
+    el.querySelectorAll("[data-suggest-tab]").forEach(btn=>{
+      btn.onclick = ()=>{
+        suggestTab = btn.dataset.suggestTab === "ai" ? "ai" : "iclow";
+        withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
+      };
+    });
 
     function syncPickChrome(){
       const n = pickedCount();
@@ -1786,10 +1883,15 @@ async function renderRequest(el, opts){
           method:"POST",
           quiet:true,
           body:JSON.stringify({
-            lines: picks.map(p=>({
-              bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
-              descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
-            })),
+            lines: picks.map(p=>{
+              const line = {
+                bcode:p.row.bcode, qty:p.qtySmall, suggest_qty:p.row.suggest_qty,
+                descr:p.row.descr||"", hq_qtyoh2:p.row.hq_qtyoh2,
+              };
+              const m = proposeMeta(p.row);
+              if(m) line.propose_meta = {source:m.source, reason:m.reason||"", ai_qty:Number(m.ai_qty), generated_at:m.generated_at||""};
+              return line;
+            }),
           }),
         });
         picks.forEach(p=>writeSuggestPick(p.row.bcode, {checked:false}));
@@ -1852,7 +1954,7 @@ async function renderRequest(el, opts){
       api("/transfer/api/suggest/hints",{
         method:"POST",
         quiet:true,
-        body:JSON.stringify({items: suggestItems}),
+        body:JSON.stringify({items: suggestItems.filter(r => (r.source||"") !== "insight")}),
       }).then(resp=>{
         if(hintGen !== window._suggestHintGen) return;
         if(view!=="request" || requestStep!==2) return;
@@ -1870,6 +1972,62 @@ async function renderRequest(el, opts){
         suggestHintsLoaded = true;
         withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
       }).catch(()=>{ suggestHintsLoaded = true; });
+    }
+
+    if(SITE === "SYP" && !suggestInsightLoaded && !suggestInsightLoading){
+      suggestInsightLoading = true;
+      window._suggestInsightGen = (window._suggestInsightGen || 0) + 1;
+      const insightGen = window._suggestInsightGen;
+      const slim = suggestItems.filter(r => (r.source||"") !== "insight").map(r=>({
+        bcode: r.bcode,
+        source: r.source || "iclow",
+        suggest_qty: r.suggest_qty,
+        syp_qtyoh2: r.syp_qtyoh2,
+        hq_qtyoh2: r.hq_qtyoh2,
+        qtymin: r.qtymin,
+        mtp2: r.mtp2,
+      }));
+      api("/transfer/api/suggest/insight",{
+        method:"POST",
+        quiet:true,
+        body:JSON.stringify({items: slim}),
+      }).then(overlay=>{
+        if(insightGen !== window._suggestInsightGen) return;
+        if(view!=="request" || requestStep!==2){
+          suggestInsightLoading = false;
+          return;
+        }
+        const updates = Array.isArray(overlay.updates) ? overlay.updates : [];
+        const by = {};
+        updates.forEach(u=>{
+          const b = (u && u.bcode || "").trim();
+          if(b && u.propose_meta) by[b] = u.propose_meta;
+        });
+        const base = suggestItems.filter(r => (r.source||"") !== "insight");
+        const annotated = base.map(r=>{
+          const meta = by[(r.bcode||"").trim()];
+          if(!meta) return r;
+          return Object.assign({}, r, {propose_meta: meta});
+        });
+        const have = new Set(annotated.map(r => (r.bcode||"").trim()));
+        const extra = (overlay.insight_only || []).filter(r=>{
+          const b = (r && r.bcode || "").trim();
+          return b && !have.has(b);
+        });
+        suggestItems = annotated.concat(extra);
+        suggestInsightError = "";
+        suggestInsightLoaded = true;
+        suggestInsightLoading = false;
+        withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
+      }).catch(()=>{
+        if(insightGen !== window._suggestInsightGen) return;
+        suggestInsightError = "โหลดรายการ AI ไม่สำเร็จ";
+        suggestInsightLoaded = true;
+        suggestInsightLoading = false;
+        if(view==="request" && requestStep===2){
+          withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
+        }
+      });
     }
 
     const searchEl = el.querySelector("#suggestSearch");
@@ -1984,11 +2142,11 @@ async function renderRequest(el, opts){
         ${submitBillNoteHtml(OTHER, SITE)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
-            ${cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code></td><td>${fmtDescr(n)}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
+            ${cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}</td><td>${fmtDescr(n)}${aiMetaHtml(n)}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
           </tbody></table></div>`,
           itemCards(cartItems.map(n=>`<div class="item-card">
-            <div class="item-card-head"><code>${escText(n.bcode)}</code><span class="num">${fmtQty(n.qty)}</span></div>
-            <div class="item-card-desc">${fmtDescr(n)}</div>
+            <div class="item-card-head"><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}<span class="num">${fmtQty(n.qty)}</span></div>
+            <div class="item-card-desc">${fmtDescr(n)}${aiMetaHtml(n)}</div>
           </div>`).join(""))
         )}
         <div class="row-actions">

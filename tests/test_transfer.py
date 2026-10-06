@@ -189,6 +189,8 @@ def test_transfer_syp_page_keeps_iclow_suggest_copy():
     html = page(user_name="ทดสอบ", site="SYP")
     assert "รอสั่ง (ICLOW)" in html
     assert "ตรงกับแท็บรอสั่งซื้อ" in html
+    assert 'data-suggest-tab="ai"' in html
+    assert "AI แนะนำ" in html
 
 
 def _mint_transfer_token(*, secret: str, ttl_seconds: int = 86400, now: float | None = None, name: str = "Tester"):
