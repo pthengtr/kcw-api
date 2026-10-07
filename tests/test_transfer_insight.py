@@ -47,6 +47,17 @@ def test_ai_qty_is_live_gap_capped_by_hq():
     assert advice["reason"].startswith("สาขา 3 / เป้า 10")
 
 
+def test_ai_skips_sub_unit_target():
+    assert ai_recommendation(
+        _policy(syp_safe_holding=0.28, syp_monthly=0.1, rec_transfer_qty_to_syp=1),
+        live_syp=0,
+        live_hq=20,
+        syp_blocked=False,
+        mtp2=12,
+        now=NOW,
+    ) is None
+
+
 def test_ai_skips_stale_blocked_dead_and_enough_stock():
     stale = (NOW - timedelta(days=30)).isoformat()
     assert ai_recommendation(_policy(generated_at=stale), live_syp=0, live_hq=5, syp_blocked=False, mtp2=1, now=NOW) is None
@@ -96,6 +107,20 @@ def test_insight_only_skips_iclow_bcode_and_ranks():
     assert lines[0]["source"] == "insight"
     assert lines[0]["suggest_qty"] == lines[0]["propose_meta"]["ai_qty"]
     assert lines[0]["propose_meta"]["source"] == "insight"
+
+
+def test_insight_only_ranks_by_demand_then_gap_and_drops_sub_unit():
+    policies = {
+        "SLOW": _policy(bcode="SLOW", syp_safe_holding=2, syp_monthly=1),
+        "FAST": _policy(bcode="FAST", syp_safe_holding=6, syp_monthly=8),
+        "TINY": _policy(bcode="TINY", syp_safe_holding=0.28, syp_monthly=0.1, rec_transfer_qty_to_syp=1),
+        "MID": _policy(bcode="MID", syp_safe_holding=3, syp_monthly=8),
+    }
+    hq = {code: {"qtyoh2": 20, "blocked": False, "mtp2": 1, "descr": code} for code in policies}
+    syp = {code: {"qtyoh2": 0, "blocked": False, "mtp2": 1, "qtymin": 1, "descr": code} for code in policies}
+    lines = insight_only_lines(policies, iclow_bcodes=set(), hq_icmas=hq, syp_icmas=syp, now=NOW)
+    # Same monthly: larger live gap first. Sub-unit target is omitted.
+    assert [row["bcode"] for row in lines] == ["FAST", "MID", "SLOW"]
 
 
 def test_suggest_keeps_iclow_and_appends_insight_only():
