@@ -101,7 +101,9 @@ def ai_recommendation(
     if not is_fresh(row.get("generated_at"), now=now):
         return None
     target = policy_target(row)
-    if target is None or live_syp >= target:
+    # A sub-unit target is not a transfer. pack_gap would round 0.xx up to 1
+    # (or a full carton), which filled the pick list with slow movers.
+    if target is None or target < 1 or live_syp >= target:
         return None
     gap = target - live_syp
     packed = pack_gap(gap, mtp2)
@@ -119,7 +121,7 @@ def ai_recommendation(
         "reason": reason,
         "target": target,
         "gap": gap,
-        "rank": (gap / monthly) if monthly > 0 else gap,
+        "monthly": monthly,
     }
 
 
@@ -234,7 +236,7 @@ def insight_only_lines(
     now: datetime | None = None,
     limit: int = AI_ONLY_LIMIT,
 ) -> list[dict[str, Any]]:
-    ranked: list[tuple[float, str, dict[str, Any]]] = []
+    ranked: list[tuple[float, float, str, dict[str, Any]]] = []
     for bcode, policy in policies.items():
         if bcode in iclow_bcodes:
             continue
@@ -253,11 +255,16 @@ def insight_only_lines(
         )
         if not advice:
             continue
-        ranked.append((float(advice["rank"]), bcode, build_insight_only_item(
-            policy, advice, hq_meta=hq_meta, syp_meta=syp_meta
-        )))
-    ranked.sort(key=lambda row: (-row[0], row[1]))
-    return [row[2] for row in ranked[: max(0, limit)]]
+        ranked.append((
+            float(advice["monthly"]),
+            float(advice["gap"]),
+            bcode,
+            build_insight_only_item(policy, advice, hq_meta=hq_meta, syp_meta=syp_meta),
+        ))
+    # Demand first, then the live shortfall. Relative gap/monthly promoted
+    # the slowest SKUs to the top of the list.
+    ranked.sort(key=lambda row: (-row[0], -row[1], row[2]))
+    return [row[3] for row in ranked[: max(0, limit)]]
 
 
 def load_insight_policies() -> dict[str, dict[str, Any]]:
