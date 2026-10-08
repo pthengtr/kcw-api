@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from html import escape
 from typing import Any
@@ -11,6 +12,27 @@ def _fmt_ts(ts: float | None) -> str:
     if not ts:
         return "ไม่เคย"
     return datetime.fromtimestamp(ts).strftime("%d/%m %H:%M")
+
+
+def _fmt_qty(value: float) -> str:
+    """Fixed-point qty. Never scientific notation (``.3g`` turns 1000 into ``1e+03``)."""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return "0"
+    if not math.isfinite(n):
+        return "0"
+    rounded = round(n, 4)
+    if abs(rounded - round(rounded)) < 1e-9:
+        return str(int(round(rounded)))
+    return f"{rounded:.4f}".rstrip("0").rstrip(".")
+
+
+def _fmt_qty_signed(value: float) -> str:
+    text = _fmt_qty(value)
+    if text.startswith("-"):
+        return text
+    return f"+{text}"
 
 
 def _nav_active(path: str, current: str) -> str:
@@ -679,7 +701,7 @@ def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> st
             {abc_bit}
           </div>
           <div class="qty-block">
-            <div class="qty">{item.get('qtyoh2', 0):.0f}</div>
+            <div class="qty">{_fmt_qty(item.get('qtyoh2', 0))}</div>
             <div class="qty-label">คงเหลือ</div>
           </div>
         </div>
@@ -784,7 +806,7 @@ def product_page(
 ) -> str:
     loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
     qty = float(item.get("qtyoh2", 0) or 0)
-    qty_disp = f"{qty:.3g}"
+    qty_disp = _fmt_qty(qty)
     badge = _pool_badge_html(item)
     badge_row = f"<div style='margin-bottom:10px'>{badge}</div>" if badge else ""
     blocked = bool(item.get("submit_blocked"))
@@ -830,7 +852,7 @@ def product_page(
           <label>นับได้กี่ชิ้น</label>
           <input type="text" name="counted_qty" id="counted-qty"
             inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*"
-            autocomplete="off" placeholder="เช่น {qty:.0f}"{disabled_attr}/>
+            autocomplete="off" placeholder="เช่น {_fmt_qty(qty)}"{disabled_attr}/>
           <p class="hint">พิมพ์ตัวเลขอย่างเดียว (คีย์บอร์ดโทรศัพท์ใช้ได้)</p>
         </div>
         <div id="panel-diff" hidden>
@@ -1090,9 +1112,9 @@ def approve_page(
               <div class="descr">{escape(d.get('descr') or '')}</div>
               {_product_model_html(d)}
               <div class="stats">
-                <div class="stat"><b>{float(d['system_qty']):.3g}</b><span>ระบบ</span></div>
-                <div class="stat"><b>{float(d['counted_qty']):.3g}</b><span>นับได้</span></div>
-                <div class="stat"><b style="color:{var_color}">{var:+.3g}</b><span>ส่วนต่าง</span></div>
+                <div class="stat"><b>{_fmt_qty(d['system_qty'])}</b><span>ระบบ</span></div>
+                <div class="stat"><b>{_fmt_qty(d['counted_qty'])}</b><span>นับได้</span></div>
+                <div class="stat"><b style="color:{var_color}">{_fmt_qty_signed(var)}</b><span>ส่วนต่าง</span></div>
               </div>
               <div class="muted" style="margin-top:8px">โดย {escape(d.get('operator_name') or '')}</div>
               {f"<div class='flash err' style='margin-top:10px'>{escape(d['post_error'])}</div>" if d.get('post_error') else ''}
@@ -1133,9 +1155,9 @@ def reject_page(
       <div class="descr">{escape(draft.get('descr') or '')}</div>
       {_product_model_html(draft)}
       <div class="stats">
-        <div class="stat"><b>{float(draft['system_qty']):.3g}</b><span>ระบบ</span></div>
-        <div class="stat"><b>{float(draft['counted_qty']):.3g}</b><span>นับได้</span></div>
-        <div class="stat"><b style="color:{var_color}">{var:+.3g}</b><span>ส่วนต่าง</span></div>
+        <div class="stat"><b>{_fmt_qty(draft['system_qty'])}</b><span>ระบบ</span></div>
+        <div class="stat"><b>{_fmt_qty(draft['counted_qty'])}</b><span>นับได้</span></div>
+        <div class="stat"><b style="color:{var_color}">{_fmt_qty_signed(var)}</b><span>ส่วนต่าง</span></div>
       </div>
       <div class="muted" style="margin-top:8px">โดย {escape(draft.get('operator_name') or '')}</div>
       {_rejection_history_html(draft.get("rejections"))}
@@ -1170,8 +1192,8 @@ def recheck_page(
     loc = " / ".join(x for x in [product.get("location1"), product.get("location2")] if x) or "ไม่ระบุที่เก็บ"
     qty = float(product.get("qtyoh2", 0) or 0)
     counted = float(draft.get("counted_qty") or 0)
-    qty_disp = f"{qty:.3g}"
-    counted_disp = f"{counted:.3g}"
+    qty_disp = _fmt_qty(qty)
+    counted_disp = _fmt_qty(counted)
     bits: list[str] = []
     if flash:
         bits.append(f"<div class='flash'>{escape(flash)}</div>")
@@ -1229,8 +1251,8 @@ def draft_edit_page(
     loc = " / ".join(x for x in [product.get("location1"), product.get("location2")] if x) or "ไม่ระบุที่เก็บ"
     qty = float(product.get("qtyoh2", 0) or 0)
     counted = float(draft.get("counted_qty") or 0)
-    qty_disp = f"{qty:.3g}"
-    counted_disp = f"{counted:.3g}"
+    qty_disp = _fmt_qty(qty)
+    counted_disp = _fmt_qty(counted)
     bits: list[str] = []
     if flash:
         bits.append(f"<div class='flash'>{escape(flash)}</div>")
@@ -1300,7 +1322,7 @@ def drift_review_page(
         bill_rows += (
             f"<div class='muted' style='margin:6px 0'>"
             f"{escape(m.get('billno') or '')} · {escape(m.get('kind_label') or '')} "
-            f"<b style='color:{q_color}'>{q:+.3g}</b></div>"
+            f"<b style='color:{q_color}'>{_fmt_qty_signed(q)}</b></div>"
         )
     if not bill_rows:
         bill_rows = "<div class='muted'>ไม่พบบิลขาย/ซื้อ/โอนในช่วงนี้</div>"
@@ -1322,8 +1344,8 @@ def drift_review_page(
         explain_note = (
             f"<div class='flash err' style='margin-top:10px'>"
             f"<b>สต็อกเปลี่ยนโดยไม่มีบิลอธิบายครบ</b><br/>"
-            f"เปลี่ยน {drift:+.3g} · จากบิล {explained:+.3g} · "
-            f"ไม่อธิบาย {unexplained:+.3g}<br/>"
+            f"เปลี่ยน {_fmt_qty_signed(drift)} · จากบิล {_fmt_qty_signed(explained)} · "
+            f"ไม่อธิบาย {_fmt_qty_signed(unexplained)}<br/>"
             f"ถ้าอนุมัติต่อ ระบบจะบันทึกเป็น "
             f"<b>completed_unexplained</b> (ไม่โพสต์ SA เมื่อนับตรงสต็อกปัจจุบัน) "
             f"— ไม่ถือว่าตรวจถูกต้องตามปกติ"
@@ -1342,7 +1364,7 @@ def drift_review_page(
     elif abs(drift) > 1e-6:
         explain_note = (
             f"<div class='flash' style='margin-top:10px'>"
-            f"สต็อกเปลี่ยน {drift:+.3g} ระหว่างนับกับอนุมัติ"
+            f"สต็อกเปลี่ยน {_fmt_qty_signed(drift)} ระหว่างนับกับอนุมัติ"
             f"</div>"
         )
 
@@ -1354,12 +1376,12 @@ def drift_review_page(
       <div class="descr">{escape(draft.get('descr') or '')}</div>
       {_product_model_html(draft)}
       <div class="stats">
-        <div class="stat"><b>{sys0:.3g}</b><span>ตอนนับ</span></div>
-        <div class="stat"><b>{counted:.3g}</b><span>นับได้</span></div>
-        <div class="stat"><b>{live:.3g}</b><span>ระบบตอนนี้</span></div>
+        <div class="stat"><b>{_fmt_qty(sys0)}</b><span>ตอนนับ</span></div>
+        <div class="stat"><b>{_fmt_qty(counted)}</b><span>นับได้</span></div>
+        <div class="stat"><b>{_fmt_qty(live)}</b><span>ระบบตอนนี้</span></div>
       </div>
       <div class="muted" style="margin-top:10px">
-        สต็อกเปลี่ยน {drift:+.3g} ระหว่างนับกับอนุมัติ · SA ที่จะโพสต์ <b style="color:{var_color}">{new_var:+.3g}</b>
+        สต็อกเปลี่ยน {_fmt_qty_signed(drift)} ระหว่างนับกับอนุมัติ · SA ที่จะโพสต์ <b style="color:{var_color}">{_fmt_qty_signed(new_var)}</b>
       </div>
       {explain_note}
       <div class="section-title" style="margin-top:14px">บิลระหว่างนับกับอนุมัติ (ขาย / ซื้อ / โอน)</div>
