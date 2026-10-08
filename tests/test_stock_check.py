@@ -943,3 +943,46 @@ def test_product_card_and_info_show_model():
     assert "รุ่น 1LT" in info
     blank = _product_card_html({**item, "model": ""}, href="/x")
     assert "รุ่น" not in blank
+
+
+def test_qty_display_is_fixed_point_not_scientific():
+    from src.stock_check.ui import _fmt_qty, _fmt_qty_signed, approve_page, product_page
+
+    assert _fmt_qty(1000) == "1000"
+    assert _fmt_qty(1500.5) == "1500.5"
+    assert _fmt_qty(1.5) == "1.5"
+    assert "e" not in _fmt_qty(12345).lower()
+    assert _fmt_qty_signed(1000) == "+1000"
+
+    item = {
+        "bcode": "P1",
+        "descr": "bearing",
+        "model": "",
+        "location1": "A-01",
+        "location2": "",
+        "qtyoh2": 1500,
+        "last_audited_at": None,
+    }
+    info = product_page(user={"display_name": "T", "line_user_id": "U1"}, item=item)
+    assert ">1500<" in info
+    assert "e+" not in info.lower()
+
+    html = approve_page(
+        user={"display_name": "T", "line_user_id": "U2"},
+        drafts=[
+            {
+                "id": "d1",
+                "bcode": "P1",
+                "descr": "bearing",
+                "location1": "A-01",
+                "location2": "",
+                "system_qty": 2000,
+                "counted_qty": 1000,
+                "variance": 1000,
+                "operator_name": "A",
+                "operator_line_user_id": "U1",
+            }
+        ],
+    )
+    assert "+1000" in html
+    assert "e+" not in html.lower()
