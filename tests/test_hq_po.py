@@ -206,6 +206,50 @@ def test_page_defaults_vendor_view():
     assert "ตามสินค้า" in html
     assert "ไม่แตะ ICLOW" in html
     assert "HQ_PO_ICLOW_STAMP_ENABLED" in html
+    assert "กำลังโหลดรายการรอสั่ง" in html
+
+
+def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
+    from src.hq_po import suggest
+
+    row = {
+        "iclow_id": 7,
+        "vendor": "V1",
+        "bcode": "A1",
+        "descr": "bolt",
+        "mcode": "M",
+        "qty": 2,
+        "ui": "PCS",
+    }
+    scanned: list[int] = []
+
+    monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: [row])
+    monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
+    monkeypatch.setattr(
+        suggest,
+        "fetch_dual_stock",
+        lambda codes: (
+            {"A1": {"qtyoh2": 1, "mtp2": 1, "blocked": False, "descr": "bolt"}},
+            {"A1": {"qtyoh2": 0, "mtp2": 1, "blocked": False}},
+            True,
+        ),
+    )
+    monkeypatch.setattr(
+        suggest,
+        "load_insight_policies",
+        lambda: {"A1": _policy(), "B2": _policy(bcode="B2")},
+    )
+    monkeypatch.setattr(suggest, "_peek_insight_cache", lambda _key: None)
+
+    def ensure(policies, bcodes):
+        scanned.append(len([b for b in policies if b not in bcodes]))
+
+    monkeypatch.setattr(suggest, "_ensure_insight_future", ensure)
+    payload = suggest.build_suggest()
+    assert payload["insight_pending"] is True
+    assert scanned == [1]
+    assert [item["bcode"] for item in payload["items"]] == ["A1"]
+    assert payload["items"][0]["source"] == "iclow"
 
 
 def test_line_command_and_menu():

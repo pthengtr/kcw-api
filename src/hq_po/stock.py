@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,11 @@ def fetch_dual_stock(bcodes: list[str]) -> tuple[dict[str, dict[str, Any]], dict
         logger.warning("hq po stock import failed", exc_info=True)
         return {}, {}, False
     try:
-        hq = _fetch_icmas_chunked("hq", codes)
-        syp = _fetch_icmas_chunked("syp", codes)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            hq_fut = pool.submit(_fetch_icmas_chunked, "hq", codes)
+            syp_fut = pool.submit(_fetch_icmas_chunked, "syp", codes)
+            hq = hq_fut.result()
+            syp = syp_fut.result()
     except Exception:
         logger.warning("hq po dual stock read failed", exc_info=True)
         return {}, {}, False
