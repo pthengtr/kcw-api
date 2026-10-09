@@ -51,6 +51,12 @@ def _attach_stock(item: dict[str, Any], hq: dict[str, Any] | None, syp: dict[str
         item["mcode"] = (hq.get("mcode") or syp.get("mcode") or "").strip()
     if not item.get("ui"):
         item["ui"] = (hq.get("ui1") or syp.get("ui1") or "").strip()
+    if not item.get("model"):
+        item["model"] = (hq.get("model") or syp.get("model") or "").strip()
+    if not item.get("brand"):
+        item["brand"] = (hq.get("brand") or syp.get("brand") or "").strip()
+    if not item.get("pcode"):
+        item["pcode"] = (hq.get("pcode") or syp.get("pcode") or "").strip()
 
 
 def _iclow_item(row: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:

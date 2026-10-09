@@ -178,6 +178,108 @@ def fetch_unordered_bcodes(bcodes: list[str]) -> set[str]:
     return out
 
 
+def fetch_vendor_cards(acctnos: list[str]) -> dict[str, dict[str, str]]:
+    """APMAS card used on the vendor sheet. MOBILE is the tax id in PARTS9."""
+    codes = []
+    seen: set[str] = set()
+    for raw in acctnos:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if not codes:
+        return {}
+    engine = get_site_engine("hq")
+    out: dict[str, dict[str, str]] = {}
+    with engine.connect() as conn:
+        for start in range(0, len(codes), 80):
+            chunk = codes[start : start + 80]
+            params = {f"a{n}": code for n, code in enumerate(chunk)}
+            placeholders = ", ".join(f":a{n}" for n in range(len(chunk)))
+            sql = text(
+                f"""
+                SELECT
+                  LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) AS ACCTNO,
+                  LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(ACCTNAME,'')))) AS ACCTNAME,
+                  LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(ADDR1,'')))) AS ADDR1,
+                  LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(ADDR2,'')))) AS ADDR2,
+                  LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PHONE,'')))) AS PHONE,
+                  LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MOBILE,'')))) AS MOBILE,
+                  LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(FAX,'')))) AS FAX,
+                  LTRIM(RTRIM(CONVERT(nvarchar(120), COALESCE(CONTACT,'')))) AS CONTACT,
+                  LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(CONVERT(varchar(40), TERM), '')))) AS TERM
+                FROM dbo.APMAS
+                WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) IN ({placeholders})
+                """
+            )
+            for row in conn.execute(sql, params).mappings().all():
+                acct = str(row.get("ACCTNO") or "").strip()
+                if not acct:
+                    continue
+                out[acct] = {
+                    "acctno": acct,
+                    "name": str(row.get("ACCTNAME") or "").strip(),
+                    "addr1": str(row.get("ADDR1") or "").strip(),
+                    "addr2": str(row.get("ADDR2") or "").strip(),
+                    "phone": str(row.get("PHONE") or "").strip(),
+                    "tax_id": str(row.get("MOBILE") or "").strip(),
+                    "fax": str(row.get("FAX") or "").strip(),
+                    "contact": str(row.get("CONTACT") or "").strip(),
+                    "term": str(row.get("TERM") or "").strip(),
+                }
+    return out
+
+
+def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
+    """ICMAS fields printed on the vendor sheet. Price is last cost, not sell price."""
+    codes = []
+    seen: set[str] = set()
+    for raw in bcodes:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if not codes:
+        return {}
+    engine = get_site_engine("hq")
+    out: dict[str, dict[str, Any]] = {}
+    with engine.connect() as conn:
+        for start in range(0, len(codes), 80):
+            chunk = codes[start : start + 80]
+            params = {f"b{n}": code for n, code in enumerate(chunk)}
+            placeholders = ", ".join(f":b{n}" for n in range(len(chunk)))
+            sql = text(
+                f"""
+                SELECT
+                  LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
+                  LTRIM(RTRIM(CONVERT(nvarchar(400), COALESCE(DESCR,'')))) AS DESCR,
+                  LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(MODEL,'')))) AS MODEL,
+                  LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(BRAND,'')))) AS BRAND,
+                  LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) AS PCODE,
+                  LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) AS MCODE,
+                  LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI1,'')))) AS UI1,
+                  COSTLAST, COSTNET
+                FROM dbo.ICMAS
+                WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) IN ({placeholders})
+                """
+            )
+            for row in conn.execute(sql, params).mappings().all():
+                bcode = str(row.get("BCODE") or "").strip()
+                if not bcode:
+                    continue
+                out[bcode] = {
+                    "descr": str(row.get("DESCR") or "").strip(),
+                    "model": str(row.get("MODEL") or "").strip(),
+                    "brand": str(row.get("BRAND") or "").strip(),
+                    "pcode": str(row.get("PCODE") or "").strip(),
+                    "mcode": str(row.get("MCODE") or "").strip(),
+                    "ui": str(row.get("UI1") or "").strip(),
+                    "costlast": row.get("COSTLAST"),
+                    "costnet": row.get("COSTNET"),
+                }
+    return out
+
+
 def fetch_vendor_names(acctnos: list[str]) -> dict[str, str]:
     codes = []
     seen: set[str] = set()
