@@ -7,6 +7,7 @@ from src.handlers.explorer_entry import is_explorer_command
 from src.handlers.image import is_image_command
 from src.handlers.pay_notes_entry import is_pay_notes_command
 from src.handlers.stock_check_entry import is_stock_check_command
+from src.handlers.hq_po_entry import is_hq_po_command
 from src.handlers.transfer_entry import is_transfer_command
 
 SERVICES_MENU_COMMANDS = {
@@ -46,6 +47,7 @@ def handle_services_menu() -> dict:
         _msg_button("ไทเกอร์เพย์", "ไทเกอร์"),
         _msg_button("ค้นหา PARTS9", "ค้นหา"),
         _msg_button("โอนสินค้า", "โอนสินค้า"),
+        _msg_button("สั่งซื้อ", "สั่งซื้อ"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
         _msg_button("วิธีใช้ทั้งหมด", "help"),
@@ -89,6 +91,7 @@ def services_menu_button_messages() -> list[str]:
         _msg_button("ไทเกอร์เพย์", "ไทเกอร์"),
         _msg_button("ค้นหา PARTS9", "ค้นหา"),
         _msg_button("โอนสินค้า", "โอนสินค้า"),
+        _msg_button("สั่งซื้อ", "สั่งซื้อ"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
         _msg_button("วิธีใช้ทั้งหมด", "help"),
@@ -102,6 +105,7 @@ def services_menu_handlers_match() -> dict[str, bool]:
         "companion": is_companion_command(checks[1]),
         "explorer": is_explorer_command(checks[2]),
         "transfer": is_transfer_command(checks[3]),
-        "image": is_image_command(checks[4]),
-        "pay_notes": is_pay_notes_command(checks[5]),
+        "hq_po": is_hq_po_command(checks[4]),
+        "image": is_image_command(checks[5]),
+        "pay_notes": is_pay_notes_command(checks[6]),
     }
