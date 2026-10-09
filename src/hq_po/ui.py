@@ -61,6 +61,26 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .line .meta{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
 .ai{color:var(--blue);font-size:12px;margin-top:6px;padding:6px 8px;background:var(--blue-wash);border-radius:8px;line-height:1.4}
 .qty{text-align:right;font-weight:700;font-size:16px;color:var(--blue-deep);white-space:nowrap}
+.recs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.rec{border:1px solid var(--line);background:#fff;color:var(--blue-deep);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:650}
+.rec.off{border:0;background:transparent;color:var(--muted);padding:4px 0}
+.qty-edit{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.qty-in{width:84px;min-height:40px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:16px;font-weight:700;text-align:right;color:var(--blue-deep);background:#fff}
+.qty-in:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
+#sheet{position:fixed;inset:0;z-index:20;background:#eef2f7;overflow:auto;padding:12px 12px calc(118px + env(safe-area-inset-bottom))}
+#sheet[hidden]{display:none}
+.sheet-top{display:flex;gap:8px;margin-bottom:12px}
+.sheet-top button{flex:1;min-height:42px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:650;font-size:14px}
+.doc{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px;margin:0 auto 12px;max-width:640px}
+.doc h2{margin:0;font-size:20px}
+.doc .who{margin:4px 0 12px;color:var(--muted);font-size:13px}
+.doc table{width:100%;border-collapse:collapse}
+.doc th{text-align:left;font-size:12px;color:var(--muted);font-weight:650;border-bottom:1px solid var(--line);padding:6px 4px}
+.doc td{border-bottom:1px solid var(--line);padding:8px 4px;vertical-align:top;font-size:14px}
+.doc td.num{text-align:right;font-weight:700;white-space:nowrap}
+.sheet-foot{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+.sheet-foot p{margin:0 0 8px;font-size:12px;color:var(--muted);text-align:center}
+.sheet-foot button{width:100%;min-height:46px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;font-size:15px}
 input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--blue)}
 .actions{padding:10px 12px;border-top:1px solid var(--line);display:flex}
 .actions button{width:100%;min-height:44px;background:var(--blue);color:#fff;border:0;border-radius:12px;padding:10px 12px;font-weight:650;font-size:14px}
@@ -123,7 +143,18 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <div id="orders"></div>
   </section>
 </main>
-<div id="dock" hidden><button type="button" id="dockConfirm">ยืนยันที่เลือก</button></div>
+<div id="dock" hidden><button type="button" id="dockConfirm">ดูใบส่งเจ้าหนี้</button></div>
+<div id="sheet" hidden>
+  <div class="sheet-top">
+    <button type="button" id="sheetClose">ปิด</button>
+    <button type="button" id="sheetCopy">คัดลอกส่งฝ่ายขาย</button>
+  </div>
+  <div id="sheetBody"></div>
+  <div class="sheet-foot">
+    <p>ส่งให้ฝ่ายขายก่อน แล้วค่อยบันทึกว่าสั่งแล้ว</p>
+    <button type="button" id="sheetCommit">บันทึกว่าสั่งแล้ว</button>
+  </div>
+</div>
 <div id="busy" hidden>
   <div class="busy-card"><span class="spin" aria-hidden="true"></span><div id="busyText">กำลังดำเนินการ…</div></div>
 </div>
@@ -132,7 +163,7 @@ const USER = __USER_JSON__;
 const STAMP = __STAMP__;
 let savedView = "vendor";
 try { savedView = localStorage.getItem("hqpo-view") || "vendor"; } catch (e) {}
-const state = {items:[], vendors:[], view: savedView, source:"all", q:"", orders:[], busy:false};
+const state = {items:[], vendors:[], view: savedView, source:"all", q:"", orders:[], busy:false, sheet:[]};
 document.getElementById("who").textContent = USER;
 if(!STAMP){
   document.getElementById("banner").innerHTML = '<div class="note">ยังไม่เปิดบันทึกลง ICLOW (HQ_PO_ICLOW_STAMP_ENABLED) — ดูรายการและคำแนะนำ AI ได้ แต่ยืนยันสั่งซื้อยังไม่ได้</div>';
@@ -172,17 +203,51 @@ function match(row){
   if(!q) return true;
   return [row.bcode, row.descr, row.mcode, row.vendor, row.vendor_name].join(" ").toLowerCase().includes(q);
 }
-function aiHtml(row){
+function rowKey(row){
+  if(row.iclow_id) return "iclow:" + row.iclow_id;
+  return "ai:" + (row.bcode || "");
+}
+function findRow(key){
+  return state.items.find(row => rowKey(row)===key);
+}
+function orderQty(row){
+  const raw = row.order_qty != null && row.order_qty !== "" ? row.order_qty : row.qty;
+  const v = Number(raw);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+function aiQty(row){
   const m = row.propose_meta;
-  if(!m || !m.ai_qty) return "";
-  const note = row.source==="insight" ? " · ไม่แตะ ICLOW" : "";
-  return `<div class="ai">AI ${esc(qtyText(m.ai_qty))}${row.ui?(" "+esc(row.ui)):""}${note}<div>${esc(m.reason||"")}</div></div>`;
+  if(m && m.ai_qty) return Number(m.ai_qty);
+  if(row.source==="insight") return Number(row.qty) || 0;
+  return 0;
+}
+function recHtml(row){
+  const key = rowKey(row);
+  const p9 = Number(row.parts9_qty);
+  const ai = aiQty(row);
+  const p9el = p9 > 0
+    ? `<button type="button" class="rec" data-fill="${esc(key)}" data-fillq="${esc(String(p9))}">PARTS9 ${esc(qtyText(p9))}</button>`
+    : `<span class="rec off">PARTS9 —</span>`;
+  const aiel = ai > 0
+    ? `<button type="button" class="rec" data-fill="${esc(key)}" data-fillq="${esc(String(ai))}">AI ${esc(qtyText(ai))}</button>`
+    : `<span class="rec off">AI —</span>`;
+  const reason = row.propose_meta && row.propose_meta.reason
+    ? `<div class="ai">${esc(row.propose_meta.reason)}</div>` : "";
+  return `<div class="recs">${p9el}${aiel}</div>${reason}`;
+}
+function qtyCell(row){
+  if(!(row.confirmable && STAMP)){
+    return `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;
+  }
+  return `<div class="qty-edit"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(row.ui||"")}</span></div>`;
 }
 function lineHtml(row){
   const check = row.confirmable && STAMP
-    ? `<input type="checkbox" data-id="${row.iclow_id}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"/>`
+    ? `<input type="checkbox" data-key="${esc(rowKey(row))}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"/>`
     : `<input type="checkbox" disabled/>`;
-  const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}`;
+  const incoming = Number(row.incoming_qty);
+  const incomingText = incoming > 0 ? ` · ค้างรับ ${esc(qtyText(incoming))}` : "";
+  const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${incomingText}`;
   const mcode = row.mcode ? `<div class="meta">${esc(row.mcode)}</div>` : "";
   return `<div class="line">
     ${check}
@@ -190,18 +255,18 @@ function lineHtml(row){
       <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
       ${mcode}
       ${stock ? `<div class="meta">${stock}</div>` : ""}
-      ${aiHtml(row)}
+      ${recHtml(row)}
     </div>
-    <div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>
+    ${qtyCell(row)}
   </div>`;
 }
 function syncDock(){
-  const n = document.querySelectorAll("#list input[type=checkbox][data-id]:checked").length;
+  const n = document.querySelectorAll("#list input[type=checkbox][data-key]:checked").length;
   const dock = document.getElementById("dock");
   const show = !!(STAMP && n && !state.busy);
   dock.hidden = !show;
   document.body.classList.toggle("has-dock", show);
-  if(show) document.getElementById("dockConfirm").textContent = `ยืนยันที่เลือก ${n} รายการ`;
+  if(show) document.getElementById("dockConfirm").textContent = `ดูใบส่งเจ้าหนี้ ${n} รายการ`;
 }
 function renderList(){
   const host = document.getElementById("list");
@@ -223,7 +288,7 @@ function renderList(){
   const ordered = [...groups.values()].sort((a,b) => (a.vendor?0:1)-(b.vendor?0:1) || vendorTitle(a).localeCompare(vendorTitle(b),'th'));
   host.innerHTML = ordered.map(g => {
     const n = g.lines.filter(r => r.confirmable).length;
-    const btn = STAMP && n ? `<div class="actions"><button type="button" data-confirm="${esc(g.vendor)}">ยืนยันที่เลือกของเจ้าหนี้นี้</button></div>` : "";
+    const btn = STAMP && n ? `<div class="actions"><button type="button" data-confirm="${esc(g.vendor)}">ดูใบที่เลือกของเจ้าหนี้นี้</button></div>` : "";
     return `<div class="card"><h2><span class="title">${esc(vendorTitle(g))}</span><span class="count">${g.lines.length} รายการ</span></h2>${g.lines.map(lineHtml).join("")}${btn}</div>`;
   }).join("");
   syncDock();
@@ -278,15 +343,20 @@ async function loadSuggest(){
 }
 function checkedFor(vendor){
   const boxes = [...document.querySelectorAll(`input[type=checkbox][data-vendor="${CSS.escape(vendor)}"]:checked`)];
-  return boxes.map(box => {
-    const id = Number(box.dataset.id);
-    return state.items.find(row => row.iclow_id===id);
-  }).filter(Boolean);
+  return boxes.map(box => findRow(box.dataset.key || "")).filter(Boolean);
 }
 function checkedRows(){
-  return [...document.querySelectorAll("#list input[type=checkbox][data-id]:checked")]
-    .map(box => state.items.find(row => row.iclow_id===Number(box.dataset.id)))
+  return [...document.querySelectorAll("#list input[type=checkbox][data-key]:checked")]
+    .map(box => findRow(box.dataset.key || ""))
     .filter(Boolean);
+}
+function linePayload(row){
+  const meta = Object.assign({}, row.propose_meta || {});
+  if(row.parts9_qty) meta.parts9_qty = row.parts9_qty;
+  const body = {qty: orderQty(row), propose_meta: Object.keys(meta).length ? meta : null};
+  if(row.iclow_id) body.iclow_id = row.iclow_id;
+  else body.bcode = row.bcode;
+  return body;
 }
 async function postVendor(vendor, picked){
   const sample = picked[0];
@@ -296,7 +366,7 @@ async function postVendor(vendor, picked){
     body: JSON.stringify({
       vendor: vendor,
       vendor_name: sample.vendor_name || "",
-      lines: picked.map(row => ({iclow_id: row.iclow_id, propose_meta: row.propose_meta || null})),
+      lines: picked.map(linePayload),
     }),
   });
   const data = await res.json().catch(()=>({}));
@@ -312,7 +382,7 @@ async function confirmRows(rows){
     if(!byVendor.has(key)) byVendor.set(key, []);
     byVendor.get(key).push(row);
   }
-  if(!byVendor.size){ alert("เลือกรายการ ICLOW ก่อน"); return; }
+  if(!byVendor.size){ alert("เลือกรายการและใส่จำนวน"); return; }
   const docs = [];
   let failed = null;
   setBusy(true, "กำลังบันทึกใบสั่งซื้อ…");
@@ -328,8 +398,50 @@ async function confirmRows(rows){
     await loadSuggest();
     return;
   }
+  closeSheet();
   alert("สั่งแล้ว " + docs.filter(Boolean).join(", "));
   await loadSuggest();
+}
+function todayTh(){
+  const d = new Date();
+  const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  return d.getDate() + " " + months[d.getMonth()] + " " + (d.getFullYear()+543);
+}
+function groupsOf(rows){
+  const groups = new Map();
+  for(const row of rows){
+    if(!row || !row.confirmable || orderQty(row) <= 0) continue;
+    const key = row.vendor || "";
+    if(!groups.has(key)) groups.set(key, {vendor:key, vendor_name:row.vendor_name, lines:[]});
+    groups.get(key).lines.push(row);
+  }
+  return [...groups.values()];
+}
+function sheetText(rows){
+  return groupsOf(rows).map(g => {
+    const lines = g.lines.map(row => `${row.bcode||"—"} ${row.descr||""} ${qtyText(orderQty(row))} ${row.ui||""}`.trim());
+    return [`ใบสั่งซื้อ`, vendorTitle(g), todayTh(), ""].concat(lines).join("\n");
+  }).join("\n\n");
+}
+function renderSheet(){
+  const groups = groupsOf(state.sheet);
+  document.getElementById("sheetBody").innerHTML = groups.map(g => {
+    const rows = g.lines.map(row => `<tr><td><div class="code"><span class="sku">${esc(row.bcode||"—")}</span></div><div>${esc(row.descr||"")}</div></td><td class="num">${esc(qtyText(orderQty(row)))}</td><td>${esc(row.ui||"")}</td></tr>`).join("");
+    return `<article class="doc"><h2>ใบสั่งซื้อ</h2><div class="who">${esc(vendorTitle(g))} · ${esc(todayTh())}</div><table><thead><tr><th>สินค้า</th><th class="num">จำนวน</th><th>หน่วย</th></tr></thead><tbody>${rows}</tbody></table></article>`;
+  }).join("") || '<div class="empty">ไม่มีรายการ</div>';
+}
+function openSheet(rows){
+  const picked = (rows||[]).filter(row => row && row.confirmable && orderQty(row) > 0);
+  if(!picked.length){ alert("เลือกรายการและใส่จำนวน"); return; }
+  state.sheet = picked;
+  renderSheet();
+  document.getElementById("sheet").hidden = false;
+  window.scrollTo(0,0);
+}
+function closeSheet(){
+  state.sheet = [];
+  const el = document.getElementById("sheet");
+  if(el) el.hidden = true;
 }
 async function confirmVendor(vendor){
   await confirmRows(checkedFor(vendor));
@@ -361,7 +473,7 @@ async function loadOrders(){
 }
 async function cancelOrder(id){
   if(state.busy) return;
-  if(!confirm("ยกเลิกใบนี้และคืน ICLOW เป็นรอสั่งซื้อ?")) return;
+  if(!confirm("ยกเลิกใบนี้บน ICLOW?")) return;
   setBusy(true, "กำลังยกเลิก…");
   let failed = null;
   try {
@@ -397,11 +509,39 @@ document.getElementById("tabDone").onclick = () => {
   loadOrders();
 };
 document.getElementById("list").onclick = (e) => {
+  const fill = e.target.closest("[data-fill]");
+  if(fill){
+    const row = findRow(fill.dataset.fill || "");
+    const q = Number(fill.dataset.fillq);
+    if(row && q > 0){
+      row.order_qty = q;
+      const input = document.querySelector(`input[data-qty="${CSS.escape(fill.dataset.fill || "")}"]`);
+      if(input) input.value = qtyText(q);
+    }
+    return;
+  }
   const btn = e.target.closest("[data-confirm]");
-  if(btn){ confirmVendor(btn.getAttribute("data-confirm") || ""); return; }
+  if(btn){ openSheet(checkedFor(btn.getAttribute("data-confirm") || "")); return; }
+};
+document.getElementById("list").oninput = (e) => {
+  const input = e.target.closest("input[data-qty]");
+  if(!input) return;
+  const row = findRow(input.dataset.qty || "");
+  if(row) row.order_qty = input.value;
 };
 document.getElementById("list").onchange = () => syncDock();
-document.getElementById("dockConfirm").onclick = () => confirmRows(checkedRows());
+document.getElementById("dockConfirm").onclick = () => openSheet(checkedRows());
+document.getElementById("sheetClose").onclick = () => closeSheet();
+document.getElementById("sheetCopy").onclick = async () => {
+  const text = sheetText(state.sheet);
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("คัดลอกแล้ว วางส่งฝ่ายขายได้");
+  } catch (err) {
+    alert(text);
+  }
+};
+document.getElementById("sheetCommit").onclick = () => confirmRows(state.sheet || []);
 document.getElementById("orders").onclick = (e) => {
   const btn = e.target.closest("[data-cancel]");
   if(btn) cancelOrder(btn.getAttribute("data-cancel"));

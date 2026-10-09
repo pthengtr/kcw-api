@@ -55,21 +55,30 @@ def ai_recommendation(
     *,
     live_company: float,
     mtp2: float | None,
+    incoming: float = 0.0,
     now: datetime | None = None,
 ) -> dict[str, Any] | None:
-    """Live company gap versus safe holding. None when it should not be shown."""
+    """Live company gap versus safe holding. None when it should not be shown.
+
+    incoming is ค้างรับ qty already ordered and not received. It covers the gap
+    the same way on-hand does, so a product is not suggested again after confirm.
+    """
     if str(row.get("dead_stock") or "").strip().lower() == "yes":
         return None
     if not is_fresh(row.get("generated_at"), now=now):
         return None
+    held = incoming if incoming and incoming > 0 else 0.0
+    covered = live_company + held
     target = policy_target(row)
-    if target is None or target < 1 or live_company >= target:
+    if target is None or target < 1 or covered >= target:
         return None
-    gap = target - live_company
+    gap = target - covered
     packed = pack_gap(gap, mtp2)
     if packed <= 0:
         return None
     reason = f"คงเหลือ {_qty_text(live_company)} / เป้า {_qty_text(target)}"
+    if held > 0:
+        reason = f"{reason} · ค้างรับ {_qty_text(held)}"
     extra = str(row.get("safe_holding_reason") or "").strip()
     if extra:
         reason = f"{reason} · {extra[:160]}"
@@ -95,42 +104,55 @@ def clean_propose_meta(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     source = str(raw.get("source") or "").strip().lower()
-    if source not in ("insight", "both"):
-        return None
     ai_qty = _num(raw.get("ai_qty"))
-    if ai_qty is None or ai_qty <= 0:
+    parts9_qty = _num(raw.get("parts9_qty"))
+    has_ai = ai_qty is not None and ai_qty > 0
+    has_parts9 = parts9_qty is not None and parts9_qty > 0
+    if source not in ("insight", "both", "parts9"):
+        source = "insight" if has_ai else "parts9"
+    if not has_ai and not has_parts9:
         return None
-    return {
+    out = {
         "source": source,
         "reason": str(raw.get("reason") or "").strip()[:300],
-        "ai_qty": ai_qty,
         "generated_at": str(raw.get("generated_at") or "").strip()[:40] or None,
     }
+    if has_ai:
+        out["ai_qty"] = ai_qty
+    if has_parts9:
+        out["parts9_qty"] = parts9_qty
+    return out
 
 
 def annotate_iclow_items(
     items: list[dict[str, Any]],
     policies: dict[str, dict[str, Any]],
     *,
+    incoming: dict[str, float] | None = None,
     now: datetime | None = None,
 ) -> None:
     """Attach an AI qty beside an existing ICLOW line. Does not change qty."""
+    held = incoming or {}
     for item in items:
         if item.get("source") != "iclow":
             continue
         if item.get("hq_blocked"):
             continue
-        policy = policies.get(str(item.get("bcode") or "").strip())
+        bcode = str(item.get("bcode") or "").strip()
+        policy = policies.get(bcode)
         if not policy:
             continue
         hq_qty = _num(item.get("hq_qtyoh2"))
         syp_qty = _num(item.get("syp_qtyoh2"))
         if hq_qty is None or syp_qty is None:
             continue
+        incoming_qty = float(held.get(bcode) or 0)
+        item["incoming_qty"] = incoming_qty
         advice = ai_recommendation(
             policy,
             live_company=hq_qty + syp_qty,
             mtp2=_num(item.get("mtp2")),
+            incoming=incoming_qty,
             now=now,
         )
         if not advice:
@@ -162,7 +184,8 @@ def build_insight_only_item(
         "qty": advice["ai_qty"],
         "ui": (hq_meta.get("ui1") or syp_meta.get("ui1") or "").strip(),
         "source": "insight",
-        "confirmable": False,
+        "confirmable": bool(vendor) and float(advice["ai_qty"]) > 0,
+        "incoming_qty": 0.0,
         "hq_qtyoh2": hq_qty,
         "syp_qtyoh2": syp_qty,
         "company_qtyoh2": hq_qty + syp_qty,
@@ -178,9 +201,11 @@ def insight_only_lines(
     iclow_bcodes: set[str],
     hq_icmas: dict[str, dict[str, Any]],
     syp_icmas: dict[str, dict[str, Any]],
+    incoming: dict[str, float] | None = None,
     now: datetime | None = None,
     limit: int = AI_ONLY_LIMIT,
 ) -> list[dict[str, Any]]:
+    held = incoming or {}
     ranked: list[tuple[float, str, dict[str, Any]]] = []
     for bcode, policy in policies.items():
         if bcode in iclow_bcodes:
@@ -191,19 +216,19 @@ def insight_only_lines(
             continue
         if hq_meta.get("blocked"):
             continue
+        incoming_qty = float(held.get(bcode) or 0)
         advice = ai_recommendation(
             policy,
             live_company=(_num(hq_meta.get("qtyoh2")) or 0.0) + (_num(syp_meta.get("qtyoh2")) or 0.0),
             mtp2=_num(hq_meta.get("mtp2")) or _num(syp_meta.get("mtp2")),
+            incoming=incoming_qty,
             now=now,
         )
         if not advice:
             continue
-        ranked.append((
-            float(advice["gap"]),
-            bcode,
-            build_insight_only_item(policy, advice, hq_meta=hq_meta, syp_meta=syp_meta),
-        ))
+        item = build_insight_only_item(policy, advice, hq_meta=hq_meta, syp_meta=syp_meta)
+        item["incoming_qty"] = incoming_qty
+        ranked.append((float(advice["gap"]), bcode, item))
     ranked.sort(key=lambda row: (-row[0], row[1]))
     return [row[2] for row in ranked[: max(0, limit)]]
 

@@ -8,8 +8,9 @@ Supabase `hq_po` is the purchase order. PARTS9 `POMAS` / `PODET` are not written
 
 1. The list reads HQ `dbo.ICLOW` rows still waiting to order (`ORDERED <> 'Y'`, not canceled).
 2. Default layout is **ตามเจ้าหนี้**. **ตามสินค้า** is the same rows, flat.
-3. AI safe stock comes from `product_insight.product_insights` (`site=hq`): company `safe_holding_qty` (else `suggested_order_qty`) minus live HQ+SYP `QTYOH2`, pack-rounded. Insight-only lines have no ICLOW id and cannot be confirmed.
-4. Confirm creates one Supabase PO per vendor (`HP` + Buddhist `YYMM` + 4 hex chars, e.g. `HP6910-A1B2`) and stamps those ICLOW ids: `ORDERED='Y'`, `DOCNO`, `DOCDATE`.
+3. AI safe stock comes from `product_insight.product_insights` (`site=hq`): company `safe_holding_qty` (else `suggested_order_qty`) minus live HQ+SYP `QTYOH2` and ค้างรับ qty (`ORDERED='Y'`, not received, not canceled), pack-rounded. An AI line can be confirmed when it has a vendor. Confirm inserts one ICLOW row already ordered.
+4. Each line shows the PARTS9 reorder qty (`QTYGET`, otherwise `QTYMIN − QTYOH2`) and the AI qty. The order qty is editable and starts from the ICLOW qty, or from the AI qty when there is no ICLOW row. Tapping a recommendation copies it into the order qty.
+5. **ดูใบส่งเจ้าหนี้** opens a clean sheet to screenshot or copy to the vendor’s salesperson. **บันทึกว่าสั่งแล้ว** is the step that writes ICLOW. Confirm creates one Supabase PO per vendor (`HP` + Buddhist `YYMM` + 4 hex chars, e.g. `HP6910-A1B2`) and writes the edited qty. An existing ICLOW row is stamped `ORDERED='Y'`, `DOCNO`, `DOCDATE`. An AI-only product gets a new ICLOW row with those fields set. Cancel of a stamped row clears the stamp. Cancel of a row this app inserted sets `CANCELED='Y'`.
 5. Receive is not written here. The ordered screen reads `RECEIVED` / `RCVDNO` and resolves `RCVDNO` to `PIMAS`. PARTS9 receive is what sets those fields.
 
 Cancel is allowed only while every line is still unreceived and `DOCNO` is still ours. It sets `ORDERED='N'`, clears `DOCNO` / `DOCDATE`, and marks the Supabase order canceled.

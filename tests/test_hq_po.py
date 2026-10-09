@@ -10,9 +10,11 @@ from src.hq_po.guards import (
     can_stamp_row,
     plan_cancel,
     plan_confirm,
+    plan_created,
     receive_view,
 )
 from src.hq_po.insight import ai_recommendation, annotate_iclow_items, insight_only_lines
+from src.hq_po.stock import parts9_order_qty
 from src.hq_po.ui import page
 
 
@@ -85,6 +87,14 @@ def test_ai_qty_is_company_gap_packed():
     assert advice["reason"].startswith("คงเหลือ 3 / เป้า 10")
 
 
+def test_ai_qty_subtracts_incoming():
+    advice = ai_recommendation(_policy(), live_company=3, mtp2=1, incoming=6, now=NOW)
+    assert advice is not None
+    assert advice["ai_qty"] == 1
+    assert "ค้างรับ 6" in advice["reason"]
+    assert ai_recommendation(_policy(), live_company=3, mtp2=1, incoming=7, now=NOW) is None
+
+
 def test_ai_skips_stale_dead_enough_and_subunit():
     stale = (NOW - timedelta(days=30)).isoformat()
     assert ai_recommendation(_policy(generated_at=stale), live_company=0, mtp2=1, now=NOW) is None
@@ -142,7 +152,7 @@ def test_insight_only_skips_iclow_and_blocked():
     }
     lines = insight_only_lines(policies, iclow_bcodes={"A1"}, hq_icmas=hq, syp_icmas=syp, now=NOW)
     assert [row["bcode"] for row in lines] == ["B2"]
-    assert lines[0]["confirmable"] is False
+    assert lines[0]["confirmable"] is True
     assert lines[0]["source"] == "insight"
     assert lines[0]["vendor"] == "V9"
     assert lines[0]["iclow_id"] is None
@@ -166,7 +176,13 @@ def test_plan_confirm_uses_live_row_and_rejects_other_vendor():
         vendor="V1",
     )
     assert planned[0]["bcode"] == "REAL"
-    assert planned[0]["qty"] == 3
+    assert planned[0]["qty"] == 99
+    fallback = plan_confirm(
+        [{"iclow_id": 7}],
+        {7: _live(iclow_id=7, qty=3, bcode="REAL")},
+        vendor="V1",
+    )
+    assert fallback[0]["qty"] == 3
     try:
         plan_confirm([{"iclow_id": None}], {1: _live()}, vendor="V1")
     except HqPoError as exc:
@@ -175,6 +191,30 @@ def test_plan_confirm_uses_live_row_and_rejects_other_vendor():
         raise AssertionError("expected not_confirmable")
     try:
         plan_confirm([{"iclow_id": 7}], {7: _live(iclow_id=7, vendor="V2")}, vendor="V1")
+    except HqPoError as exc:
+        assert exc.code == "vendor_mismatch"
+    else:
+        raise AssertionError("expected vendor_mismatch")
+
+
+def test_plan_created_uses_server_line():
+    resolved = {
+        "B2": {
+            "bcode": "B2",
+            "vendor": "V9",
+            "qty": 4,
+            "descr": "from-server",
+            "propose_meta": {"source": "insight", "ai_qty": 4, "reason": "gap"},
+        }
+    }
+    planned = plan_created([{"bcode": "B2", "qty": 99}], resolved, vendor="V9")
+    assert planned[0]["qty"] == 99
+    fallback = plan_created([{"bcode": "B2"}], resolved, vendor="V9")
+    assert fallback[0]["qty"] == 4
+    assert planned[0]["iclow_id"] is None
+    assert planned[0]["propose_meta"]["iclow_origin"] == "created"
+    try:
+        plan_created([{"bcode": "B2"}], resolved, vendor="V1")
     except HqPoError as exc:
         assert exc.code == "vendor_mismatch"
     else:
@@ -200,11 +240,20 @@ def test_receive_view_does_not_invent_a_write():
     assert receive_view({"received": "N"})["label"] == "ค้างรับ"
 
 
+def test_parts9_order_qty_prefers_lot_then_min_gap():
+    assert parts9_order_qty(qtyget=12, qtymin=4, qtyoh=1) == 12
+    assert parts9_order_qty(qtyget=0, qtymin=10, qtyoh=3) == 7
+    assert parts9_order_qty(qtyget=0, qtymin=2, qtyoh=5) is None
+    assert parts9_order_qty(qtyget=8, qtymin=-1, qtyoh=0) is None
+
+
 def test_page_defaults_vendor_view():
     html = page(user_name="Pannawit", stamp_enabled=False)
     assert "ตามเจ้าหนี้" in html
     assert "ตามสินค้า" in html
-    assert "ไม่แตะ ICLOW" in html
+    assert "data-key" in html
+    assert "PARTS9" in html
+    assert "ดูใบส่งเจ้าหนี้" in html
     assert "HQ_PO_ICLOW_STAMP_ENABLED" in html
     assert "กำลังโหลดรายการรอสั่ง" in html
 
@@ -239,9 +288,11 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
         "load_insight_policies",
         lambda: {"A1": _policy(), "B2": _policy(bcode="B2")},
     )
+    monkeypatch.setattr(suggest, "fetch_incoming_qty", lambda: {})
+    monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
     monkeypatch.setattr(suggest, "_peek_insight_cache", lambda _key: None)
 
-    def ensure(policies, bcodes):
+    def ensure(policies, bcodes, incoming=None):
         scanned.append(len([b for b in policies if b not in bcodes]))
 
     monkeypatch.setattr(suggest, "_ensure_insight_future", ensure)

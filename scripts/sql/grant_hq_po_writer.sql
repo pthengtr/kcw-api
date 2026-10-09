@@ -4,5 +4,6 @@
 
 GRANT SELECT ON dbo.ICLOW TO [python_writer];
 GRANT UPDATE ON dbo.ICLOW TO [python_writer];
+GRANT INSERT ON dbo.ICLOW TO [python_writer];
 GRANT SELECT ON dbo.APMAS TO [python_writer];
 GRANT SELECT ON dbo.ICMAS TO [python_writer];
