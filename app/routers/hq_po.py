@@ -15,6 +15,7 @@ from src.hq_po.service import (
     list_open_orders,
     suggest_payload,
 )
+from src.hq_po.sheet import build_sheet_forms
 from src.hq_po.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 from src.stock_check.net import is_tailscale_cg_nat
@@ -30,6 +31,30 @@ class ConfirmBody(BaseModel):
 
 class CancelBody(BaseModel):
     reason: str | None = None
+
+
+class SheetLineBody(BaseModel):
+    bcode: str = ""
+    descr: str = ""
+    qty: float = 0
+    ui: str = ""
+    model: str = ""
+    brand: str = ""
+    pcode: str = ""
+    mcode: str = ""
+    price: float | None = None
+
+
+class SheetGroupBody(BaseModel):
+    vendor: str = ""
+    vendor_name: str = ""
+    docno: str = ""
+    docdate: str = ""
+    lines: list[SheetLineBody] = Field(default_factory=list)
+
+
+class SheetBody(BaseModel):
+    groups: list[SheetGroupBody] = Field(default_factory=list)
 
 
 def _settings():
@@ -181,6 +206,17 @@ def api_insight(request: Request):
         return insight_only_payload()
     except Exception as exc:
         return JSONResponse({"error": "insight_failed", "message": str(exc)}, status_code=502)
+
+
+@router.post("/api/sheet")
+def api_sheet(body: SheetBody, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return build_sheet_forms([group.model_dump() for group in body.groups])
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "empty" else 409)
 
 
 @router.get("/api/orders")

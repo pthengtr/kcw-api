@@ -254,6 +254,10 @@ def test_page_defaults_vendor_view():
     assert "data-key" in html
     assert "PARTS9" in html
     assert "ดูใบส่งเจ้าหนี้" in html
+    assert "แบบย่อ" in html
+    assert "แบบเต็ม" in html
+    assert "คัดลอกส่งฝ่ายขาย" in html
+    assert "/hq-po/api/sheet" in html
     assert "HQ_PO_ICLOW_STAMP_ENABLED" in html
     assert "กำลังโหลดรายการรอสั่ง" in html
 

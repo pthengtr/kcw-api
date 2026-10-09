@@ -69,8 +69,11 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .qty-in:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 #sheet{position:fixed;inset:0;z-index:20;background:#eef2f7;overflow:auto;padding:12px 12px calc(118px + env(safe-area-inset-bottom))}
 #sheet[hidden]{display:none}
-.sheet-top{display:flex;gap:8px;margin-bottom:12px}
-.sheet-top button{flex:1;min-height:42px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:650;font-size:14px}
+.sheet-top{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.sheet-top button{flex:1 1 40%;min-height:42px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:650;font-size:14px}
+.sheet-top button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.sheet-preview{overflow:auto;-webkit-overflow-scrolling:touch}
+#printSheet{display:none}
 .doc{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px;margin:0 auto 12px;max-width:640px}
 .doc h2{margin:0;font-size:20px}
 .doc .who{margin:4px 0 12px;color:var(--muted);font-size:13px}
@@ -82,7 +85,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .sheet-foot p{margin:0 0 8px;font-size:12px;color:var(--muted);text-align:center}
 .sheet-foot button{width:100%;min-height:46px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;font-size:15px}
 input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--blue)}
-.actions{padding:10px 12px;border-top:1px solid var(--line);display:flex}
+.actions{padding:10px 12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
 .actions button{width:100%;min-height:44px;background:var(--blue);color:#fff;border:0;border-radius:12px;padding:10px 12px;font-weight:650;font-size:14px}
 .actions button.ghost{background:#fff;color:var(--warn);border:1px solid #fdba74}
 .actions button:disabled{opacity:.6}
@@ -102,6 +105,10 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 #busy{position:fixed;inset:0;z-index:30;background:rgba(15,23,42,.38);display:flex;align-items:center;justify-content:center;padding:24px}
 #busy[hidden]{display:none}
 .busy-card{background:#fff;border-radius:16px;padding:22px 26px;display:flex;flex-direction:column;align-items:center;gap:12px;min-width:180px;box-shadow:0 12px 40px rgba(15,23,42,.18);color:var(--blue-deep);font-weight:600}
+@media print{
+  body[data-print="po"] > *:not(#printSheet){display:none !important}
+  body[data-print="po"] #printSheet{display:block !important;background:#fff;color:#111}
+}
 @media (min-width:720px){
   header{padding-left:24px;padding-right:24px}
   .tabs{max-width:420px}
@@ -147,14 +154,18 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <div id="sheet" hidden>
   <div class="sheet-top">
     <button type="button" id="sheetClose">ปิด</button>
+    <button type="button" id="varSimple" class="on">แบบย่อ</button>
+    <button type="button" id="varFull">แบบเต็ม</button>
+    <button type="button" id="sheetPrint">พิมพ์</button>
     <button type="button" id="sheetCopy">คัดลอกส่งฝ่ายขาย</button>
   </div>
   <div id="sheetBody"></div>
   <div class="sheet-foot">
-    <p>ส่งให้ฝ่ายขายก่อน แล้วค่อยบันทึกว่าสั่งแล้ว</p>
+    <p id="sheetFootNote">ส่งให้ฝ่ายขายก่อน แล้วค่อยบันทึกว่าสั่งแล้ว</p>
     <button type="button" id="sheetCommit">บันทึกว่าสั่งแล้ว</button>
   </div>
 </div>
+<div id="printSheet" aria-hidden="true"></div>
 <div id="busy" hidden>
   <div class="busy-card"><span class="spin" aria-hidden="true"></span><div id="busyText">กำลังดำเนินการ…</div></div>
 </div>
@@ -163,7 +174,7 @@ const USER = __USER_JSON__;
 const STAMP = __STAMP__;
 let savedView = "vendor";
 try { savedView = localStorage.getItem("hqpo-view") || "vendor"; } catch (e) {}
-const state = {items:[], vendors:[], view: savedView, source:"all", q:"", orders:[], busy:false, sheet:[]};
+const state = {items:[], vendors:[], view: savedView, source:"all", q:"", orders:[], busy:false, sheet:[], forms:null, variant:"simple", sheetSaved:false};
 document.getElementById("who").textContent = USER;
 if(!STAMP){
   document.getElementById("banner").innerHTML = '<div class="note">ยังไม่เปิดบันทึกลง ICLOW (HQ_PO_ICLOW_STAMP_ENABLED) — ดูรายการและคำแนะนำ AI ได้ แต่ยืนยันสั่งซื้อยังไม่ได้</div>';
@@ -402,41 +413,80 @@ async function confirmRows(rows){
   alert("สั่งแล้ว " + docs.filter(Boolean).join(", "));
   await loadSuggest();
 }
-function todayTh(){
-  const d = new Date();
-  const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
-  return d.getDate() + " " + months[d.getMonth()] + " " + (d.getFullYear()+543);
-}
 function groupsOf(rows){
   const groups = new Map();
   for(const row of rows){
     if(!row || !row.confirmable || orderQty(row) <= 0) continue;
     const key = row.vendor || "";
-    if(!groups.has(key)) groups.set(key, {vendor:key, vendor_name:row.vendor_name, lines:[]});
+    if(!groups.has(key)) groups.set(key, {vendor:key, vendor_name:row.vendor_name, docno:row.docno||"", docdate:row.docdate||"", lines:[]});
     groups.get(key).lines.push(row);
   }
   return [...groups.values()];
 }
-function sheetText(rows){
-  return groupsOf(rows).map(g => {
-    const lines = g.lines.map(row => `${row.bcode||"—"} ${row.descr||""} ${qtyText(orderQty(row))} ${row.ui||""}`.trim());
-    return [`ใบสั่งซื้อ`, vendorTitle(g), todayTh(), ""].concat(lines).join("\n");
-  }).join("\n\n");
+function sheetPayload(){
+  return {
+    groups: groupsOf(state.sheet).map(g => ({
+      vendor: g.vendor,
+      vendor_name: g.vendor_name || "",
+      docno: g.docno || "",
+      docdate: g.docdate || "",
+      lines: g.lines.map(row => ({
+        bcode: row.bcode || "",
+        descr: row.descr || "",
+        qty: orderQty(row),
+        ui: row.ui || "",
+        model: row.model || "",
+        brand: row.brand || "",
+        pcode: row.pcode || "",
+        mcode: row.mcode || "",
+      })),
+    })),
+  };
 }
-function renderSheet(){
-  const groups = groupsOf(state.sheet);
-  document.getElementById("sheetBody").innerHTML = groups.map(g => {
-    const rows = g.lines.map(row => `<tr><td><div class="code"><span class="sku">${esc(row.bcode||"—")}</span></div><div>${esc(row.descr||"")}</div></td><td class="num">${esc(qtyText(orderQty(row)))}</td><td>${esc(row.ui||"")}</td></tr>`).join("");
-    return `<article class="doc"><h2>ใบสั่งซื้อ</h2><div class="who">${esc(vendorTitle(g))} · ${esc(todayTh())}</div><table><thead><tr><th>สินค้า</th><th class="num">จำนวน</th><th>หน่วย</th></tr></thead><tbody>${rows}</tbody></table></article>`;
-  }).join("") || '<div class="empty">ไม่มีรายการ</div>';
+function showVariant(variant){
+  state.variant = variant === "full" ? "full" : "simple";
+  document.getElementById("varSimple").classList.toggle("on", state.variant==="simple");
+  document.getElementById("varFull").classList.toggle("on", state.variant==="full");
+  const html = (state.forms && state.forms[state.variant + "_html"]) || "";
+  document.getElementById("sheetBody").innerHTML = html
+    ? `<div class="sheet-preview">${html}</div>`
+    : '<div class="empty">ไม่มีแบบฟอร์ม</div>';
 }
-function openSheet(rows){
+function setSheetMode(saved){
+  state.sheetSaved = !!saved;
+  document.getElementById("sheetCommit").hidden = !!saved;
+  document.getElementById("sheetFootNote").textContent = saved
+    ? "ใบที่บันทึกแล้ว — พิมพ์หรือคัดลอกส่งฝ่ายขายได้"
+    : "ส่งให้ฝ่ายขายก่อน แล้วค่อยบันทึกว่าสั่งแล้ว";
+}
+async function loadSheetForms(){
+  document.getElementById("sheetBody").innerHTML = spinner("กำลังจัดใบสั่งซื้อ…");
+  state.forms = null;
+  try {
+    const res = await fetch("/hq-po/api/sheet", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(sheetPayload()),
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.message || "จัดใบสั่งซื้อไม่สำเร็จ");
+    state.forms = data;
+    showVariant(state.variant);
+  } catch (err) {
+    document.getElementById("sheetBody").innerHTML = `<div class="empty">${esc(err.message || "จัดใบสั่งซื้อไม่สำเร็จ")}</div>`;
+  }
+}
+function currentSheetText(){
+  return (state.forms && state.forms[state.variant + "_text"]) || "";
+}
+function openSheet(rows, opts){
   const picked = (rows||[]).filter(row => row && row.confirmable && orderQty(row) > 0);
   if(!picked.length){ alert("เลือกรายการและใส่จำนวน"); return; }
   state.sheet = picked;
-  renderSheet();
+  setSheetMode(!!(opts && opts.saved));
   document.getElementById("sheet").hidden = false;
   window.scrollTo(0,0);
+  loadSheetForms();
 }
 function closeSheet(){
   state.sheet = [];
@@ -454,7 +504,8 @@ async function loadOrders(){
     if(!res.ok){ host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>'; return; }
     const data = await res.json();
     const orders = data.orders || [];
-    if(!orders.length){ host.innerHTML = '<div class="empty">ยังไม่มีใบสั่งซื้อ</div>'; return; }
+    if(!orders.length){ host.innerHTML = '<div class="empty">ยังไม่มีใบสั่งซื้อ</div>'; state.orders = []; return; }
+    state.orders = orders;
     host.innerHTML = orders.map(order => {
       const badge = order.receive_label==="รับแล้ว" ? "done" : "wait";
       const lines = (order.lines||[]).map(line => {
@@ -463,9 +514,11 @@ async function loadOrders(){
         return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div><div class="meta">${esc(rec.label||"")}${pi}</div></div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
       }).join("");
       const cancel = STAMP && order.receive_label!=="รับแล้ว"
-        ? `<div class="actions"><button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button></div>` : "";
+        ? `<button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button>` : "";
+      const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์ / คัดลอก</button>`;
+      const actions = `<div class="actions">${reprint}${cancel}</div>`;
       const title = order.vendor_name || order.vendor_acctno || "ไม่ระบุเจ้าหนี้";
-      return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${lines}${cancel}</div>`;
+      return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${lines}${actions}</div>`;
     }).join("");
   } catch (err) {
     host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>';
@@ -532,8 +585,19 @@ document.getElementById("list").oninput = (e) => {
 document.getElementById("list").onchange = () => syncDock();
 document.getElementById("dockConfirm").onclick = () => openSheet(checkedRows());
 document.getElementById("sheetClose").onclick = () => closeSheet();
+document.getElementById("varSimple").onclick = () => { if(state.forms) showVariant("simple"); };
+document.getElementById("varFull").onclick = () => { if(state.forms) showVariant("full"); };
+document.getElementById("sheetPrint").onclick = () => {
+  const html = (state.forms && state.forms[state.variant + "_html"]) || "";
+  if(!html){ alert("กำลังจัดใบสั่งซื้อ"); return; }
+  document.getElementById("printSheet").innerHTML = html;
+  document.body.setAttribute("data-print", "po");
+  window.print();
+};
+window.addEventListener("afterprint", () => document.body.removeAttribute("data-print"));
 document.getElementById("sheetCopy").onclick = async () => {
-  const text = sheetText(state.sheet);
+  const text = currentSheetText();
+  if(!text){ alert("กำลังจัดใบสั่งซื้อ"); return; }
   try {
     await navigator.clipboard.writeText(text);
     alert("คัดลอกแล้ว วางส่งฝ่ายขายได้");
@@ -542,7 +606,26 @@ document.getElementById("sheetCopy").onclick = async () => {
   }
 };
 document.getElementById("sheetCommit").onclick = () => confirmRows(state.sheet || []);
+function openSavedSheet(id){
+  const order = (state.orders || []).find(row => row.order_id === id);
+  if(!order) return;
+  const rows = (order.lines || []).filter(line => !line.canceled_at).map(line => ({
+    confirmable: true,
+    vendor: order.vendor_acctno || "",
+    vendor_name: order.vendor_name || "",
+    docno: order.docno || "",
+    docdate: order.ordered_at || "",
+    bcode: line.bcode || "",
+    descr: line.descr || "",
+    qty: line.qty,
+    order_qty: line.qty,
+    ui: line.ui || "",
+  }));
+  openSheet(rows, {saved:true});
+}
 document.getElementById("orders").onclick = (e) => {
+  const sheet = e.target.closest("[data-sheet]");
+  if(sheet){ openSavedSheet(sheet.getAttribute("data-sheet")); return; }
   const btn = e.target.closest("[data-cancel]");
   if(btn) cancelOrder(btn.getAttribute("data-cancel"));
 };
