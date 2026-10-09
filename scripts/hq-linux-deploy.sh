@@ -43,6 +43,30 @@ _units=(kcw-tiger-pay kcw-stock-check kcw-parts9-explorer kcw-ops kcw-pay-notes)
 if systemctl --user cat kcw-transfer.service &>/dev/null; then
   _units+=(kcw-transfer)
 fi
+
+# สั่งซื้อ is HQ-only. Install the unit once if it was never enabled, then
+# restart it with the rest so a git pull actually reaches port 8793.
+_install_hq_po_unit() {
+  local src="${REPO}/scripts/systemd/kcw-hq-po.service"
+  local dest="${HOME}/.config/systemd/user/kcw-hq-po.service"
+  if systemctl --user cat kcw-hq-po.service &>/dev/null; then
+    return 0
+  fi
+  if [[ ! -f "$src" ]]; then
+    echo "WARNING: kcw-hq-po unit file missing; service not restarted" >&2
+    return 0
+  fi
+  mkdir -p "${HOME}/.config/systemd/user"
+  cp "$src" "$dest"
+  systemctl --user daemon-reload
+  systemctl --user enable kcw-hq-po.service
+}
+if ! _install_hq_po_unit; then
+  echo "WARNING: could not install kcw-hq-po.service" >&2
+fi
+if systemctl --user cat kcw-hq-po.service &>/dev/null; then
+  _units+=(kcw-hq-po)
+fi
 for u in "${_units[@]}"; do
   systemctl --user restart "${u}.service"
 done
