@@ -18,7 +18,7 @@ from src.hq_po.guards import HqPoError, plan_cancel, plan_confirm, receive_view
 from src.hq_po.iclow_read import fetch_iclow_by_ids, fetch_vendor_names
 from src.hq_po.insight import clean_propose_meta
 from src.hq_po.stamp import revert_ordered, stamp_ordered
-from src.hq_po.suggest import build_suggest
+from src.hq_po.suggest import build_insight_only, build_suggest
 
 
 def suggest_payload() -> dict[str, Any]:
@@ -26,6 +26,10 @@ def suggest_payload() -> dict[str, Any]:
     payload = build_suggest()
     payload["stamp_enabled"] = settings.stamp_enabled
     return payload
+
+
+def insight_only_payload() -> dict[str, Any]:
+    return build_insight_only()
 
 
 def _vendor_name(acctno: str, hinted: str | None) -> str | None:

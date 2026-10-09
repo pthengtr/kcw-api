@@ -8,7 +8,13 @@ from pydantic import BaseModel, Field
 
 from src.hq_po.config import get_hq_po_settings
 from src.hq_po.guards import HqPoError
-from src.hq_po.service import cancel_order, confirm_order, list_open_orders, suggest_payload
+from src.hq_po.service import (
+    cancel_order,
+    confirm_order,
+    insight_only_payload,
+    list_open_orders,
+    suggest_payload,
+)
 from src.hq_po.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 from src.stock_check.net import is_tailscale_cg_nat
@@ -164,6 +170,17 @@ def api_suggest(request: Request):
         return suggest_payload()
     except Exception as exc:
         return JSONResponse({"error": "suggest_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/insight")
+def api_insight(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return insight_only_payload()
+    except Exception as exc:
+        return JSONResponse({"error": "insight_failed", "message": str(exc)}, status_code=502)
 
 
 @router.get("/api/orders")
