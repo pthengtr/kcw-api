@@ -1,0 +1,34 @@
+# HQ purchase order (`kcw-hq-po`)
+
+Standalone app on port **8793**, separate from transfer (`:8792`). LINE command: `สั่งซื้อ`.
+
+Supabase `hq_po` is the purchase order. PARTS9 `POMAS` / `PODET` are not written.
+
+## Flow
+
+1. The list reads HQ `dbo.ICLOW` rows still waiting to order (`ORDERED <> 'Y'`, not canceled).
+2. Default layout is **ตามเจ้าหนี้**. **ตามสินค้า** is the same rows, flat.
+3. AI safe stock comes from `product_insight.product_insights` (`site=hq`): company `safe_holding_qty` (else `suggested_order_qty`) minus live HQ+SYP `QTYOH2`, pack-rounded. Insight-only lines have no ICLOW id and cannot be confirmed.
+4. Confirm creates one Supabase PO per vendor (`HP` + Buddhist `YYMM` + 4 hex chars, e.g. `HP6910-A1B2`) and stamps those ICLOW ids: `ORDERED='Y'`, `DOCNO`, `DOCDATE`.
+5. Receive is not written here. The ordered screen reads `RECEIVED` / `RCVDNO` and resolves `RCVDNO` to `PIMAS`. PARTS9 receive is what sets those fields.
+
+Cancel is allowed only while every line is still unreceived and `DOCNO` is still ours. It sets `ORDERED='N'`, clears `DOCNO` / `DOCDATE`, and marks the Supabase order canceled.
+
+## Enable the stamp
+
+Listing works with the stamp flag off. Confirm and cancel refuse until both of these are done:
+
+1. Run [`scripts/sql/grant_hq_po_writer.sql`](../scripts/sql/grant_hq_po_writer.sql) on HQ `KSS` as a SQL admin.
+2. Set `HQ_PO_ICLOW_STAMP_ENABLED=true` in `.env` and restart `kcw-hq-po`.
+
+```bash
+systemctl --user enable --now kcw-hq-po.service
+```
+
+Optional URLs for the LINE button: `HQ_PO_PUBLIC_BASE_URL`, `HQ_PO_TAILSCALE_BASE_URL`. If unset, the bot rewrites the HQ explorer heartbeat onto port 8793.
+
+Apply the Supabase migrations `20261009120000_hq_po_schema.sql` and `20261009120100_hq_po_grants.sql` before confirming an order.
+
+## Known limit
+
+If the PARTS9 receive screen only flips ICLOW rows that belong to a real `POMAS`, rows stamped by this app stay ค้างรับ until that is checked on one test SKU. This service will not set `RECEIVED` itself.
