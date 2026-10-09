@@ -121,6 +121,63 @@ def fetch_iclow_by_ids(iclow_ids: list[int]) -> dict[int, dict[str, Any]]:
     return out
 
 
+def fetch_incoming_qty() -> dict[str, float]:
+    """Qty already ordered and not received, by product. This is ค้างรับ."""
+    engine = get_site_engine("hq")
+    sql = text(
+        f"""
+        SELECT {_NV('BCODE', 40)} AS BCODE, SUM({_QTY}) AS QTY
+        FROM dbo.ICLOW
+        WHERE {_NV('ORDERED', 10)} = 'Y'
+          AND {_NV('RECEIVED', 10)} <> 'Y'
+          AND {_NOT_CANCELED}
+        GROUP BY {_NV('BCODE', 40)}
+        """
+    )
+    out: dict[str, float] = {}
+    with engine.connect() as conn:
+        for row in conn.execute(sql).mappings().all():
+            bcode = str(row.get("BCODE") or "").strip()
+            qty = _qty(row.get("QTY"))
+            if bcode and qty > 0:
+                out[bcode] = qty
+    return out
+
+
+def fetch_unordered_bcodes(bcodes: list[str]) -> set[str]:
+    """Products that already have a waiting-to-order ICLOW row."""
+    codes = []
+    seen: set[str] = set()
+    for raw in bcodes:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if not codes:
+        return set()
+    engine = get_site_engine("hq")
+    out: set[str] = set()
+    with engine.connect() as conn:
+        for start in range(0, len(codes), 80):
+            chunk = codes[start : start + 80]
+            params = {f"b{n}": code for n, code in enumerate(chunk)}
+            placeholders = ", ".join(f":b{n}" for n in range(len(chunk)))
+            sql = text(
+                f"""
+                SELECT DISTINCT {_NV('BCODE', 40)} AS BCODE
+                FROM dbo.ICLOW
+                WHERE {_NV('BCODE', 40)} IN ({placeholders})
+                  AND {_NOT_CANCELED}
+                  AND {_ORDERED_N}
+                """
+            )
+            for row in conn.execute(sql, params).mappings().all():
+                bcode = str(row.get("BCODE") or "").strip()
+                if bcode:
+                    out.add(bcode)
+    return out
+
+
 def fetch_vendor_names(acctnos: list[str]) -> dict[str, str]:
     codes = []
     seen: set[str] = set()

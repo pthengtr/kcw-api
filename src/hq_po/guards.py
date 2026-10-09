@@ -72,7 +72,7 @@ def plan_confirm(
     *,
     vendor: str,
 ) -> list[dict[str, Any]]:
-    """Checked lines for one vendor. Qty and identity come from live ICLOW, not the client."""
+    """Checked lines for one vendor. Identity comes from live ICLOW. Qty is the operator's."""
     if not lines:
         raise HqPoError("empty", "ยังไม่ได้เลือกรายการ")
     vendor_key = (vendor or "").strip()
@@ -101,7 +101,7 @@ def plan_confirm(
             raise HqPoError(blocked, f"{live.get('bcode') or iclow_id} รับแล้ว")
         if blocked == "canceled":
             raise HqPoError(blocked, f"{live.get('bcode') or iclow_id} ถูกยกเลิก")
-        qty = _qty(live.get("qty"))
+        qty = chosen_qty(raw, live.get("qty"))
         if qty <= 0:
             raise HqPoError("bad_qty", f"{live.get('bcode') or iclow_id} จำนวนไม่ถูกต้อง")
         out.append(
@@ -118,6 +118,42 @@ def plan_confirm(
     return out
 
 
+def plan_created(
+    lines: list[dict[str, Any]],
+    resolved: dict[str, dict[str, Any]],
+    *,
+    vendor: str,
+) -> list[dict[str, Any]]:
+    """AI lines with no ICLOW row yet. Vendor comes from the product. Qty is the operator's."""
+    if not lines:
+        return []
+    vendor_key = (vendor or "").strip()
+    if not vendor_key:
+        raise HqPoError("vendor_mismatch", "รายการ AI ต้องมีเจ้าหนี้")
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in lines:
+        bcode = str(raw.get("bcode") or "").strip()
+        if not bcode:
+            raise HqPoError("not_confirmable", "ไม่มีรหัสสินค้า")
+        if bcode in seen:
+            raise HqPoError("duplicate", f"เลือก {bcode} ซ้ำ")
+        seen.add(bcode)
+        live = resolved.get(bcode)
+        if not live:
+            raise HqPoError("not_confirmable", f"สั่ง {bcode} ไม่ได้")
+        live_vendor = str(live.get("vendor") or "").strip()
+        if live_vendor != vendor_key:
+            raise HqPoError("vendor_mismatch", "ยืนยันได้ครั้งละหนึ่งเจ้าหนี้")
+        qty = chosen_qty(raw, live.get("qty"))
+        if qty <= 0:
+            raise HqPoError("bad_qty", f"{bcode} จำนวนไม่ถูกต้อง")
+        meta = dict(live.get("propose_meta") or {})
+        meta["iclow_origin"] = "created"
+        out.append({**live, "iclow_id": None, "qty": qty, "propose_meta": meta})
+    return out
+
+
 def plan_cancel(live_rows: list[dict[str, Any]], docno: str) -> None:
     if not live_rows:
         raise HqPoError("missing", "ไม่พบแถว ICLOW ของใบนี้")
@@ -129,8 +165,20 @@ def plan_cancel(live_rows: list[dict[str, Any]], docno: str) -> None:
             raise HqPoError(blocked, "DOCNO บน ICLOW ไม่ใช่ใบนี้แล้ว")
 
 
+_QTY_CAP = 100000.0
+
+
 def _qty(value: Any) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def chosen_qty(raw: dict[str, Any], fallback: Any) -> float:
+    """Operator qty wins. Fall back to the list qty when the field was left empty."""
+    asked = _qty(raw.get("qty"))
+    qty = asked if asked > 0 else _qty(fallback)
+    if qty <= 0 or qty > _QTY_CAP:
+        return 0.0
+    return qty

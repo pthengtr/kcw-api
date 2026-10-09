@@ -9,18 +9,27 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from src.hq_po.group import group_by_vendor, sort_products
-from src.hq_po.iclow_read import fetch_to_order_rows, fetch_vendor_names
+from src.hq_po.iclow_read import fetch_incoming_qty, fetch_to_order_rows, fetch_vendor_names
 from src.hq_po.insight import annotate_iclow_items, insight_only_lines, load_insight_policies
-from src.hq_po.stock import fetch_dual_stock
+from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
 
 logger = logging.getLogger(__name__)
 
 _INSIGHT_TTL_SEC = 300.0
 _insight_lock = threading.Lock()
-_insight_cache: tuple[float, frozenset[str], list[dict[str, Any]]] | None = None
+_insight_cache: tuple[float, tuple[Any, ...], list[dict[str, Any]]] | None = None
 _insight_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hq-po-insight")
 _insight_future: Future | None = None
-_insight_future_key: frozenset[str] | None = None
+_insight_future_key: tuple[Any, ...] | None = None
+
+
+def insight_cache_key(iclow_bcodes: set[str], incoming: dict[str, float]) -> tuple[Any, ...]:
+    held = frozenset(
+        (str(bcode), round(float(qty), 4))
+        for bcode, qty in (incoming or {}).items()
+        if str(bcode or "").strip() and float(qty or 0) > 0
+    )
+    return (frozenset(iclow_bcodes), held)
 
 
 def _attach_stock(item: dict[str, Any], hq: dict[str, Any] | None, syp: dict[str, Any] | None) -> None:
@@ -76,7 +85,9 @@ def _peek_insight_cache(key: frozenset[str]) -> list[dict[str, Any]] | None:
 
 
 def _compute_insight_only(
-    policies: dict[str, dict[str, Any]], iclow_bcodes: frozenset[str]
+    policies: dict[str, dict[str, Any]],
+    iclow_bcodes: frozenset[str],
+    incoming: dict[str, float],
 ) -> list[dict[str, Any]]:
     """Live gap for products that are not already on the ICLOW list.
 
@@ -85,7 +96,13 @@ def _compute_insight_only(
     codes = [b for b in policies if b not in iclow_bcodes]
     hq, syp, ok = fetch_dual_stock(codes) if codes else ({}, {}, True)
     lines = (
-        insight_only_lines(policies, iclow_bcodes=set(iclow_bcodes), hq_icmas=hq, syp_icmas=syp)
+        insight_only_lines(
+            policies,
+            iclow_bcodes=set(iclow_bcodes),
+            hq_icmas=hq,
+            syp_icmas=syp,
+            incoming=incoming,
+        )
         if ok
         else []
     )
@@ -99,16 +116,19 @@ def _compute_insight_only(
         vendor = line.get("vendor") or ""
         line["vendor_name"] = extra_names.get(vendor)
     with _insight_lock:
-        _insight_cache = (time.monotonic(), iclow_bcodes, lines)
+        _insight_cache = (time.monotonic(), insight_cache_key(set(iclow_bcodes), incoming), lines)
     return lines
 
 
 def _ensure_insight_future(
-    policies: dict[str, dict[str, Any]], iclow_bcodes: set[str]
+    policies: dict[str, dict[str, Any]],
+    iclow_bcodes: set[str],
+    incoming: dict[str, float] | None = None,
 ) -> Future:
     """One scan at a time. A warm cache or an in-flight scan is reused."""
     global _insight_future, _insight_future_key
-    key = frozenset(iclow_bcodes)
+    held = dict(incoming or {})
+    key = insight_cache_key(set(iclow_bcodes), held)
     with _insight_lock:
         cached = _insight_cache
         now_m = time.monotonic()
@@ -123,8 +143,23 @@ def _ensure_insight_future(
         ):
             return _insight_future
         _insight_future_key = key
-        _insight_future = _insight_executor.submit(_compute_insight_only, policies, key)
+        _insight_future = _insight_executor.submit(
+            _compute_insight_only, policies, frozenset(iclow_bcodes), held
+        )
         return _insight_future
+
+
+def _attach_parts9(items: list[dict[str, Any]]) -> None:
+    codes = [str(item.get("bcode") or "").strip() for item in items]
+    try:
+        found = fetch_parts9_qty(codes)
+    except Exception:
+        logger.warning("hq po parts9 qty read failed", exc_info=True)
+        return
+    for item in items:
+        qty = found.get(str(item.get("bcode") or "").strip())
+        if qty:
+            item["parts9_qty"] = qty
 
 
 def build_suggest() -> dict[str, Any]:
@@ -151,16 +186,25 @@ def build_suggest() -> dict[str, Any]:
     policies = load_insight_policies() if stock_ok else {}
     extra: list[dict[str, Any]] = []
     insight_pending = False
+    incoming: dict[str, float] = {}
+    incoming_ok = False
     if policies:
-        annotate_iclow_items(items, policies)
-        iclow_bcodes = {item["bcode"] for item in items if item.get("bcode")}
-        cached = _peek_insight_cache(frozenset(iclow_bcodes))
-        if cached is not None:
-            extra = cached
-        else:
-            _ensure_insight_future(policies, iclow_bcodes)
-            insight_pending = True
+        try:
+            incoming = fetch_incoming_qty()
+            incoming_ok = True
+        except Exception:
+            logger.warning("hq po incoming qty read failed", exc_info=True)
+        annotate_iclow_items(items, policies, incoming=incoming)
+        if incoming_ok:
+            iclow_bcodes = {item["bcode"] for item in items if item.get("bcode")}
+            cached = _peek_insight_cache(insight_cache_key(iclow_bcodes, incoming))
+            if cached is not None:
+                extra = cached
+            else:
+                _ensure_insight_future(policies, iclow_bcodes, incoming)
+                insight_pending = True
         items.extend(extra)
+    _attach_parts9(items)
     return {
         "items": sort_products(items),
         "vendors": group_by_vendor(items),
@@ -176,5 +220,11 @@ def build_insight_only() -> dict[str, Any]:
     iclow_bcodes = {str(row.get("bcode") or "").strip() for row in rows if row.get("bcode")}
     if not policies:
         return {"items": []}
-    lines = _ensure_insight_future(policies, iclow_bcodes).result()
+    try:
+        incoming = fetch_incoming_qty()
+    except Exception:
+        logger.warning("hq po incoming qty read failed", exc_info=True)
+        return {"items": []}
+    lines = _ensure_insight_future(policies, iclow_bcodes, incoming).result()
+    _attach_parts9(lines)
     return {"items": lines}
