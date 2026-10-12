@@ -72,7 +72,7 @@ def plan_confirm(
     *,
     vendor: str,
 ) -> list[dict[str, Any]]:
-    """Checked lines for one vendor. Identity comes from live ICLOW. Qty is the operator's."""
+    """Checked lines for one vendor. Product identity comes from live ICLOW. Qty and vendor are the operator's."""
     if not lines:
         raise HqPoError("empty", "ยังไม่ได้เลือกรายการ")
     vendor_key = (vendor or "").strip()
@@ -92,7 +92,9 @@ def plan_confirm(
         if not live:
             raise HqPoError("missing", f"ไม่พบ ICLOW {iclow_id}")
         live_vendor = str(live.get("vendor") or "").strip()
-        if live_vendor != vendor_key:
+        asked = str(raw.get("vendor") or "").strip()
+        line_vendor = asked or live_vendor
+        if line_vendor != vendor_key:
             raise HqPoError("vendor_mismatch", "ยืนยันได้ครั้งละหนึ่งเจ้าหนี้")
         blocked = can_stamp_row(live)
         if blocked == "already_ordered":
@@ -111,7 +113,7 @@ def plan_confirm(
                 "descr": str(live.get("descr") or "").strip() or None,
                 "qty": qty,
                 "ui": str(live.get("ui") or "").strip() or None,
-                "vendor": live_vendor,
+                "vendor": line_vendor,
                 "propose_meta": raw.get("propose_meta"),
             }
         )
@@ -124,7 +126,7 @@ def plan_created(
     *,
     vendor: str,
 ) -> list[dict[str, Any]]:
-    """AI lines with no ICLOW row yet. Vendor comes from the product. Qty is the operator's."""
+    """AI lines with no ICLOW row yet. Qty and vendor are the operator's; the product supplies the default vendor."""
     if not lines:
         return []
     vendor_key = (vendor or "").strip()
@@ -143,14 +145,16 @@ def plan_created(
         if not live:
             raise HqPoError("not_confirmable", f"สั่ง {bcode} ไม่ได้")
         live_vendor = str(live.get("vendor") or "").strip()
-        if live_vendor != vendor_key:
+        asked = str(raw.get("vendor") or "").strip()
+        line_vendor = asked or live_vendor
+        if line_vendor != vendor_key:
             raise HqPoError("vendor_mismatch", "ยืนยันได้ครั้งละหนึ่งเจ้าหนี้")
         qty = chosen_qty(raw, live.get("qty"))
         if qty <= 0:
             raise HqPoError("bad_qty", f"{bcode} จำนวนไม่ถูกต้อง")
         meta = dict(live.get("propose_meta") or {})
         meta["iclow_origin"] = "created"
-        out.append({**live, "iclow_id": None, "qty": qty, "propose_meta": meta})
+        out.append({**live, "iclow_id": None, "qty": qty, "vendor": line_vendor, "propose_meta": meta})
     return out
 
 

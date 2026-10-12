@@ -67,6 +67,8 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .qty-edit{display:flex;align-items:center;justify-content:flex-end;gap:6px}
 .qty-in{width:84px;min-height:40px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:16px;font-weight:700;text-align:right;color:var(--blue-deep);background:#fff}
 .qty-in:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
+.vendor-pick{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:12px;color:var(--muted);font-weight:650}
+.vendor-pick select{width:100%;max-width:100%;min-height:40px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font:650 14px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);background:#fff}
 #sheet{position:fixed;inset:0;z-index:20;background:#eef2f7;overflow:auto;padding:12px 12px calc(118px + env(safe-area-inset-bottom))}
 #sheet[hidden]{display:none}
 .sheet-top{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
@@ -212,7 +214,8 @@ function match(row){
   if(state.source==="ai" && !(row.propose_meta || row.source==="insight")) return false;
   const q = state.q.trim().toLowerCase();
   if(!q) return true;
-  return [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name].join(" ").toLowerCase().includes(q);
+  const suppliers = (row.suppliers || []).map(s => [s.name, s.acctno].join(" ")).join(" ");
+  return [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name, suppliers].join(" ").toLowerCase().includes(q);
 }
 function rowKey(row){
   if(row.iclow_id) return "iclow:" + row.iclow_id;
@@ -271,6 +274,26 @@ function productMeta(row){
   return (id.length ? `<div class="meta">${id.join(" · ")}</div>` : "")
     + (money.length ? `<div class="meta">${money.join(" · ")}</div>` : "");
 }
+function supplierLabel(s){
+  const name = String(s.name || "").trim();
+  const acct = String(s.acctno || "").trim();
+  const bits = [];
+  if(name) bits.push(name);
+  if(acct && acct !== name) bits.push(acct);
+  if(!bits.length) bits.push(acct || "—");
+  if(Number(s.bills) > 0) bits.push(String(s.bills) + " บิล");
+  if(s.last_date) bits.push(String(s.last_date));
+  return bits.join(" · ");
+}
+function supplierSelect(row){
+  const options = row.suppliers || [];
+  if(options.length < 2) return "";
+  const opts = options.map(s => {
+    const selected = String(row.vendor || "") === String(s.acctno || "") ? " selected" : "";
+    return `<option value="${esc(s.acctno || "")}"${selected}>${esc(supplierLabel(s))}</option>`;
+  }).join("");
+  return `<label class="vendor-pick">เจ้าหนี้<select data-pick="${esc(rowKey(row))}" aria-label="เจ้าหนี้ ${esc(row.bcode || "")}">${opts}</select></label>`;
+}
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
     return `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;
@@ -289,6 +312,7 @@ function lineHtml(row){
     <div>
       <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
       ${productMeta(row)}
+      ${supplierSelect(row)}
       ${stock ? `<div class="meta">${stock}</div>` : ""}
       ${recHtml(row)}
     </div>
@@ -388,7 +412,7 @@ function checkedRows(){
 function linePayload(row){
   const meta = Object.assign({}, row.propose_meta || {});
   if(row.parts9_qty) meta.parts9_qty = row.parts9_qty;
-  const body = {qty: orderQty(row), propose_meta: Object.keys(meta).length ? meta : null};
+  const body = {qty: orderQty(row), vendor: row.vendor || "", propose_meta: Object.keys(meta).length ? meta : null};
   if(row.iclow_id) body.iclow_id = row.iclow_id;
   else body.bcode = row.bcode;
   return body;
@@ -606,7 +630,23 @@ document.getElementById("list").oninput = (e) => {
   const row = findRow(input.dataset.qty || "");
   if(row) row.order_qty = input.value;
 };
-document.getElementById("list").onchange = () => syncDock();
+document.getElementById("list").onchange = (e) => {
+  const pick = e.target.closest("select[data-pick]");
+  if(!pick){ syncDock(); return; }
+  const row = findRow(pick.dataset.pick || "");
+  const hit = row && (row.suppliers || []).find(s => s.acctno === pick.value);
+  if(hit){
+    row.vendor = hit.acctno;
+    row.vendor_name = hit.name || "";
+  }
+  const checked = [...document.querySelectorAll("#list input[data-key]:checked")].map(box => box.dataset.key);
+  renderList();
+  for(const key of checked){
+    const box = document.querySelector(`#list input[data-key="${CSS.escape(key)}"]`);
+    if(box) box.checked = true;
+  }
+  syncDock();
+};
 document.getElementById("dockConfirm").onclick = () => openSheet(checkedRows());
 document.getElementById("sheetClose").onclick = () => closeSheet();
 document.getElementById("varSimple").onclick = () => { if(state.forms) showVariant("simple"); };

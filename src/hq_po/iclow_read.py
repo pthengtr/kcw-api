@@ -178,6 +178,126 @@ def fetch_unordered_bcodes(bcodes: list[str]) -> set[str]:
     return out
 
 
+_SUPPLIER_LIMIT = 12
+
+
+def supplier_choices(
+    history: list[dict[str, Any]],
+    *,
+    current: str = "",
+    current_name: str = "",
+    catalog: str = "",
+    catalog_name: str = "",
+) -> list[dict[str, Any]]:
+    """Suppliers a buyer can pick. Recent purchase accounts first, then the catalog vendor."""
+    by_acct: dict[str, dict[str, Any]] = {}
+    for row in history or []:
+        acct = str(row.get("acctno") or "").strip()
+        if not acct:
+            continue
+        try:
+            bills = int(row.get("bills") or 0)
+        except (TypeError, ValueError):
+            bills = 0
+        by_acct[acct] = {
+            "acctno": acct,
+            "name": str(row.get("name") or "").strip(),
+            "bills": bills,
+            "last_date": str(row.get("last_date") or "")[:10],
+        }
+    for acct, name in ((catalog, catalog_name), (current, current_name)):
+        code = str(acct or "").strip()
+        if not code:
+            continue
+        label = str(name or "").strip()
+        if code not in by_acct:
+            by_acct[code] = {"acctno": code, "name": label, "bills": 0, "last_date": ""}
+        elif label and not by_acct[code]["name"]:
+            by_acct[code]["name"] = label
+    rows = list(by_acct.values())
+    rows.sort(key=lambda row: (row["last_date"], row["bills"], row["acctno"]), reverse=True)
+    kept = rows[:_SUPPLIER_LIMIT]
+    current_code = str(current or "").strip()
+    if current_code and current_code not in {row["acctno"] for row in kept}:
+        kept.append(by_acct[current_code])
+    return kept
+
+
+def fetch_bcode_suppliers(
+    bcodes: list[str],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, str]]]:
+    """Purchase-invoice suppliers and the ICMAS catalog vendor, keyed by product code."""
+    codes = []
+    seen: set[str] = set()
+    for raw in bcodes:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    history: dict[str, list[dict[str, Any]]] = {}
+    catalog: dict[str, dict[str, str]] = {}
+    if not codes:
+        return history, catalog
+    engine = get_site_engine("hq")
+    with engine.connect() as conn:
+        for start in range(0, len(codes), 80):
+            chunk = codes[start : start + 80]
+            params = {f"b{n}": code for n, code in enumerate(chunk)}
+            placeholders = ", ".join(f":b{n}" for n in range(len(chunk)))
+            hist_sql = text(
+                f"""
+                SELECT
+                  {_NV('d.BCODE', 40)} AS BCODE,
+                  {_NV('d.ACCTNO', 40)} AS ACCTNO,
+                  MAX({_NV('a.ACCTNAME', 200)}) AS ACCTNAME,
+                  COUNT(*) AS BILLS,
+                  CONVERT(varchar(10), MAX(d.BILLDATE), 23) AS LAST_DATE
+                FROM dbo.PIDET d WITH (NOLOCK)
+                LEFT JOIN dbo.APMAS a WITH (NOLOCK)
+                  ON {_NV('a.ACCTNO', 40)} = {_NV('d.ACCTNO', 40)}
+                WHERE {_NV('d.BCODE', 40)} IN ({placeholders})
+                  AND {_NV('d.ACCTNO', 40)} <> ''
+                  AND UPPER({_NV('d.CANCELED', 10)}) <> 'Y'
+                  AND {_NV('d.JOURMODE', 10)} <> '0'
+                GROUP BY {_NV('d.BCODE', 40)}, {_NV('d.ACCTNO', 40)}
+                """
+            )
+            for row in conn.execute(hist_sql, params).mappings().all():
+                bcode = str(row.get("BCODE") or "").strip()
+                acct = str(row.get("ACCTNO") or "").strip()
+                if not bcode or not acct:
+                    continue
+                history.setdefault(bcode, []).append(
+                    {
+                        "acctno": acct,
+                        "name": str(row.get("ACCTNAME") or "").strip(),
+                        "bills": row.get("BILLS"),
+                        "last_date": str(row.get("LAST_DATE") or "")[:10],
+                    }
+                )
+            cat_sql = text(
+                f"""
+                SELECT
+                  {_NV('i.BCODE', 40)} AS BCODE,
+                  {_NV('i.VENDOR', 40)} AS VENDOR,
+                  {_NV('a.ACCTNAME', 200)} AS ACCTNAME
+                FROM dbo.ICMAS i WITH (NOLOCK)
+                LEFT JOIN dbo.APMAS a WITH (NOLOCK)
+                  ON {_NV('a.ACCTNO', 40)} = {_NV('i.VENDOR', 40)}
+                WHERE {_NV('i.BCODE', 40)} IN ({placeholders})
+                """
+            )
+            for row in conn.execute(cat_sql, params).mappings().all():
+                bcode = str(row.get("BCODE") or "").strip()
+                acct = str(row.get("VENDOR") or "").strip()
+                if bcode and acct:
+                    catalog[bcode] = {
+                        "acctno": acct,
+                        "name": str(row.get("ACCTNAME") or "").strip(),
+                    }
+    return history, catalog
+
+
 def fetch_vendor_cards(acctnos: list[str]) -> dict[str, dict[str, str]]:
     """APMAS card used on the vendor sheet. MOBILE is the tax id in PARTS9."""
     codes = []

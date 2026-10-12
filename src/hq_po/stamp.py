@@ -206,7 +206,7 @@ def cancel_created(lines: list[dict[str, Any]], *, docno: str) -> None:
 
 
 def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = None) -> None:
-    """Set ORDERED, DOCNO, DOCDATE on the given ICLOW ids. One transaction."""
+    """Set ORDERED, DOCNO, DOCDATE, and the chosen VENDOR on the given ICLOW ids."""
     if not lines:
         raise HqPoError("empty", "ไม่มีแถวให้สั่ง")
     doc = (docno or "").strip()
@@ -217,6 +217,10 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
         engine = _engine()
         with engine.begin() as conn:
             for line in lines:
+                vendor = _clip(line.get("vendor"), 10)
+                if not vendor:
+                    bcode = line.get("bcode") or line["iclow_id"]
+                    raise HqPoError("vendor_mismatch", f"{bcode} ไม่มีเจ้าหนี้")
                 result = conn.execute(
                     text(
                         f"""
@@ -225,6 +229,7 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
                             DOCNO = :docno,
                             DOCDATE = :docdate,
                             QTY = :qty,
+                            VENDOR = :vendor,
                             AMOUNT = CASE WHEN PRICE IS NULL THEN AMOUNT ELSE PRICE * :qty END
                         WHERE CONVERT(bigint, ID) = :iclow_id
                           AND {_ORDERED_N}
@@ -237,6 +242,7 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
                         "docno": doc[:40],
                         "docdate": today,
                         "qty": float(line["qty"]),
+                        "vendor": vendor,
                     },
                 )
                 if result.rowcount != 1:
