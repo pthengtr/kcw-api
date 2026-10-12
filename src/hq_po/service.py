@@ -16,6 +16,7 @@ from src.hq_po.db import (
 from src.hq_po.docno import make_docno, make_short_id
 from src.hq_po.guards import HqPoError, plan_cancel, plan_confirm, plan_created, receive_view
 from src.hq_po.iclow_read import (
+    fetch_bcode_suppliers,
     fetch_iclow_by_ids,
     fetch_incoming_qty,
     fetch_unordered_bcodes,
@@ -144,6 +145,46 @@ def _created_flag(line: dict[str, Any]) -> bool:
     return isinstance(meta, dict) and meta.get("iclow_origin") == "created"
 
 
+def _assert_supplier_choices(
+    lines: list[dict[str, Any]],
+    *,
+    live_by_id: dict[int, dict[str, Any]],
+    resolved: dict[str, dict[str, Any]],
+) -> None:
+    """A switched vendor must be a real purchase account or the catalog vendor."""
+    changed: list[tuple[str, str]] = []
+    for raw in lines:
+        asked = str(raw.get("vendor") or "").strip()
+        if not asked:
+            continue
+        try:
+            iclow_id = int(raw.get("iclow_id"))
+        except (TypeError, ValueError):
+            iclow_id = 0
+        if iclow_id > 0:
+            live = live_by_id.get(iclow_id) or {}
+            current = str(live.get("vendor") or "").strip()
+            bcode = str(live.get("bcode") or "").strip()
+        else:
+            bcode = str(raw.get("bcode") or "").strip()
+            current = str((resolved.get(bcode) or {}).get("vendor") or "").strip()
+        if bcode and asked != current:
+            changed.append((bcode, asked))
+    if not changed:
+        return
+    try:
+        history, catalog = fetch_bcode_suppliers([bcode for bcode, _ in changed])
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ทางเลือกไม่ได้") from exc
+    for bcode, asked in changed:
+        known = {str(row.get("acctno") or "").strip() for row in history.get(bcode) or []}
+        cat = str((catalog.get(bcode) or {}).get("acctno") or "").strip()
+        if cat:
+            known.add(cat)
+        if asked not in known:
+            raise HqPoError("vendor_mismatch", f"{bcode} ไม่เคยรับจาก {asked}")
+
+
 def confirm_order(
     *,
     vendor: str,
@@ -161,15 +202,13 @@ def confirm_order(
     planned: list[dict[str, Any]] = []
     if existing:
         ids = [int(line["iclow_id"]) for line in existing]
-        planned.extend(plan_confirm(existing, fetch_iclow_by_ids(ids), vendor=vendor))
+        live = fetch_iclow_by_ids(ids)
+        _assert_supplier_choices(existing, live_by_id=live, resolved={})
+        planned.extend(plan_confirm(existing, live, vendor=vendor))
     if created:
-        planned.extend(
-            plan_created(
-                created,
-                _resolve_created([str(line.get("bcode") or "") for line in created]),
-                vendor=vendor,
-            )
-        )
+        resolved = _resolve_created([str(line.get("bcode") or "") for line in created])
+        _assert_supplier_choices(created, live_by_id={}, resolved=resolved)
+        planned.extend(plan_created(created, resolved, vendor=vendor))
     if not planned:
         raise HqPoError("empty", "ยังไม่ได้เลือกรายการ")
     to_stamp = [line for line in planned if not _created_flag(line)]

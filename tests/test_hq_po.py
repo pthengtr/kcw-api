@@ -189,6 +189,13 @@ def test_plan_confirm_uses_live_row_and_rejects_other_vendor():
         assert exc.code == "not_confirmable"
     else:
         raise AssertionError("expected not_confirmable")
+    switched = plan_confirm(
+        [{"iclow_id": 7, "vendor": "V2"}],
+        {7: _live(iclow_id=7, vendor="V1")},
+        vendor="V2",
+    )
+    assert switched[0]["vendor"] == "V2"
+    assert switched[0]["bcode"] == "A1"
     try:
         plan_confirm([{"iclow_id": 7}], {7: _live(iclow_id=7, vendor="V2")}, vendor="V1")
     except HqPoError as exc:
@@ -213,6 +220,8 @@ def test_plan_created_uses_server_line():
     assert fallback[0]["qty"] == 4
     assert planned[0]["iclow_id"] is None
     assert planned[0]["propose_meta"]["iclow_origin"] == "created"
+    switched = plan_created([{"bcode": "B2", "vendor": "ALT", "qty": 2}], resolved, vendor="ALT")
+    assert switched[0]["vendor"] == "ALT"
     try:
         plan_created([{"bcode": "B2"}], resolved, vendor="V1")
     except HqPoError as exc:
@@ -266,6 +275,8 @@ def test_page_defaults_vendor_view():
     assert "ยี่ห้อ" in html
     assert "ราคา " in html
     assert "ค่า " in html
+    assert "data-pick" in html
+    assert "เจ้าหนี้" in html
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
@@ -301,6 +312,7 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     monkeypatch.setattr(suggest, "fetch_incoming_qty", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
     monkeypatch.setattr(suggest, "fetch_sheet_products", lambda _codes: {})
+    monkeypatch.setattr(suggest, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
     monkeypatch.setattr(suggest, "_peek_insight_cache", lambda _key: None)
 
     def ensure(policies, bcodes, incoming=None):
@@ -331,6 +343,7 @@ def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
     monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes: ({}, {}, False))
     monkeypatch.setattr(suggest, "load_insight_policies", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
+    monkeypatch.setattr(suggest, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
     monkeypatch.setattr(
         suggest,
         "fetch_sheet_products",
@@ -355,6 +368,57 @@ def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
     assert item["brand"] == "Toyota"
     assert item["price"] == 120
     assert item["cost"] == 80.5
+
+
+def test_supplier_choices_keep_purchase_accounts_and_the_current_vendor():
+    from src.hq_po.iclow_read import supplier_choices
+
+    rows = supplier_choices(
+        [
+            {"acctno": "OLD", "name": "เก่า", "bills": 1, "last_date": "2020-01-01"},
+            {"acctno": "NEW", "name": "ใหม่", "bills": 4, "last_date": "2026-10-01"},
+        ],
+        current="IC",
+        current_name="บนแถว",
+        catalog="CAT",
+        catalog_name="มาสเตอร์",
+    )
+    assert rows[0]["acctno"] == "NEW"
+    assert {row["acctno"] for row in rows} == {"NEW", "OLD", "CAT", "IC"}
+    assert rows[0]["name"] == "ใหม่"
+
+
+def test_unknown_supplier_is_rejected(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(
+        service,
+        "fetch_bcode_suppliers",
+        lambda _codes: (
+            {"A1": [{"acctno": "NEW", "name": "ใหม่", "bills": 2, "last_date": "2026-01-01"}]},
+            {"A1": {"acctno": "CAT", "name": "มาสเตอร์"}},
+        ),
+    )
+    service._assert_supplier_choices(
+        [{"iclow_id": 7, "vendor": "NEW"}],
+        live_by_id={7: {"bcode": "A1", "vendor": "OLD"}},
+        resolved={},
+    )
+    service._assert_supplier_choices(
+        [{"iclow_id": 7, "vendor": "CAT"}],
+        live_by_id={7: {"bcode": "A1", "vendor": "OLD"}},
+        resolved={},
+    )
+    try:
+        service._assert_supplier_choices(
+            [{"iclow_id": 7, "vendor": "NOPE"}],
+            live_by_id={7: {"bcode": "A1", "vendor": "OLD"}},
+            resolved={},
+        )
+    except HqPoError as exc:
+        assert "ไม่เคยรับจาก" in str(exc)
+    else:
+        raise AssertionError("expected vendor_mismatch")
 
 
 def test_line_command_and_menu():

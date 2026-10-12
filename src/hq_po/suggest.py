@@ -10,10 +10,12 @@ from typing import Any
 
 from src.hq_po.group import group_by_vendor, sort_products
 from src.hq_po.iclow_read import (
+    fetch_bcode_suppliers,
     fetch_incoming_qty,
     fetch_sheet_products,
     fetch_to_order_rows,
     fetch_vendor_names,
+    supplier_choices,
 )
 from src.hq_po.insight import annotate_iclow_items, insight_only_lines, load_insight_policies
 from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
@@ -98,6 +100,28 @@ def attach_catalog(items: list[dict[str, Any]]) -> None:
             cost = _positive_money(product.get("costnet"))
         if cost is not None:
             item["cost"] = cost
+
+
+def attach_suppliers(items: list[dict[str, Any]]) -> None:
+    """Attach purchase-history suppliers so the buyer can move a line to another vendor."""
+    codes = [str(item.get("bcode") or "").strip() for item in items if item.get("bcode")]
+    if not codes:
+        return
+    try:
+        history, catalog = fetch_bcode_suppliers(codes)
+    except Exception:
+        logger.warning("hq po supplier lookup failed", exc_info=True)
+        return
+    for item in items:
+        bcode = str(item.get("bcode") or "").strip()
+        card = catalog.get(bcode) or {}
+        item["suppliers"] = supplier_choices(
+            history.get(bcode) or [],
+            current=str(item.get("vendor") or ""),
+            current_name=str(item.get("vendor_name") or ""),
+            catalog=str(card.get("acctno") or ""),
+            catalog_name=str(card.get("name") or ""),
+        )
 
 
 def _iclow_item(row: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
@@ -253,6 +277,7 @@ def build_suggest() -> dict[str, Any]:
         items.extend(extra)
     _attach_parts9(items)
     attach_catalog(items)
+    attach_suppliers(items)
     return {
         "items": sort_products(items),
         "vendors": group_by_vendor(items),
@@ -276,4 +301,5 @@ def build_insight_only() -> dict[str, Any]:
     lines = _ensure_insight_future(policies, iclow_bcodes, incoming).result()
     _attach_parts9(lines)
     attach_catalog(lines)
+    attach_suppliers(lines)
     return {"items": lines}
