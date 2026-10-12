@@ -141,7 +141,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
         <button type="button" id="srcIclow">ICLOW</button>
         <button type="button" id="srcAi">AI</button>
       </div>
-      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส สินค้า หรือเจ้าหนี้" enterkeyhint="search"/></div>
+      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search"/></div>
     </div>
     <div id="insightNote" class="insight" hidden></div>
     <div id="list"><div class="spin-wrap"><span class="spin" aria-hidden="true"></span><span>กำลังโหลดรายการรอสั่ง…</span></div></div>
@@ -212,7 +212,7 @@ function match(row){
   if(state.source==="ai" && !(row.propose_meta || row.source==="insight")) return false;
   const q = state.q.trim().toLowerCase();
   if(!q) return true;
-  return [row.bcode, row.descr, row.mcode, row.vendor, row.vendor_name].join(" ").toLowerCase().includes(q);
+  return [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name].join(" ").toLowerCase().includes(q);
 }
 function rowKey(row){
   if(row.iclow_id) return "iclow:" + row.iclow_id;
@@ -246,6 +246,31 @@ function recHtml(row){
     ? `<div class="ai">${esc(row.propose_meta.reason)}</div>` : "";
   return `<div class="recs">${p9el}${aiel}</div>${reason}`;
 }
+function moneyText(n){
+  const v = Number(n);
+  if(!Number.isFinite(v) || v <= 0) return "";
+  const rounded = Math.round(v * 100) / 100;
+  if(Math.abs(rounded - Math.round(rounded)) < 1e-9) return Math.round(rounded).toLocaleString("en-US") + ".-";
+  return rounded.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function productMeta(row){
+  const id = [];
+  const model = String(row.model || "").trim();
+  const pcode = String(row.pcode || "").trim();
+  const mcode = String(row.mcode || "").trim();
+  const brand = String(row.brand || "").trim();
+  if(model) id.push("ชื่อรุ่น " + esc(model));
+  if(pcode) id.push("เบอร์แท้ " + esc(pcode));
+  if(mcode) id.push("เบอร์โรงงาน " + esc(mcode));
+  if(brand) id.push("ยี่ห้อ " + esc(brand));
+  const money = [];
+  const price = moneyText(row.price);
+  const cost = moneyText(row.cost);
+  if(price) money.push("ราคา " + price);
+  if(cost) money.push("ค่า " + cost);
+  return (id.length ? `<div class="meta">${id.join(" · ")}</div>` : "")
+    + (money.length ? `<div class="meta">${money.join(" · ")}</div>` : "");
+}
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
     return `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;
@@ -259,12 +284,11 @@ function lineHtml(row){
   const incoming = Number(row.incoming_qty);
   const incomingText = incoming > 0 ? ` · ค้างรับ ${esc(qtyText(incoming))}` : "";
   const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${incomingText}`;
-  const mcode = row.mcode ? `<div class="meta">${esc(row.mcode)}</div>` : "";
   return `<div class="line">
     ${check}
     <div>
       <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
-      ${mcode}
+      ${productMeta(row)}
       ${stock ? `<div class="meta">${stock}</div>` : ""}
       ${recHtml(row)}
     </div>
@@ -511,7 +535,7 @@ async function loadOrders(){
       const lines = (order.lines||[]).map(line => {
         const rec = line.receive || {};
         const pi = rec.pimas_billno ? ` · PI ${esc(rec.pimas_billno)}` : (rec.rcvdno ? ` · ${esc(rec.rcvdno)}` : "");
-        return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div><div class="meta">${esc(rec.label||"")}${pi}</div></div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
+        return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div>${productMeta(line)}<div class="meta">${esc(rec.label||"")}${pi}</div></div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
       }).join("");
       const cancel = STAMP && order.receive_label!=="รับแล้ว"
         ? `<button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button>` : "";

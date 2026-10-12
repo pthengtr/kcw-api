@@ -28,7 +28,7 @@ from src.hq_po.insight import (
     load_insight_policies,
 )
 from src.hq_po.stamp import cancel_created, insert_ordered_lines, revert_ordered, stamp_ordered
-from src.hq_po.suggest import build_insight_only, build_suggest
+from src.hq_po.suggest import attach_catalog, build_insight_only, build_suggest
 
 
 def suggest_payload() -> dict[str, Any]:
@@ -267,6 +267,8 @@ def _attach_receive(orders: list[dict[str, Any]]) -> list[dict[str, Any]]:
             order["receive_label"] = "รับบางส่วน"
         else:
             order["receive_label"] = "ค้างรับ"
+    lines = [line for order in orders for line in (order.get("lines") or [])]
+    attach_catalog(lines)
     return orders
 
 

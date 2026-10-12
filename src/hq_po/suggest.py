@@ -9,7 +9,12 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from src.hq_po.group import group_by_vendor, sort_products
-from src.hq_po.iclow_read import fetch_incoming_qty, fetch_to_order_rows, fetch_vendor_names
+from src.hq_po.iclow_read import (
+    fetch_incoming_qty,
+    fetch_sheet_products,
+    fetch_to_order_rows,
+    fetch_vendor_names,
+)
 from src.hq_po.insight import annotate_iclow_items, insight_only_lines, load_insight_policies
 from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
 
@@ -57,6 +62,42 @@ def _attach_stock(item: dict[str, Any], hq: dict[str, Any] | None, syp: dict[str
         item["brand"] = (hq.get("brand") or syp.get("brand") or "").strip()
     if not item.get("pcode"):
         item["pcode"] = (hq.get("pcode") or syp.get("pcode") or "").strip()
+
+
+def _positive_money(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number <= 0:
+        return None
+    return round(number, 2)
+
+
+def attach_catalog(items: list[dict[str, Any]]) -> None:
+    """Fill ชื่อรุ่น, เบอร์แท้, เบอร์โรงงาน, ยี่ห้อ, ราคา, and ค่า from HQ ICMAS."""
+    codes = [str(item.get("bcode") or "").strip() for item in items if item.get("bcode")]
+    if not codes:
+        return
+    try:
+        products = fetch_sheet_products(codes)
+    except Exception:
+        logger.warning("hq po catalog lookup failed", exc_info=True)
+        return
+    for item in items:
+        product = products.get(str(item.get("bcode") or "").strip()) or {}
+        for key in ("model", "brand", "pcode", "mcode"):
+            value = str(product.get(key) or "").strip()
+            if value:
+                item[key] = value
+        price = _positive_money(product.get("price1"))
+        if price is not None:
+            item["price"] = price
+        cost = _positive_money(product.get("costlast"))
+        if cost is None:
+            cost = _positive_money(product.get("costnet"))
+        if cost is not None:
+            item["cost"] = cost
 
 
 def _iclow_item(row: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
@@ -211,6 +252,7 @@ def build_suggest() -> dict[str, Any]:
                 insight_pending = True
         items.extend(extra)
     _attach_parts9(items)
+    attach_catalog(items)
     return {
         "items": sort_products(items),
         "vendors": group_by_vendor(items),
@@ -233,4 +275,5 @@ def build_insight_only() -> dict[str, Any]:
         return {"items": []}
     lines = _ensure_insight_future(policies, iclow_bcodes, incoming).result()
     _attach_parts9(lines)
+    attach_catalog(lines)
     return {"items": lines}

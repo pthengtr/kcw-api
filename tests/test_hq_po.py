@@ -260,6 +260,12 @@ def test_page_defaults_vendor_view():
     assert "/hq-po/api/sheet" in html
     assert "HQ_PO_ICLOW_STAMP_ENABLED" in html
     assert "กำลังโหลดรายการรอสั่ง" in html
+    assert "ชื่อรุ่น" in html
+    assert "เบอร์แท้" in html
+    assert "เบอร์โรงงาน" in html
+    assert "ยี่ห้อ" in html
+    assert "ราคา " in html
+    assert "ค่า " in html
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
@@ -294,6 +300,7 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     )
     monkeypatch.setattr(suggest, "fetch_incoming_qty", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
+    monkeypatch.setattr(suggest, "fetch_sheet_products", lambda _codes: {})
     monkeypatch.setattr(suggest, "_peek_insight_cache", lambda _key: None)
 
     def ensure(policies, bcodes, incoming=None):
@@ -305,6 +312,49 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     assert scanned == [1]
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
+
+
+def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
+    from src.hq_po import suggest
+
+    row = {
+        "iclow_id": 7,
+        "vendor": "V1",
+        "bcode": "A1",
+        "descr": "bolt",
+        "mcode": "",
+        "qty": 2,
+        "ui": "PCS",
+    }
+    monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: [row])
+    monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
+    monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes: ({}, {}, False))
+    monkeypatch.setattr(suggest, "load_insight_policies", lambda: {})
+    monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
+    monkeypatch.setattr(
+        suggest,
+        "fetch_sheet_products",
+        lambda codes: {
+            "A1": {
+                "model": "Vios",
+                "brand": "Toyota",
+                "pcode": "OEM-1",
+                "mcode": "FAC-1",
+                "price1": 120,
+                "costlast": 0,
+                "costnet": 80.5,
+            }
+        }
+        if "A1" in codes
+        else {},
+    )
+    item = suggest.build_suggest()["items"][0]
+    assert item["model"] == "Vios"
+    assert item["pcode"] == "OEM-1"
+    assert item["mcode"] == "FAC-1"
+    assert item["brand"] == "Toyota"
+    assert item["price"] == 120
+    assert item["cost"] == 80.5
 
 
 def test_line_command_and_menu():
