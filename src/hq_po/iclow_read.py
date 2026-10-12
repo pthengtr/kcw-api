@@ -231,7 +231,7 @@ def fetch_vendor_cards(acctnos: list[str]) -> dict[str, dict[str, str]]:
 
 
 def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
-    """ICMAS fields printed on the vendor sheet. Price is last cost, not sell price."""
+    """HQ ICMAS identity and money fields. Sell price is PRICE1; cost is COSTLAST / COSTNET."""
     codes = []
     seen: set[str] = set()
     for raw in bcodes:
@@ -258,7 +258,7 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
                   LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) AS PCODE,
                   LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) AS MCODE,
                   LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI1,'')))) AS UI1,
-                  COSTLAST, COSTNET
+                  PRICE1, COSTLAST, COSTNET
                 FROM dbo.ICMAS
                 WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) IN ({placeholders})
                 """
@@ -274,6 +274,7 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
                     "pcode": str(row.get("PCODE") or "").strip(),
                     "mcode": str(row.get("MCODE") or "").strip(),
                     "ui": str(row.get("UI1") or "").strip(),
+                    "price1": row.get("PRICE1"),
                     "costlast": row.get("COSTLAST"),
                     "costnet": row.get("COSTNET"),
                 }
