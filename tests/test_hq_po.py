@@ -8,6 +8,7 @@ from src.hq_po.guards import (
     HqPoError,
     can_revert_row,
     can_stamp_row,
+    chosen_pack,
     plan_cancel,
     plan_confirm,
     plan_created,
@@ -190,11 +191,19 @@ def test_plan_confirm_uses_live_row_and_rejects_other_vendor():
     else:
         raise AssertionError("expected not_confirmable")
     switched = plan_confirm(
-        [{"iclow_id": 7, "vendor": "V2"}],
-        {7: _live(iclow_id=7, vendor="V1")},
+        [{"iclow_id": 7, "vendor": "V2", "ui": "กล่อง", "mtp": 10}],
+        {7: _live(iclow_id=7, vendor="V1", ui="ชิ้น")},
         vendor="V2",
     )
     assert switched[0]["vendor"] == "V2"
+    assert switched[0]["ui"] == "กล่อง"
+    assert switched[0]["mtp"] == 10
+    same_unit = plan_confirm(
+        [{"iclow_id": 7, "ui": "ชิ้น", "mtp": 1}],
+        {7: _live(iclow_id=7, ui="ชิ้น")},
+        vendor="V1",
+    )
+    assert same_unit[0]["mtp"] is None
     assert switched[0]["bcode"] == "A1"
     try:
         plan_confirm([{"iclow_id": 7}], {7: _live(iclow_id=7, vendor="V2")}, vendor="V1")
@@ -277,6 +286,10 @@ def test_page_defaults_vendor_view():
     assert "ค่า " in html
     assert "data-pick" in html
     assert "เจ้าหนี้" in html
+    assert "สินค้าแทน" in html
+    assert "data-peers" in html
+    assert "list_vendor" in html
+    assert "จะไปใบของ" in html
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
@@ -432,3 +445,66 @@ def test_line_command_and_menu():
     ]
     assert "สั่งซื้อ" in labels
     assert services_menu_handlers_match()["hq_po"]
+
+
+def test_chosen_pack_uses_small_unit_or_large_pack():
+    product = {"ui": "ชิ้น", "ui2": "กล่อง", "mtp2": 10}
+    assert chosen_pack("ชิ้น", product) == ("ชิ้น", 1.0)
+    assert chosen_pack("กล่อง", product) == ("กล่อง", 10.0)
+    assert chosen_pack("ลัง", product) is None
+    assert chosen_pack("", product) is None
+    assert chosen_pack("กล่อง", {"ui": "ชิ้น", "ui2": "กล่อง", "mtp2": 1}) is None
+
+
+def test_peer_line_resolves_without_an_ai_policy(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: set())
+    monkeypatch.setattr(
+        service,
+        "fetch_sheet_products",
+        lambda _codes: {"B2": {"descr": "seal", "ui": "ชิ้น", "ui2": "กล่อง", "mtp2": 10, "mcode": "M"}},
+    )
+    monkeypatch.setattr(
+        service,
+        "fetch_bcode_suppliers",
+        lambda _codes: (
+            {"B2": [{"acctno": "V2", "name": "ร้าน", "bills": 1, "last_date": "2026-01-01"}]},
+            {},
+        ),
+    )
+    resolved = service._resolve_peer(
+        [{"bcode": "B2", "vendor": "V2", "ui": "กล่อง", "propose_meta": {"iclow_origin": "peer"}}]
+    )
+    assert resolved["B2"]["ui"] == "กล่อง"
+    assert resolved["B2"]["propose_meta"]["iclow_origin"] == "created"
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: {"B2"})
+    try:
+        service._resolve_peer([{"bcode": "B2", "vendor": "V2", "ui": "ชิ้น"}])
+    except HqPoError as exc:
+        assert exc.code == "already_on_iclow"
+    else:
+        raise AssertionError("expected already_on_iclow")
+
+
+def test_peer_groups_keep_catalog_ahead_of_part_numbers():
+    from src.hq_po.peers import group_peer_hits
+
+    groups = group_peer_hits(
+        catalog=[{"bcode": "B2", "descr": "confirmed"}],
+        suggestions=[
+            {"bcode": "B2", "source": "pcode", "sources": ["pcode"], "descr": "same oem"},
+            {"bcode": "C3", "source": "pcode", "sources": ["pcode", "mcode"], "descr": "oem"},
+            {"bcode": "D4", "source": "mcode", "sources": ["mcode"], "descr": "factory"},
+            {"bcode": "E5", "source": "remarks", "sources": ["remarks"], "descr": "note"},
+        ],
+        pcode="OEM-1",
+        mcode="FAC-1",
+    )
+    assert [group["key"] for group in groups] == ["catalog", "pcode", "mcode", "other"]
+    assert groups[0]["label"] == "กลุ่มทดแทน"
+    assert [line["bcode"] for line in groups[0]["lines"]] == ["B2"]
+    assert groups[1]["label"] == "เบอร์แท้เดียวกัน OEM-1"
+    assert [line["bcode"] for line in groups[1]["lines"]] == ["C3"]
+    assert [line["bcode"] for line in groups[2]["lines"]] == ["D4"]
+    assert [line["bcode"] for line in groups[3]["lines"]] == ["E5"]

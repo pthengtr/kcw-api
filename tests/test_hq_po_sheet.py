@@ -91,6 +91,38 @@ def test_simple_sheet_includes_vendor_and_part_columns(monkeypatch):
     assert "178.-" in text
 
 
+def test_sheet_prices_a_large_pack_as_cost_times_mtp(monkeypatch):
+    from src.hq_po import iclow_read
+
+    monkeypatch.setattr(iclow_read, "fetch_vendor_cards", lambda _acctnos: {})
+    monkeypatch.setattr(
+        iclow_read,
+        "fetch_sheet_products",
+        lambda _codes: {
+            "13051964": {
+                "descr": "ยาง",
+                "ui": "แผ่น",
+                "ui2": "กล่อง",
+                "mtp2": 10,
+                "costlast": 45,
+            }
+        },
+    )
+    forms = build_sheet_forms(
+        [
+            {
+                "vendor": "SM",
+                "vendor_name": "สมชาย",
+                "docno": "",
+                "docdate": "2026-10-09",
+                "lines": [{"bcode": "13051964", "qty": 2, "ui": "กล่อง"}],
+            }
+        ]
+    )
+    assert "450" in forms["simple_html"]
+    assert "กล่อง" in forms["simple_html"]
+
+
 def test_full_sheet_matches_purchase_order_totals(monkeypatch):
     forms = _forms(
         monkeypatch,

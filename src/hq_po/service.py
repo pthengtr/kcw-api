@@ -14,13 +14,22 @@ from src.hq_po.db import (
     mark_order_canceled,
 )
 from src.hq_po.docno import make_docno, make_short_id
-from src.hq_po.guards import HqPoError, plan_cancel, plan_confirm, plan_created, receive_view
+from src.hq_po.guards import (
+    HqPoError,
+    chosen_pack,
+    plan_cancel,
+    plan_confirm,
+    plan_created,
+    receive_view,
+)
 from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
     fetch_iclow_by_ids,
     fetch_incoming_qty,
+    fetch_sheet_products,
     fetch_unordered_bcodes,
     fetch_vendor_names,
+    supplier_choices,
 )
 from src.hq_po.insight import (
     ai_recommendation,
@@ -41,6 +50,12 @@ def suggest_payload() -> dict[str, Any]:
 
 def insight_only_payload() -> dict[str, Any]:
     return build_insight_only()
+
+
+def peers_payload(bcode: str) -> dict[str, Any]:
+    from src.hq_po.peers import load_peers
+
+    return load_peers(bcode)
 
 
 def _vendor_name(acctno: str, hinted: str | None) -> str | None:
@@ -145,6 +160,39 @@ def _created_flag(line: dict[str, Any]) -> bool:
     return isinstance(meta, dict) and meta.get("iclow_origin") == "created"
 
 
+def _peer_flag(line: dict[str, Any]) -> bool:
+    meta = line.get("propose_meta")
+    return isinstance(meta, dict) and meta.get("iclow_origin") == "peer"
+
+
+def _line_bcode(raw: dict[str, Any], live_by_id: dict[int, dict[str, Any]]) -> str:
+    try:
+        iclow_id = int(raw.get("iclow_id"))
+    except (TypeError, ValueError):
+        iclow_id = 0
+    if iclow_id > 0:
+        return str((live_by_id.get(iclow_id) or {}).get("bcode") or "").strip()
+    return str(raw.get("bcode") or "").strip()
+
+
+def _apply_units(
+    lines: list[dict[str, Any]],
+    *,
+    products: dict[str, dict[str, Any]],
+    live_by_id: dict[int, dict[str, Any]] | None = None,
+) -> None:
+    """Keep a chosen UI1/UI2. Drop a unit that is not a pack on that product."""
+    live_by_id = live_by_id or {}
+    for raw in lines:
+        product = products.get(_line_bcode(raw, live_by_id)) or {}
+        pack = chosen_pack(raw.get("ui"), product)
+        if pack is None:
+            raw.pop("ui", None)
+            raw.pop("mtp", None)
+            continue
+        raw["ui"], raw["mtp"] = pack
+
+
 def _assert_supplier_choices(
     lines: list[dict[str, Any]],
     *,
@@ -185,6 +233,62 @@ def _assert_supplier_choices(
             raise HqPoError("vendor_mismatch", f"{bcode} ไม่เคยรับจาก {asked}")
 
 
+def _resolve_peer(lines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """A replacement code ordered as its own line. It does not need an AI policy."""
+    codes = []
+    seen: set[str] = set()
+    for raw in lines:
+        bcode = str(raw.get("bcode") or "").strip()
+        if bcode and bcode not in seen:
+            seen.add(bcode)
+            codes.append(bcode)
+    if not codes:
+        return {}
+    unordered = fetch_unordered_bcodes(codes)
+    try:
+        products = fetch_sheet_products(codes)
+    except Exception as exc:
+        raise HqPoError("missing", "อ่านสินค้าแทนไม่สำเร็จ") from exc
+    try:
+        history, catalog = fetch_bcode_suppliers(codes)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ของสินค้าแทนไม่ได้") from exc
+    out: dict[str, dict[str, Any]] = {}
+    for raw in lines:
+        bcode = str(raw.get("bcode") or "").strip()
+        if not bcode or bcode in out:
+            continue
+        if bcode in unordered:
+            raise HqPoError("already_on_iclow", f"{bcode} มีในรายการรอสั่งแล้ว ให้สั่งจากแถวนั้น")
+        product = products.get(bcode) or {}
+        if not product:
+            raise HqPoError("missing", f"ไม่พบสินค้า {bcode}")
+        asked = str(raw.get("vendor") or "").strip()
+        card = catalog.get(bcode) or {}
+        choices = supplier_choices(
+            history.get(bcode) or [],
+            catalog=str(card.get("acctno") or ""),
+            catalog_name=str(card.get("name") or ""),
+        )
+        known = {str(row.get("acctno") or "").strip() for row in choices}
+        if not asked or asked not in known:
+            raise HqPoError("vendor_mismatch", f"{bcode} ไม่มีเจ้าหนี้ที่สั่งได้")
+        pack = chosen_pack(raw.get("ui"), product)
+        ui = pack[0] if pack else str(product.get("ui") or "").strip()
+        out[bcode] = {
+            "iclow_id": None,
+            "vendor": asked,
+            "bcode": bcode,
+            "descr": str(product.get("descr") or "").strip(),
+            "mcode": str(product.get("mcode") or "").strip(),
+            "qty": 0,
+            "ui": ui or None,
+            "source": "peer",
+            "propose_meta": {"iclow_origin": "created", "peer": True},
+        }
+    return out
+
+
 def confirm_order(
     *,
     vendor: str,
@@ -199,16 +303,29 @@ def confirm_order(
             "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่บันทึกใบสั่งซื้อ",
         )
     existing, created = _split_lines(lines)
+    peers = [line for line in created if _peer_flag(line)]
+    ai_lines = [line for line in created if not _peer_flag(line)]
     planned: list[dict[str, Any]] = []
     if existing:
         ids = [int(line["iclow_id"]) for line in existing]
         live = fetch_iclow_by_ids(ids)
+        try:
+            products = fetch_sheet_products(
+                [str((live.get(iclow_id) or {}).get("bcode") or "") for iclow_id in ids]
+            )
+        except Exception:
+            products = {}
+        _apply_units(existing, products=products, live_by_id=live)
         _assert_supplier_choices(existing, live_by_id=live, resolved={})
         planned.extend(plan_confirm(existing, live, vendor=vendor))
-    if created:
-        resolved = _resolve_created([str(line.get("bcode") or "") for line in created])
-        _assert_supplier_choices(created, live_by_id={}, resolved=resolved)
-        planned.extend(plan_created(created, resolved, vendor=vendor))
+    if ai_lines:
+        resolved = _resolve_created([str(line.get("bcode") or "") for line in ai_lines])
+        _assert_supplier_choices(ai_lines, live_by_id={}, resolved=resolved)
+        planned.extend(plan_created(ai_lines, resolved, vendor=vendor))
+    if peers:
+        resolved_peers = _resolve_peer(peers)
+        _assert_supplier_choices(peers, live_by_id={}, resolved=resolved_peers)
+        planned.extend(plan_created(peers, resolved_peers, vendor=vendor))
     if not planned:
         raise HqPoError("empty", "ยังไม่ได้เลือกรายการ")
     to_stamp = [line for line in planned if not _created_flag(line)]

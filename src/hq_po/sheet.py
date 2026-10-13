@@ -140,6 +140,19 @@ def _num(value: Any) -> Decimal | None:
     return number
 
 
+def _unit_cost(product: dict[str, Any], ui: Any, fallback: Any) -> Decimal | None:
+    """Last cost for the printed unit. A large pack is that cost times MTP2."""
+    cost = _positive_price(product.get("costlast"), product.get("costnet"))
+    asked = _raw(ui)
+    ui2 = _raw(product.get("ui2"))
+    mtp2 = _num(product.get("mtp2"))
+    if cost is not None and asked and ui2 and asked == ui2 and mtp2 is not None and mtp2 > 1:
+        return (cost * mtp2).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if cost is not None:
+        return cost
+    return _positive_price(fallback)
+
+
 def _positive_price(*values: Any) -> Decimal | None:
     for value in values:
         number = _num(value)
@@ -313,7 +326,7 @@ def _prepare_documents(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
             bcode = _raw(raw.get("bcode"))
             product = products.get(bcode) or {}
             qty = _num(raw.get("qty")) or Decimal("0")
-            price = _positive_price(product.get("costlast"), product.get("costnet"), raw.get("price"))
+            price = _unit_cost(product, raw.get("ui"), raw.get("price"))
             lines.append(
                 {
                     "seq": index,

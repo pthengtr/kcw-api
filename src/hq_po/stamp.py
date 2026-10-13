@@ -61,6 +61,7 @@ def _product(conn, bcode: str) -> dict[str, Any]:
               LTRIM(RTRIM(COALESCE(LOCATION1, ''))) AS LOCATION1,
               QTYOH2,
               LTRIM(RTRIM(COALESCE(UI1, ''))) AS UI1,
+              LTRIM(RTRIM(COALESCE(UI2, ''))) AS UI2,
               MTP2,
               PRICE1
             FROM dbo.ICMAS
@@ -98,10 +99,14 @@ def insert_ordered_lines(
                     raise HqPoError("bad_qty", f"{bcode} จำนวนไม่ถูกต้อง")
                 product = _product(conn, bcode)
                 price = _num(product.get("PRICE1"))
-                mtp = _num(product.get("MTP2")) or _num(line.get("mtp2")) or 1.0
-                if mtp <= 0:
-                    mtp = 1.0
-                ui = _clip(line.get("ui") or product.get("UI1"), 10)
+                ui1 = _clip(product.get("UI1"), 10)
+                ui2 = _clip(product.get("UI2"), 10)
+                mtp2 = _num(product.get("MTP2")) or 1.0
+                asked = _clip(line.get("ui"), 10)
+                if asked and asked == ui2 and mtp2 > 1:
+                    ui, mtp = ui2, mtp2
+                else:
+                    ui, mtp = (asked or ui1), 1.0
                 descr = _clip(line.get("descr") or product.get("DESCR"), 60)
                 params = {
                     "bcode": bcode,
@@ -230,6 +235,8 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
                             DOCDATE = :docdate,
                             QTY = :qty,
                             VENDOR = :vendor,
+                            UI = CASE WHEN :ui = N'' THEN UI ELSE :ui END,
+                            MTP = COALESCE(:mtp, MTP),
                             AMOUNT = CASE WHEN PRICE IS NULL THEN AMOUNT ELSE PRICE * :qty END
                         WHERE CONVERT(bigint, ID) = :iclow_id
                           AND {_ORDERED_N}
@@ -243,6 +250,8 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
                         "docdate": today,
                         "qty": float(line["qty"]),
                         "vendor": vendor,
+                        "ui": _clip(line.get("ui"), 10),
+                        "mtp": _num(line.get("mtp")),
                     },
                 )
                 if result.rowcount != 1:

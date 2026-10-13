@@ -69,6 +69,15 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .qty-in:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .vendor-pick{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:12px;color:var(--muted);font-weight:650}
 .vendor-pick select{width:100%;max-width:100%;min-height:40px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font:650 14px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);background:#fff}
+.unit-pick{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.unit-pick button,.peer-btn{min-height:36px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:650;color:var(--blue-deep)}
+.unit-pick button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.peer-btn{border-radius:10px;margin-top:8px}
+.move{color:var(--blue-deep);font-weight:650}
+.peers{margin-top:8px}
+.peer-sec{margin-top:6px}
+.peer{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;margin-top:4px;font:600 13px Prompt,"Noto Sans Thai",sans-serif;color:var(--text)}
+.peer .meta{display:block;font-weight:500}
 #sheet{position:fixed;inset:0;z-index:20;background:#eef2f7;overflow:auto;padding:12px 12px calc(118px + env(safe-area-inset-bottom))}
 #sheet[hidden]{display:none}
 .sheet-top{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
@@ -285,6 +294,41 @@ function supplierLabel(s){
   if(s.last_date) bits.push(String(s.last_date));
   return bits.join(" · ");
 }
+function pinRow(row){
+  if(row.list_vendor == null){
+    row.list_vendor = row.vendor || "";
+    row.list_vendor_name = row.vendor_name || "";
+  }
+}
+function groupKey(row){
+  pinRow(row);
+  return row.list_vendor || "";
+}
+function selectedUnit(row){
+  return String(row.order_ui || row.ui || row.ui1 || "").trim();
+}
+function unitHtml(row){
+  const ui1 = String(row.ui1 || "").trim();
+  const ui2 = String(row.ui2 || "").trim();
+  const mtp = Number(row.mtp2);
+  const current = selectedUnit(row);
+  if(!ui1 || !ui2 || !(mtp > 1) || ui1 === ui2) return "";
+  const smallOn = current === ui1 || !current ? " on" : "";
+  const largeOn = current === ui2 ? " on" : "";
+  return `<div class="unit-pick" role="group" aria-label="หน่วย ${esc(row.bcode || "")}">
+    <button type="button" class="unit${smallOn}" data-unit="${esc(rowKey(row))}" data-u="${esc(ui1)}">${esc(ui1)}</button>
+    <button type="button" class="unit${largeOn}" data-unit="${esc(rowKey(row))}" data-u="${esc(ui2)}">${esc(ui2)} ×${esc(qtyText(mtp))}</button>
+  </div>`;
+}
+function vendorMoveNote(row){
+  pinRow(row);
+  if(String(row.vendor || "") === String(row.list_vendor || "")) return "";
+  return `<div class="meta move">จะไปใบของ ${esc(vendorTitle(row))}</div>`;
+}
+function peerButton(row){
+  if(!row.bcode) return "";
+  return `<button type="button" class="peer-btn" data-peers="${esc(rowKey(row))}">สินค้าแทน</button><div class="peers" data-peerbox="${esc(rowKey(row))}" hidden></div>`;
+}
 function supplierSelect(row){
   const options = row.suppliers || [];
   if(options.length < 2) return "";
@@ -298,7 +342,7 @@ function qtyCell(row){
   if(!(row.confirmable && STAMP)){
     return `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;
   }
-  return `<div class="qty-edit"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(row.ui||"")}</span></div>`;
+  return `<div class="qty-edit"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(selectedUnit(row))}</span></div>`;
 }
 function lineHtml(row){
   const check = row.confirmable && STAMP
@@ -306,15 +350,22 @@ function lineHtml(row){
     : `<input type="checkbox" disabled/>`;
   const incoming = Number(row.incoming_qty);
   const incomingText = incoming > 0 ? ` · ค้างรับ ${esc(qtyText(incoming))}` : "";
-  const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${incomingText}`;
-  return `<div class="line">
+  const packs = Number(row.mtp2);
+  const ui2 = String(row.ui2 || "").trim();
+  const packText = row.company_qtyoh2 != null && packs > 1 && ui2
+    ? ` · ${esc(qtyText(Number(row.company_qtyoh2) / packs))} ${esc(ui2)}` : "";
+  const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${packText}${incomingText}`;
+  return `<div class="line" id="line-${esc(rowKey(row))}">
     ${check}
     <div>
       <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
       ${productMeta(row)}
       ${supplierSelect(row)}
+      ${vendorMoveNote(row)}
+      ${unitHtml(row)}
       ${stock ? `<div class="meta">${stock}</div>` : ""}
       ${recHtml(row)}
+      ${peerButton(row)}
     </div>
     ${qtyCell(row)}
   </div>`;
@@ -328,20 +379,23 @@ function syncDock(){
   if(show) document.getElementById("dockConfirm").textContent = `ดูใบส่งเจ้าหนี้ ${n} รายการ`;
 }
 function renderList(){
+  const y = window.scrollY;
   const host = document.getElementById("list");
   const items = state.items.filter(match);
-  if(!items.length){ host.innerHTML = '<div class="empty">ไม่มีรายการ</div>'; syncDock(); return; }
+  for(const row of items) pinRow(row);
+  if(!items.length){ host.innerHTML = '<div class="empty">ไม่มีรายการ</div>'; syncDock(); window.scrollTo(0, y); return; }
   if(state.view==="product"){
     host.innerHTML = `<div class="card"><h2><span class="title">สินค้า</span><span class="count">${items.length} รายการ</span></h2>${items.map(lineHtml).join("")}</div>`;
     syncDock();
+    window.scrollTo(0, y);
     return;
   }
   const groups = new Map();
   for(const row of items){
-    const key = row.vendor || "";
-    if(!groups.has(key)) groups.set(key, {vendor:key, vendor_name:row.vendor_name, lines:[]});
+    const key = groupKey(row);
+    if(!groups.has(key)) groups.set(key, {vendor:key, vendor_name:row.list_vendor_name || "", lines:[]});
     const g = groups.get(key);
-    if(!g.vendor_name && row.vendor_name) g.vendor_name = row.vendor_name;
+    if(!g.vendor_name && row.list_vendor_name) g.vendor_name = row.list_vendor_name;
     g.lines.push(row);
   }
   const ordered = [...groups.values()].sort((a,b) => (a.vendor?0:1)-(b.vendor?0:1) || vendorTitle(a).localeCompare(vendorTitle(b),'th'));
@@ -351,6 +405,7 @@ function renderList(){
     return `<div class="card"><h2><span class="title">${esc(vendorTitle(g))}</span><span class="count">${g.lines.length} รายการ</span></h2>${g.lines.map(lineHtml).join("")}${btn}</div>`;
   }).join("");
   syncDock();
+  window.scrollTo(0, y);
 }
 function setView(view){
   state.view = view;
@@ -375,6 +430,7 @@ async function loadInsight(){
     const extra = data.items || [];
     const have = new Set(state.items.filter(row => row.source==="insight").map(row => row.bcode));
     const add = extra.filter(row => row.bcode && !have.has(row.bcode));
+    for(const row of add) pinRow(row);
     if(add.length){
       state.items = state.items.concat(add);
       renderList();
@@ -393,6 +449,7 @@ async function loadSuggest(){
     if(!res.ok){ host.innerHTML = '<div class="empty">โหลดรายการไม่ได้</div>'; return; }
     const data = await res.json();
     state.items = data.items || [];
+    for(const row of state.items) pinRow(row);
     state.vendors = data.vendors || [];
     renderList();
     if(data.insight_pending) loadInsight();
@@ -412,7 +469,7 @@ function checkedRows(){
 function linePayload(row){
   const meta = Object.assign({}, row.propose_meta || {});
   if(row.parts9_qty) meta.parts9_qty = row.parts9_qty;
-  const body = {qty: orderQty(row), vendor: row.vendor || "", propose_meta: Object.keys(meta).length ? meta : null};
+  const body = {qty: orderQty(row), vendor: row.vendor || "", ui: selectedUnit(row), propose_meta: Object.keys(meta).length ? meta : null};
   if(row.iclow_id) body.iclow_id = row.iclow_id;
   else body.bcode = row.bcode;
   return body;
@@ -482,7 +539,7 @@ function sheetPayload(){
         bcode: row.bcode || "",
         descr: row.descr || "",
         qty: orderQty(row),
-        ui: row.ui || "",
+        ui: selectedUnit(row),
         model: row.model || "",
         brand: row.brand || "",
         pcode: row.pcode || "",
@@ -609,7 +666,128 @@ document.getElementById("tabDone").onclick = () => {
   document.getElementById("doneView").hidden = false;
   loadOrders();
 };
+function peerLineHtml(owner, line){
+  const bits = [];
+  const cost = moneyText(line.cost);
+  if(line.brand) bits.push(line.brand);
+  if(cost) bits.push("ค่า " + cost);
+  if(line.company_qtyoh2 != null) bits.push("คงเหลือ " + qtyText(line.company_qtyoh2));
+  if(line.vendor_name || line.vendor) bits.push(line.vendor_name || line.vendor);
+  return `<button type="button" class="peer" data-use="${esc(rowKey(owner))}" data-peer="${esc(line.bcode)}"><span class="sku">${esc(line.bcode)}</span>${esc(line.descr||"")}<span class="meta">${esc(bits.join(" · "))}</span></button>`;
+}
+function peerPanelHtml(row){
+  const groups = ((row.peers && row.peers.groups) || []).filter(g => (g.lines||[]).length);
+  if(!groups.length) return `<div class="meta">ไม่พบสินค้าแทน</div>`;
+  return groups.map(g => `<div class="peer-sec"><div class="meta">${esc(g.label||"")}</div>${(g.lines||[]).map(line => peerLineHtml(row, line)).join("")}</div>`).join("");
+}
+async function loadPeers(row){
+  if(!row || !row.bcode) return;
+  const box = document.querySelector(`[data-peerbox="${CSS.escape(rowKey(row))}"]`);
+  if(!box) return;
+  if(row.peers && box.dataset.open === "1"){
+    box.hidden = true;
+    box.dataset.open = "";
+    return;
+  }
+  box.hidden = false;
+  box.dataset.open = "1";
+  if(row.peers){ box.innerHTML = peerPanelHtml(row); return; }
+  box.innerHTML = spinner("กำลังหาสินค้าแทน…");
+  try {
+    const res = await fetch("/hq-po/api/peers/" + encodeURIComponent(row.bcode));
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.message || "หาสินค้าแทนไม่ได้");
+    row.peers = data;
+    box.innerHTML = peerPanelHtml(row);
+  } catch (err) {
+    box.innerHTML = `<div class="meta">${esc(err.message || "หาสินค้าแทนไม่ได้")}</div>`;
+  }
+}
+function findPeer(row, bcode){
+  const groups = (row.peers && row.peers.groups) || [];
+  for(const group of groups){
+    const hit = (group.lines||[]).find(line => String(line.bcode||"") === bcode);
+    if(hit) return hit;
+  }
+  return null;
+}
+function scrollToRow(row){
+  const el = document.getElementById("line-" + rowKey(row));
+  if(el) el.scrollIntoView({block:"center"});
+}
+function usePeer(row, bcode){
+  if(!row || !bcode) return;
+  const hit = findPeer(row, bcode);
+  if(!hit) return;
+  const existing = state.items.find(item => String(item.bcode||"") === bcode);
+  if(!existing && !hit.vendor){
+    alert("สินค้านี้ยังไม่มีเจ้าหนี้ที่สั่งได้");
+    return;
+  }
+  if(existing){
+    renderList();
+    const box = document.querySelector(`#list input[data-key="${CSS.escape(rowKey(existing))}"]`);
+    if(box && !box.disabled) box.checked = true;
+    scrollToRow(existing);
+    syncDock();
+    return;
+  }
+  const added = {
+    iclow_id: null,
+    source: "peer",
+    confirmable: !!hit.vendor,
+    list_vendor: row.list_vendor || row.vendor || "",
+    list_vendor_name: row.list_vendor_name || row.vendor_name || "",
+    vendor: hit.vendor || "",
+    vendor_name: hit.vendor_name || "",
+    suppliers: hit.suppliers || [],
+    bcode: hit.bcode,
+    descr: hit.descr || "",
+    model: hit.model || "",
+    brand: hit.brand || "",
+    pcode: hit.pcode || "",
+    mcode: hit.mcode || "",
+    ui: hit.ui1 || hit.ui || "",
+    ui1: hit.ui1 || hit.ui || "",
+    ui2: hit.ui2 || "",
+    mtp2: hit.mtp2 || 1,
+    price: hit.price,
+    cost: hit.cost,
+    qty: orderQty(row) || 1,
+    order_qty: orderQty(row) || 1,
+    hq_qtyoh2: hit.hq_qtyoh2,
+    syp_qtyoh2: hit.syp_qtyoh2,
+    company_qtyoh2: hit.company_qtyoh2,
+    propose_meta: {iclow_origin: "peer"},
+  };
+  const idx = state.items.indexOf(row);
+  state.items.splice(idx < 0 ? state.items.length : idx + 1, 0, added);
+  renderList();
+  const box = document.querySelector(`#list input[data-key="${CSS.escape(rowKey(added))}"]`);
+  if(box && !box.disabled) box.checked = true;
+  scrollToRow(added);
+  syncDock();
+}
 document.getElementById("list").onclick = (e) => {
+  const unit = e.target.closest("[data-unit]");
+  if(unit){
+    const row = findRow(unit.dataset.unit || "");
+    const u = unit.dataset.u || "";
+    if(row && u){
+      row.order_ui = u;
+      const line = unit.closest(".line");
+      if(line){
+        line.querySelectorAll("[data-unit]").forEach(btn => btn.classList.toggle("on", btn.dataset.u === u));
+        const meta = line.querySelector(".qty-edit .meta");
+        if(meta) meta.textContent = u;
+      }
+    }
+    return;
+  }
+  const peers = e.target.closest("[data-peers]");
+  if(peers){ loadPeers(findRow(peers.dataset.peers || "")); return; }
+  const use = e.target.closest("[data-use]");
+  if(use){ usePeer(findRow(use.dataset.use || ""), use.dataset.peer || ""); return; }
   const fill = e.target.closest("[data-fill]");
   if(fill){
     const row = findRow(fill.dataset.fill || "");
@@ -622,7 +800,13 @@ document.getElementById("list").onclick = (e) => {
     return;
   }
   const btn = e.target.closest("[data-confirm]");
-  if(btn){ openSheet(checkedFor(btn.getAttribute("data-confirm") || "")); return; }
+  if(btn){
+    const card = btn.closest(".card");
+    const rows = card
+      ? [...card.querySelectorAll("input[data-key]:checked")].map(box => findRow(box.dataset.key || "")).filter(Boolean)
+      : checkedFor(btn.getAttribute("data-confirm") || "");
+    openSheet(rows);
+  }
 };
 document.getElementById("list").oninput = (e) => {
   const input = e.target.closest("input[data-qty]");
@@ -635,15 +819,18 @@ document.getElementById("list").onchange = (e) => {
   if(!pick){ syncDock(); return; }
   const row = findRow(pick.dataset.pick || "");
   const hit = row && (row.suppliers || []).find(s => s.acctno === pick.value);
-  if(hit){
+  if(hit && row){
     row.vendor = hit.acctno;
     row.vendor_name = hit.name || "";
-  }
-  const checked = [...document.querySelectorAll("#list input[data-key]:checked")].map(box => box.dataset.key);
-  renderList();
-  for(const key of checked){
-    const box = document.querySelector(`#list input[data-key="${CSS.escape(key)}"]`);
-    if(box) box.checked = true;
+    const line = pick.closest(".line");
+    const box = line && line.querySelector("input[data-key]");
+    if(box) box.dataset.vendor = row.vendor || "";
+    const note = line && line.querySelector(".move");
+    const text = vendorMoveNote(row);
+    if(text){
+      if(note) note.outerHTML = text;
+      else pick.closest(".vendor-pick").insertAdjacentHTML("afterend", text);
+    } else if(note) note.remove();
   }
   syncDock();
 };

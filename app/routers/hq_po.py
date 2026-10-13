@@ -13,6 +13,7 @@ from src.hq_po.service import (
     confirm_order,
     insight_only_payload,
     list_open_orders,
+    peers_payload,
     suggest_payload,
 )
 from src.hq_po.sheet import build_sheet_forms
@@ -195,6 +196,19 @@ def api_suggest(request: Request):
         return suggest_payload()
     except Exception as exc:
         return JSONResponse({"error": "suggest_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/peers/{bcode}")
+def api_peers(bcode: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return peers_payload(bcode)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "peers_failed", "message": str(exc)}, status_code=502)
 
 
 @router.get("/api/insight")
