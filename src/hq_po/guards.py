@@ -106,13 +106,25 @@ def plan_confirm(
         qty = chosen_qty(raw, live.get("qty"))
         if qty <= 0:
             raise HqPoError("bad_qty", f"{live.get('bcode') or iclow_id} จำนวนไม่ถูกต้อง")
+        live_ui = str(live.get("ui") or "").strip()
+        asked_ui = str(raw.get("ui") or "").strip()
+        ui = asked_ui or live_ui or None
+        mtp = None
+        if asked_ui and asked_ui != live_ui and raw.get("mtp") not in (None, ""):
+            try:
+                mtp = float(raw.get("mtp"))
+            except (TypeError, ValueError):
+                mtp = None
+            if mtp is not None and mtp <= 0:
+                mtp = None
         out.append(
             {
                 "iclow_id": iclow_id,
                 "bcode": str(live.get("bcode") or "").strip(),
                 "descr": str(live.get("descr") or "").strip() or None,
                 "qty": qty,
-                "ui": str(live.get("ui") or "").strip() or None,
+                "ui": ui,
+                "mtp": mtp,
                 "vendor": line_vendor,
                 "propose_meta": raw.get("propose_meta"),
             }
@@ -186,3 +198,26 @@ def chosen_qty(raw: dict[str, Any], fallback: Any) -> float:
     if qty <= 0 or qty > _QTY_CAP:
         return 0.0
     return qty
+
+
+def chosen_pack(asked_ui: Any, product: dict[str, Any] | None) -> tuple[str, float] | None:
+    """Map a chosen unit onto ICMAS packs. UI1 uses MTP 1. UI2 uses MTP2.
+
+    None means the asked unit is not a pack on this product, so the caller keeps
+    the unit already stored on the line.
+    """
+    card = product or {}
+    asked = str(asked_ui or "").strip()
+    if not asked:
+        return None
+    ui1 = str(card.get("ui") or card.get("ui1") or "").strip()
+    ui2 = str(card.get("ui2") or "").strip()
+    try:
+        mtp2 = float(card.get("mtp2") or 0)
+    except (TypeError, ValueError):
+        mtp2 = 0.0
+    if ui2 and asked == ui2 and mtp2 > 1:
+        return ui2, mtp2
+    if ui1 and asked == ui1:
+        return ui1, 1.0
+    return None

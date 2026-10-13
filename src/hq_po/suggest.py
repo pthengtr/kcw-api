@@ -56,8 +56,12 @@ def _attach_stock(item: dict[str, Any], hq: dict[str, Any] | None, syp: dict[str
         item["descr"] = (hq.get("descr") or syp.get("descr") or "").strip()
     if not item.get("mcode"):
         item["mcode"] = (hq.get("mcode") or syp.get("mcode") or "").strip()
+    if not item.get("ui1"):
+        item["ui1"] = (hq.get("ui1") or syp.get("ui1") or "").strip()
+    if not item.get("ui2"):
+        item["ui2"] = (hq.get("ui2") or syp.get("ui2") or "").strip()
     if not item.get("ui"):
-        item["ui"] = (hq.get("ui1") or syp.get("ui1") or "").strip()
+        item["ui"] = item.get("ui1") or ""
     if not item.get("model"):
         item["model"] = (hq.get("model") or syp.get("model") or "").strip()
     if not item.get("brand"):
@@ -92,6 +96,18 @@ def attach_catalog(items: list[dict[str, Any]]) -> None:
             value = str(product.get(key) or "").strip()
             if value:
                 item[key] = value
+        ui1 = str(product.get("ui") or "").strip()
+        if ui1:
+            item["ui1"] = ui1
+        ui2 = str(product.get("ui2") or "").strip()
+        if ui2:
+            item["ui2"] = ui2
+        try:
+            mtp2 = float(product.get("mtp2") or 0)
+        except (TypeError, ValueError):
+            mtp2 = 0.0
+        if mtp2 > 0:
+            item["mtp2"] = mtp2
         price = _positive_money(product.get("price1"))
         if price is not None:
             item["price"] = price
