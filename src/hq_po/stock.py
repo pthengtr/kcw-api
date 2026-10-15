@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_REFRESH_CHUNK = 40
+_REFRESH_CHUNK = 200
+# A reload while the list is already fresh should paint without another ledger scan.
+_FRESH_SEC = 120.0
+_fresh_lock = threading.Lock()
+_fresh_until: dict[str, float] = {}
 
 
 def parts9_order_qty(*, qtyget: Any, qtymin: Any, qtyoh: Any) -> float | None:
@@ -60,6 +66,11 @@ def refresh_qtyoh2(bcodes: list[str], *, sites: tuple[str, ...] = ("hq", "syp"))
     codes = _codes(bcodes)
     if not codes:
         return
+    now = time.monotonic()
+    with _fresh_lock:
+        codes = [code for code in codes if _fresh_until.get(code, 0.0) <= now]
+    if not codes:
+        return
     try:
         from src.db.qtyoh2_ledger import (
             qtyoh2_sync_on_read_enabled,
@@ -72,25 +83,40 @@ def refresh_qtyoh2(bcodes: list[str], *, sites: tuple[str, ...] = ("hq", "syp"))
     if not qtyoh2_sync_on_read_enabled():
         return
 
-    def _site(site: str) -> None:
+    def _site(site: str) -> set[str] | None:
         try:
             writer = get_site_writer_engine(site)
         except Exception:
             logger.warning("hq po qtyoh2 writer unavailable for %s", site, exc_info=True)
-            return
+            return None
         if writer is None:
-            return
+            return None
+        fresh: set[str] = set()
         for start in range(0, len(codes), _REFRESH_CHUNK):
-            sync_qtyoh2_from_ledger_many(codes[start : start + _REFRESH_CHUNK], engine=writer)
+            results = sync_qtyoh2_from_ledger_many(
+                codes[start : start + _REFRESH_CHUNK], engine=writer
+            )
+            fresh.update(result.bcode for result in results if not result.skipped)
+        return fresh
 
     chosen = tuple(site for site in sites if site in ("hq", "syp"))
     if not chosen:
         return
     try:
         with ThreadPoolExecutor(max_workers=len(chosen)) as pool:
-            list(pool.map(_site, chosen))
+            synced = list(pool.map(_site, chosen))
     except Exception:
         logger.warning("hq po qtyoh2 sync failed", exc_info=True)
+        return
+    if any(site_codes is None for site_codes in synced):
+        return
+    fresh = set.intersection(*(site_codes or set() for site_codes in synced))
+    if not fresh:
+        return
+    until = time.monotonic() + _FRESH_SEC
+    with _fresh_lock:
+        for code in fresh:
+            _fresh_until[code] = until
 
 
 def fetch_parts9_qty(bcodes: list[str]) -> dict[str, float]:

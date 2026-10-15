@@ -17,7 +17,12 @@ from src.hq_po.iclow_read import (
     fetch_vendor_names,
     supplier_choices,
 )
-from src.hq_po.insight import annotate_iclow_items, insight_only_lines, load_insight_policies
+from src.hq_po.insight import (
+    annotate_iclow_items,
+    insight_only_lines,
+    load_insight_policies,
+    load_insight_policies_for,
+)
 from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
 
 logger = logging.getLogger(__name__)
@@ -80,16 +85,20 @@ def _positive_money(value: Any) -> float | None:
     return round(number, 2)
 
 
-def attach_catalog(items: list[dict[str, Any]]) -> None:
+def attach_catalog(
+    items: list[dict[str, Any]],
+    products: dict[str, dict[str, Any]] | None = None,
+) -> None:
     """Fill ชื่อรุ่น, เบอร์แท้, เบอร์โรงงาน, ยี่ห้อ, ราคา, and ค่า from HQ ICMAS."""
     codes = [str(item.get("bcode") or "").strip() for item in items if item.get("bcode")]
     if not codes:
         return
-    try:
-        products = fetch_sheet_products(codes)
-    except Exception:
-        logger.warning("hq po catalog lookup failed", exc_info=True)
-        return
+    if products is None:
+        try:
+            products = fetch_sheet_products(codes)
+        except Exception:
+            logger.warning("hq po catalog lookup failed", exc_info=True)
+            return
     for item in items:
         product = products.get(str(item.get("bcode") or "").strip()) or {}
         for key in ("model", "brand", "pcode", "mcode"):
@@ -247,29 +256,60 @@ def _ensure_insight_future(
         return _insight_future
 
 
-def _attach_parts9(items: list[dict[str, Any]]) -> None:
-    codes = [str(item.get("bcode") or "").strip() for item in items]
-    try:
-        found = fetch_parts9_qty(codes)
-    except Exception:
-        logger.warning("hq po parts9 qty read failed", exc_info=True)
-        return
+def _attach_parts9(
+    items: list[dict[str, Any]],
+    found: dict[str, float] | None = None,
+) -> None:
+    if found is None:
+        codes = [str(item.get("bcode") or "").strip() for item in items]
+        try:
+            found = fetch_parts9_qty(codes)
+        except Exception:
+            logger.warning("hq po parts9 qty read failed", exc_info=True)
+            return
     for item in items:
         qty = found.get(str(item.get("bcode") or "").strip())
         if qty:
             item["parts9_qty"] = qty
 
 
-def build_suggest() -> dict[str, Any]:
-    rows = fetch_to_order_rows()
+def _catalog_for(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     try:
-        names = fetch_vendor_names([row["vendor"] for row in rows])
+        return fetch_sheet_products(bcodes)
     except Exception:
-        logger.warning("hq po vendor name lookup failed", exc_info=True)
-        names = {}
+        logger.warning("hq po catalog lookup failed", exc_info=True)
+        return {}
+
+
+def build_suggest() -> dict[str, Any]:
+    """Waiting lines only. The full AI scan stays on the AI tab."""
+    rows = fetch_to_order_rows()
+    bcodes = [str(row.get("bcode") or "").strip() for row in rows if str(row.get("bcode") or "").strip()]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        catalog_fut = pool.submit(_catalog_for, bcodes)
+        try:
+            names = fetch_vendor_names([row["vendor"] for row in rows])
+        except Exception:
+            logger.warning("hq po vendor name lookup failed", exc_info=True)
+            names = {}
+        hq, syp, stock_ok = fetch_dual_stock(bcodes)
+        incoming: dict[str, float] = {}
+        try:
+            incoming = fetch_incoming_qty()
+        except Exception:
+            logger.warning("hq po incoming qty read failed", exc_info=True)
+        try:
+            parts9 = fetch_parts9_qty(bcodes)
+        except Exception:
+            logger.warning("hq po parts9 qty read failed", exc_info=True)
+            parts9 = {}
+        try:
+            policies = load_insight_policies_for(bcodes) if stock_ok else {}
+        except Exception:
+            logger.warning("hq po insight policy read failed", exc_info=True)
+            policies = {}
+        products = catalog_fut.result()
     items = [_iclow_item(row, names) for row in rows]
-    bcodes = [item["bcode"] for item in items if item.get("bcode")]
-    hq, syp, stock_ok = fetch_dual_stock(bcodes, refresh=True)
     if stock_ok:
         for item in items:
             bcode = item.get("bcode") or ""
@@ -281,33 +321,14 @@ def build_suggest() -> dict[str, Any]:
                 hq_meta = hq_meta or {"qtyoh2": 0, "mtp2": 1, "blocked": False}
                 syp_meta = syp_meta or {"qtyoh2": 0, "mtp2": 1, "blocked": False}
             _attach_stock(item, hq_meta, syp_meta)
-    policies = load_insight_policies() if stock_ok else {}
-    extra: list[dict[str, Any]] = []
-    insight_pending = False
-    incoming: dict[str, float] = {}
-    incoming_ok = False
-    if policies:
-        try:
-            incoming = fetch_incoming_qty()
-            incoming_ok = True
-        except Exception:
-            logger.warning("hq po incoming qty read failed", exc_info=True)
-        annotate_iclow_items(items, policies, incoming=incoming)
-        if incoming_ok:
-            iclow_bcodes = {item["bcode"] for item in items if item.get("bcode")}
-            cached = _peek_insight_cache(insight_cache_key(iclow_bcodes, incoming))
-            if cached is not None:
-                extra = cached
-            else:
-                _ensure_insight_future(policies, iclow_bcodes, incoming)
-                insight_pending = True
-        items.extend(extra)
-    _attach_parts9(items)
-    attach_catalog(items)
+        if policies:
+            annotate_iclow_items(items, policies, incoming=incoming)
+    _attach_parts9(items, parts9)
+    attach_catalog(items, products)
     return {
         "items": sort_products(items),
         "stock_ok": stock_ok,
-        "insight_pending": insight_pending,
+        "insight_pending": False,
     }
 
 

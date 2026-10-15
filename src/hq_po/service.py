@@ -27,16 +27,21 @@ from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
     fetch_iclow_by_ids,
     fetch_incoming_qty,
+    fetch_ordered_product_rows,
+    fetch_to_order_rows,
     fetch_sheet_products,
     fetch_unordered_bcodes,
     fetch_vendor_names,
+    search_vendors,
     supplier_choices,
 )
 from src.hq_po.insight import (
     ai_recommendation,
     build_insight_only_item,
     clean_propose_meta,
+    insight_only_lines,
     load_insight_policies,
+    load_insight_policies_for_supplier,
 )
 from src.hq_po.stamp import cancel_created, insert_ordered_lines, revert_ordered, stamp_ordered
 from src.hq_po.suggest import attach_catalog, build_insight_only, build_suggest, suppliers_for_bcode
@@ -51,6 +56,166 @@ def suggest_payload() -> dict[str, Any]:
 
 def insight_only_payload() -> dict[str, Any]:
     return build_insight_only()
+
+
+def vendor_search_payload(query: str) -> dict[str, Any]:
+    try:
+        rows = search_vendors(query)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "หาเจ้าหนี้ไม่ได้") from exc
+    return {"vendors": rows}
+
+
+def _history_item(
+    row: dict[str, Any],
+    *,
+    acct: str,
+    name: str,
+    product: dict[str, Any],
+    hq: dict[str, Any] | None,
+    syp: dict[str, Any] | None,
+    parts9: float | None,
+) -> dict[str, Any]:
+    hq_qty = float((hq or {}).get("qtyoh2") or 0) if hq is not None else None
+    syp_qty = float((syp or {}).get("qtyoh2") or 0) if syp is not None else None
+    company = None if hq_qty is None or syp_qty is None else hq_qty + syp_qty
+    try:
+        mtp2 = float(product.get("mtp2") or (hq or {}).get("mtp2") or 1)
+    except (TypeError, ValueError):
+        mtp2 = 1.0
+    qty = parts9 if parts9 and parts9 > 0 else 1.0
+    return {
+        "iclow_id": None,
+        "vendor": acct,
+        "vendor_name": name or None,
+        "bcode": row["bcode"],
+        "descr": str(product.get("descr") or (hq or {}).get("descr") or "").strip(),
+        "mcode": str(product.get("mcode") or "").strip(),
+        "model": str(product.get("model") or "").strip(),
+        "brand": str(product.get("brand") or "").strip(),
+        "pcode": str(product.get("pcode") or "").strip(),
+        "qty": qty,
+        "ui": str(product.get("ui") or "").strip(),
+        "ui1": str(product.get("ui") or "").strip(),
+        "ui2": str(product.get("ui2") or "").strip(),
+        "mtp2": mtp2 if mtp2 > 0 else 1.0,
+        "source": "history",
+        "confirmable": True,
+        "hq_qtyoh2": hq_qty,
+        "syp_qtyoh2": syp_qty,
+        "company_qtyoh2": company,
+        "last_date": row.get("last_date") or "",
+        "bills": row.get("bills") or 0,
+        "parts9_qty": parts9,
+        "propose_meta": {"iclow_origin": "history"},
+    }
+
+
+def vendor_ordered_payload(acctno: str) -> dict[str, Any]:
+    acct = str(acctno or "").strip()
+    if not acct:
+        raise HqPoError("missing", "ไม่มีรหัสเจ้าหนี้")
+    try:
+        name = fetch_vendor_names([acct]).get(acct) or ""
+        rows = fetch_ordered_product_rows(acct)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "อ่านสินค้าที่เคยสั่งไม่ได้") from exc
+    if not rows:
+        return {"vendor": acct, "vendor_name": name, "items": []}
+    codes = [row["bcode"] for row in rows]
+    try:
+        products = fetch_sheet_products(codes)
+    except Exception:
+        products = {}
+    try:
+        waiting = fetch_unordered_bcodes(codes)
+    except Exception:
+        waiting = set()
+    from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
+
+    hq, syp, ok = fetch_dual_stock(codes)
+    try:
+        parts9 = fetch_parts9_qty(codes)
+    except Exception:
+        parts9 = {}
+    items = []
+    for row in rows:
+        bcode = row["bcode"]
+        if bcode in waiting:
+            continue
+        product = products.get(bcode) or {}
+        items.append(
+            _history_item(
+                row,
+                acct=acct,
+                name=name,
+                product=product,
+                hq=hq.get(bcode) if ok else None,
+                syp=syp.get(bcode) if ok else None,
+                parts9=parts9.get(bcode),
+            )
+        )
+    return {"vendor": acct, "vendor_name": name, "items": items}
+
+
+def vendor_insight_payload(acctno: str) -> dict[str, Any]:
+    """AI lines for one vendor. This does not scan every insight product."""
+    acct = str(acctno or "").strip()
+    if not acct:
+        raise HqPoError("missing", "ไม่มีรหัสเจ้าหนี้")
+    try:
+        name = fetch_vendor_names([acct]).get(acct) or ""
+    except Exception:
+        name = ""
+    try:
+        policies = load_insight_policies_for_supplier(acct, name)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "อ่านคำแนะนำ AI ของเจ้าหนี้ไม่ได้") from exc
+    if not policies:
+        return {"vendor": acct, "vendor_name": name, "items": []}
+    try:
+        waiting_rows = fetch_to_order_rows()
+    except Exception:
+        waiting_rows = []
+    iclow_bcodes = {str(row.get("bcode") or "").strip() for row in waiting_rows if row.get("bcode")}
+    try:
+        incoming = fetch_incoming_qty()
+    except Exception:
+        incoming = {}
+    from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
+
+    codes = [bcode for bcode in policies if bcode not in iclow_bcodes]
+    hq, syp, ok = fetch_dual_stock(codes) if codes else ({}, {}, True)
+    lines = (
+        insight_only_lines(
+            policies,
+            iclow_bcodes=iclow_bcodes,
+            hq_icmas=hq,
+            syp_icmas=syp,
+            incoming=incoming,
+        )
+        if ok
+        else []
+    )
+    for line in lines:
+        line["vendor"] = acct
+        line["vendor_name"] = name or None
+        try:
+            qty = float(line.get("qty") or 0)
+        except (TypeError, ValueError):
+            qty = 0
+        if acct and qty > 0:
+            line["confirmable"] = True
+    try:
+        parts9 = fetch_parts9_qty([str(line.get("bcode") or "") for line in lines])
+    except Exception:
+        parts9 = {}
+    for line in lines:
+        qty = parts9.get(str(line.get("bcode") or "").strip())
+        if qty:
+            line["parts9_qty"] = qty
+    attach_catalog(lines)
+    return {"vendor": acct, "vendor_name": name, "items": lines}
 
 
 def suppliers_payload(bcode: str, *, current: str = "", current_name: str = "") -> dict[str, Any]:
@@ -175,7 +340,7 @@ def _created_flag(line: dict[str, Any]) -> bool:
 
 def _peer_flag(line: dict[str, Any]) -> bool:
     meta = line.get("propose_meta")
-    return isinstance(meta, dict) and meta.get("iclow_origin") == "peer"
+    return isinstance(meta, dict) and meta.get("iclow_origin") in ("peer", "history")
 
 
 def _line_bcode(raw: dict[str, Any], live_by_id: dict[int, dict[str, Any]]) -> str:
