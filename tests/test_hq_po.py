@@ -290,6 +290,8 @@ def test_page_defaults_vendor_view():
     assert "data-peers" in html
     assert "list_vendor" in html
     assert "จะไปใบของ" in html
+    assert "ยกเลิกบรรทัด" in html
+    assert "data-cancel-line" in html
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
@@ -308,15 +310,17 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
 
     monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: [row])
     monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
-    monkeypatch.setattr(
-        suggest,
-        "fetch_dual_stock",
-        lambda codes: (
+    refreshed: list[bool] = []
+
+    def dual_stock(codes, refresh=False):
+        refreshed.append(refresh)
+        return (
             {"A1": {"qtyoh2": 1, "mtp2": 1, "blocked": False, "descr": "bolt"}},
             {"A1": {"qtyoh2": 0, "mtp2": 1, "blocked": False}},
             True,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(suggest, "fetch_dual_stock", dual_stock)
     monkeypatch.setattr(
         suggest,
         "load_insight_policies",
@@ -337,6 +341,7 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     assert scanned == [1]
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
+    assert refreshed == [True]
 
 
 def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
@@ -353,7 +358,7 @@ def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
     }
     monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: [row])
     monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
-    monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes: ({}, {}, False))
+    monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes, refresh=False: ({}, {}, False))
     monkeypatch.setattr(suggest, "load_insight_policies", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
     monkeypatch.setattr(suggest, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
@@ -508,3 +513,109 @@ def test_peer_groups_keep_catalog_ahead_of_part_numbers():
     assert [line["bcode"] for line in groups[1]["lines"]] == ["C3"]
     assert [line["bcode"] for line in groups[2]["lines"]] == ["D4"]
     assert [line["bcode"] for line in groups[3]["lines"]] == ["E5"]
+
+
+def test_refresh_qtyoh2_syncs_both_sites(monkeypatch):
+    import src.db.qtyoh2_ledger as ledger
+    import src.parts9_explorer.db as explorer_db
+    from src.hq_po.stock import fetch_dual_stock, refresh_qtyoh2
+
+    monkeypatch.setattr(ledger, "qtyoh2_sync_on_read_enabled", lambda: True)
+    engines = {"hq": object(), "syp": object()}
+    monkeypatch.setattr(explorer_db, "get_site_writer_engine", lambda site: engines[site])
+    seen: list[tuple[tuple[str, ...], object]] = []
+
+    def sync(codes, *, engine):
+        seen.append((tuple(codes), engine))
+        return []
+
+    monkeypatch.setattr(ledger, "sync_qtyoh2_from_ledger_many", sync)
+    refresh_qtyoh2(["A1", "A1", " B2 "])
+    assert {engine for _, engine in seen} == set(engines.values())
+    assert {codes for codes, _ in seen} == {("A1", "B2")}
+
+    seen.clear()
+    monkeypatch.setattr(ledger, "qtyoh2_sync_on_read_enabled", lambda: False)
+    refresh_qtyoh2(["A1"])
+    assert seen == []
+
+    order: list[str] = []
+    monkeypatch.setattr(
+        "src.hq_po.stock.refresh_qtyoh2",
+        lambda codes, sites=("hq", "syp"): order.append("refresh"),
+    )
+    import src.transfer.parts9 as parts9
+
+    monkeypatch.setattr(parts9, "_fetch_icmas_chunked", lambda site, codes: order.append(site) or {})
+    fetch_dual_stock(["A1"], refresh=True)
+    assert order[0] == "refresh"
+    fetch_dual_stock(["A1"])
+    assert order.count("refresh") == 1
+
+
+def test_cancel_line_returns_the_row_to_iclow(monkeypatch):
+    from src.hq_po import service
+
+    class Settings:
+        stamp_enabled = True
+
+    order = {
+        "order_id": "o1",
+        "status": "ordered",
+        "docno": "HP6910-AAAA",
+        "lines": [
+            {
+                "line_id": "l1",
+                "iclow_id": 9,
+                "bcode": "A1",
+                "canceled_at": None,
+                "propose_meta": {"iclow_origin": "created"},
+            },
+            {
+                "line_id": "l2",
+                "iclow_id": 10,
+                "bcode": "B2",
+                "canceled_at": None,
+            },
+        ],
+    }
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: Settings())
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+    monkeypatch.setattr(service, "get_order", lambda _client, _order_id: order)
+    monkeypatch.setattr(
+        service,
+        "fetch_iclow_by_ids",
+        lambda _ids: {
+            9: {"iclow_id": 9, "bcode": "A1", "ordered": "Y", "received": "N", "docno": "HP6910-AAAA"}
+        },
+    )
+    reverted: list[tuple[list, str]] = []
+    marked: list[tuple] = []
+    def _do_not_retire(*_args, **_kwargs):
+        raise AssertionError("created row must return to ICLOW")
+
+    monkeypatch.setattr(service, "revert_ordered", lambda lines, docno: reverted.append((lines, docno)))
+    monkeypatch.setattr(service, "cancel_created", _do_not_retire)
+    monkeypatch.setattr(
+        service,
+        "mark_line_canceled",
+        lambda client, order_id, line_id, reason=None: marked.append((order_id, line_id, reason)),
+    )
+    service.cancel_order_line("o1", "l1")
+    assert reverted[0][1] == "HP6910-AAAA"
+    assert reverted[0][0][0]["iclow_id"] == 9
+    assert marked == [("o1", "l1", "vendor_unavailable")]
+
+    monkeypatch.setattr(
+        service,
+        "fetch_iclow_by_ids",
+        lambda _ids: {
+            9: {"iclow_id": 9, "bcode": "A1", "ordered": "Y", "received": "Y", "docno": "HP6910-AAAA"}
+        },
+    )
+    try:
+        service.cancel_order_line("o1", "l1")
+    except HqPoError as exc:
+        assert exc.code == "already_received"
+    else:
+        raise AssertionError("expected already_received")

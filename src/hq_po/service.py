@@ -11,6 +11,7 @@ from src.hq_po.db import (
     get_order,
     insert_order,
     list_orders,
+    mark_line_canceled,
     mark_order_canceled,
 )
 from src.hq_po.docno import make_docno, make_short_id
@@ -84,7 +85,7 @@ def _split_lines(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], lis
 
 def _resolve_created(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     """Fresh AI qty for products that are not already waiting on ICLOW."""
-    from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
+    from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty, refresh_qtyoh2
 
     codes = []
     seen: set[str] = set()
@@ -95,6 +96,7 @@ def _resolve_created(bcodes: list[str]) -> dict[str, dict[str, Any]]:
             codes.append(bcode)
     if not codes:
         return {}
+    refresh_qtyoh2(codes)
     unordered = fetch_unordered_bcodes(codes)
     incoming = fetch_incoming_qty()
     try:
@@ -330,6 +332,10 @@ def confirm_order(
         raise HqPoError("empty", "ยังไม่ได้เลือกรายการ")
     to_stamp = [line for line in planned if not _created_flag(line)]
     to_insert = [line for line in planned if _created_flag(line)]
+    if to_insert:
+        from src.hq_po.stock import refresh_qtyoh2
+
+        refresh_qtyoh2([str(line.get("bcode") or "") for line in to_insert])
     for line in to_stamp:
         line["propose_meta"] = clean_propose_meta(line.get("propose_meta"))
     acct = (vendor or "").strip()
@@ -469,3 +475,45 @@ def cancel_order(order_id: str, *, reason: str | None = None) -> dict[str, Any]:
         cancel_created(created, docno=docno)
     mark_order_canceled(client, order_id, reason=reason or "canceled")
     return get_order(client, order_id) or {"order_id": order_id, "status": "canceled"}
+
+
+def cancel_order_line(order_id: str, line_id: str, *, reason: str | None = None) -> dict[str, Any]:
+    """Drop one line the vendor cannot supply and return that ICLOW row to รอสั่ง."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่ยกเลิกบน ICLOW",
+        )
+    wanted = str(line_id or "").strip()
+    if not wanted:
+        raise HqPoError("missing", "ไม่มีรายการให้ยกเลิก")
+    client = get_hq_po_supabase_client()
+    order = get_order(client, order_id)
+    if not order or order.get("status") != "ordered":
+        raise HqPoError("missing", "ไม่พบใบสั่งซื้อที่ยังเปิดอยู่")
+    line = next(
+        (
+            row
+            for row in (order.get("lines") or [])
+            if str(row.get("line_id") or "") == wanted and not row.get("canceled_at")
+        ),
+        None,
+    )
+    if not line:
+        raise HqPoError("missing", "ไม่พบรายการนี้ในใบสั่งซื้อ")
+    try:
+        iclow_id = int(line["iclow_id"])
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "รายการนี้ไม่มีแถว ICLOW") from None
+    live = fetch_iclow_by_ids([iclow_id])
+    row = live.get(iclow_id)
+    if not row:
+        raise HqPoError("missing", f"ไม่พบ ICLOW {iclow_id}")
+    docno = str(order.get("docno") or "")
+    plan_cancel([row], docno)
+    # A line the vendor cannot fill goes back to the waiting list, including a
+    # row this app inserted. Whole-order cancel still retires those inserted rows.
+    revert_ordered([line], docno=docno)
+    mark_line_canceled(client, order_id, wanted, reason=reason or "vendor_unavailable")
+    return get_order(client, order_id) or {"order_id": order_id, "status": "ordered"}

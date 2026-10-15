@@ -92,6 +92,42 @@ def insert_order(
     return header
 
 
+def mark_line_canceled(
+    client: Client, order_id: str, line_id: str, *, reason: str | None = None
+) -> bool:
+    """Mark one PO line canceled. Returns True when the order has no open lines left."""
+    now = datetime.now(timezone.utc).isoformat()
+    updated = _rows(
+        _table(client, "lines")
+        .update({"canceled_at": now})
+        .eq("order_id", order_id)
+        .eq("line_id", line_id)
+        .is_("canceled_at", "null")
+        .execute()
+    )
+    if not updated:
+        raise HqPoError("missing", "ไม่พบรายการนี้ในใบสั่งซื้อ")
+    open_lines = _rows(
+        _table(client, "lines")
+        .select("line_id")
+        .eq("order_id", order_id)
+        .is_("canceled_at", "null")
+        .execute()
+    )
+    if open_lines:
+        _table(client, "orders").update({"updated_at": now}).eq("order_id", order_id).execute()
+        return False
+    _table(client, "orders").update(
+        {
+            "status": "canceled",
+            "canceled_at": now,
+            "cancel_reason": (reason or "line_canceled")[:300] or None,
+            "updated_at": now,
+        }
+    ).eq("order_id", order_id).eq("status", "ordered").execute()
+    return True
+
+
 def mark_order_canceled(client: Client, order_id: str, *, reason: str | None = None) -> None:
     now = datetime.now(timezone.utc).isoformat()
     _table(client, "lines").update({"canceled_at": now}).eq("order_id", order_id).is_(
