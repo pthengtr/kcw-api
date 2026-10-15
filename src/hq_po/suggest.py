@@ -8,7 +8,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
-from src.hq_po.group import group_by_vendor, sort_products
+from src.hq_po.group import sort_products
 from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
     fetch_incoming_qty,
@@ -118,26 +118,25 @@ def attach_catalog(items: list[dict[str, Any]]) -> None:
             item["cost"] = cost
 
 
-def attach_suppliers(items: list[dict[str, Any]]) -> None:
-    """Attach purchase-history suppliers so the buyer can move a line to another vendor."""
-    codes = [str(item.get("bcode") or "").strip() for item in items if item.get("bcode")]
-    if not codes:
-        return
-    try:
-        history, catalog = fetch_bcode_suppliers(codes)
-    except Exception:
-        logger.warning("hq po supplier lookup failed", exc_info=True)
-        return
-    for item in items:
-        bcode = str(item.get("bcode") or "").strip()
-        card = catalog.get(bcode) or {}
-        item["suppliers"] = supplier_choices(
-            history.get(bcode) or [],
-            current=str(item.get("vendor") or ""),
-            current_name=str(item.get("vendor_name") or ""),
-            catalog=str(card.get("acctno") or ""),
-            catalog_name=str(card.get("name") or ""),
-        )
+def suppliers_for_bcode(
+    bcode: str,
+    *,
+    current: str = "",
+    current_name: str = "",
+) -> list[dict[str, Any]]:
+    """Purchase-history suppliers for one product. The waiting list does not call this."""
+    code = str(bcode or "").strip()
+    if not code:
+        return []
+    history, catalog = fetch_bcode_suppliers([code])
+    card = catalog.get(code) or {}
+    return supplier_choices(
+        history.get(code) or [],
+        current=current,
+        current_name=current_name,
+        catalog=str(card.get("acctno") or ""),
+        catalog_name=str(card.get("name") or ""),
+    )
 
 
 def _iclow_item(row: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
@@ -305,10 +304,8 @@ def build_suggest() -> dict[str, Any]:
         items.extend(extra)
     _attach_parts9(items)
     attach_catalog(items)
-    attach_suppliers(items)
     return {
         "items": sort_products(items),
-        "vendors": group_by_vendor(items),
         "stock_ok": stock_ok,
         "insight_pending": insight_pending,
     }
@@ -329,5 +326,4 @@ def build_insight_only() -> dict[str, Any]:
     lines = _ensure_insight_future(policies, iclow_bcodes, incoming).result()
     _attach_parts9(lines)
     attach_catalog(lines)
-    attach_suppliers(lines)
     return {"items": lines}

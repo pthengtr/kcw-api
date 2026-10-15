@@ -16,6 +16,7 @@ from src.hq_po.service import (
     list_open_orders,
     peers_payload,
     suggest_payload,
+    suppliers_payload,
 )
 from src.hq_po.sheet import build_sheet_forms
 from src.hq_po.ui import APP, SESSION_COOKIE, page
@@ -197,6 +198,24 @@ def api_suggest(request: Request):
         return suggest_payload()
     except Exception as exc:
         return JSONResponse({"error": "suggest_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/suppliers/{bcode}")
+def api_suppliers(
+    bcode: str,
+    request: Request,
+    current: str = "",
+    current_name: str = "",
+):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return suppliers_payload(bcode, current=current, current_name=current_name)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "suppliers_failed", "message": str(exc)}, status_code=502)
 
 
 @router.get("/api/peers/{bcode}")
