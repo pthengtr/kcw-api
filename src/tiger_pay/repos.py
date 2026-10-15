@@ -208,7 +208,9 @@ def list_latest_attempts_by_bill_ids(
         select distinct on (pos_bill_id) *
         from tiger_pay.payment_attempt
         where pos_bill_id = any(:pos_bill_ids)
-        order by pos_bill_id, created_at desc
+        order by pos_bill_id,
+                 case when status = 'success' then 0 else 1 end,
+                 created_at desc
         """
     )
     with engine.connect() as conn:
@@ -269,16 +271,25 @@ def update_payment_attempt(
     error_message: str | None = None,
     touch_last_polled: bool = False,
     clear_error: bool = False,
+    recover_failed_success: bool = False,
 ) -> dict[str, Any] | None:
     sets: list[str] = ["updated_at = now()"]
-    params: dict[str, Any] = {"id": attempt_id}
+    params: dict[str, Any] = {
+        "id": attempt_id,
+        "recover_failed_success": recover_failed_success,
+    }
 
     if status is not None:
         # Terminal statuses are sticky at the SQL layer so a missed service
-        # guard cannot reopen a completed bill.
+        # guard cannot reopen a completed bill. A paid QR may move failed
+        # to success; failed must not return to pending.
         sets.append(
             f"""
             status = case
+                when :recover_failed_success
+                     and status = 'failed'
+                     and :status = 'success'
+                then :status
                 when status in ({TERMINAL_STATUS_SQL})
                      and status is distinct from :status
                 then status
@@ -291,6 +302,10 @@ def update_payment_attempt(
         sets.append(
             f"""
             raw_status = case
+                when :recover_failed_success
+                     and status = 'failed'
+                     and :status = 'success'
+                then :raw_status
                 when status in ({TERMINAL_STATUS_SQL})
                      and :status is not null
                      and status is distinct from :status

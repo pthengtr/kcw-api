@@ -168,6 +168,29 @@ def dynamic_qr_is_paid(qr: dict[str, Any] | None) -> bool:
     return status in QR_PAID_STATUSES
 
 
+def paid_qr_settled(payment: dict[str, Any] | None) -> bool:
+    """True when the QR itself is paid and totalPay covers the amount.
+
+    Tiger can still report payment status ``fail`` after a confirm mismatch.
+    Companion must keep that row as success so the bill cannot be paid again.
+    """
+    if not isinstance(payment, dict):
+        return False
+    payment_type = str(payment.get("type") or payment.get("payment_type") or "").strip().lower()
+    qr = payment.get("dynamicQR") if isinstance(payment.get("dynamicQR"), dict) else None
+    if payment_type not in QR_PAYMENT_TYPES and qr is None:
+        return False
+    if not dynamic_qr_is_paid(qr):
+        return False
+    amount = _as_amount(payment.get("amount"))
+    total_pay = _as_amount(
+        payment.get("totalPay") if payment.get("totalPay") is not None else payment.get("total_pay")
+    )
+    if amount is None or total_pay is None or amount <= 0:
+        return False
+    return total_pay + 1e-9 >= amount
+
+
 def _as_amount(value: Any) -> float | None:
     if value is None or value == "":
         return None
