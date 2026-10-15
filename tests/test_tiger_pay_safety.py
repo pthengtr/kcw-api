@@ -25,8 +25,97 @@ def test_can_replace_status_terminal_is_sticky():
     assert not can_replace_status("success", "cancelled")
     assert not can_replace_status("cancelled", "pending")
     assert not can_replace_status("failed", "sending")
+    assert not can_replace_status("failed", "success")
+    assert not can_replace_status("failed", "pending")
     assert can_replace_status("cancelling", "success")
     assert can_replace_status("unknown", "success")
+
+
+def _paid_qr(**overrides):
+    payment = {
+        "id": 3064,
+        "type": "qr",
+        "status": "fail",
+        "amount": 350,
+        "totalPay": 350,
+        "refNo2": "att-qr",
+        "remark": "Payment status does not match the expected value.",
+        "dynamicQR": {"status": "C", "amount": 350},
+    }
+    payment.update(overrides)
+    return payment
+
+
+def test_reconcile_paid_qr_fail_webhook_stores_success():
+    engine = MagicMock()
+    attempt = {"id": "att-qr", "status": "pending", "amount": Decimal("350")}
+    with (
+        patch(
+            "src.tiger_pay.payment_service.repos.find_attempt_by_tiger_or_ref",
+            return_value=attempt,
+        ),
+        patch("src.tiger_pay.payment_service.repos.insert_payment_event"),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={**attempt, "status": "success"},
+        ) as update,
+    ):
+        reconcile_from_tiger_payment(engine, _paid_qr(), source="webhook")
+    assert update.call_args.kwargs["status"] == "success"
+    assert update.call_args.kwargs["recover_failed_success"] is False
+
+
+def test_reconcile_paid_qr_replaces_stuck_failed():
+    engine = MagicMock()
+    attempt = {"id": "att-qr", "status": "failed", "amount": Decimal("350")}
+    with (
+        patch(
+            "src.tiger_pay.payment_service.repos.find_attempt_by_tiger_or_ref",
+            return_value=attempt,
+        ),
+        patch("src.tiger_pay.payment_service.repos.insert_payment_event"),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={**attempt, "status": "success"},
+        ) as update,
+    ):
+        reconcile_from_tiger_payment(
+            engine,
+            _paid_qr(status="success", remark=None),
+            source="polling",
+        )
+    assert update.call_args.kwargs["status"] == "success"
+    assert update.call_args.kwargs["recover_failed_success"] is True
+
+
+def test_reconcile_cash_success_does_not_replace_failed():
+    engine = MagicMock()
+    attempt = {"id": "att-cash", "status": "failed", "amount": Decimal("350")}
+    with (
+        patch(
+            "src.tiger_pay.payment_service.repos.find_attempt_by_tiger_or_ref",
+            return_value=attempt,
+        ),
+        patch("src.tiger_pay.payment_service.repos.insert_payment_event") as insert,
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value=attempt,
+        ) as update,
+    ):
+        reconcile_from_tiger_payment(
+            engine,
+            {
+                "id": 3148,
+                "refNo2": "att-cash",
+                "status": "success",
+                "type": "cash",
+                "amount": 350,
+                "totalPay": 350,
+            },
+            source="polling",
+        )
+    assert insert.call_args.kwargs["payload"]["action"] == "polling_ignored_downgrade"
+    assert "status" not in update.call_args.kwargs
 
 
 def test_tiger_amount_compatible_allows_cash_floor():

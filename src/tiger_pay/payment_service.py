@@ -23,6 +23,7 @@ from src.tiger_pay.qr import (
     extract_companion_qr,
     has_displayable_qr,
     merge_qr_payload_into_payment,
+    paid_qr_settled,
     payment_type_from_attempt,
     should_confirm_qr_payment,
 )
@@ -879,6 +880,7 @@ def apply_status_update(
     tiger_payment_id: int | None = None,
     tiger_payment_no: str | None = None,
     touch_last_polled: bool = False,
+    recover_failed_success: bool = False,
 ) -> dict[str, Any] | None:
     status = normalize_status(raw_status)
     repos.insert_payment_event(
@@ -899,6 +901,7 @@ def apply_status_update(
         tiger_payment_no=tiger_payment_no,
         touch_last_polled=touch_last_polled,
         clear_error=True,
+        recover_failed_success=recover_failed_success,
     )
 
 
@@ -938,13 +941,23 @@ def reconcile_from_tiger_payment(
 
     raw_status = str(payment.get("status") or payment.get("raw_status") or "unknown")
     incoming = normalize_status(raw_status)
+    # A confirm-mismatch fail webhook can arrive after the QR is already paid.
+    # Keep the attempt on success so Companion does not open a second payment.
+    if incoming == "failed" and paid_qr_settled(payment):
+        incoming = "success"
+        raw_status = "success"
     payment_no = payment.get("paymentNo") or payment.get("payment_no") or attempt.get(
         "tiger_payment_no"
     )
     key = event_key or f"{source}:{attempt['id']}:{tiger_payment_id}:{raw_status}"
     current_status = str(attempt.get("status") or "")
+    recover_failed_success = (
+        normalize_status(current_status) == "failed"
+        and incoming == "success"
+        and paid_qr_settled(payment)
+    )
 
-    if not can_replace_status(current_status, incoming):
+    if not can_replace_status(current_status, incoming) and not recover_failed_success:
         logger.warning(
             "Ignoring %s status downgrade attempt_id=%s current=%s incoming=%s",
             source,
@@ -1011,6 +1024,7 @@ def reconcile_from_tiger_payment(
         tiger_payment_id=tiger_payment_id,
         tiger_payment_no=str(payment_no) if payment_no is not None else None,
         touch_last_polled=touch_last_polled,
+        recover_failed_success=recover_failed_success,
     )
 
 
@@ -1156,28 +1170,29 @@ def _confirm_qr_if_paid(
                 exc.message,
                 refreshed.get("status") if refreshed else None,
             )
-            repos.insert_payment_event(
+            assert refreshed is not None
+            recovered = _payment_as_success(refreshed)
+            payment_no = recovered.get("paymentNo") or recovered.get("payment_no")
+            # Commit success before returning so a late fail webhook sees a
+            # terminal attempt and cannot reopen the bill.
+            apply_status_update(
                 engine,
-                payment_attempt_id=attempt_id,
+                attempt_id=attempt_id,
+                raw_status="success",
                 source="api",
-                status="success",
                 payload={
                     "action": "confirm_race_recovered",
                     "error": exc.message,
                     "status_code": exc.status_code,
                     "confirm_payload": omit_qr_images(exc.payload),
-                    "payment": omit_qr_images(refreshed),
+                    "payment": omit_qr_images(recovered),
                 },
                 event_key=f"api:confirm_race_recovered:{attempt_id}",
-            )
-            repos.update_payment_attempt(
-                engine,
-                attempt_id,
-                clear_error=True,
+                tiger_payment_id=int(tiger_payment_id),
+                tiger_payment_no=str(payment_no) if payment_no is not None else None,
                 touch_last_polled=True,
+                recover_failed_success=True,
             )
-            assert refreshed is not None
-            recovered = _payment_as_success(refreshed)
             try:
                 repos.force_payment_transaction_success(
                     engine,
