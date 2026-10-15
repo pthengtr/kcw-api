@@ -10,6 +10,7 @@ from src.hq_po.config import get_hq_po_settings
 from src.hq_po.guards import HqPoError
 from src.hq_po.service import (
     cancel_order,
+    cancel_order_line,
     confirm_order,
     insight_only_payload,
     list_open_orders,
@@ -268,5 +269,16 @@ def api_cancel(order_id: str, body: CancelBody, request: Request):
         return err
     try:
         return cancel_order(order_id, reason=body.reason)
+    except HqPoError as exc:
+        return _error(exc)
+
+
+@router.post("/api/orders/{order_id}/lines/{line_id}/cancel")
+def api_cancel_line(order_id: str, line_id: str, body: CancelBody, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return cancel_order_line(order_id, line_id, reason=body.reason)
     except HqPoError as exc:
         return _error(exc)

@@ -193,6 +193,18 @@ def _compute_insight_only(
         if ok
         else []
     )
+    if ok and lines:
+        shown = [str(line.get("bcode") or "").strip() for line in lines if line.get("bcode")]
+        hq2, syp2, ok2 = fetch_dual_stock(shown, refresh=True)
+        if ok2:
+            subset = {bcode: policies[bcode] for bcode in shown if bcode in policies}
+            lines = insight_only_lines(
+                subset,
+                iclow_bcodes=set(iclow_bcodes),
+                hq_icmas=hq2,
+                syp_icmas=syp2,
+                incoming=incoming,
+            )
     global _insight_cache
     try:
         extra_names = fetch_vendor_names([line.get("vendor") or "" for line in lines])
@@ -258,7 +270,7 @@ def build_suggest() -> dict[str, Any]:
         names = {}
     items = [_iclow_item(row, names) for row in rows]
     bcodes = [item["bcode"] for item in items if item.get("bcode")]
-    hq, syp, stock_ok = fetch_dual_stock(bcodes)
+    hq, syp, stock_ok = fetch_dual_stock(bcodes, refresh=True)
     if stock_ok:
         for item in items:
             bcode = item.get("bcode") or ""

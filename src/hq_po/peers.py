@@ -202,7 +202,7 @@ def load_peers(bcode: str) -> dict[str, Any]:
     syp: dict[str, dict[str, Any]] = {}
     stock_ok = False
     if codes:
-        hq, syp, stock_ok = fetch_dual_stock(codes)
+        hq, syp, stock_ok = fetch_dual_stock(codes, refresh=True)
     history: dict[str, list[dict[str, Any]]] = {}
     catalog: dict[str, dict[str, str]] = {}
     if codes:

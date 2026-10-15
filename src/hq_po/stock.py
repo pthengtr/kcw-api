@@ -8,6 +8,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_REFRESH_CHUNK = 40
+
 
 def parts9_order_qty(*, qtyget: Any, qtymin: Any, qtyoh: Any) -> float | None:
     """PARTS9 reorder qty: QTYGET when set, otherwise the gap up to QTYMIN.
@@ -38,15 +40,62 @@ def parts9_order_qty(*, qtyget: Any, qtymin: Any, qtyoh: Any) -> float | None:
     return None
 
 
-def fetch_parts9_qty(bcodes: list[str]) -> dict[str, float]:
-    """HQ ICMAS reorder qty keyed by product code."""
-    codes = []
+def _codes(bcodes: list[str]) -> list[str]:
+    codes: list[str] = []
     seen: set[str] = set()
     for raw in bcodes:
         code = str(raw or "").strip()
         if code and code not in seen:
             seen.add(code)
             codes.append(code)
+    return codes
+
+
+def refresh_qtyoh2(bcodes: list[str], *, sites: tuple[str, ...] = ("hq", "syp")) -> None:
+    """Rebuild ICMAS.QTYOH2 from the product ledger before this service reads it.
+
+    Same writer path as parts9 explorer product open and stock-check take.
+    A failed or disabled sync leaves the later ICMAS read unchanged.
+    """
+    codes = _codes(bcodes)
+    if not codes:
+        return
+    try:
+        from src.db.qtyoh2_ledger import (
+            qtyoh2_sync_on_read_enabled,
+            sync_qtyoh2_from_ledger_many,
+        )
+        from src.parts9_explorer.db import get_site_writer_engine
+    except Exception:
+        logger.warning("hq po qtyoh2 sync import failed", exc_info=True)
+        return
+    if not qtyoh2_sync_on_read_enabled():
+        return
+
+    def _site(site: str) -> None:
+        try:
+            writer = get_site_writer_engine(site)
+        except Exception:
+            logger.warning("hq po qtyoh2 writer unavailable for %s", site, exc_info=True)
+            return
+        if writer is None:
+            return
+        for start in range(0, len(codes), _REFRESH_CHUNK):
+            sync_qtyoh2_from_ledger_many(codes[start : start + _REFRESH_CHUNK], engine=writer)
+
+    chosen = tuple(site for site in sites if site in ("hq", "syp"))
+    if not chosen:
+        return
+    try:
+        with ThreadPoolExecutor(max_workers=len(chosen)) as pool:
+            list(pool.map(_site, chosen))
+    except Exception:
+        logger.warning("hq po qtyoh2 sync failed", exc_info=True)
+
+
+def fetch_parts9_qty(bcodes: list[str]) -> dict[str, float]:
+    """HQ ICMAS reorder qty keyed by product code."""
+    codes = _codes(bcodes)
     if not codes:
         return {}
     from sqlalchemy import text
@@ -81,11 +130,20 @@ def fetch_parts9_qty(bcodes: list[str]) -> dict[str, float]:
     return out
 
 
-def fetch_dual_stock(bcodes: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], bool]:
-    """Return (hq, syp, ok). ok is False when either site could not be read."""
-    codes = [str(b).strip() for b in bcodes if str(b or "").strip()]
+def fetch_dual_stock(
+    bcodes: list[str], *, refresh: bool = False
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], bool]:
+    """Return (hq, syp, ok). ok is False when either site could not be read.
+
+    refresh rebuilds QTYOH2 from the ledger first. Use it for the lines on screen
+    and for a confirm. The full insight scan stays a read so it does not rewrite
+    every policy SKU.
+    """
+    codes = _codes(bcodes)
     if not codes:
         return {}, {}, True
+    if refresh:
+        refresh_qtyoh2(codes)
     try:
         from src.transfer.parts9 import _fetch_icmas_chunked
     except Exception:

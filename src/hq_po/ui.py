@@ -61,6 +61,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .line .meta{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
 .ai{color:var(--blue);font-size:12px;margin-top:6px;padding:6px 8px;background:var(--blue-wash);border-radius:8px;line-height:1.4}
 .qty{text-align:right;font-weight:700;font-size:16px;color:var(--blue-deep);white-space:nowrap}
+.line button.ghost{display:block;margin-top:8px;min-height:36px;background:#fff;color:var(--warn);border:1px solid #fdba74;border-radius:10px;padding:6px 10px;font-size:13px;font-weight:650}
 .recs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .rec{border:1px solid var(--line);background:#fff;color:var(--blue-deep);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:650}
 .rec.off{border:0;background:transparent;color:var(--muted);padding:4px 0}
@@ -616,9 +617,14 @@ async function loadOrders(){
       const lines = (order.lines||[]).map(line => {
         const rec = line.receive || {};
         const pi = rec.pimas_billno ? ` · PI ${esc(rec.pimas_billno)}` : (rec.rcvdno ? ` · ${esc(rec.rcvdno)}` : "");
-        return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div>${productMeta(line)}<div class="meta">${esc(rec.label||"")}${pi}</div></div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
+        const canReturn = STAMP && line.line_id && !rec.received && !rec.unknown;
+        const lineCancel = canReturn
+          ? `<button type="button" class="ghost" data-cancel-line="${esc(order.order_id)}" data-line="${esc(line.line_id)}" data-bcode="${esc(line.bcode||"")}">ยกเลิกบรรทัด</button>`
+          : "";
+        return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div>${productMeta(line)}<div class="meta">${esc(rec.label||"")}${pi}</div>${lineCancel}</div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
       }).join("");
-      const cancel = STAMP && order.receive_label!=="รับแล้ว"
+      const anyReceived = (order.lines||[]).some(line => (line.receive||{}).received);
+      const cancel = STAMP && !anyReceived && order.receive_label!=="รับแล้ว"
         ? `<button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button>` : "";
       const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์ / คัดลอก</button>`;
       const actions = `<div class="actions">${reprint}${cancel}</div>`;
@@ -628,6 +634,25 @@ async function loadOrders(){
   } catch (err) {
     host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>';
   }
+}
+async function cancelLine(orderId, lineId, bcode){
+  if(state.busy) return;
+  const name = bcode ? ` ${bcode}` : "";
+  if(!confirm(`ยกเลิก${name} และคืนไปรายการรอสั่ง?`)) return;
+  setBusy(true, "กำลังยกเลิกบรรทัด…");
+  let failed = null;
+  try {
+    const res = await fetch(`/hq-po/api/orders/${orderId}/lines/${lineId}/cancel`, {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "ยกเลิกบรรทัดไม่สำเร็จ");
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "ยกเลิกบรรทัดไม่สำเร็จ"); return; }
+  await loadOrders();
+  await loadSuggest();
 }
 async function cancelOrder(id){
   if(state.busy) return;
@@ -877,6 +902,11 @@ function openSavedSheet(id){
 document.getElementById("orders").onclick = (e) => {
   const sheet = e.target.closest("[data-sheet]");
   if(sheet){ openSavedSheet(sheet.getAttribute("data-sheet")); return; }
+  const lineBtn = e.target.closest("[data-cancel-line]");
+  if(lineBtn){
+    cancelLine(lineBtn.getAttribute("data-cancel-line"), lineBtn.getAttribute("data-line"), lineBtn.getAttribute("data-bcode") || "");
+    return;
+  }
   const btn = e.target.closest("[data-cancel]");
   if(btn) cancelOrder(btn.getAttribute("data-cancel"));
 };
