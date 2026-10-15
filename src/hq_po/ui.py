@@ -58,6 +58,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .card h2 .title{min-width:0;overflow-wrap:anywhere}
 .card h2 .count{flex:none;margin-top:2px}
 .line{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:8px;padding:12px;border-top:1px solid var(--line);align-items:start}
+.line.plain{grid-template-columns:minmax(0,1fr) auto}
 .line .code{font-weight:600;line-height:1.4;overflow-wrap:anywhere}
 .sku{display:inline-block;background:var(--blue-soft);color:var(--blue-deep);border-radius:6px;padding:0 6px;font-size:12px;font-weight:700;margin-right:4px;vertical-align:1px}
 .line .meta{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
@@ -76,7 +77,11 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .unit-pick button,.peer-btn{min-height:36px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:650;color:var(--blue-deep)}
 .unit-pick button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .peer-btn{border-radius:10px;margin-top:8px}
-.move{color:var(--blue-deep);font-weight:650}
+.line-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.line-actions .peer-btn{margin-top:0}
+.vendor-card{display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;margin-bottom:10px;padding:14px 12px;font:650 15px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.vendor-card .title{min-width:0;overflow-wrap:anywhere}
+.back{display:block;width:100%;min-height:42px;margin-bottom:10px;border:1px solid var(--line);background:#fff;border-radius:12px;font-weight:650;color:var(--blue-deep)}
 .peers{margin-top:8px}
 .peer-sec{margin-top:6px}
 .peer{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;margin-top:4px;font:600 13px Prompt,"Noto Sans Thai",sans-serif;color:var(--text)}
@@ -147,15 +152,15 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   <section id="orderView">
     <div class="toolbar">
       <div class="toggle">
-        <button type="button" id="viewVendor" class="on">ตามเจ้าหนี้</button>
-        <button type="button" id="viewProduct">ตามสินค้า</button>
+        <button type="button" id="viewProduct" class="on">ตามสินค้า</button>
+        <button type="button" id="viewVendor">ตามเจ้าหนี้</button>
       </div>
       <div class="toggle">
         <button type="button" id="srcAll" class="on">ทั้งหมด</button>
         <button type="button" id="srcIclow">ICLOW</button>
         <button type="button" id="srcAi">AI</button>
       </div>
-      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search" autocomplete="off"/></div>
+      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อสินค้า ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search" autocomplete="off"/></div>
       <p id="qStatus" class="search-status" role="status"><span class="spin sm" aria-hidden="true"></span><span id="qStatusText">กำลังโหลดรายการรอสั่ง…</span></p>
     </div>
     <div id="insightNote" class="insight" hidden></div>
@@ -187,9 +192,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-let savedView = "vendor";
-try { savedView = localStorage.getItem("hqpo-view") || "vendor"; } catch (e) {}
-const state = {items:[], vendors:[], view: savedView, source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false};
+const state = {items:[], view:"product", vendorKey:null, source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false};
 let searchTimer = 0;
 document.getElementById("who").textContent = USER;
 if(!STAMP){
@@ -232,8 +235,7 @@ function vendorTitle(row){
   return name ? `${name} · ${code}` : code;
 }
 function haystack(row){
-  const suppliers = (row.suppliers || []).map(s => [s.name, s.acctno].join(" ")).join(" ");
-  row._hay = [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name, row.list_vendor, row.list_vendor_name, suppliers].join(" ").toLowerCase();
+  row._hay = [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name].join(" ").toLowerCase();
   return row._hay;
 }
 function match(row){
@@ -311,16 +313,6 @@ function supplierLabel(s){
   if(s.last_date) bits.push(String(s.last_date));
   return bits.join(" · ");
 }
-function pinRow(row){
-  if(row.list_vendor == null){
-    row.list_vendor = row.vendor || "";
-    row.list_vendor_name = row.vendor_name || "";
-  }
-}
-function groupKey(row){
-  pinRow(row);
-  return row.list_vendor || "";
-}
 function selectedUnit(row){
   return String(row.order_ui || row.ui || row.ui1 || "").trim();
 }
@@ -337,23 +329,19 @@ function unitHtml(row){
     <button type="button" class="unit${largeOn}" data-unit="${esc(rowKey(row))}" data-u="${esc(ui2)}">${esc(ui2)} ×${esc(qtyText(mtp))}</button>
   </div>`;
 }
-function vendorMoveNote(row){
-  pinRow(row);
-  if(String(row.vendor || "") === String(row.list_vendor || "")) return "";
-  return `<div class="meta move">จะไปใบของ ${esc(vendorTitle(row))}</div>`;
-}
-function peerButton(row){
-  if(!row.bcode) return "";
-  return `<button type="button" class="peer-btn" data-peers="${esc(rowKey(row))}">สินค้าแทน</button><div class="peers" data-peerbox="${esc(rowKey(row))}" hidden></div>`;
-}
 function supplierSelect(row){
   const options = row.suppliers || [];
-  if(options.length < 2) return "";
+  if(!options.length) return `<div class="meta">ไม่พบเจ้าหนี้ที่สั่งได้</div>`;
   const opts = options.map(s => {
     const selected = String(row.vendor || "") === String(s.acctno || "") ? " selected" : "";
     return `<option value="${esc(s.acctno || "")}"${selected}>${esc(supplierLabel(s))}</option>`;
   }).join("");
   return `<label class="vendor-pick">เจ้าหนี้<select data-pick="${esc(rowKey(row))}" aria-label="เจ้าหนี้ ${esc(row.bcode || "")}">${opts}</select></label>`;
+}
+function productTools(row){
+  if(!row.bcode) return "";
+  const key = esc(rowKey(row));
+  return `<div class="line-actions"><button type="button" class="peer-btn" data-vendors="${key}">เปลี่ยนเจ้าหนี้</button><button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button></div><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div>`;
 }
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
@@ -361,10 +349,11 @@ function qtyCell(row){
   }
   return `<div class="qty-edit"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(selectedUnit(row))}</span></div>`;
 }
-function lineHtml(row){
-  const check = row.confirmable && STAMP
+function lineHtml(row, mode){
+  const pick = mode === "pick";
+  const check = !pick ? "" : (row.confirmable && STAMP
     ? `<input type="checkbox" data-key="${esc(rowKey(row))}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"${row.picked ? " checked" : ""}/>`
-    : `<input type="checkbox" disabled/>`;
+    : `<input type="checkbox" disabled/>`);
   const incoming = Number(row.incoming_qty);
   const incomingText = incoming > 0 ? ` · ค้างรับ ${esc(qtyText(incoming))}` : "";
   const packs = Number(row.mtp2);
@@ -372,23 +361,25 @@ function lineHtml(row){
   const packText = row.company_qtyoh2 != null && packs > 1 && ui2
     ? ` · ${esc(qtyText(Number(row.company_qtyoh2) / packs))} ${esc(ui2)}` : "";
   const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${packText}${incomingText}`;
-  return `<div class="line" id="line-${esc(rowKey(row))}">
+  const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}</div>`;
+  const tools = pick ? "" : productTools(row);
+  return `<div class="line${pick ? "" : " plain"}" id="line-${esc(rowKey(row))}">
     ${check}
     <div>
       <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
       ${productMeta(row)}
-      ${supplierSelect(row)}
-      ${vendorMoveNote(row)}
+      ${vendorLine}
       ${unitHtml(row)}
       ${stock ? `<div class="meta">${stock}</div>` : ""}
       ${recHtml(row)}
-      ${peerButton(row)}
+      ${tools}
     </div>
     ${qtyCell(row)}
   </div>`;
 }
 function syncDock(){
-  const n = document.querySelectorAll("#list input[type=checkbox][data-key]:checked").length;
+  const open = state.view === "vendor" && state.vendorKey != null;
+  const n = open ? document.querySelectorAll("#list input[type=checkbox][data-key]:checked").length : 0;
   const dock = document.getElementById("dock");
   const show = !!(STAMP && n && !state.busy);
   dock.hidden = !show;
@@ -415,6 +406,17 @@ function scheduleRender(label, delay){
     });
   }, delay || 0);
 }
+function vendorGroups(items){
+  const groups = new Map();
+  for(const row of items){
+    const key = row.vendor || "";
+    if(!groups.has(key)) groups.set(key, {vendor:key, vendor_name:row.vendor_name || "", lines:[]});
+    const g = groups.get(key);
+    if(!g.vendor_name && row.vendor_name) g.vendor_name = row.vendor_name;
+    g.lines.push(row);
+  }
+  return [...groups.values()].sort((a,b) => (a.vendor?0:1)-(b.vendor?0:1) || vendorTitle(a).localeCompare(vendorTitle(b),"th"));
+}
 function renderList(){
   const y = window.scrollY;
   const host = document.getElementById("list");
@@ -425,35 +427,35 @@ function renderList(){
     return;
   }
   const items = state.items.filter(match);
-  for(const row of items) pinRow(row);
   const typing = document.activeElement && document.activeElement.id === "q";
-  if(!items.length){ host.innerHTML = '<div class="empty">ไม่มีรายการ</div>'; syncDock(); if(!typing) window.scrollTo(0, y); return; }
   if(state.view==="product"){
-    host.innerHTML = `<div class="card"><h2><span class="title">สินค้า</span><span class="count">${items.length} รายการ</span></h2>${items.map(lineHtml).join("")}</div>`;
+    host.innerHTML = items.length
+      ? `<div class="card"><h2><span class="title">สินค้า</span><span class="count">${items.length} รายการ</span></h2>${items.map(row => lineHtml(row, "product")).join("")}</div>`
+      : '<div class="empty">ไม่มีรายการ</div>';
     syncDock();
     if(!typing) window.scrollTo(0, y);
     return;
   }
-  const groups = new Map();
-  for(const row of items){
-    const key = groupKey(row);
-    if(!groups.has(key)) groups.set(key, {vendor:key, vendor_name:row.list_vendor_name || "", lines:[]});
-    const g = groups.get(key);
-    if(!g.vendor_name && row.list_vendor_name) g.vendor_name = row.list_vendor_name;
-    g.lines.push(row);
+  if(state.vendorKey == null){
+    const groups = vendorGroups(items);
+    host.innerHTML = groups.length
+      ? groups.map(g => `<button type="button" class="vendor-card" data-open-vendor="${esc(g.vendor)}"><span class="title">${esc(vendorTitle(g))}</span><span class="badge">${g.lines.length}</span></button>`).join("")
+      : '<div class="empty">ไม่มีรายการ</div>';
+    syncDock();
+    if(!typing) window.scrollTo(0, y);
+    return;
   }
-  const ordered = [...groups.values()].sort((a,b) => (a.vendor?0:1)-(b.vendor?0:1) || vendorTitle(a).localeCompare(vendorTitle(b),'th'));
-  host.innerHTML = ordered.map(g => {
-    const n = g.lines.filter(r => r.confirmable).length;
-    const btn = STAMP && n ? `<div class="actions"><button type="button" data-confirm="${esc(g.vendor)}">ดูใบที่เลือกของเจ้าหนี้นี้</button></div>` : "";
-    return `<div class="card"><h2><span class="title">${esc(vendorTitle(g))}</span><span class="count">${g.lines.length} รายการ</span></h2>${g.lines.map(lineHtml).join("")}${btn}</div>`;
-  }).join("");
+  const lines = items.filter(row => (row.vendor || "") === state.vendorKey);
+  const named = state.items.find(row => (row.vendor || "") === state.vendorKey);
+  const title = named ? vendorTitle(named) : (state.vendorKey || "ไม่ระบุเจ้าหนี้");
+  const body = lines.length ? lines.map(row => lineHtml(row, "pick")).join("") : '<div class="empty">ไม่มีรายการ</div>';
+  host.innerHTML = `<button type="button" class="back" data-vendor-back>เจ้าหนี้ทั้งหมด</button><div class="card"><h2><span class="title">${esc(title)}</span><span class="count">${lines.length} รายการ</span></h2>${body}</div>`;
   syncDock();
   if(!typing) window.scrollTo(0, y);
 }
 function setView(view){
   state.view = view;
-  try { localStorage.setItem("hqpo-view", view); } catch (e) {}
+  state.vendorKey = null;
   document.getElementById("viewVendor").classList.toggle("on", view==="vendor");
   document.getElementById("viewProduct").classList.toggle("on", view==="product");
   scheduleRender("กำลังจัดรายการ…", 0);
@@ -474,7 +476,7 @@ async function loadInsight(){
     const extra = data.items || [];
     const have = new Set(state.items.filter(row => row.source==="insight").map(row => row.bcode));
     const add = extra.filter(row => row.bcode && !have.has(row.bcode));
-    for(const row of add) pinRow(row);
+    for(const row of add) haystack(row);
     if(add.length){
       state.items = state.items.concat(add);
       renderList();
@@ -501,11 +503,7 @@ async function loadSuggest(){
     }
     const data = await res.json();
     state.items = data.items || [];
-    for(const row of state.items){
-      pinRow(row);
-      haystack(row);
-    }
-    state.vendors = data.vendors || [];
+    for(const row of state.items) haystack(row);
     state.loading = false;
     hideSearchStatus();
     renderList();
@@ -515,10 +513,6 @@ async function loadSuggest(){
     hideSearchStatus();
     host.innerHTML = '<div class="empty">โหลดรายการไม่ได้</div>';
   }
-}
-function checkedFor(vendor){
-  const boxes = [...document.querySelectorAll(`input[type=checkbox][data-vendor="${CSS.escape(vendor)}"]:checked`)];
-  return boxes.map(box => findRow(box.dataset.key || "")).filter(Boolean);
 }
 function checkedRows(){
   return [...document.querySelectorAll("#list input[type=checkbox][data-key]:checked")]
@@ -656,9 +650,6 @@ function closeSheet(){
   state.sheet = [];
   const el = document.getElementById("sheet");
   if(el) el.hidden = true;
-}
-async function confirmVendor(vendor){
-  await confirmRows(checkedFor(vendor));
 }
 async function loadOrders(){
   const host = document.getElementById("orders");
@@ -812,21 +803,15 @@ function usePeer(row, bcode){
   }
   if(existing){
     renderList();
-    const box = document.querySelector(`#list input[data-key="${CSS.escape(rowKey(existing))}"]`);
-    if(box && !box.disabled) box.checked = true;
     scrollToRow(existing);
-    syncDock();
     return;
   }
   const added = {
     iclow_id: null,
     source: "peer",
     confirmable: !!hit.vendor,
-    list_vendor: row.list_vendor || row.vendor || "",
-    list_vendor_name: row.list_vendor_name || row.vendor_name || "",
     vendor: hit.vendor || "",
     vendor_name: hit.vendor_name || "",
-    suppliers: hit.suppliers || [],
     bcode: hit.bcode,
     descr: hit.descr || "",
     model: hit.model || "",
@@ -848,11 +833,36 @@ function usePeer(row, bcode){
   };
   const idx = state.items.indexOf(row);
   state.items.splice(idx < 0 ? state.items.length : idx + 1, 0, added);
+  haystack(added);
   renderList();
-  const box = document.querySelector(`#list input[data-key="${CSS.escape(rowKey(added))}"]`);
-  if(box && !box.disabled) box.checked = true;
   scrollToRow(added);
-  syncDock();
+}
+async function loadSuppliers(row){
+  if(!row || !row.bcode) return;
+  const box = document.querySelector(`[data-vendorbox="${CSS.escape(rowKey(row))}"]`);
+  if(!box) return;
+  if(row.suppliers && box.dataset.open === "1"){
+    box.hidden = true;
+    box.dataset.open = "";
+    return;
+  }
+  box.hidden = false;
+  box.dataset.open = "1";
+  if(row.suppliers){ box.innerHTML = supplierSelect(row); return; }
+  box.innerHTML = spinner("กำลังหาเจ้าหนี้…");
+  try {
+    const params = new URLSearchParams();
+    if(row.vendor) params.set("current", row.vendor);
+    if(row.vendor_name) params.set("current_name", row.vendor_name);
+    const qs = params.toString();
+    const res = await fetch("/hq-po/api/suppliers/" + encodeURIComponent(row.bcode) + (qs ? "?" + qs : ""));
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.message || "หาเจ้าหนี้ไม่ได้");
+    row.suppliers = data.suppliers || [];
+    box.innerHTML = supplierSelect(row);
+  } catch (err) {
+    box.innerHTML = `<div class="meta">${esc(err.message || "หาเจ้าหนี้ไม่ได้")}</div>`;
+  }
 }
 document.getElementById("list").onclick = (e) => {
   const unit = e.target.closest("[data-unit]");
@@ -870,6 +880,12 @@ document.getElementById("list").onclick = (e) => {
     }
     return;
   }
+  const back = e.target.closest("[data-vendor-back]");
+  if(back){ state.vendorKey = null; renderList(); return; }
+  const open = e.target.closest("[data-open-vendor]");
+  if(open){ state.vendorKey = open.getAttribute("data-open-vendor") || ""; renderList(); return; }
+  const vendors = e.target.closest("[data-vendors]");
+  if(vendors){ loadSuppliers(findRow(vendors.dataset.vendors || "")); return; }
   const peers = e.target.closest("[data-peers]");
   if(peers){ loadPeers(findRow(peers.dataset.peers || "")); return; }
   const use = e.target.closest("[data-use]");
@@ -884,14 +900,6 @@ document.getElementById("list").onclick = (e) => {
       if(input) input.value = qtyText(q);
     }
     return;
-  }
-  const btn = e.target.closest("[data-confirm]");
-  if(btn){
-    const card = btn.closest(".card");
-    const rows = card
-      ? [...card.querySelectorAll("input[data-key]:checked")].map(box => findRow(box.dataset.key || "")).filter(Boolean)
-      : checkedFor(btn.getAttribute("data-confirm") || "");
-    openSheet(rows);
   }
 };
 document.getElementById("list").oninput = (e) => {
@@ -916,17 +924,11 @@ document.getElementById("list").onchange = (e) => {
     row.vendor = hit.acctno;
     row.vendor_name = hit.name || "";
     row._hay = "";
-    const line = pick.closest(".line");
-    const box = line && line.querySelector("input[data-key]");
-    if(box) box.dataset.vendor = row.vendor || "";
-    const note = line && line.querySelector(".move");
-    const text = vendorMoveNote(row);
-    if(text){
-      if(note) note.outerHTML = text;
-      else pick.closest(".vendor-pick").insertAdjacentHTML("afterend", text);
-    } else if(note) note.remove();
+    haystack(row);
+    const line = document.getElementById("line-" + rowKey(row));
+    const shown = line && line.querySelector("[data-vendor-label]");
+    if(shown) shown.textContent = vendorTitle(row);
   }
-  syncDock();
 };
 document.getElementById("dockConfirm").onclick = () => openSheet(checkedRows());
 document.getElementById("sheetClose").onclick = () => closeSheet();
@@ -979,7 +981,7 @@ document.getElementById("orders").onclick = (e) => {
   const btn = e.target.closest("[data-cancel]");
   if(btn) cancelOrder(btn.getAttribute("data-cancel"));
 };
-document.getElementById("viewVendor").classList.toggle("on", state.view!=="product");
+document.getElementById("viewVendor").classList.toggle("on", state.view==="vendor");
 document.getElementById("viewProduct").classList.toggle("on", state.view==="product");
 loadSuggest();
 </script>

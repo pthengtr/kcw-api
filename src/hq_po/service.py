@@ -39,7 +39,7 @@ from src.hq_po.insight import (
     load_insight_policies,
 )
 from src.hq_po.stamp import cancel_created, insert_ordered_lines, revert_ordered, stamp_ordered
-from src.hq_po.suggest import attach_catalog, build_insight_only, build_suggest
+from src.hq_po.suggest import attach_catalog, build_insight_only, build_suggest, suppliers_for_bcode
 
 
 def suggest_payload() -> dict[str, Any]:
@@ -51,6 +51,17 @@ def suggest_payload() -> dict[str, Any]:
 
 def insight_only_payload() -> dict[str, Any]:
     return build_insight_only()
+
+
+def suppliers_payload(bcode: str, *, current: str = "", current_name: str = "") -> dict[str, Any]:
+    code = str(bcode or "").strip()
+    if not code:
+        raise HqPoError("missing", "ไม่มีรหัสสินค้า")
+    try:
+        rows = suppliers_for_bcode(code, current=current, current_name=current_name)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ทางเลือกไม่ได้") from exc
+    return {"suppliers": rows}
 
 
 def peers_payload(bcode: str) -> dict[str, Any]:

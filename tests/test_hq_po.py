@@ -265,8 +265,9 @@ def test_parts9_order_qty_prefers_lot_then_min_gap():
     assert parts9_order_qty(qtyget=8, qtymin=-1, qtyoh=0) is None
 
 
-def test_page_defaults_vendor_view():
+def test_page_defaults_product_view():
     html = page(user_name="Pannawit", stamp_enabled=False)
+    assert 'id="viewProduct" class="on"' in html
     assert "ตามเจ้าหนี้" in html
     assert "ตามสินค้า" in html
     assert "data-key" in html
@@ -276,6 +277,7 @@ def test_page_defaults_vendor_view():
     assert "แบบเต็ม" in html
     assert "คัดลอกส่งฝ่ายขาย" in html
     assert "/hq-po/api/sheet" in html
+    assert "/hq-po/api/suppliers/" in html
     assert "HQ_PO_ICLOW_STAMP_ENABLED" in html
     assert "กำลังโหลดรายการรอสั่ง" in html
     assert "กำลังค้นหา" in html
@@ -286,12 +288,17 @@ def test_page_defaults_vendor_view():
     assert "ยี่ห้อ" in html
     assert "ราคา " in html
     assert "ค่า " in html
-    assert "data-pick" in html
-    assert "เจ้าหนี้" in html
+    assert "เปลี่ยนเจ้าหนี้" in html
     assert "สินค้าแทน" in html
     assert "data-peers" in html
-    assert "list_vendor" in html
-    assert "จะไปใบของ" in html
+    assert "data-open-vendor" in html
+    assert "data-vendor-back" in html
+    assert 'state.view === "vendor" && state.vendorKey != null' in html
+    assert "row.bcode, row.descr" in html
+    assert "row.vendor, row.vendor_name" in html
+    assert "list_vendor" not in html
+    assert "จะไปใบของ" not in html
+    assert "hqpo-view" not in html
     assert "ยกเลิกบรรทัด" in html
     assert "data-cancel-line" in html
 
@@ -331,7 +338,11 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     monkeypatch.setattr(suggest, "fetch_incoming_qty", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
     monkeypatch.setattr(suggest, "fetch_sheet_products", lambda _codes: {})
-    monkeypatch.setattr(suggest, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
+
+    def suppliers_must_wait(_codes):
+        raise AssertionError("supplier scan must wait until one product asks")
+
+    monkeypatch.setattr(suggest, "fetch_bcode_suppliers", suppliers_must_wait)
     monkeypatch.setattr(suggest, "_peek_insight_cache", lambda _key: None)
 
     def ensure(policies, bcodes, incoming=None):
@@ -340,6 +351,8 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     monkeypatch.setattr(suggest, "_ensure_insight_future", ensure)
     payload = suggest.build_suggest()
     assert payload["insight_pending"] is True
+    assert "vendors" not in payload
+    assert "suppliers" not in payload["items"][0]
     assert scanned == [1]
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
@@ -363,7 +376,6 @@ def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
     monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes, refresh=False: ({}, {}, False))
     monkeypatch.setattr(suggest, "load_insight_policies", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
-    monkeypatch.setattr(suggest, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
     monkeypatch.setattr(
         suggest,
         "fetch_sheet_products",
@@ -388,6 +400,25 @@ def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
     assert item["brand"] == "Toyota"
     assert item["price"] == 120
     assert item["cost"] == 80.5
+
+
+def test_suppliers_for_one_bcode(monkeypatch):
+    from src.hq_po import suggest
+
+    seen: list[list[str]] = []
+
+    def fetch(codes):
+        seen.append(list(codes))
+        return (
+            {"A1": [{"acctno": "NEW", "name": "ใหม่", "bills": 2, "last_date": "2026-10-01"}]},
+            {"A1": {"acctno": "CAT", "name": "มาสเตอร์"}},
+        )
+
+    monkeypatch.setattr(suggest, "fetch_bcode_suppliers", fetch)
+    rows = suggest.suppliers_for_bcode("A1", current="IC", current_name="บนแถว")
+    assert seen == [["A1"]]
+    assert rows[0]["acctno"] == "NEW"
+    assert {row["acctno"] for row in rows} == {"NEW", "CAT", "IC"}
 
 
 def test_supplier_choices_keep_purchase_accounts_and_the_current_vendor():
