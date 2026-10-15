@@ -248,13 +248,51 @@ def load_insight_policies() -> dict[str, dict[str, Any]]:
     return rows
 
 
+def load_insight_policies_for(bcodes: list[str]) -> dict[str, dict[str, Any]]:
+    """Policies for the waiting lines only. This does not scan the whole insight table."""
+    wanted: list[str] = []
+    seen: set[str] = set()
+    for raw in bcodes:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            wanted.append(code)
+    if not wanted:
+        return {}
+    now_m = time.monotonic()
+    with _policy_lock:
+        cached = _policy_cache
+        if cached and (now_m - cached[0]) <= _POLICY_TTL_SEC:
+            full = cached[1]
+            return {code: full[code] for code in wanted if code in full}
+    found: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(wanted), 400):
+        found.update(_fetch_insight_policies(wanted[start : start + 400]))
+    return found
+
+
 def clear_insight_policy_cache() -> None:
     global _policy_cache
     with _policy_lock:
         _policy_cache = None
 
 
-def _fetch_insight_policies() -> dict[str, dict[str, Any]]:
+def load_insight_policies_for_supplier(*names: str) -> dict[str, dict[str, Any]]:
+    """Policies whose last supplier is this account or its name. Not the full catalog."""
+    keys: list[str] = []
+    for raw in names:
+        key = str(raw or "").strip()
+        if key and key not in keys:
+            keys.append(key)
+    if not keys:
+        return {}
+    return _fetch_insight_policies(suppliers=keys)
+
+
+def _fetch_insight_policies(
+    bcodes: list[str] | None = None,
+    suppliers: list[str] | None = None,
+) -> dict[str, dict[str, Any]]:
     try:
         from src.db.engine import get_conn
     except Exception:
@@ -278,12 +316,20 @@ def _fetch_insight_policies() -> dict[str, dict[str, Any]]:
             OR coalesce(suggested_order_qty, 0) >= 1
           )
     """
+    params: list[Any] = [INSIGHT_SITE]
+    if bcodes is not None:
+        sql += "\n          AND btrim(bcode) = ANY(%s)"
+        params.append(bcodes)
+    if suppliers is not None:
+        sql += "\n          AND btrim(coalesce(last_supplier, '')) = ANY(%s)"
+        params.append(suppliers)
+        sql += "\n        LIMIT 80"
     out: dict[str, dict[str, Any]] = {}
     conn = None
     try:
         conn = get_conn()
         with conn.cursor() as cur:
-            cur.execute(sql, (INSIGHT_SITE,))
+            cur.execute(sql, params)
             cols = [d[0] for d in cur.description]
             for raw in cur.fetchall():
                 row = dict(zip(cols, raw))

@@ -17,6 +17,9 @@ from src.hq_po.service import (
     peers_payload,
     suggest_payload,
     suppliers_payload,
+    vendor_insight_payload,
+    vendor_ordered_payload,
+    vendor_search_payload,
 )
 from src.hq_po.sheet import build_sheet_forms
 from src.hq_po.ui import APP, SESSION_COOKIE, page
@@ -198,6 +201,45 @@ def api_suggest(request: Request):
         return suggest_payload()
     except Exception as exc:
         return JSONResponse({"error": "suggest_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/vendors")
+def api_vendor_search(request: Request, q: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return vendor_search_payload(q)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "vendors_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/vendors/{acctno}/ordered")
+def api_vendor_ordered(acctno: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return vendor_ordered_payload(acctno)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "vendor_ordered_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/vendors/{acctno}/insight")
+def api_vendor_insight(acctno: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return vendor_insight_payload(acctno)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "vendor_insight_failed", "message": str(exc)}, status_code=502)
 
 
 @router.get("/api/suppliers/{bcode}")

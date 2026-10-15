@@ -289,6 +289,10 @@ def test_page_defaults_product_view():
     assert "ราคา " in html
     assert "ค่า " in html
     assert "เปลี่ยนเจ้าหนี้" in html
+    assert "สั่งกับเจ้าหนี้นี้" in html
+    assert "ดูสินค้าที่เคยสั่งจากเจ้าหนี้นี้" in html
+    assert "/hq-po/api/vendors" in html
+    assert "data-order" in html
     assert "สินค้าแทน" in html
     assert "data-peers" in html
     assert "data-open-vendor" in html
@@ -332,8 +336,8 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     monkeypatch.setattr(suggest, "fetch_dual_stock", dual_stock)
     monkeypatch.setattr(
         suggest,
-        "load_insight_policies",
-        lambda: {"A1": _policy(), "B2": _policy(bcode="B2")},
+        "load_insight_policies_for",
+        lambda codes: {code: _policy(bcode=code) for code in codes if code in {"A1", "B2"}},
     )
     monkeypatch.setattr(suggest, "fetch_incoming_qty", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
@@ -350,13 +354,13 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
 
     monkeypatch.setattr(suggest, "_ensure_insight_future", ensure)
     payload = suggest.build_suggest()
-    assert payload["insight_pending"] is True
+    assert payload["insight_pending"] is False
     assert "vendors" not in payload
     assert "suppliers" not in payload["items"][0]
-    assert scanned == [1]
+    assert scanned == []
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
-    assert refreshed == [True]
+    assert refreshed == [False]
 
 
 def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
@@ -548,6 +552,39 @@ def test_peer_groups_keep_catalog_ahead_of_part_numbers():
     assert [line["bcode"] for line in groups[3]["lines"]] == ["E5"]
 
 
+def test_history_reorder_uses_the_peer_path():
+    from src.hq_po.service import _peer_flag
+
+    assert _peer_flag({"propose_meta": {"iclow_origin": "history"}})
+    assert _peer_flag({"propose_meta": {"iclow_origin": "peer"}})
+    assert not _peer_flag({"propose_meta": {"iclow_origin": "created"}})
+
+
+def test_vendor_history_skips_products_already_waiting(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(service, "fetch_vendor_names", lambda _codes: {"RR": "รุ่งโรจน์"})
+    monkeypatch.setattr(
+        service,
+        "fetch_ordered_product_rows",
+        lambda _acct: [
+            {"bcode": "A1", "last_date": "2026-09-01", "bills": 2},
+            {"bcode": "B2", "last_date": "2026-08-01", "bills": 1},
+        ],
+    )
+    monkeypatch.setattr(service, "fetch_sheet_products", lambda _codes: {"B2": {"descr": "past", "ui": "ชิ้น"}})
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: {"A1"})
+    monkeypatch.setattr(
+        "src.hq_po.stock.fetch_dual_stock",
+        lambda _codes, refresh=False: ({"B2": {"qtyoh2": 1, "mtp2": 1}}, {"B2": {"qtyoh2": 0, "mtp2": 1}}, True),
+    )
+    monkeypatch.setattr("src.hq_po.stock.fetch_parts9_qty", lambda _codes: {})
+    payload = service.vendor_ordered_payload("RR")
+    assert [item["bcode"] for item in payload["items"]] == ["B2"]
+    assert payload["items"][0]["propose_meta"]["iclow_origin"] == "history"
+    assert payload["items"][0]["vendor"] == "RR"
+
+
 def test_refresh_qtyoh2_syncs_both_sites(monkeypatch):
     import src.db.qtyoh2_ledger as ledger
     import src.parts9_explorer.db as explorer_db
@@ -560,12 +597,18 @@ def test_refresh_qtyoh2_syncs_both_sites(monkeypatch):
 
     def sync(codes, *, engine):
         seen.append((tuple(codes), engine))
-        return []
+        return [type("Row", (), {"bcode": code, "skipped": False})() for code in codes]
 
     monkeypatch.setattr(ledger, "sync_qtyoh2_from_ledger_many", sync)
+    from src.hq_po import stock as stock_mod
+
+    stock_mod._fresh_until.clear()
     refresh_qtyoh2(["A1", "A1", " B2 "])
     assert {engine for _, engine in seen} == set(engines.values())
     assert {codes for codes, _ in seen} == {("A1", "B2")}
+    seen.clear()
+    refresh_qtyoh2(["A1", "B2"])
+    assert seen == []
 
     seen.clear()
     monkeypatch.setattr(ledger, "qtyoh2_sync_on_read_enabled", lambda: False)

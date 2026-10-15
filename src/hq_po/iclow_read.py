@@ -405,6 +405,99 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def search_vendors(query: str, *, limit: int = 8) -> list[dict[str, str]]:
+    """HQ APMAS accounts matching a short code or a longer name."""
+    q = str(query or "").strip()
+    if len(q) < 2:
+        return []
+    safe = q.replace("%", "").replace("_", "").replace("[", "")
+    if len(safe) < 2:
+        return []
+    engine = get_site_engine("hq")
+    name_ok = 1 if len(safe) >= 3 else 0
+    sql = text(
+        """
+        SELECT TOP (:lim)
+          LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) AS ACCTNO,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(ACCTNAME,'')))) AS ACCTNAME
+        FROM dbo.APMAS WITH (NOLOCK)
+        WHERE UPPER(LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,''))))) <> 'Y'
+          AND (
+            LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) = :q
+            OR LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) LIKE :prefix
+            OR (:name_ok = 1 AND LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(ACCTNAME,'')))) LIKE :contains)
+          )
+        ORDER BY
+          CASE
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) = :q THEN 0
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) LIKE :prefix THEN 1
+            ELSE 2
+          END,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO)))
+        """
+    )
+    out: list[dict[str, str]] = []
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "lim": int(limit),
+                "q": safe,
+                "prefix": safe + "%",
+                "name_ok": name_ok,
+                "contains": f"%{safe}%",
+            },
+        ).mappings().all()
+    for row in rows:
+        acct = str(row.get("ACCTNO") or "").strip()
+        if not acct:
+            continue
+        out.append({"acctno": acct, "name": str(row.get("ACCTNAME") or "").strip()})
+    return out
+
+
+def fetch_ordered_product_rows(acctno: str, *, limit: int = 80) -> list[dict[str, Any]]:
+    """Distinct products purchased from one HQ vendor, newest bill first."""
+    acct = str(acctno or "").strip()
+    if not acct:
+        return []
+    engine = get_site_engine("hq")
+    sql = text(
+        """
+        SELECT TOP (:lim)
+          LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
+          CONVERT(varchar(10), MAX(BILLDATE), 23) AS LAST_DATE,
+          COUNT(*) AS BILLS
+        FROM dbo.PIDET WITH (NOLOCK)
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) = :acct
+          AND LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) <> ''
+          AND UPPER(LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,''))))) <> 'Y'
+          AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(JOURMODE,'')))) <> '0'
+        GROUP BY LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE)))
+        ORDER BY MAX(BILLDATE) DESC
+        """
+    )
+    out: list[dict[str, Any]] = []
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"lim": int(limit), "acct": acct}).mappings().all()
+    for row in rows:
+        bcode = str(row.get("BCODE") or "").strip()
+        if not bcode:
+            continue
+        try:
+            bills = int(row.get("BILLS") or 0)
+        except (TypeError, ValueError):
+            bills = 0
+        out.append(
+            {
+                "bcode": bcode,
+                "last_date": str(row.get("LAST_DATE") or "")[:10],
+                "bills": bills,
+            }
+        )
+    return out
+
+
 def fetch_vendor_names(acctnos: list[str]) -> dict[str, str]:
     codes = []
     seen: set[str] = set()

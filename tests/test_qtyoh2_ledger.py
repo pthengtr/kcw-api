@@ -78,20 +78,58 @@ def test_sync_unchanged_skips_update(monkeypatch):
     assert conn.execute.call_count == 1
 
 
+def _mapped(rows):
+    result = MagicMock()
+    result.mappings.return_value.all.return_value = rows
+    return result
+
+
 def test_batch_dedupes(monkeypatch):
     monkeypatch.setenv("QTYOH2_SYNC_ON_READ", "1")
-    read_row = {
-        "icmas_id": 1,
-        "beg": 0.0,
-        "old_qtyoh2": 0.0,
-        "pi_units": 0.0,
-        "si_units": 0.0,
-    }
     conn = MagicMock()
-    conn.execute.return_value.mappings.return_value.first.return_value = read_row
+    conn.execute.side_effect = [
+        _mapped(
+            [
+                {"icmas_id": 1, "bcode": "a", "beg": 0.0, "old_qtyoh2": 0.0},
+                {"icmas_id": 2, "bcode": "b", "beg": 1.0, "old_qtyoh2": 1.0},
+            ]
+        ),
+        _mapped([]),
+        _mapped([]),
+    ]
     engine = MagicMock()
     engine.begin.return_value.__enter__.return_value = conn
     engine.begin.return_value.__exit__.return_value = None
 
     results = sync_qtyoh2_from_ledger_many(["a", "a", "b"], engine=engine)
     assert [r.bcode for r in results] == ["a", "b"]
+    assert [r.updated for r in results] == [False, False]
+    assert conn.execute.call_count == 3
+
+
+def test_batch_updates_only_the_row_whose_ledger_differs(monkeypatch):
+    monkeypatch.setenv("QTYOH2_SYNC_ON_READ", "1")
+    conn = MagicMock()
+    conn.execute.side_effect = [
+        _mapped(
+            [
+                {"icmas_id": 1, "bcode": "a", "beg": 10.0, "old_qtyoh2": 15.0},
+                {"icmas_id": 9, "bcode": "a", "beg": 0.0, "old_qtyoh2": 0.0},
+                {"icmas_id": 2, "bcode": "b", "beg": 0.0, "old_qtyoh2": 1.0},
+            ]
+        ),
+        _mapped([{"bcode": "a", "units": 20.0}, {"bcode": "b", "units": 4.0}]),
+        _mapped([{"bcode": "a", "units": 15.0}, {"bcode": "b", "units": 1.0}]),
+        SimpleNamespace(rowcount=1),
+    ]
+    engine = MagicMock()
+    engine.begin.return_value.__enter__.return_value = conn
+    engine.begin.return_value.__exit__.return_value = None
+
+    results = sync_qtyoh2_from_ledger_many(["a", "b"], engine=engine)
+    assert [(r.bcode, r.new_qtyoh2, r.updated) for r in results] == [
+        ("a", 15.0, False),
+        ("b", 3.0, True),
+    ]
+    update = conn.execute.call_args_list[-1]
+    assert update.args[1] == {"icmas_id": 2, "new_qtyoh2": 3.0}
