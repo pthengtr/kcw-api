@@ -278,6 +278,8 @@ def test_page_defaults_vendor_view():
     assert "/hq-po/api/sheet" in html
     assert "HQ_PO_ICLOW_STAMP_ENABLED" in html
     assert "กำลังโหลดรายการรอสั่ง" in html
+    assert "กำลังค้นหา" in html
+    assert 'id="qStatus"' in html
     assert "ชื่อรุ่น" in html
     assert "เบอร์แท้" in html
     assert "เบอร์โรงงาน" in html

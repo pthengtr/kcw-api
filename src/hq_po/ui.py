@@ -23,7 +23,7 @@ _HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="color-scheme" content="light"/>
 <title>สั่งซื้อ HQ</title>
-<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
 <style>
 :root{
   --blue:#1d4ed8;--blue-deep:#1e3a8a;--blue-soft:#dbeafe;--blue-wash:#eff6ff;
@@ -48,6 +48,8 @@ body.has-dock main{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 .toggle button{flex:1;min-height:38px;border:0;background:transparent;border-radius:9px;padding:7px 8px;font-size:13px;color:var(--muted);font-weight:600}
 .toggle button.on{background:var(--blue);color:#fff}
 .bar{display:flex;gap:8px}
+.search-status{display:flex;align-items:center;gap:8px;margin:0;color:var(--blue-deep);font-size:13px;font-weight:650}
+.search-status[hidden]{display:none}
 input[type=search]{width:100%;min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:16px;background:#fff;color:var(--text)}
 input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .count{font-size:12px;color:var(--muted);padding:0 2px}
@@ -153,7 +155,8 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
         <button type="button" id="srcIclow">ICLOW</button>
         <button type="button" id="srcAi">AI</button>
       </div>
-      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search"/></div>
+      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search" autocomplete="off"/></div>
+      <p id="qStatus" class="search-status" role="status"><span class="spin sm" aria-hidden="true"></span><span id="qStatusText">กำลังโหลดรายการรอสั่ง…</span></p>
     </div>
     <div id="insightNote" class="insight" hidden></div>
     <div id="list"><div class="spin-wrap"><span class="spin" aria-hidden="true"></span><span>กำลังโหลดรายการรอสั่ง…</span></div></div>
@@ -186,7 +189,8 @@ const USER = __USER_JSON__;
 const STAMP = __STAMP__;
 let savedView = "vendor";
 try { savedView = localStorage.getItem("hqpo-view") || "vendor"; } catch (e) {}
-const state = {items:[], vendors:[], view: savedView, source:"all", q:"", orders:[], busy:false, sheet:[], forms:null, variant:"simple", sheetSaved:false};
+const state = {items:[], vendors:[], view: savedView, source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false};
+let searchTimer = 0;
 document.getElementById("who").textContent = USER;
 if(!STAMP){
   document.getElementById("banner").innerHTML = '<div class="note">ยังไม่เปิดบันทึกลง ICLOW (HQ_PO_ICLOW_STAMP_ENABLED) — ดูรายการและคำแนะนำ AI ได้ แต่ยืนยันสั่งซื้อยังไม่ได้</div>';
@@ -201,6 +205,14 @@ function setBusy(on, text){
   const el = document.getElementById("busy");
   document.getElementById("busyText").textContent = text || "กำลังดำเนินการ…";
   el.hidden = !on;
+}
+function showSearchStatus(text){
+  const el = document.getElementById("qStatus");
+  document.getElementById("qStatusText").textContent = text;
+  el.hidden = false;
+}
+function hideSearchStatus(){
+  document.getElementById("qStatus").hidden = true;
 }
 function setInsight(text){
   const el = document.getElementById("insightNote");
@@ -219,13 +231,17 @@ function vendorTitle(row){
   if(!code) return "ไม่ระบุเจ้าหนี้";
   return name ? `${name} · ${code}` : code;
 }
+function haystack(row){
+  const suppliers = (row.suppliers || []).map(s => [s.name, s.acctno].join(" ")).join(" ");
+  row._hay = [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name, row.list_vendor, row.list_vendor_name, suppliers].join(" ").toLowerCase();
+  return row._hay;
+}
 function match(row){
   if(state.source==="iclow" && row.source==="insight") return false;
   if(state.source==="ai" && !(row.propose_meta || row.source==="insight")) return false;
   const q = state.q.trim().toLowerCase();
   if(!q) return true;
-  const suppliers = (row.suppliers || []).map(s => [s.name, s.acctno].join(" ")).join(" ");
-  return [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name, suppliers].join(" ").toLowerCase().includes(q);
+  return (row._hay || haystack(row)).includes(q);
 }
 function rowKey(row){
   if(row.iclow_id) return "iclow:" + row.iclow_id;
@@ -347,7 +363,7 @@ function qtyCell(row){
 }
 function lineHtml(row){
   const check = row.confirmable && STAMP
-    ? `<input type="checkbox" data-key="${esc(rowKey(row))}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"/>`
+    ? `<input type="checkbox" data-key="${esc(rowKey(row))}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"${row.picked ? " checked" : ""}/>`
     : `<input type="checkbox" disabled/>`;
   const incoming = Number(row.incoming_qty);
   const incomingText = incoming > 0 ? ` · ค้างรับ ${esc(qtyText(incoming))}` : "";
@@ -379,16 +395,43 @@ function syncDock(){
   document.body.classList.toggle("has-dock", show);
   if(show) document.getElementById("dockConfirm").textContent = `ดูใบส่งเจ้าหนี้ ${n} รายการ`;
 }
+function scheduleRender(label, delay){
+  clearTimeout(searchTimer);
+  if(state.loading){
+    showSearchStatus("กำลังโหลดรายการรอสั่ง…");
+    document.getElementById("list").innerHTML = spinner("กำลังโหลดรายการรอสั่ง…");
+    syncDock();
+    return;
+  }
+  if(label){
+    showSearchStatus(label);
+    document.getElementById("list").innerHTML = spinner(label);
+    syncDock();
+  }
+  searchTimer = setTimeout(() => {
+    requestAnimationFrame(() => {
+      renderList();
+      hideSearchStatus();
+    });
+  }, delay || 0);
+}
 function renderList(){
   const y = window.scrollY;
   const host = document.getElementById("list");
+  if(state.loading){
+    showSearchStatus("กำลังโหลดรายการรอสั่ง…");
+    host.innerHTML = spinner("กำลังโหลดรายการรอสั่ง…");
+    syncDock();
+    return;
+  }
   const items = state.items.filter(match);
   for(const row of items) pinRow(row);
-  if(!items.length){ host.innerHTML = '<div class="empty">ไม่มีรายการ</div>'; syncDock(); window.scrollTo(0, y); return; }
+  const typing = document.activeElement && document.activeElement.id === "q";
+  if(!items.length){ host.innerHTML = '<div class="empty">ไม่มีรายการ</div>'; syncDock(); if(!typing) window.scrollTo(0, y); return; }
   if(state.view==="product"){
     host.innerHTML = `<div class="card"><h2><span class="title">สินค้า</span><span class="count">${items.length} รายการ</span></h2>${items.map(lineHtml).join("")}</div>`;
     syncDock();
-    window.scrollTo(0, y);
+    if(!typing) window.scrollTo(0, y);
     return;
   }
   const groups = new Map();
@@ -406,21 +449,21 @@ function renderList(){
     return `<div class="card"><h2><span class="title">${esc(vendorTitle(g))}</span><span class="count">${g.lines.length} รายการ</span></h2>${g.lines.map(lineHtml).join("")}${btn}</div>`;
   }).join("");
   syncDock();
-  window.scrollTo(0, y);
+  if(!typing) window.scrollTo(0, y);
 }
 function setView(view){
   state.view = view;
   try { localStorage.setItem("hqpo-view", view); } catch (e) {}
   document.getElementById("viewVendor").classList.toggle("on", view==="vendor");
   document.getElementById("viewProduct").classList.toggle("on", view==="product");
-  renderList();
+  scheduleRender("กำลังจัดรายการ…", 0);
 }
 function setSource(source){
   state.source = source;
   for(const [id, val] of [["srcAll","all"],["srcIclow","iclow"],["srcAi","ai"]]){
     document.getElementById(id).classList.toggle("on", source===val);
   }
-  renderList();
+  scheduleRender("กำลังจัดรายการ…", 0);
 }
 async function loadInsight(){
   setInsight("กำลังโหลดคำแนะนำ AI…");
@@ -443,18 +486,33 @@ async function loadInsight(){
 }
 async function loadSuggest(){
   const host = document.getElementById("list");
+  state.loading = true;
+  clearTimeout(searchTimer);
+  showSearchStatus("กำลังโหลดรายการรอสั่ง…");
   host.innerHTML = spinner("กำลังโหลดรายการรอสั่ง…");
   syncDock();
   try {
     const res = await fetch("/hq-po/api/suggest");
-    if(!res.ok){ host.innerHTML = '<div class="empty">โหลดรายการไม่ได้</div>'; return; }
+    if(!res.ok){
+      state.loading = false;
+      hideSearchStatus();
+      host.innerHTML = '<div class="empty">โหลดรายการไม่ได้</div>';
+      return;
+    }
     const data = await res.json();
     state.items = data.items || [];
-    for(const row of state.items) pinRow(row);
+    for(const row of state.items){
+      pinRow(row);
+      haystack(row);
+    }
     state.vendors = data.vendors || [];
+    state.loading = false;
+    hideSearchStatus();
     renderList();
     if(data.insight_pending) loadInsight();
   } catch (err) {
+    state.loading = false;
+    hideSearchStatus();
     host.innerHTML = '<div class="empty">โหลดรายการไม่ได้</div>';
   }
 }
@@ -677,7 +735,10 @@ document.getElementById("viewProduct").onclick = () => setView("product");
 document.getElementById("srcAll").onclick = () => setSource("all");
 document.getElementById("srcIclow").onclick = () => setSource("iclow");
 document.getElementById("srcAi").onclick = () => setSource("ai");
-document.getElementById("q").oninput = (e) => { state.q = e.target.value; renderList(); };
+document.getElementById("q").oninput = (e) => {
+  state.q = e.target.value;
+  scheduleRender(state.loading ? "" : "กำลังค้นหา…", state.loading ? 0 : 180);
+};
 document.getElementById("tabOrder").onclick = () => {
   document.getElementById("tabOrder").classList.add("on");
   document.getElementById("tabDone").classList.remove("on");
@@ -840,6 +901,13 @@ document.getElementById("list").oninput = (e) => {
   if(row) row.order_qty = input.value;
 };
 document.getElementById("list").onchange = (e) => {
+  const box = e.target.closest("input[type=checkbox][data-key]");
+  if(box){
+    const picked = findRow(box.dataset.key || "");
+    if(picked) picked.picked = box.checked;
+    syncDock();
+    return;
+  }
   const pick = e.target.closest("select[data-pick]");
   if(!pick){ syncDock(); return; }
   const row = findRow(pick.dataset.pick || "");
@@ -847,6 +915,7 @@ document.getElementById("list").onchange = (e) => {
   if(hit && row){
     row.vendor = hit.acctno;
     row.vendor_name = hit.name || "";
+    row._hay = "";
     const line = pick.closest(".line");
     const box = line && line.querySelector("input[data-key]");
     if(box) box.dataset.vendor = row.vendor || "";
