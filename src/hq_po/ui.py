@@ -48,6 +48,8 @@ body.has-dock main{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 .toggle button{flex:1;min-height:38px;border:0;background:transparent;border-radius:9px;padding:7px 8px;font-size:13px;color:var(--muted);font-weight:600}
 .toggle button.on{background:var(--blue);color:#fff}
 .bar{display:flex;gap:8px}
+.bar input[type=search]{flex:1;width:auto;min-width:0}
+#addProduct{flex:none;min-height:44px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;padding:8px 12px;font-size:14px}
 .search-status{display:flex;align-items:center;gap:8px;margin:0;color:var(--blue-deep);font-size:13px;font-weight:650}
 .search-status[hidden]{display:none}
 input[type=search]{width:100%;min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:16px;background:#fff;color:var(--text)}
@@ -176,7 +178,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
         <button type="button" id="srcIclow">ICLOW</button>
         <button type="button" id="srcAi">AI</button>
       </div>
-      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อสินค้า ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search" autocomplete="off"/></div>
+      <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อสินค้า ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search" autocomplete="off"/><button type="button" id="addProduct">เพิ่มสินค้า</button></div>
       <p id="qStatus" class="search-status" role="status"><span class="spin sm" aria-hidden="true"></span><span id="qStatusText">กำลังโหลดรายการรอสั่ง…</span></p>
     </div>
     <div id="insightNote" class="insight" hidden></div>
@@ -268,7 +270,11 @@ function haystack(row){
   row._hay = [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name].join(" ").toLowerCase();
   return row._hay;
 }
+function validBcode(row){
+  return /\d/.test(String(row && row.bcode || "").trim());
+}
 function match(row){
+  if(!validBcode(row)) return false;
   if(state.source==="iclow" && row.source==="insight") return false;
   if(state.source==="ai" && !(row.propose_meta || row.source==="insight")) return false;
   const q = state.q.trim().toLowerCase();
@@ -703,7 +709,7 @@ async function loadSuggest(){
       return;
     }
     const data = await res.json();
-    state.items = data.items || [];
+    state.items = (data.items || []).filter(validBcode);
     for(const row of state.items) haystack(row);
     state.loading = false;
     hideSearchStatus();
@@ -922,6 +928,7 @@ async function cancelOrder(id){
   await loadOrders();
   await loadSuggest();
 }
+document.getElementById("addProduct").onclick = () => openCatalog();
 document.getElementById("viewVendor").onclick = () => setView("vendor");
 document.getElementById("viewProduct").onclick = () => setView("product");
 document.getElementById("srcAll").onclick = () => setSource("all");

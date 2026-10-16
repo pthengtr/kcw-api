@@ -72,6 +72,7 @@ def fetch_to_order_rows() -> list[dict[str, Any]]:
         SELECT {_SELECT}
         FROM dbo.ICLOW
         WHERE {_NOT_CANCELED} AND {_ORDERED_N}
+          AND {_NV('BCODE', 40)} LIKE '%[0-9]%'
         ORDER BY {_NV('VENDOR', 40)}, {_NV('BCODE', 40)}, ID
         OFFSET :off ROWS FETCH NEXT :lim ROWS ONLY
         """

@@ -281,9 +281,15 @@ def _catalog_for(bcodes: list[str]) -> dict[str, dict[str, Any]]:
         return {}
 
 
+def _valid_bcode(value: Any) -> bool:
+    """A PARTS9 code has a digit. A blank or dash line is not a product."""
+    code = str(value or "").strip()
+    return bool(code) and any(ch.isdigit() for ch in code)
+
+
 def build_suggest() -> dict[str, Any]:
     """Waiting lines only. The full AI scan stays on the AI tab."""
-    rows = fetch_to_order_rows()
+    rows = [row for row in fetch_to_order_rows() if _valid_bcode(row.get("bcode"))]
     bcodes = [str(row.get("bcode") or "").strip() for row in rows if str(row.get("bcode") or "").strip()]
     with ThreadPoolExecutor(max_workers=1) as pool:
         catalog_fut = pool.submit(_catalog_for, bcodes)
