@@ -15,6 +15,7 @@ from src.hq_po.service import (
     insight_only_payload,
     list_open_orders,
     peers_payload,
+    product_search_payload,
     suggest_payload,
     suppliers_payload,
     vendor_insight_payload,
@@ -201,6 +202,19 @@ def api_suggest(request: Request):
         return suggest_payload()
     except Exception as exc:
         return JSONResponse({"error": "suggest_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/products")
+def api_product_search(request: Request, q: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return product_search_payload(q)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "products_failed", "message": str(exc)}, status_code=502)
 
 
 @router.get("/api/vendors")

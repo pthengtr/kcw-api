@@ -27,11 +27,13 @@ from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
     fetch_iclow_by_ids,
     fetch_incoming_qty,
+    fetch_live_vendors,
     fetch_ordered_product_rows,
     fetch_to_order_rows,
     fetch_sheet_products,
     fetch_unordered_bcodes,
     fetch_vendor_names,
+    search_products,
     search_vendors,
     supplier_choices,
 )
@@ -218,6 +220,96 @@ def vendor_insight_payload(acctno: str) -> dict[str, Any]:
     return {"vendor": acct, "vendor_name": name, "items": lines}
 
 
+def _money(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number <= 0:
+        return None
+    return round(number, 2)
+
+
+def _on_hand(meta: dict[str, Any] | None) -> float | None:
+    if meta is None:
+        return None
+    try:
+        return float(meta.get("qtyoh2") or 0)
+    except (TypeError, ValueError):
+        return None
+
+
+def product_search_payload(query: str) -> dict[str, Any]:
+    """ICMAS products that can be added even when they are not on the waiting list."""
+    try:
+        rows = search_products(query)
+    except Exception as exc:
+        raise HqPoError("missing", "หาสินค้าไม่ได้") from exc
+    if not rows:
+        return {"products": []}
+    codes = [row["bcode"] for row in rows]
+    try:
+        history, catalog = fetch_bcode_suppliers(codes)
+    except Exception:
+        history, catalog = {}, {}
+    try:
+        waiting = fetch_unordered_bcodes(codes)
+    except Exception:
+        waiting = set()
+    from src.hq_po.stock import fetch_dual_stock
+
+    hq, syp, ok = fetch_dual_stock(codes)
+    products: list[dict[str, Any]] = []
+    for row in rows:
+        bcode = row["bcode"]
+        hist = history.get(bcode) or []
+        def _bills(item: dict[str, Any]) -> int:
+            try:
+                return int(item.get("bills") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        latest = max(hist, key=lambda item: (str(item.get("last_date") or ""), _bills(item)), default=None)
+        card = catalog.get(bcode) or {}
+        last_vendor = str((latest or {}).get("acctno") or "").strip()
+        last_name = str((latest or {}).get("name") or "").strip()
+        vendor = last_vendor or str(card.get("acctno") or row.get("vendor") or "").strip()
+        vendor_name = last_name or str(card.get("name") or "").strip()
+        hq_qty = _on_hand(hq.get(bcode)) if ok else _on_hand({"qtyoh2": row.get("qtyoh2")})
+        syp_qty = _on_hand(syp.get(bcode)) if ok else None
+        company = None if hq_qty is None or syp_qty is None else hq_qty + syp_qty
+        try:
+            mtp2 = float(row.get("mtp2") or 1)
+        except (TypeError, ValueError):
+            mtp2 = 1.0
+        products.append(
+            {
+                "bcode": bcode,
+                "descr": row.get("descr") or "",
+                "model": row.get("model") or "",
+                "brand": row.get("brand") or "",
+                "pcode": row.get("pcode") or "",
+                "mcode": row.get("mcode") or "",
+                "ui": row.get("ui") or "",
+                "ui1": row.get("ui") or "",
+                "ui2": row.get("ui2") or "",
+                "mtp2": mtp2 if mtp2 > 0 else 1.0,
+                "price": _money(row.get("price1")),
+                "cost": _money(row.get("costlast")) or _money(row.get("costnet")),
+                "vendor": vendor,
+                "vendor_name": vendor_name,
+                "last_vendor": last_vendor,
+                "last_vendor_name": last_name,
+                "last_date": str((latest or {}).get("last_date") or "")[:10],
+                "hq_qtyoh2": hq_qty,
+                "syp_qtyoh2": syp_qty,
+                "company_qtyoh2": company,
+                "waiting": bcode in waiting,
+            }
+        )
+    return {"products": products}
+
+
 def suppliers_payload(bcode: str, *, current: str = "", current_name: str = "") -> dict[str, Any]:
     code = str(bcode or "").strip()
     if not code:
@@ -340,7 +432,23 @@ def _created_flag(line: dict[str, Any]) -> bool:
 
 def _peer_flag(line: dict[str, Any]) -> bool:
     meta = line.get("propose_meta")
-    return isinstance(meta, dict) and meta.get("iclow_origin") in ("peer", "history")
+    return isinstance(meta, dict) and meta.get("iclow_origin") in ("peer", "history", "catalog")
+
+
+def _live_accounts(acctnos: list[str]) -> dict[str, str]:
+    codes = []
+    seen: set[str] = set()
+    for raw in acctnos:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if not codes:
+        return {}
+    try:
+        return fetch_live_vendors(codes)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ใหม่ไม่ได้") from exc
 
 
 def _line_bcode(raw: dict[str, Any], live_by_id: dict[int, dict[str, Any]]) -> str:
@@ -377,7 +485,7 @@ def _assert_supplier_choices(
     live_by_id: dict[int, dict[str, Any]],
     resolved: dict[str, dict[str, Any]],
 ) -> None:
-    """A switched vendor must be a real purchase account or the catalog vendor."""
+    """A switched vendor must be a past supplier, the catalog vendor, or a live APMAS account."""
     changed: list[tuple[str, str]] = []
     for raw in lines:
         asked = str(raw.get("vendor") or "").strip()
@@ -402,12 +510,19 @@ def _assert_supplier_choices(
         history, catalog = fetch_bcode_suppliers([bcode for bcode, _ in changed])
     except Exception as exc:
         raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ทางเลือกไม่ได้") from exc
+    unknown: list[tuple[str, str]] = []
     for bcode, asked in changed:
         known = {str(row.get("acctno") or "").strip() for row in history.get(bcode) or []}
         cat = str((catalog.get(bcode) or {}).get("acctno") or "").strip()
         if cat:
             known.add(cat)
         if asked not in known:
+            unknown.append((bcode, asked))
+    if not unknown:
+        return
+    live = _live_accounts([asked for _, asked in unknown])
+    for bcode, asked in unknown:
+        if asked not in live:
             raise HqPoError("vendor_mismatch", f"{bcode} ไม่เคยรับจาก {asked}")
 
 
@@ -432,6 +547,7 @@ def _resolve_peer(lines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     except Exception as exc:
         raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ของสินค้าแทนไม่ได้") from exc
     out: dict[str, dict[str, Any]] = {}
+    fresh: list[tuple[str, str]] = []
     for raw in lines:
         bcode = str(raw.get("bcode") or "").strip()
         if not bcode or bcode in out:
@@ -449,10 +565,13 @@ def _resolve_peer(lines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             catalog_name=str(card.get("name") or ""),
         )
         known = {str(row.get("acctno") or "").strip() for row in choices}
-        if not asked or asked not in known:
+        if not asked:
             raise HqPoError("vendor_mismatch", f"{bcode} ไม่มีเจ้าหนี้ที่สั่งได้")
+        if asked not in known:
+            fresh.append((bcode, asked))
         pack = chosen_pack(raw.get("ui"), product)
         ui = pack[0] if pack else str(product.get("ui") or "").strip()
+        origin = "catalog" if _peer_flag(raw) and (raw.get("propose_meta") or {}).get("iclow_origin") == "catalog" else "peer"
         out[bcode] = {
             "iclow_id": None,
             "vendor": asked,
@@ -461,9 +580,14 @@ def _resolve_peer(lines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "mcode": str(product.get("mcode") or "").strip(),
             "qty": 0,
             "ui": ui or None,
-            "source": "peer",
-            "propose_meta": {"iclow_origin": "created", "peer": True},
+            "source": origin,
+            "propose_meta": {"iclow_origin": "created", "peer": origin != "catalog", "catalog": origin == "catalog"},
         }
+    if fresh:
+        live = _live_accounts([asked for _, asked in fresh])
+        for bcode, asked in fresh:
+            if asked not in live:
+                raise HqPoError("vendor_mismatch", f"{bcode} ไม่มีเจ้าหนี้ที่สั่งได้")
     return out
 
 
