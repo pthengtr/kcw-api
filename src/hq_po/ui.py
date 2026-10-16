@@ -81,6 +81,19 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .line-actions .peer-btn{margin-top:0}
 .order-btn,.history-btn{display:block;width:100%;min-height:42px;margin-top:8px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;font-size:14px}
 .history-btn{background:#fff;color:var(--blue-deep);border:1px solid var(--blue)}
+.add-quiet{display:block;width:100%;margin:4px 0 12px;background:transparent;border:0;color:var(--blue);font-weight:650;font-size:13px;min-height:40px}
+.ap-search{margin-top:8px}
+.ap-search input{width:100%;min-height:40px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:16px;background:#fff;color:var(--text)}
+.ap-hit{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;margin-top:4px;font:600 13px Prompt,"Noto Sans Thai",sans-serif;color:var(--text)}
+.pick-row{display:flex;gap:8px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:8px}
+.pick-row .grow{flex:1;min-width:0}
+.pick-row button.choose{flex:none;min-height:40px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;padding:8px 12px}
+#catalog{position:fixed;inset:0;z-index:18;background:var(--bg);overflow:auto;padding:12px 12px calc(24px + env(safe-area-inset-bottom))}
+#catalog[hidden]{display:none}
+.catalog-top{display:flex;gap:8px;margin-bottom:10px}
+.catalog-top button{min-height:42px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:650;padding:8px 14px;color:var(--blue-deep)}
+.catalog-head{margin:0;font-size:18px}
+.catalog-sub{margin:4px 0 12px;color:var(--muted);font-size:13px}
 .line.picked{background:var(--blue-wash)}
 .vendor-card{display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;margin-bottom:10px;padding:14px 12px;font:650 15px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .vendor-card .title{min-width:0;overflow-wrap:anywhere}
@@ -188,6 +201,16 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <button type="button" id="sheetCommit">บันทึกว่าสั่งแล้ว</button>
   </div>
 </div>
+<div id="catalog" hidden>
+  <div class="catalog-top">
+    <button type="button" id="catalogClose">กลับ</button>
+    <button type="button" id="catalogBack" hidden>เลือกสินค้าอื่น</button>
+  </div>
+  <h2 class="catalog-head">เพิ่มสินค้า</h2>
+  <p class="catalog-sub" id="catalogSub">ค้นจากรหัสสินค้าใน PARTS9</p>
+  <div class="bar"><input id="catalogQ" type="search" placeholder="รหัส ชื่อ ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน" enterkeyhint="search" autocomplete="off"/></div>
+  <div id="catalogBody"></div>
+</div>
 <div id="printSheet" aria-hidden="true"></div>
 <div id="busy" hidden>
   <div class="busy-card"><span class="spin" aria-hidden="true"></span><div id="busyText">กำลังดำเนินการ…</div></div>
@@ -195,10 +218,12 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"product", vendorKey:null, vendorName:"", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false};
+const state = {items:[], view:"product", vendorKey:null, vendorName:"", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
+let catalogTimer = 0;
+let apTimer = 0;
 document.getElementById("who").textContent = USER;
 if(!STAMP){
   document.getElementById("banner").innerHTML = '<div class="note">ยังไม่เปิดบันทึกลง ICLOW (HQ_PO_ICLOW_STAMP_ENABLED) — ดูรายการและคำแนะนำ AI ได้ แต่ยืนยันสั่งซื้อยังไม่ได้</div>';
@@ -314,9 +339,13 @@ function supplierLabel(s){
   if(name) bits.push(name);
   if(acct && acct !== name) bits.push(acct);
   if(!bits.length) bits.push(acct || "—");
-  if(Number(s.bills) > 0) bits.push(String(s.bills) + " บิล");
-  if(s.last_date) bits.push(String(s.last_date));
+  if(s.fresh) bits.push("เจ้าหนี้ใหม่");
+  else if(Number(s.bills) > 0) bits.push(String(s.bills) + " บิล");
+  if(!s.fresh && s.last_date) bits.push(String(s.last_date));
   return bits.join(" · ");
+}
+function vendorFresh(row){
+  return (row.suppliers || []).some(s => s.fresh && String(s.acctno || "") === String(row.vendor || ""));
 }
 function selectedUnit(row){
   return String(row.order_ui || row.ui || row.ui1 || "").trim();
@@ -335,13 +364,31 @@ function unitHtml(row){
   </div>`;
 }
 function supplierSelect(row){
+  const key = esc(rowKey(row));
   const options = row.suppliers || [];
-  if(!options.length) return `<div class="meta">ไม่พบเจ้าหนี้ที่สั่งได้</div>`;
   const opts = options.map(s => {
     const selected = String(row.vendor || "") === String(s.acctno || "") ? " selected" : "";
     return `<option value="${esc(s.acctno || "")}"${selected}>${esc(supplierLabel(s))}</option>`;
   }).join("");
-  return `<label class="vendor-pick">เจ้าหนี้<select data-pick="${esc(rowKey(row))}" aria-label="เจ้าหนี้ ${esc(row.bcode || "")}">${opts}</select></label>`;
+  const empty = options.length ? "" : `<option value="">เลือกเจ้าหนี้</option>`;
+  const ap = row.apOpen
+    ? apEditorHtml(rowKey(row), row)
+    : `<button type="button" class="peer-btn" data-new-ap="${key}">เลือกเจ้าหนี้ใหม่</button>`;
+  return `<label class="vendor-pick">เจ้าหนี้<select data-pick="${key}" aria-label="เจ้าหนี้ ${esc(row.bcode || "")}">${empty}${opts}</select></label>${ap}`;
+}
+function apEditorHtml(key, row){
+  return `<div class="ap-search"><input type="search" data-apq="${esc(key)}" placeholder="ค้นรหัสหรือชื่อเจ้าหนี้" value="${esc(row.apQ || "")}" enterkeyhint="search" autocomplete="off"/><div data-aphits="${esc(key)}">${apHitsHtml(row, key)}</div></div>`;
+}
+function apHitsHtml(row, key){
+  const q = String(row.apQ || "").trim();
+  if(q.length < 2) return `<div class="meta">พิมพ์อย่างน้อย 2 ตัว</div>`;
+  if(row.apQuery !== q) return spinner("กำลังหาเจ้าหนี้…");
+  if(!(row.apHits || []).length) return `<div class="meta">ไม่พบเจ้าหนี้</div>`;
+  return row.apHits.map(v => `<button type="button" class="ap-hit" data-ap-use="${esc(key)}" data-acct="${esc(v.acctno || "")}" data-name="${esc(v.name || "")}"><span class="sku">${esc(v.acctno || "")}</span>${esc(v.name || "")}</button>`).join("");
+}
+function apRowFromKey(key){
+  if(key === "catalog") return state.catalogPick;
+  return findRow(key);
 }
 function productTools(row){
   const key = esc(rowKey(row));
@@ -371,7 +418,8 @@ function lineHtml(row, mode){
   const packText = row.company_qtyoh2 != null && packs > 1 && ui2
     ? ` · ${esc(qtyText(Number(row.company_qtyoh2) / packs))} ${esc(ui2)}` : "";
   const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${packText}${incomingText}`;
-  const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}</div>`;
+  const fresh = !pick && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
+  const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}${fresh}</div>`;
   const tools = pick ? "" : productTools(row);
   return `<div class="line${pick ? "" : " plain"}${pick && row.picked ? " picked" : ""}" id="line-${esc(rowKey(row))}">
     ${check}
@@ -465,6 +513,11 @@ function historyButton(){
   const label = state.historyLoading ? "กำลังโหลดสินค้าที่เคยสั่ง…" : "ดูสินค้าที่เคยสั่งจากเจ้าหนี้นี้";
   return `<button type="button" class="history-btn" data-load-history="${esc(state.vendorKey)}"${state.historyLoading ? " disabled" : ""}>${esc(label)}</button>`;
 }
+function addProductControl(kind){
+  if(kind === "primary") return `<button type="button" class="order-btn" data-add-product>เพิ่มสินค้าจากรหัสนี้</button>`;
+  if(kind === "vendor") return `<button type="button" class="history-btn" data-add-product>เพิ่มสินค้าที่ไม่อยู่ในรายการ</button>`;
+  return `<button type="button" class="add-quiet" data-add-product>ไม่ใช่สินค้าที่ต้องการ? เพิ่มจากรหัสอื่น</button>`;
+}
 function mergeRows(rows){
   const have = new Set(state.items.map(row => String(row.bcode || "")).filter(Boolean));
   const add = (rows || []).filter(row => row.bcode && !have.has(String(row.bcode)));
@@ -527,11 +580,12 @@ function renderList(){
   if(state.view==="product"){
     if(!items.length && q.length >= 2){
       if(state.vendorQuery !== q) scheduleVendorSearch();
-      host.innerHTML = vendorHitHtml();
+      host.innerHTML = `<div class="card" style="padding:12px"><div class="meta">ไม่พบในรายการรอสั่ง</div>${addProductControl("primary")}</div>${vendorHitHtml()}`;
     } else {
+      const extra = items.length && q ? addProductControl("quiet") : (!items.length ? addProductControl("vendor") : "");
       host.innerHTML = items.length
-        ? `<div class="card"><h2><span class="title">สินค้า</span><span class="count">${items.length} รายการ</span></h2>${items.map(row => lineHtml(row, "product")).join("")}</div>`
-        : '<div class="empty">ไม่มีรายการ</div>';
+        ? `<div class="card"><h2><span class="title">สินค้า</span><span class="count">${items.length} รายการ</span></h2>${items.map(row => lineHtml(row, "product")).join("")}</div>${extra}`
+        : `<div class="empty">ไม่มีรายการ</div>${extra}`;
     }
     syncDock();
     if(!typing) window.scrollTo(0, y);
@@ -541,11 +595,11 @@ function renderList(){
     const groups = vendorGroups(items);
     if(!groups.length && q.length >= 2){
       if(state.vendorQuery !== q) scheduleVendorSearch();
-      host.innerHTML = vendorHitHtml();
+      host.innerHTML = `<div class="card" style="padding:12px"><div class="meta">ไม่พบในรายการรอสั่ง</div>${addProductControl("primary")}</div>${vendorHitHtml()}`;
     } else {
       host.innerHTML = groups.length
         ? groups.map(g => `<button type="button" class="vendor-card" data-open-vendor="${esc(g.vendor)}"><span class="title">${esc(vendorTitle(g))}</span><span class="badge">${g.lines.length}</span></button>`).join("")
-        : '<div class="empty">ไม่มีรายการ</div>';
+        : `<div class="empty">ไม่มีรายการ</div>${addProductControl("vendor")}`;
     }
     syncDock();
     if(!typing) window.scrollTo(0, y);
@@ -565,7 +619,7 @@ function renderList(){
   const body = state.historyOnly
     ? (past.length ? section("เคยสั่ง", past) : (state.historyLoading ? spinner("กำลังโหลดสินค้าที่เคยสั่ง…") : ""))
     : `${section("รอสั่ง", waiting)}${section("AI", ai)}${past.length ? section("เคยสั่ง", past) : ""}`;
-  host.innerHTML = `<button type="button" class="back" data-vendor-back>เจ้าหนี้ทั้งหมด</button><div class="card"><h2><span class="title">${esc(title)}</span></h2></div>${body}${historyButton()}`;
+  host.innerHTML = `<button type="button" class="back" data-vendor-back>เจ้าหนี้ทั้งหมด</button><div class="card"><h2><span class="title">${esc(title)}</span></h2></div>${body}${historyButton()}${addProductControl("vendor")}`;
   syncDock();
   if(!typing) window.scrollTo(0, y);
 }
@@ -1011,6 +1065,381 @@ async function loadSuppliers(row){
     box.innerHTML = `<div class="meta">${esc(err.message || "หาเจ้าหนี้ไม่ได้")}</div>`;
   }
 }
+function paintApHits(row, key){
+  const host = document.querySelector(`[data-aphits="${CSS.escape(key)}"]`);
+  if(host) host.innerHTML = apHitsHtml(row, key);
+}
+function scheduleAp(row, key){
+  clearTimeout(apTimer);
+  const q = String(row.apQ || "").trim();
+  if(q.length < 2){
+    row.apHits = [];
+    row.apQuery = "";
+    paintApHits(row, key);
+    return;
+  }
+  const host = document.querySelector(`[data-aphits="${CSS.escape(key)}"]`);
+  if(host) host.innerHTML = spinner("กำลังหาเจ้าหนี้…");
+  apTimer = setTimeout(() => lookupAp(row, key, q), 200);
+}
+async function lookupAp(row, key, q){
+  row.apQuery = q;
+  try {
+    const res = await fetch("/hq-po/api/vendors?q=" + encodeURIComponent(q));
+    const data = await res.json().catch(() => ({}));
+    if(String(row.apQ || "").trim() !== q) return;
+    row.apHits = res.ok ? (data.vendors || []) : [];
+  } catch (err) {
+    if(String(row.apQ || "").trim() !== q) return;
+    row.apHits = [];
+  }
+  paintApHits(row, key);
+}
+function applyNewVendor(row, acct, name){
+  if(!row || !acct) return;
+  row.suppliers = row.suppliers || [];
+  let hit = row.suppliers.find(s => String(s.acctno || "") === acct);
+  if(!hit){
+    hit = {acctno: acct, name: name || "", bills: 0, last_date: "", fresh: true};
+    row.suppliers.push(hit);
+  } else if(name && !hit.name) hit.name = name;
+  row.vendor = acct;
+  row.vendor_name = hit.name || name || "";
+  row.apOpen = false;
+  row._hay = "";
+  haystack(row);
+  if(row === state.catalogPick){
+    renderCatalog();
+    return;
+  }
+  const key = rowKey(row);
+  const box = document.querySelector(`[data-vendorbox="${CSS.escape(key)}"]`);
+  if(box){
+    box.hidden = false;
+    box.dataset.open = "1";
+    box.innerHTML = supplierSelect(row);
+  }
+  const line = document.getElementById("line-" + key);
+  const shown = line && line.querySelector("[data-vendor-label]");
+  if(shown) shown.textContent = vendorTitle(row) + (vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "");
+  const orderBtn = line && line.querySelector(".order-btn");
+  if(orderBtn && row.vendor){
+    orderBtn.textContent = "สั่งกับเจ้าหนี้นี้";
+    orderBtn.removeAttribute("data-vendors");
+    orderBtn.setAttribute("data-order", key);
+  }
+}
+function toggleNewAp(key){
+  const row = apRowFromKey(key);
+  if(!row) return;
+  row.apOpen = !row.apOpen;
+  if(key === "catalog"){
+    renderCatalog();
+    const input = document.querySelector("#catalog input[data-apq]");
+    if(input) input.focus();
+    return;
+  }
+  const box = document.querySelector(`[data-vendorbox="${CSS.escape(key)}"]`);
+  if(!box) return;
+  box.innerHTML = supplierSelect(row);
+  const input = box.querySelector("input[data-apq]");
+  if(input) input.focus();
+}
+function openCatalog(){
+  const fromVendor = state.view === "vendor" && state.vendorKey != null;
+  state.catalogVendor = fromVendor ? (state.vendorKey || "") : "";
+  state.catalogVendorName = fromVendor ? (state.vendorName || "") : "";
+  state.catalogPick = null;
+  state.catalogHits = [];
+  state.catalogQuery = "";
+  state.catalogLoading = false;
+  state.catalogQ = state.q.trim();
+  document.getElementById("catalog").hidden = false;
+  const input = document.getElementById("catalogQ");
+  input.value = state.catalogQ;
+  renderCatalog();
+  input.focus();
+  if(state.catalogQ.length >= 2) lookupProducts(state.catalogQ);
+}
+function closeCatalog(){
+  state.catalogPick = null;
+  document.getElementById("catalog").hidden = true;
+}
+function renderCatalog(){
+  const pick = state.catalogPick;
+  document.getElementById("catalogBack").hidden = !pick;
+  document.getElementById("catalogQ").hidden = !!pick;
+  document.getElementById("catalogQ").parentElement.hidden = !!pick;
+  const sub = document.getElementById("catalogSub");
+  if(pick){
+    sub.textContent = state.catalogVendorName
+      ? "ใส่ในใบของ " + state.catalogVendorName
+      : "เลือกจำนวนและเจ้าหนี้ แล้วใส่ในรายการ";
+  } else {
+    sub.textContent = "ค้นจากรหัสสินค้าใน PARTS9";
+  }
+  const host = document.getElementById("catalogBody");
+  if(pick){
+    host.innerHTML = catalogEditorHtml(pick);
+    return;
+  }
+  const q = state.catalogQ.trim();
+  if(q.length < 2){
+    host.innerHTML = '<div class="empty">พิมพ์อย่างน้อย 2 ตัว</div>';
+    return;
+  }
+  if(state.catalogLoading || state.catalogQuery !== q){
+    host.innerHTML = spinner("กำลังหาสินค้า…");
+    return;
+  }
+  if(!state.catalogHits.length){
+    host.innerHTML = '<div class="empty">ไม่พบรหัสนี้ในสินค้า</div>';
+    return;
+  }
+  host.innerHTML = state.catalogHits.map(catalogHitHtml).join("");
+}
+function catalogHitHtml(row){
+  const stock = row.company_qtyoh2 == null ? "" : `<div class="meta">คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}</div>`;
+  const last = row.last_vendor_name || row.last_vendor || "";
+  const lastLine = last ? `<div class="meta">เจ้าหนี้ล่าสุด ${esc(last)}${row.last_date ? " · " + esc(row.last_date) : ""}</div>` : "";
+  const wait = row.waiting ? `<div class="meta"><span class="badge wait">อยู่ในรายการรอสั่ง</span></div>` : "";
+  return `<div class="pick-row"><div class="grow"><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${stock}${lastLine}${wait}</div><button type="button" class="choose" data-catalog-choose="${esc(row.bcode || "")}">${row.waiting ? "ไปที่รายการ" : "เลือก"}</button></div>`;
+}
+function catalogUnitHtml(row){
+  const ui1 = String(row.ui1 || row.ui || "").trim();
+  const ui2 = String(row.ui2 || "").trim();
+  const mtp = Number(row.mtp2);
+  const current = String(row.order_ui || ui1).trim();
+  if(!ui1 || !ui2 || !(mtp > 1) || ui1 === ui2) return "";
+  const smallOn = current === ui1 || !current ? " on" : "";
+  const largeOn = current === ui2 ? " on" : "";
+  return `<div class="unit-pick" role="group" aria-label="หน่วย ${esc(row.bcode || "")}"><button type="button" class="unit${smallOn}" data-catalog-unit="${esc(ui1)}">${esc(ui1)}</button><button type="button" class="unit${largeOn}" data-catalog-unit="${esc(ui2)}">${esc(ui2)} ×${esc(qtyText(mtp))}</button></div>`;
+}
+function catalogSupplierHtml(row){
+  if(row.suppliersLoading) return spinner("กำลังหาเจ้าหนี้…");
+  const options = row.suppliers || [];
+  const opts = options.map(s => {
+    const selected = String(row.vendor || "") === String(s.acctno || "") ? " selected" : "";
+    return `<option value="${esc(s.acctno || "")}"${selected}>${esc(supplierLabel(s))}</option>`;
+  }).join("");
+  const empty = options.length ? "" : `<option value="">เลือกเจ้าหนี้</option>`;
+  const ap = row.apOpen
+    ? apEditorHtml("catalog", row)
+    : `<button type="button" class="peer-btn" data-new-ap="catalog">เลือกเจ้าหนี้ใหม่</button>`;
+  return `<label class="vendor-pick">เจ้าหนี้<select data-catalog-pick aria-label="เจ้าหนี้ ${esc(row.bcode || "")}">${empty}${opts}</select></label>${ap}`;
+}
+function catalogEditorHtml(row){
+  const label = state.catalogVendor ? "ใส่ในใบของเจ้าหนี้นี้" : "ใส่รายการนี้";
+  const stock = row.company_qtyoh2 == null ? "" : `<div class="meta">คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}</div>`;
+  return `<div class="card"><div class="line plain"><div><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${catalogUnitHtml(row)}${stock}${catalogSupplierHtml(row)}<button type="button" class="order-btn" data-catalog-accept>${label}</button></div><div class="qty-edit"><input class="qty-in" data-catalog-qty inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(row.order_qty || 1))}" aria-label="จำนวน ${esc(row.bcode || "")}"/><span class="meta">${esc(row.order_ui || row.ui || "")}</span></div></div></div>`;
+}
+function scheduleCatalogSearch(){
+  clearTimeout(catalogTimer);
+  const q = state.catalogQ.trim();
+  if(q.length < 2){
+    state.catalogHits = [];
+    state.catalogQuery = "";
+    state.catalogLoading = false;
+    renderCatalog();
+    return;
+  }
+  state.catalogLoading = true;
+  renderCatalog();
+  catalogTimer = setTimeout(() => lookupProducts(q), 200);
+}
+async function lookupProducts(q){
+  state.catalogLoading = true;
+  state.catalogQuery = "";
+  try {
+    const res = await fetch("/hq-po/api/products?q=" + encodeURIComponent(q));
+    const data = await res.json().catch(() => ({}));
+    if(state.catalogQ.trim() !== q) return;
+    state.catalogHits = res.ok ? (data.products || []) : [];
+    state.catalogQuery = q;
+  } catch (err) {
+    if(state.catalogQ.trim() !== q) return;
+    state.catalogHits = [];
+    state.catalogQuery = q;
+  } finally {
+    if(state.catalogQ.trim() === q){
+      state.catalogLoading = false;
+      renderCatalog();
+    }
+  }
+}
+function chooseCatalogProduct(bcode){
+  const hit = state.catalogHits.find(row => String(row.bcode || "") === bcode);
+  if(!hit) return;
+  if(hit.waiting){
+    const existing = state.items.find(item => String(item.bcode || "") === bcode);
+    closeCatalog();
+    if(!existing){
+      alert("สินค้านี้อยู่ในรายการรอสั่งแล้ว");
+      return;
+    }
+    state.q = "";
+    const q = document.getElementById("q");
+    if(q) q.value = "";
+    if(existing.vendor) openVendorOrder(existing);
+    else { renderList(); scrollToRow(existing); }
+    return;
+  }
+  state.catalogPick = Object.assign({}, hit, {
+    order_qty: 1,
+    order_ui: hit.ui1 || hit.ui || "",
+    suppliers: null,
+    suppliersLoading: true,
+    apOpen: false,
+    apQ: "",
+    apHits: [],
+    apQuery: "",
+  });
+  if(state.catalogVendor){
+    state.catalogPick.vendor = state.catalogVendor;
+    state.catalogPick.vendor_name = state.catalogVendorName || "";
+  }
+  renderCatalog();
+  loadCatalogSuppliers(state.catalogPick);
+}
+async function loadCatalogSuppliers(row){
+  try {
+    const params = new URLSearchParams();
+    const current = state.catalogVendor || row.vendor || "";
+    const currentName = state.catalogVendor ? state.catalogVendorName : (row.vendor_name || "");
+    if(current) params.set("current", current);
+    if(currentName) params.set("current_name", currentName);
+    const qs = params.toString();
+    const res = await fetch("/hq-po/api/suppliers/" + encodeURIComponent(row.bcode) + (qs ? "?" + qs : ""));
+    const data = await res.json().catch(() => ({}));
+    if(state.catalogPick !== row) return;
+    if(!res.ok) throw new Error(data.message || "หาเจ้าหนี้ไม่ได้");
+    row.suppliers = data.suppliers || [];
+    const preset = state.catalogVendor || "";
+    if(preset && !row.suppliers.some(s => String(s.acctno || "") === preset)){
+      row.suppliers.push({acctno: preset, name: state.catalogVendorName || "", bills: 0, last_date: "", fresh: true});
+    }
+    if(preset){
+      row.vendor = preset;
+      const named = row.suppliers.find(s => String(s.acctno || "") === preset);
+      row.vendor_name = (named && named.name) || state.catalogVendorName || "";
+    } else if(row.vendor && !row.suppliers.some(s => String(s.acctno || "") === String(row.vendor))){
+      row.suppliers.unshift({
+        acctno: row.vendor,
+        name: row.vendor_name || "",
+        bills: 0,
+        last_date: row.last_date || "",
+        fresh: !row.last_vendor,
+      });
+    }
+  } catch (err) {
+    if(state.catalogPick !== row) return;
+    row.suppliers = row.suppliers || [];
+    alert(err.message || "หาเจ้าหนี้ไม่ได้");
+  } finally {
+    if(state.catalogPick === row){
+      row.suppliersLoading = false;
+      renderCatalog();
+    }
+  }
+}
+function acceptCatalog(){
+  const row = state.catalogPick;
+  if(!row) return;
+  const qty = Number(row.order_qty);
+  if(!(qty > 0)){ alert("ใส่จำนวน"); return; }
+  if(!row.vendor){ alert("เลือกเจ้าหนี้ก่อน"); return; }
+  const existing = state.items.find(item => String(item.bcode || "") === String(row.bcode || ""));
+  if(existing){
+    closeCatalog();
+    if(existing.vendor) openVendorOrder(existing);
+    else { renderList(); scrollToRow(existing); }
+    return;
+  }
+  const added = {
+    iclow_id: null,
+    source: "catalog",
+    confirmable: true,
+    vendor: row.vendor,
+    vendor_name: row.vendor_name || "",
+    bcode: row.bcode,
+    descr: row.descr || "",
+    model: row.model || "",
+    brand: row.brand || "",
+    pcode: row.pcode || "",
+    mcode: row.mcode || "",
+    ui: row.ui1 || row.ui || "",
+    ui1: row.ui1 || row.ui || "",
+    ui2: row.ui2 || "",
+    mtp2: row.mtp2 || 1,
+    order_ui: row.order_ui || row.ui1 || row.ui || "",
+    price: row.price,
+    cost: row.cost,
+    qty: qty,
+    order_qty: qty,
+    hq_qtyoh2: row.hq_qtyoh2,
+    syp_qtyoh2: row.syp_qtyoh2,
+    company_qtyoh2: row.company_qtyoh2,
+    suppliers: row.suppliers || [],
+    propose_meta: {iclow_origin: "catalog"},
+    picked: true,
+  };
+  haystack(added);
+  state.items.push(added);
+  closeCatalog();
+  openVendorOrder(added);
+}
+document.getElementById("catalogClose").onclick = () => closeCatalog();
+document.getElementById("catalogBack").onclick = () => {
+  state.catalogPick = null;
+  renderCatalog();
+  document.getElementById("catalogQ").focus();
+};
+document.getElementById("catalogQ").oninput = (e) => {
+  state.catalogQ = e.target.value;
+  scheduleCatalogSearch();
+};
+document.getElementById("catalog").onclick = (e) => {
+  const choose = e.target.closest("[data-catalog-choose]");
+  if(choose){ chooseCatalogProduct(choose.dataset.catalogChoose || ""); return; }
+  const unit = e.target.closest("[data-catalog-unit]");
+  if(unit && state.catalogPick){
+    state.catalogPick.order_ui = unit.dataset.catalogUnit || "";
+    renderCatalog();
+    return;
+  }
+  const neu = e.target.closest("[data-new-ap]");
+  if(neu){ toggleNewAp(neu.dataset.newAp || ""); return; }
+  const apUse = e.target.closest("[data-ap-use]");
+  if(apUse){
+    applyNewVendor(apRowFromKey(apUse.dataset.apUse || ""), apUse.dataset.acct || "", apUse.dataset.name || "");
+    return;
+  }
+  if(e.target.closest("[data-catalog-accept]")) acceptCatalog();
+};
+document.getElementById("catalog").oninput = (e) => {
+  const qty = e.target.closest("input[data-catalog-qty]");
+  if(qty && state.catalogPick){
+    state.catalogPick.order_qty = qty.value;
+    return;
+  }
+  const ap = e.target.closest("input[data-apq]");
+  if(ap && state.catalogPick){
+    state.catalogPick.apQ = ap.value;
+    scheduleAp(state.catalogPick, "catalog");
+  }
+};
+document.getElementById("catalog").onchange = (e) => {
+  const pick = e.target.closest("select[data-catalog-pick]");
+  if(!pick || !state.catalogPick) return;
+  const hit = (state.catalogPick.suppliers || []).find(s => s.acctno === pick.value);
+  if(!hit){
+    state.catalogPick.vendor = "";
+    state.catalogPick.vendor_name = "";
+    return;
+  }
+  state.catalogPick.vendor = hit.acctno;
+  state.catalogPick.vendor_name = hit.name || "";
+};
 document.getElementById("list").onclick = (e) => {
   const unit = e.target.closest("[data-unit]");
   if(unit){
@@ -1029,6 +1458,15 @@ document.getElementById("list").onclick = (e) => {
   }
   const order = e.target.closest("[data-order]");
   if(order){ openVendorOrder(findRow(order.dataset.order || "")); return; }
+  const add = e.target.closest("[data-add-product]");
+  if(add){ openCatalog(); return; }
+  const neu = e.target.closest("[data-new-ap]");
+  if(neu){ toggleNewAp(neu.dataset.newAp || ""); return; }
+  const apUse = e.target.closest("[data-ap-use]");
+  if(apUse){
+    applyNewVendor(apRowFromKey(apUse.dataset.apUse || ""), apUse.dataset.acct || "", apUse.dataset.name || "");
+    return;
+  }
   const back = e.target.closest("[data-vendor-back]");
   if(back){ state.vendorKey = null; state.vendorName = ""; state.historyOnly = false; renderList(); return; }
   const past = e.target.closest("[data-load-history]");
@@ -1067,6 +1505,14 @@ document.getElementById("list").onclick = (e) => {
   }
 };
 document.getElementById("list").oninput = (e) => {
+  const ap = e.target.closest("input[data-apq]");
+  if(ap){
+    const row = apRowFromKey(ap.dataset.apq || "");
+    if(!row) return;
+    row.apQ = ap.value;
+    scheduleAp(row, ap.dataset.apq || "");
+    return;
+  }
   const input = e.target.closest("input[data-qty]");
   if(!input) return;
   const row = findRow(input.dataset.qty || "");
@@ -1091,7 +1537,7 @@ document.getElementById("list").onchange = (e) => {
     haystack(row);
     const line = document.getElementById("line-" + rowKey(row));
     const shown = line && line.querySelector("[data-vendor-label]");
-    if(shown) shown.textContent = vendorTitle(row);
+    if(shown) shown.textContent = vendorTitle(row) + (vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "");
     const orderBtn = line && line.querySelector(".order-btn");
     if(orderBtn && row.vendor){
       orderBtn.textContent = "สั่งกับเจ้าหนี้นี้";

@@ -291,6 +291,10 @@ def test_page_defaults_product_view():
     assert "เปลี่ยนเจ้าหนี้" in html
     assert "สั่งกับเจ้าหนี้นี้" in html
     assert "ดูสินค้าที่เคยสั่งจากเจ้าหนี้นี้" in html
+    assert "เลือกเจ้าหนี้ใหม่" in html
+    assert "เพิ่มสินค้าจากรหัสนี้" in html
+    assert "เพิ่มสินค้าที่ไม่อยู่ในรายการ" in html
+    assert "/hq-po/api/products" in html
     assert "/hq-po/api/vendors" in html
     assert "data-order" in html
     assert "สินค้าแทน" in html
@@ -454,6 +458,7 @@ def test_unknown_supplier_is_rejected(monkeypatch):
             {"A1": {"acctno": "CAT", "name": "มาสเตอร์"}},
         ),
     )
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda _codes: {})
     service._assert_supplier_choices(
         [{"iclow_id": 7, "vendor": "NEW"}],
         live_by_id={7: {"bcode": "A1", "vendor": "OLD"}},
@@ -474,6 +479,18 @@ def test_unknown_supplier_is_rejected(monkeypatch):
         assert "ไม่เคยรับจาก" in str(exc)
     else:
         raise AssertionError("expected vendor_mismatch")
+
+
+def test_live_ap_can_be_chosen_for_a_product_it_has_not_supplied(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(service, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda codes: {"NEWAP": "ร้านใหม่"} if "NEWAP" in codes else {})
+    service._assert_supplier_choices(
+        [{"iclow_id": 7, "vendor": "NEWAP"}],
+        live_by_id={7: {"bcode": "A1", "vendor": "OLD"}},
+        resolved={},
+    )
 
 
 def test_line_command_and_menu():
@@ -557,7 +574,95 @@ def test_history_reorder_uses_the_peer_path():
 
     assert _peer_flag({"propose_meta": {"iclow_origin": "history"}})
     assert _peer_flag({"propose_meta": {"iclow_origin": "peer"}})
+    assert _peer_flag({"propose_meta": {"iclow_origin": "catalog"}})
     assert not _peer_flag({"propose_meta": {"iclow_origin": "created"}})
+
+
+def test_catalog_line_accepts_a_live_ap_without_purchase_history(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: set())
+    monkeypatch.setattr(
+        service,
+        "fetch_sheet_products",
+        lambda _codes: {"C9": {"descr": "ใหม่", "ui": "ชิ้น", "mcode": "M"}},
+    )
+    monkeypatch.setattr(service, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda codes: {"AP1": "เจ้าหนี้ใหม่"} if "AP1" in codes else {})
+    resolved = service._resolve_peer(
+        [{"bcode": "C9", "vendor": "AP1", "ui": "ชิ้น", "propose_meta": {"iclow_origin": "catalog"}}]
+    )
+    assert resolved["C9"]["vendor"] == "AP1"
+    assert resolved["C9"]["propose_meta"]["catalog"] is True
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda _codes: {})
+    try:
+        service._resolve_peer(
+            [{"bcode": "C9", "vendor": "GONE", "ui": "ชิ้น", "propose_meta": {"iclow_origin": "catalog"}}]
+        )
+    except HqPoError as exc:
+        assert exc.code == "vendor_mismatch"
+    else:
+        raise AssertionError("expected vendor_mismatch")
+
+
+def test_product_search_payload_marks_waiting_and_last_vendor(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(
+        service,
+        "search_products",
+        lambda _q: [
+            {
+                "bcode": "01011980",
+                "descr": "ลูกปืน",
+                "model": "6203",
+                "brand": "NSK",
+                "pcode": "OEM",
+                "mcode": "FAC",
+                "ui": "ชิ้น",
+                "ui2": "กล่อง",
+                "mtp2": 10,
+                "price1": 120,
+                "costlast": 80,
+                "costnet": 70,
+                "vendor": "CAT",
+                "qtyoh2": 4,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        service,
+        "fetch_bcode_suppliers",
+        lambda _codes: (
+            {"01011980": [{"acctno": "YSR", "name": "ยนต์เสรี", "bills": 3, "last_date": "2026-08-01"}]},
+            {"01011980": {"acctno": "CAT", "name": "มาสเตอร์"}},
+        ),
+    )
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: {"01011980"})
+    monkeypatch.setattr(
+        "src.hq_po.stock.fetch_dual_stock",
+        lambda _codes, refresh=False: (
+            {"01011980": {"qtyoh2": 2}},
+            {"01011980": {"qtyoh2": 1}},
+            True,
+        ),
+    )
+    payload = service.product_search_payload("01011")
+    item = payload["products"][0]
+    assert item["bcode"] == "01011980"
+    assert item["vendor"] == "YSR"
+    assert item["last_vendor_name"] == "ยนต์เสรี"
+    assert item["waiting"] is True
+    assert item["company_qtyoh2"] == 3
+    assert item["price"] == 120
+    assert item["cost"] == 80
+
+
+def test_product_search_skips_a_short_query():
+    from src.hq_po.iclow_read import search_products
+
+    assert search_products("a") == []
+    assert search_products("  ") == []
 
 
 def test_vendor_history_skips_products_already_waiting(monkeypatch):

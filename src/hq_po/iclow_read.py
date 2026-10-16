@@ -405,6 +405,97 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def search_products(query: str, *, limit: int = 12) -> list[dict[str, Any]]:
+    """HQ ICMAS rows matching a code, genuine number, factory number, or name."""
+    q = str(query or "").strip()
+    if len(q) < 2:
+        return []
+    safe = q.replace("%", "").replace("_", "").replace("[", "")
+    if len(safe) < 2:
+        return []
+    engine = get_site_engine("hq")
+    name_ok = 1 if len(safe) >= 3 else 0
+    sql = text(
+        """
+        SELECT TOP (:lim)
+          LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
+          LTRIM(RTRIM(CONVERT(nvarchar(400), COALESCE(DESCR,'')))) AS DESCR,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(MODEL,'')))) AS MODEL,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(BRAND,'')))) AS BRAND,
+          LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) AS PCODE,
+          LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) AS MCODE,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI1,'')))) AS UI1,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI2,'')))) AS UI2,
+          MTP2,
+          PRICE1, COSTLAST, COSTNET,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(VENDOR,'')))) AS VENDOR,
+          QTYOH2
+        FROM dbo.ICMAS WITH (NOLOCK)
+        WHERE (
+            LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :q
+            OR LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) LIKE :prefix
+            OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) = :q
+            OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) LIKE :prefix
+            OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) = :q
+            OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) LIKE :prefix
+            OR (
+              :name_ok = 1 AND (
+                LTRIM(RTRIM(CONVERT(nvarchar(400), COALESCE(DESCR,'')))) LIKE :contains
+                OR LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(MODEL,'')))) LIKE :contains
+                OR LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(BRAND,'')))) LIKE :contains
+                OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) LIKE :contains
+                OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) LIKE :contains
+              )
+            )
+          )
+        ORDER BY
+          CASE
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :q THEN 0
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) LIKE :prefix THEN 1
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) = :q
+              OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) = :q THEN 2
+            ELSE 3
+          END,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE)))
+        """
+    )
+    out: list[dict[str, Any]] = []
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "lim": int(limit),
+                "q": safe,
+                "prefix": safe + "%",
+                "name_ok": name_ok,
+                "contains": f"%{safe}%",
+            },
+        ).mappings().all()
+    for row in rows:
+        bcode = str(row.get("BCODE") or "").strip()
+        if not bcode:
+            continue
+        out.append(
+            {
+                "bcode": bcode,
+                "descr": str(row.get("DESCR") or "").strip(),
+                "model": str(row.get("MODEL") or "").strip(),
+                "brand": str(row.get("BRAND") or "").strip(),
+                "pcode": str(row.get("PCODE") or "").strip(),
+                "mcode": str(row.get("MCODE") or "").strip(),
+                "ui": str(row.get("UI1") or "").strip(),
+                "ui2": str(row.get("UI2") or "").strip(),
+                "mtp2": row.get("MTP2"),
+                "price1": row.get("PRICE1"),
+                "costlast": row.get("COSTLAST"),
+                "costnet": row.get("COSTNET"),
+                "vendor": str(row.get("VENDOR") or "").strip(),
+                "qtyoh2": row.get("QTYOH2"),
+            }
+        )
+    return out
+
+
 def search_vendors(query: str, *, limit: int = 8) -> list[dict[str, str]]:
     """HQ APMAS accounts matching a short code or a longer name."""
     q = str(query or "").strip()
@@ -495,6 +586,41 @@ def fetch_ordered_product_rows(acctno: str, *, limit: int = 80) -> list[dict[str
                 "bills": bills,
             }
         )
+    return out
+
+
+def fetch_live_vendors(acctnos: list[str]) -> dict[str, str]:
+    """Non-canceled APMAS accounts. An empty name still means the account exists."""
+    codes = []
+    seen: set[str] = set()
+    for raw in acctnos:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if not codes:
+        return {}
+    engine = get_site_engine("hq")
+    out: dict[str, str] = {}
+    with engine.connect() as conn:
+        for start in range(0, len(codes), 80):
+            chunk = codes[start : start + 80]
+            params = {f"a{n}": code for n, code in enumerate(chunk)}
+            placeholders = ", ".join(f":a{n}" for n in range(len(chunk)))
+            sql = text(
+                f"""
+                SELECT
+                  LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) AS ACCTNO,
+                  LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(ACCTNAME,'')))) AS ACCTNAME
+                FROM dbo.APMAS WITH (NOLOCK)
+                WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), ACCTNO))) IN ({placeholders})
+                  AND UPPER(LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,''))))) <> 'Y'
+                """
+            )
+            for row in conn.execute(sql, params).mappings().all():
+                acct = str(row.get("ACCTNO") or "").strip()
+                if acct:
+                    out[acct] = str(row.get("ACCTNAME") or "").strip()
     return out
 
 
