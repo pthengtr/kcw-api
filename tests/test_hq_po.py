@@ -292,6 +292,7 @@ def test_page_defaults_product_view():
     assert "สั่งกับเจ้าหนี้นี้" in html
     assert "ดูสินค้าที่เคยสั่งจากเจ้าหนี้นี้" in html
     assert "เลือกเจ้าหนี้ใหม่" in html
+    assert 'id="addProduct"' in html
     assert "เพิ่มสินค้าจากรหัสนี้" in html
     assert "เพิ่มสินค้าที่ไม่อยู่ในรายการ" in html
     assert "/hq-po/api/products" in html
@@ -365,6 +366,24 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
     assert refreshed == [False]
+
+
+def test_suggest_drops_a_line_with_no_product_code(monkeypatch):
+    from src.hq_po import suggest
+
+    rows = [
+        {"iclow_id": 1, "vendor": "", "bcode": "", "descr": "", "mcode": "", "qty": 0, "ui": ""},
+        {"iclow_id": 2, "vendor": "", "bcode": "-", "descr": "", "mcode": "", "qty": 0, "ui": ""},
+        {"iclow_id": 7, "vendor": "V1", "bcode": "A1", "descr": "bolt", "mcode": "", "qty": 2, "ui": "PCS"},
+    ]
+    monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: rows)
+    monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
+    monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes, refresh=False: ({}, {}, False))
+    monkeypatch.setattr(suggest, "fetch_incoming_qty", lambda: {})
+    monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
+    monkeypatch.setattr(suggest, "fetch_sheet_products", lambda _codes: {})
+    payload = suggest.build_suggest()
+    assert [item["bcode"] for item in payload["items"]] == ["A1"]
 
 
 def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
