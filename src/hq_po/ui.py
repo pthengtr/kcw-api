@@ -133,6 +133,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 @keyframes spin{to{transform:rotate(360deg)}}
 .insight{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;color:var(--blue-deep);font-size:13px}
 .insight[hidden]{display:none}
+#vendorSort[hidden]{display:none}
 .badge{flex:none;font-size:12px;font-weight:650;border-radius:999px;padding:3px 8px;background:var(--blue-soft);color:var(--blue-deep)}
 .badge.wait{background:var(--wait-bg);color:var(--wait)}
 .badge.done{background:var(--ok-bg);color:var(--ok)}
@@ -151,7 +152,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   .tabs{max-width:420px}
   main{padding-left:20px;padding-right:20px}
   .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .bar{grid-column:1 / -1}
+  .bar,#vendorSort{grid-column:1 / -1}
   .line{padding:12px 14px}
 }
 </style>
@@ -177,6 +178,10 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
         <button type="button" id="srcAll" class="on">ทั้งหมด</button>
         <button type="button" id="srcIclow">ICLOW</button>
         <button type="button" id="srcAi">AI</button>
+      </div>
+      <div class="toggle" id="vendorSort" hidden>
+        <button type="button" id="sortCount" class="on">จำนวนสินค้า</button>
+        <button type="button" id="sortName">ตามชื่อ</button>
       </div>
       <div class="bar"><input id="q" type="search" placeholder="ค้นรหัส ชื่อสินค้า ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน ยี่ห้อ หรือเจ้าหนี้" enterkeyhint="search" autocomplete="off"/><button type="button" id="addProduct">เพิ่มสินค้า</button></div>
       <p id="qStatus" class="search-status" role="status"><span class="spin sm" aria-hidden="true"></span><span id="qStatusText">กำลังโหลดรายการรอสั่ง…</span></p>
@@ -220,7 +225,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"product", vendorKey:null, vendorName:"", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
+const state = {items:[], view:"product", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -480,7 +485,24 @@ function vendorGroups(items){
     if(!g.vendor_name && row.vendor_name) g.vendor_name = row.vendor_name;
     g.lines.push(row);
   }
-  return [...groups.values()].sort((a,b) => (a.vendor?0:1)-(b.vendor?0:1) || vendorTitle(a).localeCompare(vendorTitle(b),"th"));
+  return [...groups.values()].sort((a,b) => {
+    const blank = (a.vendor?0:1) - (b.vendor?0:1);
+    if(blank) return blank;
+    if(state.vendorSort === "count"){
+      const byCount = b.lines.length - a.lines.length;
+      if(byCount) return byCount;
+    }
+    return vendorTitle(a).localeCompare(vendorTitle(b),"th");
+  });
+}
+function syncVendorSort(){
+  document.getElementById("vendorSort").hidden = !(state.view === "vendor" && state.vendorKey == null);
+}
+function setVendorSort(sort){
+  state.vendorSort = sort === "name" ? "name" : "count";
+  document.getElementById("sortCount").classList.toggle("on", state.vendorSort === "count");
+  document.getElementById("sortName").classList.toggle("on", state.vendorSort === "name");
+  if(state.view === "vendor" && state.vendorKey == null) scheduleRender("กำลังจัดรายการ…", 0);
 }
 function sameVendor(row, acct, name){
   const v = String(row.vendor || "").trim();
@@ -567,11 +589,13 @@ function showVendor(acct, name, historyOnly){
   state.historyOnly = !!historyOnly;
   document.getElementById("viewVendor").classList.add("on");
   document.getElementById("viewProduct").classList.remove("on");
+  syncVendorSort();
   renderList();
   if(acct && !historyOnly) loadVendorInsight(acct);
   if(acct && historyOnly) loadVendorHistory(acct);
 }
 function renderList(){
+  syncVendorSort();
   const y = window.scrollY;
   const host = document.getElementById("list");
   if(state.loading){
@@ -636,6 +660,7 @@ function setView(view){
   state.historyOnly = false;
   document.getElementById("viewVendor").classList.toggle("on", view==="vendor");
   document.getElementById("viewProduct").classList.toggle("on", view==="product");
+  syncVendorSort();
   scheduleRender("กำลังจัดรายการ…", 0);
 }
 function openVendorOrder(row){
@@ -931,6 +956,8 @@ async function cancelOrder(id){
 document.getElementById("addProduct").onclick = () => openCatalog();
 document.getElementById("viewVendor").onclick = () => setView("vendor");
 document.getElementById("viewProduct").onclick = () => setView("product");
+document.getElementById("sortCount").onclick = () => setVendorSort("count");
+document.getElementById("sortName").onclick = () => setVendorSort("name");
 document.getElementById("srcAll").onclick = () => setSource("all");
 document.getElementById("srcIclow").onclick = () => setSource("iclow");
 document.getElementById("srcAi").onclick = () => setSource("ai");

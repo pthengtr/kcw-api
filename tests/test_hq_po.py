@@ -270,6 +270,10 @@ def test_page_defaults_product_view():
     assert 'id="viewProduct" class="on"' in html
     assert "ตามเจ้าหนี้" in html
     assert "ตามสินค้า" in html
+    assert 'id="vendorSort"' in html
+    assert 'id="sortCount" class="on"' in html
+    assert "จำนวนสินค้า" in html
+    assert "state.vendorSort" in html
     assert "data-key" in html
     assert "PARTS9" in html
     assert "ดูใบส่งเจ้าหนี้" in html
