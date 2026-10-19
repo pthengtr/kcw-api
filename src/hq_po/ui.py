@@ -44,6 +44,7 @@ main{padding:12px 12px calc(20px + env(safe-area-inset-bottom));max-width:860px;
 body.has-dock main{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 .note{background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;margin-bottom:12px}
 .toolbar{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.order-filters{display:grid;grid-template-columns:1fr;gap:8px}
 .toggle{display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px}
 .toggle button{flex:1;min-height:38px;border:0;background:transparent;border-radius:9px;padding:7px 8px;font-size:13px;color:var(--muted);font-weight:600}
 .toggle button.on{background:var(--blue);color:#fff}
@@ -153,6 +154,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   main{padding-left:20px;padding-right:20px}
   .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .bar,#vendorSort{grid-column:1 / -1}
+  .order-filters{grid-template-columns:1fr 1fr}
   .line{padding:12px 14px}
 }
 </style>
@@ -190,6 +192,10 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <div id="list"><div class="spin-wrap"><span class="spin" aria-hidden="true"></span><span>กำลังโหลดรายการรอสั่ง…</span></div></div>
   </section>
   <section id="doneView" hidden>
+    <div class="toolbar order-filters">
+      <input id="orderVendor" type="search" placeholder="กรองเจ้าหนี้" aria-label="กรองเจ้าหนี้" enterkeyhint="search" autocomplete="off"/>
+      <input id="orderBcode" type="search" placeholder="กรองรหัสสินค้า" aria-label="กรองรหัสสินค้า" enterkeyhint="search" autocomplete="off"/>
+    </div>
     <div id="orders"></div>
   </section>
 </main>
@@ -225,7 +231,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"product", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
+const state = {items:[], view:"product", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, orderVendor:"", orderBcode:"", busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -883,35 +889,72 @@ function closeSheet(){
   const el = document.getElementById("sheet");
   if(el) el.hidden = true;
 }
+function orderFilterText(value){
+  return String(value || "").trim().toLowerCase();
+}
+function orderVisible(order){
+  const vendorQ = orderFilterText(state.orderVendor);
+  const codeQ = orderFilterText(state.orderBcode);
+  if(vendorQ){
+    const hay = [order.vendor_name, order.vendor_acctno].join(" ").toLowerCase();
+    if(!hay.includes(vendorQ)) return false;
+  }
+  if(codeQ){
+    return (order.lines || []).some(line => String(line.bcode || "").toLowerCase().includes(codeQ));
+  }
+  return true;
+}
+function orderVisibleLines(order){
+  const codeQ = orderFilterText(state.orderBcode);
+  const lines = order.lines || [];
+  if(!codeQ) return lines;
+  return lines.filter(line => String(line.bcode || "").toLowerCase().includes(codeQ));
+}
+function renderOrders(){
+  const host = document.getElementById("orders");
+  const all = state.orders || [];
+  if(!all.length){
+    host.innerHTML = '<div class="empty">ยังไม่มีใบสั่งซื้อ</div>';
+    return;
+  }
+  const orders = all.filter(orderVisible);
+  if(!orders.length){
+    host.innerHTML = '<div class="empty">ไม่พบใบสั่งซื้อตามตัวกรอง</div>';
+    return;
+  }
+  const filtering = orderFilterText(state.orderVendor) || orderFilterText(state.orderBcode);
+  const summary = filtering ? `<p class="count">${orders.length} ใบ</p>` : "";
+  host.innerHTML = summary + orders.map(order => {
+    const badge = order.receive_label==="รับแล้ว" ? "done" : "wait";
+    const lines = orderVisibleLines(order).map(line => {
+      const rec = line.receive || {};
+      const pi = rec.pimas_billno ? ` · PI ${esc(rec.pimas_billno)}` : (rec.rcvdno ? ` · ${esc(rec.rcvdno)}` : "");
+      const canReturn = STAMP && line.line_id && !rec.received && !rec.unknown;
+      const lineCancel = canReturn
+        ? `<button type="button" class="ghost" data-cancel-line="${esc(order.order_id)}" data-line="${esc(line.line_id)}" data-bcode="${esc(line.bcode||"")}">ยกเลิกบรรทัด</button>`
+        : "";
+      return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div>${productMeta(line)}<div class="meta">${esc(rec.label||"")}${pi}</div>${lineCancel}</div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
+    }).join("");
+    const anyReceived = (order.lines||[]).some(line => (line.receive||{}).received);
+    const cancel = STAMP && !anyReceived && order.receive_label!=="รับแล้ว"
+      ? `<button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button>` : "";
+    const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์ / คัดลอก</button>`;
+    const actions = `<div class="actions">${reprint}${cancel}</div>`;
+    const title = order.vendor_name || order.vendor_acctno || "ไม่ระบุเจ้าหนี้";
+    return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${lines}${actions}</div>`;
+  }).join("");
+}
 async function loadOrders(){
   const host = document.getElementById("orders");
+  state.ordersLoaded = false;
   host.innerHTML = spinner("กำลังโหลดใบที่สั่งแล้ว…");
   try {
     const res = await fetch("/hq-po/api/orders");
     if(!res.ok){ host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>'; return; }
     const data = await res.json();
-    const orders = data.orders || [];
-    if(!orders.length){ host.innerHTML = '<div class="empty">ยังไม่มีใบสั่งซื้อ</div>'; state.orders = []; return; }
-    state.orders = orders;
-    host.innerHTML = orders.map(order => {
-      const badge = order.receive_label==="รับแล้ว" ? "done" : "wait";
-      const lines = (order.lines||[]).map(line => {
-        const rec = line.receive || {};
-        const pi = rec.pimas_billno ? ` · PI ${esc(rec.pimas_billno)}` : (rec.rcvdno ? ` · ${esc(rec.rcvdno)}` : "");
-        const canReturn = STAMP && line.line_id && !rec.received && !rec.unknown;
-        const lineCancel = canReturn
-          ? `<button type="button" class="ghost" data-cancel-line="${esc(order.order_id)}" data-line="${esc(line.line_id)}" data-bcode="${esc(line.bcode||"")}">ยกเลิกบรรทัด</button>`
-          : "";
-        return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div>${productMeta(line)}<div class="meta">${esc(rec.label||"")}${pi}</div>${lineCancel}</div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
-      }).join("");
-      const anyReceived = (order.lines||[]).some(line => (line.receive||{}).received);
-      const cancel = STAMP && !anyReceived && order.receive_label!=="รับแล้ว"
-        ? `<button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button>` : "";
-      const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์ / คัดลอก</button>`;
-      const actions = `<div class="actions">${reprint}${cancel}</div>`;
-      const title = order.vendor_name || order.vendor_acctno || "ไม่ระบุเจ้าหนี้";
-      return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${lines}${actions}</div>`;
-    }).join("");
+    state.orders = data.orders || [];
+    state.ordersLoaded = true;
+    renderOrders();
   } catch (err) {
     host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>';
   }
@@ -978,6 +1021,12 @@ document.getElementById("tabDone").onclick = () => {
   document.getElementById("doneView").hidden = false;
   loadOrders();
 };
+function onOrderFilter(key, value){
+  state[key] = value;
+  if(state.ordersLoaded) renderOrders();
+}
+document.getElementById("orderVendor").oninput = (e) => onOrderFilter("orderVendor", e.target.value);
+document.getElementById("orderBcode").oninput = (e) => onOrderFilter("orderBcode", e.target.value);
 function peerLineHtml(owner, line){
   const bits = [];
   const cost = moneyText(line.cost);
