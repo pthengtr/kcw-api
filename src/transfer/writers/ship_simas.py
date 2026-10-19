@@ -17,6 +17,7 @@ from src.transfer.writers._engine import (
     writer_engine_for_branch,
     _fetch_icmas_row,
 )
+from src.transfer.writers.iclow_low import ensure_hq_low_stock_iclow
 
 
 class TransferShipError(TransferWriteError):
@@ -158,8 +159,18 @@ def post_transfer_ship(
                 if product:
                     new_qty = float(product.get("QTYOH2") or 0) - qty_ship
                     conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
+                    # HQ TF ship only. PARTS9 has no trigger that opens ICLOW
+                    # when QTYOH2 falls below qtylo (ICMAS.QTYMIN).
+                    if from_u == "HQ":
+                        ensure_hq_low_stock_iclow(
+                            conn,
+                            bcode=bcode,
+                            qtyoh=new_qty,
+                            on=billdate.date(),
+                        )
     except (ProgrammingError, DBAPIError) as exc:
-        hint = transfer_write_permission_hint(exc, branch=from_branch, tables="SIMAS/SIDET/ICMAS")
+        tables = "SIMAS/SIDET/ICMAS/ICLOW" if from_u == "HQ" else "SIMAS/SIDET/ICMAS"
+        hint = transfer_write_permission_hint(exc, branch=from_branch, tables=tables)
         if hint:
             raise TransferShipError(hint, code="permission_denied") from exc
         raise TransferShipError(str(exc), code="sql_error") from exc
