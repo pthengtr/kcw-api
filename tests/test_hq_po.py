@@ -314,6 +314,12 @@ def test_page_defaults_product_view():
     assert "hqpo-view" not in html
     assert "ยกเลิกบรรทัด" in html
     assert "data-cancel-line" in html
+    assert 'id="orderVendor"' in html
+    assert 'id="orderBcode"' in html
+    assert "กรองเจ้าหนี้" in html
+    assert "กรองรหัสสินค้า" in html
+    assert "function orderVisible" in html
+    assert "ไม่พบใบสั่งซื้อตามตัวกรอง" in html
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
