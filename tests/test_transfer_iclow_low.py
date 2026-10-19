@@ -12,13 +12,14 @@ def test_reorder_qty_skips_qtylo_zero_minus_one_and_not_below():
     assert low_stock_reorder_qty(qtyget=4, qtymin=-1, qtyoh=0) is None
     assert low_stock_reorder_qty(qtyget=2, qtymin=0, qtyoh=0) is None
     assert low_stock_reorder_qty(qtyget=4, qtymin=None, qtyoh=0) is None
-    assert low_stock_reorder_qty(qtyget=6, qtymin=4, qtyoh=4) is None
     assert low_stock_reorder_qty(qtyget=4, qtymin=2, qtyoh=3) is None
 
 
-def test_reorder_qty_uses_lot_then_gap_when_below_qtylo():
+def test_reorder_qty_uses_lot_when_on_hand_reaches_qtylo():
+    assert low_stock_reorder_qty(qtyget=6, qtymin=4, qtyoh=4) == 6
     assert low_stock_reorder_qty(qtyget=6, qtymin=4, qtyoh=3) == 6
     assert low_stock_reorder_qty(qtyget=0, qtymin=4, qtyoh=1) == 3
+    assert low_stock_reorder_qty(qtyget=0, qtymin=4, qtyoh=4) == 1
 
 
 class _Result:
@@ -83,9 +84,17 @@ def test_ensure_skips_when_an_unreceived_row_is_already_open():
     assert conn.inserted is None
 
 
-def test_ensure_skips_when_not_below_qtylo():
+def test_ensure_inserts_when_on_hand_lands_on_qtylo():
+    conn = _Conn({"QTYMIN": 8, "QTYGET": 10, "COSTLAST": 12, "BCODE": "03053151"})
+    iclow_id = ensure_hq_low_stock_iclow(conn, bcode="03053151", qtyoh=8, on=date(2026, 10, 19))
+    assert iclow_id == 501
+    assert conn.inserted["qty"] == 10
+    assert conn.inserted["qtyoh"] == 8
+
+
+def test_ensure_skips_when_still_above_qtylo():
     conn = _Conn({"QTYMIN": 2, "QTYGET": 4})
-    assert ensure_hq_low_stock_iclow(conn, bcode="03010575", qtyoh=2) is None
+    assert ensure_hq_low_stock_iclow(conn, bcode="03010575", qtyoh=3) is None
     assert conn.inserted is None
     assert ensure_hq_low_stock_iclow(_Conn({"QTYMIN": 0, "QTYGET": 4}), bcode="03010575", qtyoh=0) is None
     assert ensure_hq_low_stock_iclow(_Conn({"QTYMIN": -1, "QTYGET": 4}), bcode="03010575", qtyoh=0) is None

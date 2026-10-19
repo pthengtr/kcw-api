@@ -21,27 +21,30 @@ def low_stock_reorder_qty(*, qtyget: Any, qtymin: Any, qtyoh: Any) -> float | No
 
     PARTS9 calls this field qtylo. On ICMAS it is QTYMIN.
     qtylo -1 (any QTYMIN < 0) means do not order. qtylo 0 is not a reorder point.
-    A waiting row is opened only when on-hand is strictly below a positive qtylo.
+    A waiting row is opened when on-hand reaches or falls under a positive qtylo.
     The row qty is QTYGET when that lot is set, otherwise the gap up to qtylo.
     """
     minimum = _num(qtymin)
     if minimum is None or minimum <= 0:
         return None
     on_hand = _num(qtyoh) or 0.0
-    if on_hand >= minimum:
+    if on_hand > minimum:
         return None
     lot = _num(qtyget) or 0.0
     if lot > 0:
         return lot
-    return minimum - on_hand
+    gap = minimum - on_hand
+    if gap > 0:
+        return gap
+    return 1.0
 
 
 def ensure_hq_low_stock_iclow(
     conn, *, bcode: str, qtyoh: float, on: date | None = None
 ) -> int | None:
-    """Insert one ORDERED='N' ICLOW row when HQ on-hand is below qtylo and nothing is open.
+    """Insert one ORDERED='N' ICLOW row when HQ on-hand has reached qtylo and nothing is open.
 
-    Returns the new ICLOW.ID, or None when qtylo is 0 or -1, on-hand is not below
+    Returns the new ICLOW.ID, or None when qtylo is 0 or -1, on-hand is still above
     it, or an unreceived ICLOW row already exists.
     """
     code = (bcode or "").strip()
@@ -91,7 +94,7 @@ def backfill_hq_low_stock_iclow(conn, *, on: date | None = None) -> dict[str, in
             FROM dbo.ICMAS
             WHERE LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) <> 'Y'
               AND QTYMIN > 0
-              AND QTYOH2 < QTYMIN
+              AND QTYOH2 <= QTYMIN
             """
         )
     ).mappings().all()

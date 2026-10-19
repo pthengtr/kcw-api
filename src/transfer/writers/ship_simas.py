@@ -160,7 +160,7 @@ def post_transfer_ship(
                     new_qty = float(product.get("QTYOH2") or 0) - qty_ship
                     conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
                     # HQ TF ship only. PARTS9 has no trigger that opens ICLOW
-                    # when QTYOH2 falls below qtylo (ICMAS.QTYMIN).
+                    # when QTYOH2 reaches qtylo (ICMAS.QTYMIN).
                     if from_u == "HQ":
                         ensure_hq_low_stock_iclow(
                             conn,
