@@ -1,10 +1,15 @@
 """Rebuild ICMAS.QTYOH2 from the KAcc product-open ledger identity.
 
-Line-only (confirmed 2026-09-24, open test 12051563 → 215):
+Line-only (confirmed 2026-09-24, open test 12051563 → 215;
+JOURMODE 0 purchases excluded 2026-10-19, live OH on 40/43 affected SKUs):
 
   QTYOH2 = QTYBEG2
-         + Σ PIDET QTY×MTP   (line CANCELED <> 'Y')
+         + Σ PIDET QTY×MTP   (JOURMODE <> '0', line CANCELED <> 'Y')
          − Σ SIDET QTY×MTP   (JOURMODE <> '0', line CANCELED <> 'Y')
+
+JOURMODE 0 purchase lines are supplier-invoice copies or reopen credits.
+KAcc product-open leaves them out of on-hand. Counting them makes check stock
+write a higher qty that KAcc reverts on the next product open.
 
 No PIMAS/SIMAS header filter (header cancel with active line stays in the sum).
 Does not modify QTYBEG2.
@@ -40,6 +45,7 @@ _READ_SQL = text(
             ), 0)
             FROM dbo.PIDET AS p
             WHERE LTRIM(RTRIM(CONVERT(nvarchar(50), p.BCODE))) = :bcode
+              AND LTRIM(RTRIM(COALESCE(p.JOURMODE, N''))) <> N'0'
               AND UPPER(LTRIM(RTRIM(COALESCE(p.CANCELED, N'')))) <> N'Y'
         ) AS pi_units,
         (
@@ -221,7 +227,8 @@ def _sync_chunk(conn: Connection, codes: list[str]) -> list[Qtyoh2SyncResult]:
                    * COALESCE(NULLIF(CONVERT(float, p.MTP), 0), 1.0)
                ), 0) AS units
         FROM dbo.PIDET AS p
-        WHERE UPPER(LTRIM(RTRIM(COALESCE(p.CANCELED, N'')))) <> N'Y'
+        WHERE LTRIM(RTRIM(COALESCE(p.JOURMODE, N''))) <> N'0'
+          AND UPPER(LTRIM(RTRIM(COALESCE(p.CANCELED, N'')))) <> N'Y'
           AND {_bcode_expr("p")} IN ({placeholders})
         GROUP BY {_bcode_expr("p")}
     """

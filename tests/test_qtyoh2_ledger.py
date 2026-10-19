@@ -7,10 +7,16 @@ from unittest.mock import MagicMock
 
 from src.db.qtyoh2_ledger import (
     Qtyoh2SyncResult,
+    _READ_SQL,
     qtyoh2_sync_on_read_enabled,
     sync_qtyoh2_from_ledger,
     sync_qtyoh2_from_ledger_many,
 )
+
+
+def test_read_sql_excludes_jourmode_zero_on_purchases_and_sales():
+    sql = _READ_SQL.text.upper()
+    assert sql.count("<> N'0'") == 2
 
 
 def test_flag_defaults_on(monkeypatch):

@@ -15,7 +15,7 @@
 -- using the KAcc product-open identity (confirmed 2026-09-24 open test):
 --
 --   QTYOH2 = QTYBEG2
---          + Σ PIDET QTY×MTP   (line CANCELED <> 'Y' only)
+--          + Σ PIDET QTY×MTP   (JOURMODE <> '0'; line CANCELED <> 'Y' only)
 --          − Σ SIDET QTY×MTP   (JOURMODE <> '0'; line CANCELED <> 'Y' only)
 --
 -- Line-only: do NOT filter on PIMAS/SIMAS. Header cancel with line still active
@@ -74,7 +74,8 @@ BEGIN
         FROM dbo.PIDET AS p
         INNER JOIN touched AS t
             ON LTRIM(RTRIM(CONVERT(NVARCHAR(50), p.BCODE))) = t.bcode
-        WHERE UPPER(LTRIM(RTRIM(COALESCE(p.CANCELED, N'')))) <> N'Y'
+        WHERE LTRIM(RTRIM(COALESCE(p.JOURMODE, N''))) <> N'0'
+          AND UPPER(LTRIM(RTRIM(COALESCE(p.CANCELED, N'')))) <> N'Y'
         GROUP BY LTRIM(RTRIM(CONVERT(NVARCHAR(50), p.BCODE)))
     ),
     si AS (
