@@ -23,5 +23,9 @@ GRANT UPDATE ON dbo.ICMAS TO [python_writer];
 -- Required when TRANSFER_ICLOW_STAMP_ENABLED=true on syp-ubuntu-server.
 GRANT UPDATE ON dbo.ICLOW TO [python_writer];
 
+-- HQ (KSS) ship: insert a รอสั่ง ICLOW row when the TF drops QTYOH2 below a positive qtylo (QTYMIN).
+GRANT SELECT ON dbo.ICLOW TO [python_writer];
+GRANT INSERT ON dbo.ICLOW TO [python_writer];
+
 -- HQ (KSS): TF SIMAS ship + 3TF PIMAS receive (SYP→HQ)
 -- SYP (kss-pc): 3TF SIMAS ship + TF PIMAS receive (HQ→SYP)
