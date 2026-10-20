@@ -454,6 +454,7 @@ def _vision_extract(
     client = get_openai_client()
     resp = client.responses.create(
         model=model,
+        reasoning={"effort": "none"},
         input=[
             {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
             {
@@ -573,7 +574,7 @@ def extract_bill_lines_from_image(
         content_type=content_type,
         system_prompt=BILL_LINES_SYSTEM_PROMPT,
         user_text=_page_user_text(page_index=page_index, page_count=page_count),
-        model=(model or os.getenv("PAY_NOTES_AI_MODEL") or "gpt-4o-mini").strip(),
+        model=(model or os.getenv("PAY_NOTES_AI_MODEL") or "gpt-6-luna").strip(),
         timeout=timeout,
     )
     if data.get("error"):
@@ -603,7 +604,7 @@ def verify_payment_from_image(
             "Read the transfer amount from this Thai bank payment slip. "
             "Return JSON with extracted_amount only for the amount transferred."
         ),
-        model=(model or os.getenv("PAY_NOTES_AI_MODEL") or "gpt-4o-mini").strip(),
+        model=(model or os.getenv("PAY_NOTES_AI_MODEL") or "gpt-6-luna").strip(),
         timeout=timeout,
     )
     warnings = [str(w).strip() for w in (data.get("warnings") or []) if str(w).strip()]
