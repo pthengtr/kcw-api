@@ -24,7 +24,7 @@ class PayNotesSettings(BaseSettings):
     pay_notes_token_secret: str = Field(default="", validation_alias="PAY_NOTES_TOKEN_SECRET")
     pay_notes_write_enabled: bool = Field(default=False, validation_alias="PAY_NOTES_WRITE_ENABLED")
     pay_notes_ai_enabled: bool = Field(default=True, validation_alias="PAY_NOTES_AI_ENABLED")
-    pay_notes_ai_model: str = Field(default="gpt-4o-mini", validation_alias="PAY_NOTES_AI_MODEL")
+    pay_notes_ai_model: str = Field(default="gpt-6-luna", validation_alias="PAY_NOTES_AI_MODEL")
     pay_notes_ai_timeout_seconds: float = Field(
         default=45.0, validation_alias="PAY_NOTES_AI_TIMEOUT_SECONDS"
     )
