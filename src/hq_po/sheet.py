@@ -367,13 +367,20 @@ def _vendor_rows(card: dict[str, str]) -> list[tuple[str, str]]:
     ]
 
 
+def _simple_vendor_rows(card: dict[str, str]) -> list[tuple[str, str]]:
+    return [
+        ("รหัสเจ้าหนี้", _raw(card.get("acctno"))),
+        ("ผู้ขาย", _raw(card.get("name"))),
+    ]
+
+
 def _simple_page(doc: dict[str, Any]) -> str:
     card = doc["vendor"]
     day: date = doc["docdate"]
     docno = _raw(doc.get("docno")) or "ยังไม่ออกเลข"
     vendor_html = "".join(
         f'<div class="k">{html.escape(label)}</div><div class="v">{_e(value)}</div>'
-        for label, value in _vendor_rows(card)
+        for label, value in _simple_vendor_rows(card)
     )
     body = []
     for line in doc["lines"]:
@@ -429,7 +436,7 @@ def _simple_text(doc: dict[str, Any]) -> str:
         "",
         "ผู้ขาย / SUPPLIER",
     ]
-    for label, value in _vendor_rows(doc["vendor"]):
+    for label, value in _simple_vendor_rows(doc["vendor"]):
         lines.append(f"{label}: {value or '—'}")
     lines.append("")
     lines.append("รหัสสินค้า\tชื่อสินค้า\tแบบ\tNO.1\tNO.2\tยี่ห้อ\tจำนวน\tหน่วย\tราคา/หน่วย")

@@ -75,12 +75,16 @@ def test_simple_sheet_includes_vendor_and_part_columns(monkeypatch):
     for blob in (simple, text):
         assert "ผู้ขาย / SUPPLIER" in blob
         assert "บริษัท ส.มิตรอะไหล่ยาง (1985) จำกัด" in blob
-        assert "02-2215865" in blob
-        assert "02-2243659" in blob
-        assert "0105530000000" in blob
-        assert "คุณสมชาย" in blob
-        assert "สำนักงานใหญ่ กรุงเทพฯ" in blob
-        assert "เลขประจำตัวผู้เสียภาษี" in blob
+        assert "รหัสเจ้าหนี้" in blob
+        assert "SM" in blob
+        assert "02-2215865" not in blob
+        assert "02-2243659" not in blob
+        assert "0105530000000" not in blob
+        assert "คุณสมชาย" not in blob
+        assert "สำนักงานใหญ่" not in blob
+        assert "เลขประจำตัวผู้เสียภาษี" not in blob
+        assert "ผู้ติดต่อ" not in blob
+        assert "เครดิต" not in blob
         assert "NO.1" in blob
         assert "NO.2" in blob
         assert "RF008" in blob
@@ -178,10 +182,11 @@ def test_sheet_keeps_vendor_labels_when_card_is_missing(monkeypatch):
     simple = forms["simple_text"]
     assert "ร้านทดสอบ" in simple
     assert "รหัสเจ้าหนี้: V9" in simple
-    assert "ที่อยู่: —" in simple
-    assert "โทรศัพท์: —" in simple
-    assert "เลขประจำตัวผู้เสียภาษี: —" in simple
-    assert "ผู้ติดต่อ: —" in simple
+    assert "ผู้ขาย: ร้านทดสอบ" in simple
+    assert "ที่อยู่" not in simple
+    assert "โทรศัพท์" not in simple
+    assert "เลขประจำตัวผู้เสียภาษี" not in simple
+    assert "ผู้ติดต่อ" not in simple
     assert "ลูกปืนคลัช" in simple
     assert "ยังไม่ออกเลข" in simple
 
