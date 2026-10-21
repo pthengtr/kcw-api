@@ -719,6 +719,46 @@ def test_vendor_history_skips_products_already_waiting(monkeypatch):
     assert payload["items"][0]["vendor"] == "RR"
 
 
+def test_vendor_insight_refreshes_on_hand_before_the_gap(monkeypatch):
+    from datetime import datetime, timezone
+
+    from src.hq_po import service
+
+    monkeypatch.setattr(service, "fetch_vendor_names", lambda _codes: {"JJY": "จ"})
+    monkeypatch.setattr(
+        service,
+        "load_insight_policies_for_supplier",
+        lambda *_args: {
+            "13064261": {
+                "bcode": "13064261",
+                "last_supplier": "JJY",
+                "safe_holding_qty": 4.91,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "dead_stock": "no",
+            }
+        },
+    )
+    monkeypatch.setattr(service, "fetch_to_order_rows", lambda: [])
+    monkeypatch.setattr(service, "fetch_incoming_qty", lambda: {})
+    monkeypatch.setattr(service, "attach_catalog", lambda _lines: None)
+    calls: list[bool] = []
+
+    def fetch(_codes, refresh=False):
+        calls.append(refresh)
+        # Ledger on-hand already covers the target. Stored QTYOH2 would not.
+        return (
+            {"13064261": {"qtyoh2": 8, "mtp2": 1, "blocked": False, "descr": "seal"}},
+            {"13064261": {"qtyoh2": 2, "mtp2": 1}},
+            True,
+        )
+
+    monkeypatch.setattr("src.hq_po.stock.fetch_dual_stock", fetch)
+    monkeypatch.setattr("src.hq_po.stock.fetch_parts9_qty", lambda _codes: {})
+    payload = service.vendor_insight_payload("JJY")
+    assert calls == [True]
+    assert payload["items"] == []
+
+
 def test_refresh_qtyoh2_syncs_both_sites(monkeypatch):
     import src.db.qtyoh2_ledger as ledger
     import src.parts9_explorer.db as explorer_db
