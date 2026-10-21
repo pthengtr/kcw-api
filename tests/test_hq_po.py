@@ -342,8 +342,10 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
 
     def dual_stock(codes, refresh=False):
         refreshed.append(refresh)
+        # Stored QTYOH2 is 0. The list must show the rebuilt ledger qty.
+        qty = 10 if refresh else 0
         return (
-            {"A1": {"qtyoh2": 1, "mtp2": 1, "blocked": False, "descr": "bolt"}},
+            {"A1": {"qtyoh2": qty, "mtp2": 1, "blocked": False, "descr": "bolt"}},
             {"A1": {"qtyoh2": 0, "mtp2": 1, "blocked": False}},
             True,
         )
@@ -375,7 +377,8 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     assert scanned == []
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
-    assert refreshed == [False]
+    assert payload["items"][0]["hq_qtyoh2"] == 10
+    assert refreshed == [True]
 
 
 def test_suggest_drops_a_line_with_no_product_code(monkeypatch):

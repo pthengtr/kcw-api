@@ -298,7 +298,9 @@ def build_suggest() -> dict[str, Any]:
         except Exception:
             logger.warning("hq po vendor name lookup failed", exc_info=True)
             names = {}
-        hq, syp, stock_ok = fetch_dual_stock(bcodes)
+        # Same ledger rebuild as the AI tab. These rows are on screen, so a
+        # stale QTYOH2 must not be the on-hand the list shows.
+        hq, syp, stock_ok = fetch_dual_stock(bcodes, refresh=True)
         incoming: dict[str, float] = {}
         try:
             incoming = fetch_incoming_qty()
