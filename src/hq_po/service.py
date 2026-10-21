@@ -187,7 +187,10 @@ def vendor_insight_payload(acctno: str) -> dict[str, Any]:
     from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
 
     codes = [bcode for bcode in policies if bcode not in iclow_bcodes]
-    hq, syp, ok = fetch_dual_stock(codes) if codes else ({}, {}, True)
+    # Same ledger rebuild as the AI tab. This set is already one vendor, so
+    # refresh before the gap check. A stale QTYOH2 both mis-states on-hand
+    # and keeps a product on the list after Part9 stock already covers it.
+    hq, syp, ok = fetch_dual_stock(codes, refresh=True) if codes else ({}, {}, True)
     lines = (
         insight_only_lines(
             policies,
