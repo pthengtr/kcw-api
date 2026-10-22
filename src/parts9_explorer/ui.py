@@ -1369,14 +1369,10 @@ function renderInsight(ins, live) {
   const marginTrend = pick(pm.margin_trend, pm.margin_flag, mg.flag, pol.margin_flag, mgDer.flag);
   const marginFlag = pick(pm.margin_flag, mg.flag, pol.margin_flag, mgDer.flag);
 
-  const qtyLiveHq = numOrNull(live.qtyHq);
-  const qtyLiveSyp = numOrNull(live.qtySyp);
-  const companyLive = (qtyLiveHq != null || qtyLiveSyp != null)
-    ? (qtyLiveHq || 0) + (qtyLiveSyp || 0) : null;
-  const qtyHq = numOrNull(pick(qtyLiveHq, stk.hq, stBlk.qtyoh_hq, pol.qtyoh_hq));
-  const qtySyp = numOrNull(pick(qtyLiveSyp, stk.syp, stBlk.qtyoh_syp, pol.qtyoh_syp));
-  const qtyTotal = numOrNull(pick(companyLive, stk.total, stBlk.company_qtyoh,
-    (qtyHq != null || qtySyp != null) ? (qtyHq || 0) + (qtySyp || 0) : null));
+  const qtyHq = numOrNull(live.qtyHq);
+  const qtySyp = numOrNull(live.qtySyp);
+  const qtyTotal = (qtyHq != null || qtySyp != null)
+    ? (qtyHq || 0) + (qtySyp || 0) : null;
   const target = numOrNull(pick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
   const reorder = numOrNull(pick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
   const lot = numOrNull(pick(stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
@@ -1391,7 +1387,7 @@ function renderInsight(ins, live) {
 
   const dead = pick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
   const orderOk = pick(purch.order_ok, pol.order_ok, fl.order_ok);
-  let orderStatus = pick(dash.order_status, i.order_status, fl.order_status);
+  let orderStatus = null;
   if (dead === "yes") orderStatus = "dead_stock";
   else if (qtyTotal != null && target != null && qtyTotal >= target) orderStatus = "no_order_needed";
   else if (qtyTotal != null && reorder != null && qtyTotal <= reorder) orderStatus = "should_order";
@@ -1449,8 +1445,8 @@ function renderInsight(ins, live) {
         ? " และยอดขายช่วงล่าสุดยังต่ำกว่าค่าเฉลี่ย"
         : " และยอดขายช่วงล่าสุดสูงกว่าหรือใกล้ค่าเฉลี่ย";
     }
-  } else if (summaryTxt) {
-    summaryMain = esc(summaryTxt);
+  } else if (qtyTotal != null) {
+    summaryMain = "สต็อกปัจจุบัน <strong>"+qtyU(qtyTotal)+"</strong>";
   } else {
     summaryMain = "—";
   }
@@ -1548,8 +1544,7 @@ function renderInsight(ins, live) {
 
   html += "<section class='pi-card pi-ai'><h3>AI แนะนำ</h3><p><strong>"+esc(stInfo.th)
     +(sypNeedTransfer ? " และควรโอนไป SYP" : " และยังไม่ต้องโอนไป SYP")
-    +"</strong> "
-    +esc(ai || summaryTxt || "—")+"</p></section>";
+    +"</strong></p></section>";
 
   html += "<div class='pi-foot'>Dashboard · นโยบาย 14–30 วัน"
     +(ins.prompt_version ? " · "+esc(ins.prompt_version) : "")

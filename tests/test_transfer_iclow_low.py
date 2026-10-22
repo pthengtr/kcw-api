@@ -140,7 +140,7 @@ def test_hq_ship_opens_iclow_after_qty_update(mock_get_shipment, mock_engine, _c
 @patch("src.transfer.writers.ship_simas.get_transfer_supabase_client")
 @patch("src.transfer.writers.ship_simas.writer_engine_for_branch")
 @patch("src.transfer.writers.ship_simas.get_shipment_by_token")
-def test_syp_ship_does_not_open_hq_iclow(mock_get_shipment, mock_engine, _client, mock_low):
+def test_syp_ship_opens_branch_iclow_after_qty_update(mock_get_shipment, mock_engine, _client, mock_low):
     mock_get_shipment.return_value = None
     mock_conn = MagicMock()
     mock_conn.execute.return_value.mappings.return_value.first.return_value = {
@@ -164,4 +164,6 @@ def test_syp_ship_does_not_open_hq_iclow(mock_get_shipment, mock_engine, _client
             operator="op",
             client_token="tok",
         )
-    mock_low.assert_not_called()
+    mock_low.assert_called_once()
+    assert mock_low.call_args.kwargs["bcode"] == "03010575"
+    assert mock_low.call_args.kwargs["qtyoh"] == 0

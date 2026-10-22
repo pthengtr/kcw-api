@@ -1,8 +1,10 @@
 -- HQ (KSS) PARTS9 — sync ICMAS.QTYOH2 after PIDET changes
 --
--- STATUS (2026-09-24): line-only formula. Trigger left DISABLED — superseded by
---   app on-read sync (src/db/qtyoh2_ledger.py on stock-check Take / explorer open).
---   Prefer QTYOH2_SYNC_ON_READ over enabling this PIDET trigger.
+-- STATUS (2026-10-22): ENABLED on KSS. A purchase must recompute QTYOH2 in the
+--   same statement. On-read sync only repairs a code someone opens, so a receipt
+--   can sit stale for days (BN691000894: 13051176 1→11, 03052793 0→2, healed
+--   only when KAcc opened the product). Leave this trigger enabled.
+--   Disable it only for a bulk PIDET load, then enable it again.
 --
 --   DISABLE TRIGGER dbo.trg_PIDET_sync_icmas_qtyoh2 ON dbo.PIDET;
 --   ENABLE TRIGGER dbo.trg_PIDET_sync_icmas_qtyoh2 ON dbo.PIDET;
@@ -119,8 +121,8 @@ BEGIN
 END
 GO
 
--- Keep disabled after re-apply until smoke ENABLE.
-DISABLE TRIGGER dbo.trg_PIDET_sync_icmas_qtyoh2 ON dbo.PIDET;
+-- Re-apply leaves the trigger enabled. On-read sync stays as the backstop.
+ENABLE TRIGGER dbo.trg_PIDET_sync_icmas_qtyoh2 ON dbo.PIDET;
 GO
 
 SELECT name, is_disabled, create_date, modify_date
