@@ -384,6 +384,7 @@ dialog.dlg:not([open]) { display:none !important; }
 }
 .sum-box .k { color:var(--muted); font-size:.75rem; }
 .sum-box .v { margin-top:.1rem; }
+#payBankLine { white-space:pre-line; }
 .sum-box .net .k, .sum-box .net .v { font-weight:700; }
 .sum-box .net .v { color:var(--acc); }
 .methods { display:grid; grid-template-columns:repeat(3, 1fr); gap:.45rem; margin:.25rem 0 .75rem; }
@@ -643,7 +644,8 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 .pv-checks { font-size:11pt; }
 .pv-amt-red { color:#c41e3a; font-weight:800; font-size:13pt; font-variant-numeric:tabular-nums; }
 .pv-paytbl { border-collapse:collapse; font-size:10pt; min-width:22rem; }
-.pv-paytbl th, .pv-paytbl td { border:1px solid #111; padding:.2rem .4rem; }
+.pv-paytbl th, .pv-paytbl td { border:1px solid #111; padding:.2rem .4rem; vertical-align:top; }
+.pv-paytbl td.pv-bank { white-space:pre-line; }
 .pv-sign { display:flex; justify-content:space-between; margin-top:1.6rem; font-size:10.5pt; }
 .pv-sign .col { width:48%; }
 .pv-sign .line { border-bottom:1px dotted #333; min-height:1.6rem; margin:.15rem 0 .35rem; }
@@ -1405,6 +1407,16 @@ function esc(s) {
 }
 function fmtMoney(n) {
   return Number(n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function formatBankDisplay(text) {
+  const s = String(text || '').replace(/\s+#\s*$/, '').trim();
+  if (!s || s.includes('\n')) return s;
+  const dashed = s.match(/^(.*\S)\s+#\s*(\d{3}-\d-\d{4,6}-\d)\s*$/)
+    || s.match(/^(.*\S)\s+(\d{3}-\d-\d{4,6}-\d)\s*$/);
+  if (dashed) return dashed[1] + '\n' + dashed[2];
+  const hashed = s.match(/^(.*\S)\s+#\s*(\S+)\s*$/);
+  if (hashed) return hashed[1] + '\n' + hashed[2];
+  return s;
 }
 function fmtTokens(n) {
   return Number(n || 0).toLocaleString('en-US');
@@ -2282,7 +2294,7 @@ function fillPrintSheet(det, row) {
     return `<tr>
       <td>${esc(kind)}</td>
       <td class="pv-amt-red">${esc(fmtDate(p.CHKDATE || docDate))}</td>
-      <td>${esc(p.BANKNAME || '')}</td>
+      <td class="pv-bank">${esc(formatBankDisplay(p.BANKNAME || '')).replace(/\n/g, '<br>')}</td>
       <td class="num pv-amt-red">${fmtMoney(p.CHKAMT != null ? p.CHKAMT : net)}</td>
     </tr>`;
   }).join('');
@@ -2653,7 +2665,7 @@ function openPay(acct, note, billamt, discount, bankname) {
   $('payBillAmt').textContent = fmtMoney(bill);
   $('payDiscountAmt').textContent = fmtMoney(disc);
   $('payNetAmt').textContent = fmtMoney(net);
-  $('payBankLine').textContent = (bankname || '').replace(/\s+#\s+$/,'').trim() || '— ไม่พบบัญชีธนาคาร —';
+  $('payBankLine').textContent = formatBankDisplay(bankname) || '— ไม่พบบัญชีธนาคาร —';
   $('payChkamt').value = net.toFixed(2);
   $('payChkdate').value = todayISO();
   $('payBankSelect').value = DEFAULT_PAY_BANK;
