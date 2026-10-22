@@ -159,17 +159,17 @@ def post_transfer_ship(
                 if product:
                     new_qty = float(product.get("QTYOH2") or 0) - qty_ship
                     conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
-                    # HQ TF ship only. PARTS9 has no trigger that opens ICLOW
-                    # when QTYOH2 reaches qtylo (ICMAS.QTYMIN).
-                    if from_u == "HQ":
-                        ensure_hq_low_stock_iclow(
-                            conn,
-                            bcode=bcode,
-                            qtyoh=new_qty,
-                            on=billdate.date(),
-                        )
+                    # PARTS9 has no trigger that opens ICLOW when QTYOH2
+                    # reaches qtylo (ICMAS.QTYMIN). The ship-from branch
+                    # gets the waiting row: HQ→SYP on KSS, SYP→HQ on kss-pc.
+                    ensure_hq_low_stock_iclow(
+                        conn,
+                        bcode=bcode,
+                        qtyoh=new_qty,
+                        on=billdate.date(),
+                    )
     except (ProgrammingError, DBAPIError) as exc:
-        tables = "SIMAS/SIDET/ICMAS/ICLOW" if from_u == "HQ" else "SIMAS/SIDET/ICMAS"
+        tables = "SIMAS/SIDET/ICMAS/ICLOW"
         hint = transfer_write_permission_hint(exc, branch=from_branch, tables=tables)
         if hint:
             raise TransferShipError(hint, code="permission_denied") from exc

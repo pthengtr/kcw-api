@@ -137,6 +137,6 @@ SYP→HQ requests (submit at HQ) do not stamp SYP ICLOW.
 
 ## HQ low stock on TF ship (KSS)
 
-An HQ→SYP ship bill writes `SIMAS`/`SIDET` on KSS and sets `ICMAS.QTYOH2` itself. PARTS9 has no trigger that opens ICLOW from that update. PARTS9 calls the reorder point qtylo; the column is `ICMAS.QTYMIN`. When the new on-hand reaches or falls under a positive qtylo and the product has no unreceived ICLOW row, the ship writer inserts one HQ waiting row (`ORDERED='N'`, qty `QTYGET` or the gap up to qtylo). qtylo `0` and qtylo `-1` (do not order) stay off the list. SYP ship bills do not insert ICLOW.
+A ship bill writes `SIMAS`/`SIDET` on the sending branch and sets `ICMAS.QTYOH2` itself. PARTS9 has no trigger that opens ICLOW from that update. PARTS9 calls the reorder point qtylo; the column is `ICMAS.QTYMIN`. When the new on-hand reaches or falls under a positive qtylo and the product has no unreceived ICLOW row, the ship writer inserts one waiting row on that branch (`ORDERED='N'`, qty `QTYGET` or the gap up to qtylo). HQ→SYP writes it on KSS. SYP→HQ writes it on kss-pc, so a branch shipment that leaves the shelf red shows up on the branch รอสั่งซื้อ list. qtylo `0` and qtylo `-1` (do not order) stay off the list.
 
 Transfer status is only **requested → prepared → received**. `received` means the prepared qty is in, even when that is less than `qty_requested`. kcw-api does not insert a replacement ICLOW row. After the receive bill raises `QTYOH2`, PARTS9 opens the next รอสั่ง row when on-hand is still at or below `QTYMIN`.

@@ -697,6 +697,40 @@ def test_product_search_skips_a_short_query():
     assert search_products("  ") == []
 
 
+def test_vendor_insight_rebuilds_on_hand_before_listing(monkeypatch):
+    from src.hq_po import service
+
+    seen: dict[str, object] = {}
+
+    def dual(codes, refresh=False):
+        seen["refresh"] = refresh
+        seen["codes"] = list(codes)
+        return (
+            {"13051176": {"qtyoh2": 11, "mtp2": 1, "blocked": False}},
+            {"13051176": {"qtyoh2": 3, "mtp2": 1}},
+            True,
+        )
+
+    monkeypatch.setattr(service, "fetch_vendor_names", lambda _codes: {"SKM": "สุกมล"})
+    monkeypatch.setattr(
+        service,
+        "load_insight_policies_for_supplier",
+        lambda *_args: {"13051176": {"bcode": "13051176", "safe_holding_qty": 7}},
+    )
+    monkeypatch.setattr(service, "fetch_to_order_rows", lambda: [])
+    monkeypatch.setattr(service, "fetch_incoming_qty", lambda: {})
+    monkeypatch.setattr(service, "insight_only_lines", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(service, "attach_catalog", lambda _items: None)
+    monkeypatch.setattr("src.hq_po.stock.fetch_dual_stock", dual)
+    monkeypatch.setattr("src.hq_po.stock.fetch_parts9_qty", lambda _codes: {})
+
+    payload = service.vendor_insight_payload("SKM")
+
+    assert payload["items"] == []
+    assert seen["refresh"] is True
+    assert seen["codes"] == ["13051176"]
+
+
 def test_vendor_history_skips_products_already_waiting(monkeypatch):
     from src.hq_po import service
 

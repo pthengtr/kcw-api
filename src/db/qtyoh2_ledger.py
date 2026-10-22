@@ -15,7 +15,8 @@ No PIMAS/SIMAS header filter (header cancel with active line stays in the sum).
 Does not modify QTYBEG2.
 
 Used on stock-check take / ondemand search / product open, parts9-explorer product detail,
-and HQ PO stock reads — not a PIDET trigger. Flag: QTYOH2_SYNC_ON_READ (default on).
+and every HQ PO stock read. HQ also recomputes on purchase via
+`trg_PIDET_sync_icmas_qtyoh2` (kept enabled). Flag: QTYOH2_SYNC_ON_READ (default on).
 """
 
 from __future__ import annotations

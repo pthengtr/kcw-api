@@ -135,7 +135,7 @@ def vendor_ordered_payload(acctno: str) -> dict[str, Any]:
         waiting = set()
     from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
 
-    hq, syp, ok = fetch_dual_stock(codes)
+    hq, syp, ok = fetch_dual_stock(codes, refresh=True)
     try:
         parts9 = fetch_parts9_qty(codes)
     except Exception:
@@ -187,7 +187,9 @@ def vendor_insight_payload(acctno: str) -> dict[str, Any]:
     from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
 
     codes = [bcode for bcode in policies if bcode not in iclow_bcodes]
-    hq, syp, ok = fetch_dual_stock(codes) if codes else ({}, {}, True)
+    # Rebuild before the list is ranked. A stored QTYOH2 left behind by a
+    # purchase would otherwise recommend an order part9 does not have.
+    hq, syp, ok = fetch_dual_stock(codes, refresh=True) if codes else ({}, {}, True)
     lines = (
         insight_only_lines(
             policies,
@@ -258,7 +260,7 @@ def product_search_payload(query: str) -> dict[str, Any]:
         waiting = set()
     from src.hq_po.stock import fetch_dual_stock
 
-    hq, syp, ok = fetch_dual_stock(codes)
+    hq, syp, ok = fetch_dual_stock(codes, refresh=True)
     products: list[dict[str, Any]] = []
     for row in rows:
         bcode = row["bcode"]

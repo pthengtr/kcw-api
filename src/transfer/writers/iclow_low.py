@@ -1,8 +1,9 @@
-"""Open an HQ ICLOW รอสั่ง row when a KSS transfer-out drops on-hand to low stock.
+"""Open an ICLOW รอสั่ง row when a transfer-out drops on-hand to low stock.
 
 PARTS9 does not do this from a trigger. The desktop app inserts ICLOW while it
 posts the bill. The transfer writer updates QTYOH2 directly, so the ship path
-has to insert the same waiting row.
+has to insert the same waiting row on the branch that shipped: HQ on KSS,
+SYP on kss-pc.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ def low_stock_reorder_qty(*, qtyget: Any, qtymin: Any, qtyoh: Any) -> float | No
 def ensure_hq_low_stock_iclow(
     conn, *, bcode: str, qtyoh: float, on: date | None = None
 ) -> int | None:
-    """Insert one ORDERED='N' ICLOW row when HQ on-hand has reached qtylo and nothing is open.
+    """Insert one ORDERED='N' ICLOW row when this branch's on-hand has reached qtylo and nothing is open.
 
     Returns the new ICLOW.ID, or None when qtylo is 0 or -1, on-hand is still above
     it, or an unreceived ICLOW row already exists.
