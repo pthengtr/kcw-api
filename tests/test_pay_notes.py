@@ -197,6 +197,37 @@ def test_print_sheet_includes_numeric_net_amount():
     assert ".pv-tot .pv-net" in html
 
 
+def test_recorded_payment_puts_account_number_on_its_own_line():
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    assert node, "node is required to check the payment bank line"
+    html = page(user_name="ทดสอบ", site="HQ")
+    start = html.index("function formatBankDisplay")
+    end = html.index("function fmtTokens")
+    program = (
+        html[start:end]
+        + "\nconst samples = [\n"
+        + "  formatBankDisplay('กรุงไทย 248-0-44244-6'),\n"
+        + "  formatBankDisplay('ไทยพาณิชย์ บ.ไอซีน # 420-0-24341-0'),\n"
+        + "  formatBankDisplay('กสิกร 141-1-72355-7'),\n"
+        + "  formatBankDisplay(''),\n"
+        + "];\n"
+        + "process.stdout.write(JSON.stringify(samples));\n"
+    )
+    out = subprocess.check_output([node, "-e", program], text=True)
+    lines = json.loads(out)
+    assert lines[0] == "กรุงไทย\n248-0-44244-6"
+    assert lines[1] == "ไทยพาณิชย์ บ.ไอซีน\n420-0-24341-0"
+    assert lines[2] == "กสิกร\n141-1-72355-7"
+    assert lines[3] == ""
+    assert 'class="pv-bank"' in html
+    assert "formatBankDisplay(bankname)" in html
+    assert "#payBankLine { white-space:pre-line; }" in html
+
+
 def test_page_has_voucher_and_proof_tabs():
     html = page(user_name="Alice Doe", site="HQ", write_enabled=True)
     assert "ใบสำคัญจ่าย" in html
