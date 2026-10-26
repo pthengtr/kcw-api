@@ -287,9 +287,40 @@ def _valid_bcode(value: Any) -> bool:
     return bool(code) and any(ch.isdigit() for ch in code)
 
 
+def _without_held_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Hide ORDERED=X and lines that already belong to an open HQ PO.
+
+    Those rows are not รอสั่ง. Leaving them on the list makes save fail with
+    มีรายการที่อยู่ในใบสั่งซื้อแล้ว.
+    """
+    visible = [row for row in rows if str(row.get("ordered") or "").strip().upper() != "X"]
+    ids: list[int] = []
+    for row in visible:
+        try:
+            iclow_id = int(row.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if iclow_id > 0:
+            ids.append(iclow_id)
+    if not ids:
+        return visible
+    try:
+        from src.hq_po.db import get_hq_po_supabase_client, open_lines_for_iclow
+
+        held = open_lines_for_iclow(get_hq_po_supabase_client(), ids)
+    except Exception:
+        logger.warning("hq po open-line lookup failed", exc_info=True)
+        return visible
+    if not held:
+        return visible
+    return [row for row in visible if int(row.get("iclow_id") or 0) not in held]
+
+
 def build_suggest() -> dict[str, Any]:
     """Waiting lines only. The full AI scan stays on the AI tab."""
-    rows = [row for row in fetch_to_order_rows() if _valid_bcode(row.get("bcode"))]
+    rows = _without_held_rows(
+        [row for row in fetch_to_order_rows() if _valid_bcode(row.get("bcode"))]
+    )
     bcodes = [str(row.get("bcode") or "").strip() for row in rows if str(row.get("bcode") or "").strip()]
     with ThreadPoolExecutor(max_workers=1) as pool:
         catalog_fut = pool.submit(_catalog_for, bcodes)

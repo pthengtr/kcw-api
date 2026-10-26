@@ -19,9 +19,58 @@ def can_stamp_row(row: dict[str, Any]) -> str | None:
         return "canceled"
     if _flag(row.get("received")) == "Y":
         return "already_received"
-    if _flag(row.get("ordered")) == "Y":
+    ordered = _flag(row.get("ordered"))
+    # X is hidden from รอสั่ง. It is not a row this screen may stamp.
+    if ordered in {"Y", "X"}:
         return "already_ordered"
     return None
+
+
+def skip_already_open(
+    lines: list[dict[str, Any]],
+    live_by_id: dict[int, dict[str, Any]],
+    open_by_id: dict[int, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Drop lines that already sit on an open PO or can no longer be stamped.
+
+    One such line used to reject the whole purchase order.
+    """
+    kept: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for raw in lines:
+        try:
+            iclow_id = int(raw.get("iclow_id"))
+        except (TypeError, ValueError):
+            kept.append(raw)
+            continue
+        live = live_by_id.get(iclow_id)
+        if not live:
+            kept.append(raw)
+            continue
+        hit = open_by_id.get(iclow_id) or {}
+        blocked = can_stamp_row(live)
+        if not hit and not blocked:
+            kept.append(raw)
+            continue
+        bcode = str(hit.get("bcode") or live.get("bcode") or raw.get("bcode") or iclow_id).strip()
+        docno = str(hit.get("docno") or "").strip()
+        if docno:
+            message = f"{bcode} อยู่ในใบ {docno} แล้ว"
+        elif blocked == "already_received":
+            message = f"{bcode} รับแล้ว"
+        elif blocked == "canceled":
+            message = f"{bcode} ถูกยกเลิก"
+        else:
+            message = f"{bcode} สั่งไปแล้ว"
+        skipped.append(
+            {
+                "iclow_id": iclow_id,
+                "bcode": bcode,
+                "docno": docno or None,
+                "message": message,
+            }
+        )
+    return kept, skipped
 
 
 def can_revert_row(row: dict[str, Any], docno: str) -> str | None:

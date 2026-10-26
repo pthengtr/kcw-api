@@ -37,6 +37,57 @@ def _first(resp) -> dict[str, Any]:
     return {}
 
 
+def open_lines_for_iclow(client: Client, iclow_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Open PO lines keyed by ICLOW id. The unique index blocks a second one."""
+    ids: list[int] = []
+    seen: set[int] = set()
+    for raw in iclow_ids:
+        try:
+            iclow_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if iclow_id > 0 and iclow_id not in seen:
+            seen.add(iclow_id)
+            ids.append(iclow_id)
+    found: dict[int, dict[str, Any]] = {}
+    for start in range(0, len(ids), 80):
+        chunk = ids[start : start + 80]
+        lines = _rows(
+            _table(client, "lines")
+            .select("iclow_id,bcode,order_id")
+            .in_("iclow_id", chunk)
+            .is_("canceled_at", "null")
+            .execute()
+        )
+        if not lines:
+            continue
+        order_ids = list({row.get("order_id") for row in lines if row.get("order_id")})
+        parents = (
+            _rows(
+                _table(client, "orders")
+                .select("order_id,docno")
+                .in_("order_id", order_ids)
+                .execute()
+            )
+            if order_ids
+            else []
+        )
+        by_order = {row.get("order_id"): row for row in parents}
+        for line in lines:
+            try:
+                iclow_id = int(line.get("iclow_id"))
+            except (TypeError, ValueError):
+                continue
+            parent = by_order.get(line.get("order_id")) or {}
+            found[iclow_id] = {
+                "iclow_id": iclow_id,
+                "bcode": line.get("bcode"),
+                "docno": str(parent.get("docno") or "").strip(),
+                "order_id": line.get("order_id"),
+            }
+    return found
+
+
 def insert_order(
     client: Client,
     *,

@@ -8,6 +8,7 @@ from src.hq_po.guards import (
     HqPoError,
     can_revert_row,
     can_stamp_row,
+    skip_already_open,
     chosen_pack,
     plan_cancel,
     plan_confirm,
@@ -162,12 +163,33 @@ def test_insight_only_skips_iclow_and_blocked():
 def test_stamp_and_revert_guards():
     assert can_stamp_row(_live()) is None
     assert can_stamp_row(_live(ordered="Y")) == "already_ordered"
+    assert can_stamp_row(_live(ordered="X")) == "already_ordered"
     assert can_stamp_row(_live(received="Y")) == "already_received"
     assert can_stamp_row(_live(canceled="Y")) == "canceled"
     assert can_revert_row(_live(ordered="Y", docno="HP6910-A1B2"), "HP6910-A1B2") is None
     assert can_revert_row(_live(ordered="Y", docno="HP6910-A1B2", received="Y"), "HP6910-A1B2") == "already_received"
     assert can_revert_row(_live(ordered="Y", docno="PO6901-1"), "HP6910-A1B2") == "docno_mismatch"
     assert can_revert_row(_live(ordered="N", docno=""), "HP6910-A1B2") is None
+
+
+def test_skip_already_open_keeps_the_rest_of_the_po():
+    lines = [
+        {"iclow_id": 1, "bcode": "OLD"},
+        {"iclow_id": 2, "bcode": "NEW"},
+    ]
+    live = {
+        1: _live(iclow_id=1, bcode="OLD", ordered="X"),
+        2: _live(iclow_id=2, bcode="NEW"),
+    }
+    kept, skipped = skip_already_open(
+        lines,
+        live,
+        {1: {"bcode": "OLD", "docno": "HP6910-DE07"}},
+    )
+    assert [row["iclow_id"] for row in kept] == [2]
+    assert skipped[0]["bcode"] == "OLD"
+    assert skipped[0]["docno"] == "HP6910-DE07"
+    assert "HP6910-DE07" in skipped[0]["message"]
 
 
 def test_plan_confirm_uses_live_row_and_rejects_other_vendor():

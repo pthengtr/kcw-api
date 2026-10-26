@@ -13,6 +13,7 @@ from src.hq_po.db import (
     list_orders,
     mark_line_canceled,
     mark_order_canceled,
+    open_lines_for_iclow,
 )
 from src.hq_po.docno import make_docno, make_short_id
 from src.hq_po.guards import (
@@ -22,6 +23,7 @@ from src.hq_po.guards import (
     plan_confirm,
     plan_created,
     receive_view,
+    skip_already_open,
 )
 from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
@@ -610,18 +612,23 @@ def confirm_order(
     peers = [line for line in created if _peer_flag(line)]
     ai_lines = [line for line in created if not _peer_flag(line)]
     planned: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    client = get_hq_po_supabase_client()
     if existing:
         ids = [int(line["iclow_id"]) for line in existing]
         live = fetch_iclow_by_ids(ids)
-        try:
-            products = fetch_sheet_products(
-                [str((live.get(iclow_id) or {}).get("bcode") or "") for iclow_id in ids]
-            )
-        except Exception:
-            products = {}
-        _apply_units(existing, products=products, live_by_id=live)
-        _assert_supplier_choices(existing, live_by_id=live, resolved={})
-        planned.extend(plan_confirm(existing, live, vendor=vendor))
+        existing, skipped = skip_already_open(existing, live, open_lines_for_iclow(client, ids))
+        if existing:
+            ids = [int(line["iclow_id"]) for line in existing]
+            try:
+                products = fetch_sheet_products(
+                    [str((live.get(iclow_id) or {}).get("bcode") or "") for iclow_id in ids]
+                )
+            except Exception:
+                products = {}
+            _apply_units(existing, products=products, live_by_id=live)
+            _assert_supplier_choices(existing, live_by_id=live, resolved={})
+            planned.extend(plan_confirm(existing, live, vendor=vendor))
     if ai_lines:
         resolved = _resolve_created([str(line.get("bcode") or "") for line in ai_lines])
         _assert_supplier_choices(ai_lines, live_by_id={}, resolved=resolved)
@@ -631,6 +638,11 @@ def confirm_order(
         _assert_supplier_choices(peers, live_by_id={}, resolved=resolved_peers)
         planned.extend(plan_created(peers, resolved_peers, vendor=vendor))
     if not planned:
+        if skipped:
+            raise HqPoError(
+                "already_ordered",
+                "มีรายการที่อยู่ในใบสั่งซื้อแล้ว: " + ", ".join(row["message"] for row in skipped),
+            )
         raise HqPoError("empty", "ยังไม่ได้เลือกรายการ")
     to_stamp = [line for line in planned if not _created_flag(line)]
     to_insert = [line for line in planned if _created_flag(line)]
@@ -642,7 +654,6 @@ def confirm_order(
         line["propose_meta"] = clean_propose_meta(line.get("propose_meta"))
     acct = (vendor or "").strip()
     name = _vendor_name(acct, vendor_name)
-    client = get_hq_po_supabase_client()
     last_error: Exception | None = None
     for _ in range(3):
         short_id = make_short_id()
@@ -664,7 +675,13 @@ def confirm_order(
                 cancel_created(inserted, docno=docno)
             message = str(exc).lower()
             if "hq_po_lines_open_iclow" in message:
-                raise HqPoError("already_ordered", "มีรายการที่อยู่ในใบสั่งซื้อแล้ว") from exc
+                raise HqPoError(
+                    "already_ordered",
+                    "มีรายการที่อยู่ในใบสั่งซื้อแล้ว: "
+                    + ", ".join(
+                        str(line.get("bcode") or line.get("iclow_id") or "") for line in stored_lines
+                    ),
+                ) from exc
             if "duplicate" in message or "unique" in message or "23505" in message:
                 last_error = exc
                 continue
@@ -678,6 +695,7 @@ def confirm_order(
                 cancel_created(inserted, docno=docno)
             raise
         order["vendor_name"] = name
+        order["skipped"] = skipped
         return order
     raise HqPoError("docno_collision", f"ออกเลขที่ใบซ้ำ: {last_error}")
 
