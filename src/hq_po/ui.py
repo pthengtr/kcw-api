@@ -778,7 +778,7 @@ async function postVendor(vendor, picked){
   });
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.message || "สั่งซื้อไม่สำเร็จ");
-  return data.docno || "";
+  return data;
 }
 async function confirmRows(rows){
   if(state.busy) return;
@@ -791,10 +791,15 @@ async function confirmRows(rows){
   }
   if(!byVendor.size){ alert("เลือกรายการและใส่จำนวน"); return; }
   const docs = [];
+  const skipped = [];
   let failed = null;
   setBusy(true, "กำลังบันทึกใบสั่งซื้อ…");
   try{
-    for(const [vendor, picked] of byVendor) docs.push(await postVendor(vendor, picked));
+    for(const [vendor, picked] of byVendor){
+      const data = await postVendor(vendor, picked);
+      if(data.docno) docs.push(data.docno);
+      for(const row of data.skipped || []) skipped.push(row);
+    }
   }catch(err){
     failed = err;
   }finally{
@@ -806,7 +811,14 @@ async function confirmRows(rows){
     return;
   }
   closeSheet();
-  alert("สั่งแล้ว " + docs.filter(Boolean).join(", "));
+  let msg = "สั่งแล้ว " + docs.filter(Boolean).join(", ");
+  if(skipped.length){
+    msg += "\nข้ามรายการที่อยู่ในใบสั่งซื้อแล้ว: " + skipped.map(row => {
+      const code = row.bcode || "";
+      return row.docno ? code + " (" + row.docno + ")" : code;
+    }).join(", ");
+  }
+  alert(msg);
   await loadSuggest();
 }
 function groupsOf(rows){
