@@ -162,6 +162,7 @@ def test_void_sheet_has_watermark():
 
 def test_line_command_and_menu():
     assert is_to_bill_command("ใบเต็ม")
+    assert is_to_bill_command("ใบเต็มออนไลน์")
     assert is_to_bill_command("TO Bill")
     assert not is_to_bill_command("สั่งซื้อ")
     assert services_menu_handlers_match()["to_bill"]
