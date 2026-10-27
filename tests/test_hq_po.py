@@ -342,6 +342,10 @@ def test_page_defaults_product_view():
     assert "กรองรหัสสินค้า" in html
     assert "function orderVisible" in html
     assert "ไม่พบใบสั่งซื้อตามตัวกรอง" in html
+    assert "function orderDateText" in html
+    assert "วันที่สั่ง" in html
+    assert 'class="po-lines"' in html
+    assert "รายการสินค้า" in html
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):

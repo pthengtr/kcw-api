@@ -123,6 +123,12 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .sheet-foot p{margin:0 0 8px;font-size:12px;color:var(--muted);text-align:center}
 .sheet-foot button{width:100%;min-height:46px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;font-size:15px}
 input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--blue)}
+.card h2 .when{display:block;margin-top:2px;font-size:12px;font-weight:500;color:var(--muted)}
+.po-lines{border-top:1px solid var(--line)}
+.po-lines summary{cursor:pointer;list-style:none;min-height:44px;padding:12px;font-size:14px;font-weight:650;color:var(--blue-deep);display:flex;align-items:center;gap:8px;user-select:none}
+.po-lines summary::-webkit-details-marker{display:none}
+.po-lines summary::before{content:"▸";font-size:12px;color:var(--muted);transition:transform .15s}
+.po-lines[open] summary::before{transform:rotate(90deg)}
 .actions{padding:10px 12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
 .actions button{width:100%;min-height:44px;background:var(--blue);color:#fff;border:0;border-radius:12px;padding:10px 12px;font-weight:650;font-size:14px}
 .actions button.ghost{background:#fff;color:var(--warn);border:1px solid #fdba74}
@@ -922,6 +928,13 @@ function orderVisibleLines(order){
   if(!codeQ) return lines;
   return lines.filter(line => String(line.bcode || "").toLowerCase().includes(codeQ));
 }
+function orderDateText(iso){
+  const raw = String(iso || "").trim();
+  if(!raw) return "";
+  const d = new Date(raw);
+  if(Number.isNaN(d.getTime())) return raw.slice(0, 10);
+  return new Intl.DateTimeFormat("en-GB", {timeZone:"Asia/Bangkok", day:"2-digit", month:"2-digit", year:"numeric"}).format(d);
+}
 function renderOrders(){
   const host = document.getElementById("orders");
   const all = state.orders || [];
@@ -953,7 +966,13 @@ function renderOrders(){
     const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์ / คัดลอก</button>`;
     const actions = `<div class="actions">${reprint}${cancel}</div>`;
     const title = order.vendor_name || order.vendor_acctno || "ไม่ระบุเจ้าหนี้";
-    return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${lines}${actions}</div>`;
+    const when = orderDateText(order.ordered_at);
+    const whenHtml = when ? `<span class="when">วันที่สั่ง ${esc(when)}</span>` : "";
+    const n = orderVisibleLines(order).length;
+    const open = orderFilterText(state.orderBcode) ? " open" : "";
+    const body = lines || '<div class="line plain"><div class="meta">ไม่มีรายการสินค้า</div></div>';
+    const linesBlock = `<details class="po-lines"${open}><summary>รายการสินค้า ${n} รายการ</summary>${body}</details>`;
+    return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}${whenHtml}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${linesBlock}${actions}</div>`;
   }).join("");
 }
 async function loadOrders(){
