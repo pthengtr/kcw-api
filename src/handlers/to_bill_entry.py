@@ -18,6 +18,7 @@ from src.transfer.net import rewrite_base_port
 
 TO_BILL_COMMANDS = {
     "ใบเต็ม",
+    "ใบเต็มออนไลน์",
     "ใบกำกับ",
     "to bill",
     "tobill",
@@ -92,8 +93,8 @@ def handle_to_bill_command(
             "text": "ยังไม่พบเซิร์ฟเวอร์ใบเต็มครับ (รอ heartbeat จาก HQ)",
         }
     return branch_uri_buttons(
-        title="ใบเต็ม TAD",
-        alt_text="ใบเต็ม TAD — กดเปิด",
+        title="ใบเต็มออนไลน์",
+        alt_text="ใบเต็มออนไลน์ — กดเปิด",
         links=links,
         wifi_hint=elevated_wifi_hint(elevated, allow_tailscale_copy=True),
     )

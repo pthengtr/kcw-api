@@ -136,7 +136,7 @@ def _require(request: Request):
     ident = _identity_from_request(request)
     if ident is None:
         return None, HTMLResponse(
-            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ ใบเต็ม ในแชท หรือเปิดจากเครือข่ายสำนักงาน</p>",
+            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ ใบเต็มออนไลน์ ในแชท หรือเปิดจากเครือข่ายสำนักงาน</p>",
             status_code=401,
         )
     return ident, None

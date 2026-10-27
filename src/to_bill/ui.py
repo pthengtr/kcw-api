@@ -8,7 +8,7 @@ _PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ใบเต็ม TAD</title>
+<title>ใบเต็มออนไลน์</title>
 <style>
 :root { color-scheme: light; }
 body { margin:0; font-family: Prompt, "Noto Sans Thai", sans-serif; color:#111; background:#f6f7f9; }
@@ -81,7 +81,7 @@ button:disabled { opacity:.55; cursor:default; }
 <body>
 <header>
   <div>
-    <h1>ใบเต็ม TAD</h1>
+    <h1>ใบเต็มออนไลน์</h1>
     <p id="who"></p>
   </div>
   <div class="row noprint">
