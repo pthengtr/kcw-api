@@ -8,6 +8,7 @@ from src.handlers.image import is_image_command
 from src.handlers.pay_notes_entry import is_pay_notes_command
 from src.handlers.stock_check_entry import is_stock_check_command
 from src.handlers.hq_po_entry import is_hq_po_command
+from src.handlers.to_bill_entry import is_to_bill_command
 from src.handlers.transfer_entry import is_transfer_command
 
 SERVICES_MENU_COMMANDS = {
@@ -50,6 +51,7 @@ def handle_services_menu() -> dict:
         _msg_button("สั่งซื้อ", "สั่งซื้อ"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
+        _msg_button("ใบเต็ม", "ใบเต็ม"),
         _msg_button("วิธีใช้ทั้งหมด", "help"),
     ]
     return {
@@ -94,6 +96,7 @@ def services_menu_button_messages() -> list[str]:
         _msg_button("สั่งซื้อ", "สั่งซื้อ"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
+        _msg_button("ใบเต็ม", "ใบเต็ม"),
         _msg_button("วิธีใช้ทั้งหมด", "help"),
     ]]
 
@@ -108,4 +111,5 @@ def services_menu_handlers_match() -> dict[str, bool]:
         "hq_po": is_hq_po_command(checks[4]),
         "image": is_image_command(checks[5]),
         "pay_notes": is_pay_notes_command(checks[6]),
+        "to_bill": is_to_bill_command("ใบเต็ม"),
     }

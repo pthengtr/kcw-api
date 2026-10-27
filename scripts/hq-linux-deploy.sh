@@ -67,6 +67,29 @@ fi
 if systemctl --user cat kcw-hq-po.service &>/dev/null; then
   _units+=(kcw-hq-po)
 fi
+
+# ใบเต็ม TAD is HQ-only. Install once, then restart with the other units.
+_install_to_bill_unit() {
+  local src="${REPO}/scripts/systemd/kcw-to-bill.service"
+  local dest="${HOME}/.config/systemd/user/kcw-to-bill.service"
+  if systemctl --user cat kcw-to-bill.service &>/dev/null; then
+    return 0
+  fi
+  if [[ ! -f "$src" ]]; then
+    echo "WARNING: kcw-to-bill unit file missing; service not restarted" >&2
+    return 0
+  fi
+  mkdir -p "${HOME}/.config/systemd/user"
+  cp "$src" "$dest"
+  systemctl --user daemon-reload
+  systemctl --user enable kcw-to-bill.service
+}
+if ! _install_to_bill_unit; then
+  echo "WARNING: could not install kcw-to-bill.service" >&2
+fi
+if systemctl --user cat kcw-to-bill.service &>/dev/null; then
+  _units+=(kcw-to-bill)
+fi
 for u in "${_units[@]}"; do
   systemctl --user restart "${u}.service"
 done
