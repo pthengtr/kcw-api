@@ -136,6 +136,7 @@ def test_sheet_names_the_tad_and_buyer():
     assert html.count("(สำเนา)") == 1
     assert "เลขที่เอกสาร" in html
     assert "TO6910-001" in html
+    assert "27 ตุลาคม 2569" in html
     assert "27/10/2569" in html
     assert "ลูกค้า" in html
     assert "ผู้ซื้อ" not in html
