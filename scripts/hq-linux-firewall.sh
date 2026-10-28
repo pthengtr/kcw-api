@@ -23,7 +23,7 @@ ufw allow from 192.168.1.0/24 to any port 4000 proto tcp comment 'NoMachine TCP 
 ufw allow from 192.168.1.0/24 to any port 4000 proto udp comment 'NoMachine UDP LAN'
 ufw allow from 192.168.1.0/24 to any port 445 proto tcp comment 'Samba SMB LAN'
 
-for port in 8000 8787 8788 8790 8791 8792; do
+for port in 8000 8787 8788 8790 8791 8792 8793 8794; do
   ufw allow from 192.168.1.0/24 to any port "$port" proto tcp comment "KCW :$port LAN"
   ufw allow in on "$LAN_IF" to any port "$port" proto tcp comment "KCW :$port LAN iface"
 done
