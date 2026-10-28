@@ -163,10 +163,17 @@ def list_bills_with_payment_status(
     payout_bills = list_cn_bills(mode=mode, limit=limit)
     bills = [*collect_bills, *payout_bills]
 
-    latest_by_bill = repos.list_latest_attempts_by_bill_ids(
-        engine,
-        [bill.id for bill in collect_bills],
-    )
+    try:
+        latest_by_bill = repos.list_latest_attempts_by_bill_ids(
+            engine,
+            [bill.id for bill in collect_bills],
+        )
+    except Exception:
+        # POS rows still have to list when Supabase session slots are full.
+        # A failed attempt lookup used to 500 the whole /companion/bills call,
+        # which left the till on "ไม่มีบิลที่แสดง" until someone refreshed.
+        logger.exception("Failed loading payment attempts for bill list")
+        latest_by_bill = {}
     try:
         latest_vouchers = voucher_repos.list_latest_vouchers_by_bill_ids(
             engine,
