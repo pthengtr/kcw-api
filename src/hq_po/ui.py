@@ -60,6 +60,8 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .card h2{margin:0;padding:12px;font-size:15px;background:var(--blue-wash);display:flex;justify-content:space-between;gap:8px;align-items:flex-start;line-height:1.35}
 .card h2 .title{min-width:0;overflow-wrap:anywhere}
 .card h2 .count{flex:none;margin-top:2px}
+.select-all{display:flex;align-items:center;gap:8px;min-height:44px;padding:10px 12px;border-top:1px solid var(--line);background:#fff;font-size:14px;font-weight:650;color:var(--blue-deep)}
+.select-all input{margin:0;flex:none}
 .line{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:8px;padding:12px;border-top:1px solid var(--line);align-items:start}
 .line.plain{grid-template-columns:minmax(0,1fr) auto}
 .line .code{font-weight:600;line-height:1.4;overflow-wrap:anywhere}
@@ -459,6 +461,29 @@ function lineHtml(row, mode){
     ${qtyCell(row)}
   </div>`;
 }
+function selectAllHtml(rows){
+  const selectable = (rows || []).filter(row => row.confirmable && STAMP);
+  if(!selectable.length) return "";
+  const all = selectable.every(row => row.picked);
+  return `<label class="select-all"><input type="checkbox" data-select-all aria-label="เลือกทั้งหมด"${all ? " checked" : ""}/>เลือกทั้งหมด</label>`;
+}
+function applyPicked(box, on){
+  box.checked = on;
+  const row = findRow(box.dataset.key || "");
+  if(row) row.picked = on;
+  const line = box.closest(".line");
+  if(line) line.classList.toggle("picked", on);
+}
+function syncSelectAll(){
+  document.querySelectorAll("#list input[data-select-all]").forEach(box => {
+    const card = box.closest(".card");
+    if(!card) return;
+    const boxes = [...card.querySelectorAll("input[type=checkbox][data-key]:not(:disabled)")];
+    const n = boxes.filter(item => item.checked).length;
+    box.checked = boxes.length > 0 && n === boxes.length;
+    box.indeterminate = n > 0 && n < boxes.length;
+  });
+}
 function syncDock(){
   const open = state.view === "vendor" && state.vendorKey != null;
   const n = open ? document.querySelectorAll("#list input[type=checkbox][data-key]:checked").length : 0;
@@ -656,12 +681,13 @@ function renderList(){
   const ai = lines.filter(row => row.source === "insight");
   const past = lines.filter(row => row.source === "history");
   const section = (label, rows) => rows.length
-    ? `<div class="card"><h2><span class="title">${esc(label)}</span><span class="count">${rows.length} รายการ</span></h2>${rows.map(row => lineHtml(row, "pick")).join("")}</div>`
+    ? `<div class="card"><h2><span class="title">${esc(label)}</span><span class="count">${rows.length} รายการ</span></h2>${selectAllHtml(rows)}${rows.map(row => lineHtml(row, "pick")).join("")}</div>`
     : "";
   const body = state.historyOnly
     ? (past.length ? section("เคยสั่ง", past) : (state.historyLoading ? spinner("กำลังโหลดสินค้าที่เคยสั่ง…") : ""))
     : `${section("รอสั่ง", waiting)}${section("AI", ai)}${past.length ? section("เคยสั่ง", past) : ""}`;
   host.innerHTML = `<button type="button" class="back" data-vendor-back>เจ้าหนี้ทั้งหมด</button><div class="card"><h2><span class="title">${esc(title)}</span></h2></div>${body}${historyButton()}${addProductControl("vendor")}`;
+  syncSelectAll();
   syncDock();
   if(!typing) window.scrollTo(0, y);
 }
@@ -1633,10 +1659,21 @@ document.getElementById("list").oninput = (e) => {
   if(row) row.order_qty = input.value;
 };
 document.getElementById("list").onchange = (e) => {
+  const all = e.target.closest("input[data-select-all]");
+  if(all){
+    const card = all.closest(".card");
+    const on = all.checked;
+    if(card){
+      card.querySelectorAll("input[type=checkbox][data-key]:not(:disabled)").forEach(box => applyPicked(box, on));
+    }
+    all.indeterminate = false;
+    syncDock();
+    return;
+  }
   const box = e.target.closest("input[type=checkbox][data-key]");
   if(box){
-    const picked = findRow(box.dataset.key || "");
-    if(picked) picked.picked = box.checked;
+    applyPicked(box, box.checked);
+    syncSelectAll();
     syncDock();
     return;
   }

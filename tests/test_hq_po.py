@@ -327,6 +327,8 @@ def test_page_defaults_product_view():
     assert "สินค้าแทน" in html
     assert "data-peers" in html
     assert "data-open-vendor" in html
+    assert "data-select-all" in html
+    assert "เลือกทั้งหมด" in html
     assert "data-vendor-back" in html
     assert 'state.view === "vendor" && state.vendorKey != null' in html
     assert "row.bcode, row.descr" in html
