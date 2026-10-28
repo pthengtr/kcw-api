@@ -9,6 +9,22 @@ from decimal import Decimal
 from src.hq_po.sheet import COMPANY_ADDRESS, COMPANY_BRANCH, COMPANY_NAME, COMPANY_PHONE
 from src.pay_notes.baht_text import baht_text
 
+_MONTHS = (
+    "มกราคม",
+    "กุมภาพันธ์",
+    "มีนาคม",
+    "เมษายน",
+    "พฤษภาคม",
+    "มิถุนายน",
+    "กรกฎาคม",
+    "สิงหาคม",
+    "กันยายน",
+    "ตุลาคม",
+    "พฤศจิกายน",
+    "ธันวาคม",
+)
+
+
 def _esc(value) -> str:
     return html.escape(str(value or ""), quote=True)
 
@@ -36,6 +52,13 @@ def _day(value) -> date | None:
         return date.fromisoformat(text[:10])
     except ValueError:
         return None
+
+
+def _thai_date(value) -> str:
+    day = _day(value)
+    if not day:
+        return "—"
+    return f"{day.day} {_MONTHS[day.month - 1]} {day.year + 543}"
 
 
 def _slash_date(value) -> str:
@@ -98,10 +121,12 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
         discount_row = (
             f"<div class='row'><span>ส่วนลด</span><span>{_money(discount)}</span></div>"
         )
-    buyer = [
+    buyer_head = [
         _field("ลูกค้า", f"<span class='name'>{_esc(invoice.get('customer_name'))}</span>"),
         _field("ที่อยู่", _esc(invoice.get("address")), value_class="pre"),
-        _field("เลขประจำตัวผู้เสียภาษี", _esc(invoice.get("tax_id")), span=True),
+    ]
+    buyer = [
+        _field("เลขประจำตัวผู้เสียภาษี", f"<span class='wide-v'>{_esc(invoice.get('tax_id'))}</span>"),
         _field("สาขา", _esc(invoice.get("branch_label"))),
     ]
     phone = str(invoice.get("phone") or "").strip()
@@ -112,13 +137,13 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
         buyer.append(_field("อีเมล", _esc(email)))
     document = [
         _field("เลขที่เอกสาร", f"<span class='no'>{_esc(invoice.get('docno'))}</span>"),
-        _field("วันที่", _esc(_slash_date(invoice.get("bill_date")))),
+        _field("วันที่", _esc(_thai_date(invoice.get("bill_date")))),
     ]
     order = str(invoice.get("online_po") or "").strip()
     if order:
         document.append(_field("เลขคำสั่งซื้อ", _esc(order)))
     document.append(_field("อ้างอิง", _esc(invoice.get("tad_billno"))))
-    document.append(_field("ออกเอกสาร", _esc(_slash_date(invoice.get("issued_at")))))
+    document.append(_field("ออกเอกสาร", _esc(_thai_date(invoice.get("issued_at")))))
     watermark = "<div class='void'>ยกเลิก</div>" if voided else ""
     reason = ""
     if voided and invoice.get("void_reason"):
@@ -139,20 +164,24 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
 <article class="tof">
   {watermark}
   <div class="top">
-    <div>
+    <div class="brand">
       <div class="logo">KCW</div>
       <div class="co">{_esc(COMPANY_NAME)}</div>
       <div class="addr">{_esc(COMPANY_ADDRESS)}<br>โทร {_esc(COMPANY_PHONE)} · {_esc(COMPANY_BRANCH)}</div>
       <div class="addr">เลขประจำตัวผู้เสียภาษี {_esc(seller_tax_id)}</div>
     </div>
-  </div>
-  <div class="title-row">
-    <h1>ใบกำกับภาษี/ใบเสร็จรับเงิน</h1>
-    <p class="mark">({_esc(copy_label)})</p>
+    <div class="doc">
+      <h1>ใบกำกับภาษี/ใบเสร็จรับเงิน</h1>
+      <p class="mark">({_esc(copy_label)})</p>
+      <p class="no">{_esc(invoice.get("docno"))}</p>
+    </div>
   </div>
   <div class="rule"></div>
   <div class="boxes">
-    <div class="box"><div class="fields">{''.join(buyer)}</div></div>
+    <div class="box">
+      <div class="who">{''.join(buyer_head)}</div>
+      <div class="fields">{''.join(buyer)}</div>
+    </div>
     <div class="box"><div class="fields">{''.join(document)}</div></div>
   </div>
   <table>
@@ -166,8 +195,8 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
       {''.join(body)}
     </tbody>
   </table>
-  <div class="note">{note}</div>
   <div class="foot">
+    <div class="note">{note}</div>
     <div class="tot">
       {discount_row}
       <div class="row"><span>ก่อนภาษี</span><span>{_money(invoice.get("beforetax"))}</span></div>
