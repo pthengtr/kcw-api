@@ -1221,6 +1221,7 @@
       selectedAttemptId: null,
       actionInFlight: null, // { type: 'send'|'cancel'|'force', billId, attemptId, paymentType }
       pollTimer: null,
+      billRetryTimer: null,
       refreshing: false,
       canForceComplete: false,
       mode: prefs.mode,
@@ -1235,6 +1236,7 @@
       statusSnapshotReady: false,
       qrByAttemptId: {},
       openQrAttemptId: null,
+      billLoadFailed: false,
     };
 
     function applyTheme(theme) {
@@ -2286,6 +2288,23 @@
           await loadTimeline(state.selectedAttemptId, { payout: isPayoutBill(selected) });
         }
         maybeStartPolling();
+        if (state.billRetryTimer) {
+          clearTimeout(state.billRetryTimer);
+          state.billRetryTimer = null;
+        }
+        if (state.billLoadFailed) {
+          state.billLoadFailed = false;
+          setMessage("");
+        }
+      } catch (err) {
+        state.billLoadFailed = true;
+        setMessage(err.message || String(err));
+        if (!state.billRetryTimer) {
+          state.billRetryTimer = setTimeout(() => {
+            state.billRetryTimer = null;
+            loadBills().catch(() => {});
+          }, 3000);
+        }
       } finally {
         if (showRefresh) {
           state.refreshing = false;

@@ -159,6 +159,35 @@ def test_list_bills_keeps_paid_non_kcn_voucher_visible():
     assert bills[0]["payment_attempt_active"] is False
 
 
+def test_list_bills_still_returns_pos_rows_when_attempt_lookup_fails():
+    from src.tiger_pay.payment_service import list_bills_with_payment_status
+
+    with (
+        patch("src.tiger_pay.payment_service.list_open_bills", return_value=[MOCK_OPEN_BILL]),
+        patch("src.tiger_pay.payment_service.list_cn_bills", return_value=[]),
+        patch("src.tiger_pay.payment_service.schedule_refresh_active_vouchers"),
+        patch(
+            "src.tiger_pay.payment_service.repos.list_latest_attempts_by_bill_ids",
+            side_effect=RuntimeError("EMAXCONNSESSION"),
+        ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_latest_vouchers_by_bill_ids",
+            return_value={},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_voucher_attempts_for_biz_day",
+            return_value=[],
+        ),
+    ):
+        bills = list_bills_with_payment_status(MagicMock(), mode="today", limit=10)
+
+    assert len(bills) == 1
+    assert bills[0]["id"] == "bill-1001"
+    assert bills[0]["bill_number"] == "B2607140001"
+    assert bills[0]["tiger_payment_status"] is None
+    assert bills[0]["payment_attempt_id"] is None
+
+
 def test_build_open_api_authorization_with_and_without_digest():
     body = b'{"amount":1}'
     token_with = build_open_api_authorization(
