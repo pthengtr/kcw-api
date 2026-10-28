@@ -9,22 +9,6 @@ from decimal import Decimal
 from src.hq_po.sheet import COMPANY_ADDRESS, COMPANY_BRANCH, COMPANY_NAME, COMPANY_PHONE
 from src.pay_notes.baht_text import baht_text
 
-_MONTHS = (
-    "มกราคม",
-    "กุมภาพันธ์",
-    "มีนาคม",
-    "เมษายน",
-    "พฤษภาคม",
-    "มิถุนายน",
-    "กรกฎาคม",
-    "สิงหาคม",
-    "กันยายน",
-    "ตุลาคม",
-    "พฤศจิกายน",
-    "ธันวาคม",
-)
-
-
 def _esc(value) -> str:
     return html.escape(str(value or ""), quote=True)
 
@@ -54,14 +38,44 @@ def _day(value) -> date | None:
         return None
 
 
-def _thai_date(value) -> str:
+def _slash_date(value) -> str:
     day = _day(value)
     if not day:
         return "—"
-    return f"{day.day} {_MONTHS[day.month - 1]} {day.year + 543}"
+    return f"{day.day:02d}/{day.month:02d}/{day.year + 543}"
+
+
+def _field(label: str, value: str, *, value_class: str = "", span: bool = False) -> str:
+    if span:
+        return (
+            f"<div class='wide'><span class='k'>{_esc(label)}</span>"
+            f"<span class='wide-v'>{value}</span></div>"
+        )
+    klass = f" class='{_esc(value_class)}'" if value_class else ""
+    return f"<div class='k'>{_esc(label)}</div><div{klass}>{value}</div>"
+
+
+def _signature(title: str) -> str:
+    return f"""
+    <section>
+      <h3>{_esc(title)}</h3>
+      <div class="hand"></div>
+      <div class="sig-fields">
+        <span>ลายมือชื่อ</span><span class="line"></span>
+        <span>ชื่อ</span><span class="line"></span>
+        <span>วันที่</span><span class="line"></span>
+      </div>
+    </section>"""
 
 
 def build_sheet(invoice: dict, *, seller_tax_id: str) -> str:
+    return "\n".join(
+        _article(invoice, seller_tax_id=seller_tax_id, copy_label=label)
+        for label in ("ต้นฉบับ", "สำเนา")
+    )
+
+
+def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
     voided = invoice.get("status") == "void"
     lines = invoice.get("lines") or []
     body = []
@@ -84,19 +98,43 @@ def build_sheet(invoice: dict, *, seller_tax_id: str) -> str:
         discount_row = (
             f"<div class='row'><span>ส่วนลด</span><span>{_money(discount)}</span></div>"
         )
-    email = str(invoice.get("email") or "").strip()
+    buyer = [
+        _field("ลูกค้า", f"<span class='name'>{_esc(invoice.get('customer_name'))}</span>"),
+        _field("ที่อยู่", _esc(invoice.get("address")), value_class="pre"),
+        _field("เลขประจำตัวผู้เสียภาษี", _esc(invoice.get("tax_id")), span=True),
+        _field("สาขา", _esc(invoice.get("branch_label"))),
+    ]
     phone = str(invoice.get("phone") or "").strip()
-    extra = ""
+    email = str(invoice.get("email") or "").strip()
     if phone:
-        extra += f"<div><span class='k'>โทร</span> {_esc(phone)}</div>"
+        buyer.append(_field("โทร", _esc(phone)))
     if email:
-        extra += f"<div><span class='k'>อีเมล</span> {_esc(email)}</div>"
+        buyer.append(_field("อีเมล", _esc(email)))
+    document = [
+        _field("เลขที่เอกสาร", f"<span class='no'>{_esc(invoice.get('docno'))}</span>"),
+        _field("วันที่", _esc(_slash_date(invoice.get("bill_date")))),
+    ]
+    order = str(invoice.get("online_po") or "").strip()
+    if order:
+        document.append(_field("เลขคำสั่งซื้อ", _esc(order)))
+    document.append(_field("อ้างอิง", _esc(invoice.get("tad_billno"))))
+    document.append(_field("ออกเอกสาร", _esc(_slash_date(invoice.get("issued_at")))))
     watermark = "<div class='void'>ยกเลิก</div>" if voided else ""
     reason = ""
     if voided and invoice.get("void_reason"):
         reason = f"<p class='reason'>เหตุผลที่ยกเลิก: {_esc(invoice.get('void_reason'))}</p>"
-    order = str(invoice.get("online_po") or "").strip()
-    order_line = f"<div><span class='k'>เลขออเดอร์</span> {_esc(order)}</div>" if order else ""
+    note = (
+        f"<span class='keep'>ออกแทนใบกำกับภาษีอย่างย่อ {_esc(invoice.get('tad_billno'))}</span> "
+        f"<span class='keep'>วันที่ {_esc(_slash_date(invoice.get('bill_date')))} ซึ่งยกเลิกแล้ว</span>"
+    )
+    signs = "".join(
+        _signature(title)
+        for title in (
+            "ผู้ออกเอกสาร (ผู้ขาย)",
+            "ผู้อนุมัติเอกสาร (ผู้ขาย)",
+            "ผู้รับเอกสาร (ลูกค้า)",
+        )
+    )
     return f"""
 <article class="tof">
   {watermark}
@@ -107,29 +145,15 @@ def build_sheet(invoice: dict, *, seller_tax_id: str) -> str:
       <div class="addr">{_esc(COMPANY_ADDRESS)}<br>โทร {_esc(COMPANY_PHONE)} · {_esc(COMPANY_BRANCH)}</div>
       <div class="addr">เลขประจำตัวผู้เสียภาษี {_esc(seller_tax_id)}</div>
     </div>
-    <div class="doc">
-      <h1>ใบกำกับภาษีเต็มรูป</h1>
-      <p class="en">FULL TAX INVOICE</p>
-      <p class="no">{_esc(invoice.get("docno"))}</p>
-    </div>
+  </div>
+  <div class="title-row">
+    <h1>ใบกำกับภาษี/ใบเสร็จรับเงิน</h1>
+    <p class="mark">({_esc(copy_label)})</p>
   </div>
   <div class="rule"></div>
   <div class="boxes">
-    <div class="box">
-      <h2>ผู้ซื้อ</h2>
-      <div class="name">{_esc(invoice.get("customer_name"))}</div>
-      <div>{_esc(invoice.get("address"))}</div>
-      <div><span class="k">เลขประจำตัวผู้เสียภาษี</span> {_esc(invoice.get("tax_id"))}</div>
-      <div><span class="k">สาขา</span> {_esc(invoice.get("branch_label"))}</div>
-      {extra}
-    </div>
-    <div class="box">
-      <h2>เอกสาร</h2>
-      <div><span class="k">วันที่</span> {_esc(_thai_date(invoice.get("bill_date")))}</div>
-      <div><span class="k">อ้างอิง</span> {_esc(invoice.get("tad_billno"))}</div>
-      {order_line}
-      <div><span class="k">ออกเอกสาร</span> {_esc(_thai_date(invoice.get("issued_at")))}</div>
-    </div>
+    <div class="box"><div class="fields">{''.join(buyer)}</div></div>
+    <div class="box"><div class="fields">{''.join(document)}</div></div>
   </div>
   <table>
     <thead>
@@ -142,11 +166,8 @@ def build_sheet(invoice: dict, *, seller_tax_id: str) -> str:
       {''.join(body)}
     </tbody>
   </table>
+  <div class="note">{note}</div>
   <div class="foot">
-    <div class="note">
-      เอกสารนี้เป็นใบกำกับภาษีเต็มรูปของ {_esc(invoice.get("tad_billno"))}
-      รายการและยอดเงินคัดลอกจากบิลนั้น
-    </div>
     <div class="tot">
       {discount_row}
       <div class="row"><span>ก่อนภาษี</span><span>{_money(invoice.get("beforetax"))}</span></div>
@@ -156,9 +177,7 @@ def build_sheet(invoice: dict, *, seller_tax_id: str) -> str:
     </div>
   </div>
   {reason}
-  <div class="sign">
-    <div>ผู้รับสินค้า<div class="line"></div></div>
-    <div>ผู้ขาย<div class="line"></div></div>
+  <div class="sign">{signs}
   </div>
 </article>
 """
