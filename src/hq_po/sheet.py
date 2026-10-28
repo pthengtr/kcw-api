@@ -19,7 +19,7 @@ BKK = ZoneInfo("Asia/Bangkok")
 COMPANY_SHORT = "เกียรติชัยอะไหล่ยนต์ (วังจันทร์)"
 COMPANY_NAME = "บริษัท เกียรติชัยอะไหล่ยนต์ 2007 จำกัด"
 COMPANY_ADDRESS = "305 ม.1 ต.ชุมแสง อ.วังจันทร์ จ.ระยอง 21210"
-COMPANY_PHONE = "038-666078"
+COMPANY_PHONE = "038-666-078, 093-399-6490"
 COMPANY_BRANCH = "สำนักงานใหญ่"
 
 _MONTHS = (
