@@ -129,13 +129,31 @@ def test_sheet_names_the_tad_and_buyer():
         },
         seller_tax_id="0105537000000",
     )
-    assert "ใบกำกับภาษีเต็มรูป" in html
+    assert "ใบกำกับภาษี/ใบเสร็จรับเงิน" in html
+    assert "ใบกำกับภาษีเต็มรูป" not in html
+    assert "FULL TAX INVOICE" not in html
+    assert html.count("(ต้นฉบับ)") == 1
+    assert html.count("(สำเนา)") == 1
+    assert "เลขที่เอกสาร" in html
     assert "TO6910-001" in html
+    assert "27/10/2569" in html
+    assert "ลูกค้า" in html
+    assert "ผู้ซื้อ" not in html
+    assert "ที่อยู่" in html
+    assert "เลขคำสั่งซื้อ" in html
+    assert "เลขออเดอร์" not in html
+    assert "9988" in html
+    assert "ออกแทนใบกำกับภาษีอย่างย่อ TAD6910-014" in html
+    assert "วันที่ 27/10/2569 ซึ่งยกเลิกแล้ว" in html
+    assert html.count("ผู้ออกเอกสาร (ผู้ขาย)") == 2
+    assert html.count("ผู้อนุมัติเอกสาร (ผู้ขาย)") == 2
+    assert html.count("ผู้รับเอกสาร (ลูกค้า)") == 2
+    assert "ลายมือชื่อ" in html
     assert "TAD6910-014" in html
     assert "บริษัท ทดสอบ จำกัด" in html
     assert "1234567890123" in html
     assert "0105537000000" in html
-    assert "ยกเลิก" not in html
+    assert "class='void'" not in html
 
 
 def test_void_sheet_has_watermark():
@@ -156,8 +174,9 @@ def test_void_sheet_has_watermark():
         },
         seller_tax_id="0105537000000",
     )
-    assert "class='void'>ยกเลิก" in html
+    assert html.count("class='void'>ยกเลิก") == 2
     assert "พิมพ์ผิด" in html
+    assert "(ต้นฉบับ)" in html and "(สำเนา)" in html
 
 
 def test_line_command_and_menu():
