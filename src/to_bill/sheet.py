@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from src.hq_po.sheet import COMPANY_ADDRESS, COMPANY_BRANCH, COMPANY_NAME, COMPANY_PHONE
 from src.pay_notes.baht_text import baht_text
+from src.to_bill.buyers import shop_label
 
 _MONTHS = (
     "มกราคม",
@@ -143,6 +144,9 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
     if order:
         document.append(_field("เลขคำสั่งซื้อ", _esc(order)))
     document.append(_field("อ้างอิง", _esc(invoice.get("tad_billno"))))
+    shop = shop_label(invoice.get("acctname_kss"), invoice.get("acctno"))
+    if shop:
+        document.append(_field("ร้านค้า", _esc(shop)))
     document.append(_field("ออกเอกสาร", _esc(_thai_date(invoice.get("issued_at")))))
     watermark = "<div class='void'>ยกเลิก</div>" if voided else ""
     reason = ""
@@ -173,7 +177,6 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
     <div class="doc">
       <h1>ใบกำกับภาษี/ใบเสร็จรับเงิน</h1>
       <p class="mark">({_esc(copy_label)})</p>
-      <p class="no">{_esc(invoice.get("docno"))}</p>
     </div>
   </div>
   <div class="rule"></div>

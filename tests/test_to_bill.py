@@ -1,7 +1,14 @@
 from datetime import date
 from decimal import Decimal
 
-from src.to_bill.buyers import armas_prefill, is_generic_party, parse_buyer, usable_tax_id, validate_buyer
+from src.to_bill.buyers import (
+    armas_prefill,
+    is_generic_party,
+    parse_buyer,
+    shop_label,
+    usable_tax_id,
+    validate_buyer,
+)
 from src.to_bill.kss import LiveBill, LiveLine, like_prefix
 from src.to_bill.net import is_private_lan
 from src.to_bill.numbering import buddhist_yymm, format_docno, month_bounds
@@ -22,6 +29,19 @@ def test_buddhist_month_and_bounds():
     start, end = month_bounds("6910")
     assert start.isoformat().startswith("2026-10-01")
     assert end.isoformat().startswith("2026-11-01")
+
+
+def test_shop_label_names_the_marketplace_channel():
+    assert shop_label("คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)", "7LAZ1") == (
+        "LAZADA | KC INDUSTRY (7LAZ1)"
+    )
+    assert shop_label("คุณลูกค้าทั่วไป LAZADA ( PNT TRACTOR)", "7LPNT") == (
+        "LAZADA | PNT TRACTOR (7LPNT)"
+    )
+    assert shop_label("คุณลูกค้าทั่วไป TIKTOK (ICE TIKTOK SHOP)", "7ICE") == (
+        "TIKTOK | ICE TIKTOK SHOP (7ICE)"
+    )
+    assert shop_label("หจก. สมชายอะไหล่", "C001") == ""
 
 
 def test_generic_party_and_tax_id():
@@ -125,6 +145,8 @@ def test_sheet_names_the_tad_and_buyer():
             "aftertax": 107,
             "discount": 0,
             "online_po": "9988",
+            "acctno": "7LAZ1",
+            "acctname_kss": "คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
             "lines": [{"bcode": "12053560", "detail": "แหวน", "qty": 1, "ui": "หน่วย", "price": 107, "amount": 107}],
         },
         seller_tax_id="0105537000000",
@@ -135,7 +157,9 @@ def test_sheet_names_the_tad_and_buyer():
     assert html.count("(ต้นฉบับ)") == 1
     assert html.count("(สำเนา)") == 1
     assert "เลขที่เอกสาร" in html
-    assert "TO6910-001" in html
+    assert html.count("TO6910-001") == 2
+    assert "ร้านค้า" in html
+    assert "LAZADA | KC INDUSTRY (7LAZ1)" in html
     assert "27 ตุลาคม 2569" in html
     assert "27/10/2569" in html
     assert "ลูกค้า" in html

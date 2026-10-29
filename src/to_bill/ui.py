@@ -171,6 +171,7 @@ function renderHits(rows) {
       <div class="meta">${esc(hit.bill_date || "")} · ${money(hit.aftertax)} บาท
         ${hit.online_po ? " · ออเดอร์ " + esc(hit.online_po) : ""}</div>
       <div class="meta">ชื่อใน KSS ${esc(hit.acctname || "—")}</div>
+      ${hit.shop_label ? `<div class="meta">ร้านค้า ${esc(hit.shop_label)}</div>` : ""}
       <div class="actions"><button type="button" data-open="${esc(hit.billno)}" ${hit.canceled && !hit.open ? "disabled" : ""}>${hit.open ? "เปิด" : "สร้างใบเต็ม"}</button></div>
     </article>
   `).join("");
@@ -213,6 +214,7 @@ function renderEditor(inv) {
         ${inv.kss_changed ? "<p class='banner'>ยอดใน KSS เปลี่ยนจากฉบับร่าง กดดึงจาก KSS อีกครั้งก่อนออกเอกสาร</p>" : ""}
         <p class="meta">ชื่อใน KSS ${esc(inv.acctname_kss || "—")}
           ${inv.online_po ? " · ออเดอร์ " + esc(inv.online_po) : ""}</p>
+        ${inv.shop_label ? `<p class="meta">ร้านค้า ${esc(inv.shop_label)}</p>` : ""}
         <table class="lines">
           <thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">จำนวนเงิน</th></tr></thead>
           <tbody>
