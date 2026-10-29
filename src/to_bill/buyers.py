@@ -24,6 +24,26 @@ def is_generic_party(name: str | None) -> bool:
     return any(token in folded for token in _GENERIC)
 
 
+_SHOP = re.compile(r"^(\S+)\s*\((.+)\)\s*$")
+_PLATFORMS = {"lazada": "LAZADA", "shopee": "SHOPEE", "tiktok": "TIKTOK"}
+
+
+def shop_label(acctname: str | None, acctno: str | None) -> str:
+    """Marketplace channel on the full invoice, e.g. LAZADA | KC INDUSTRY (7LAZ1)."""
+    raw = re.sub(r"\s+", " ", (acctname or "").strip())
+    raw = re.sub(r"^คุณลูกค้าทั่วไป\s+", "", raw, flags=re.IGNORECASE)
+    match = _SHOP.fullmatch(raw)
+    if not match:
+        return ""
+    platform = _PLATFORMS.get(match.group(1).lower())
+    shop = re.sub(r"\s+", " ", match.group(2)).strip()
+    if not platform or not shop:
+        return ""
+    code = (acctno or "").strip()
+    body = f"{platform} | {shop}"
+    return f"{body} ({code})" if code else body
+
+
 def usable_tax_id(raw: str | None) -> str:
     digits = re.sub(r"\D", "", raw or "")
     if len(digits) != 13:

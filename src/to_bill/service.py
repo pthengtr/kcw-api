@@ -7,6 +7,7 @@ from src.to_bill.buyers import (
     armas_prefill,
     is_generic_party,
     parse_buyer,
+    shop_label,
     usable_tax_id,
     validate_buyer,
 )
@@ -62,6 +63,7 @@ def _decorate(row: dict, live: LiveBill | None) -> dict:
 
     out = dict(row)
     out["generic_name"] = is_generic_party(str(row.get("acctname_kss") or ""))
+    out["shop_label"] = shop_label(row.get("acctname_kss"), row.get("acctno"))
     out["seller_ready"] = _seller_ready()
     status = row.get("status")
     if status == "draft":
@@ -100,6 +102,7 @@ def search(q: str) -> dict:
                 "bill_date": hit.bill_date.isoformat() if hit.bill_date else None,
                 "acctname": hit.acctname,
                 "generic_name": is_generic_party(hit.acctname),
+                "shop_label": shop_label(hit.acctname, hit.acctno),
                 "online_po": hit.online_po,
                 "aftertax": float(hit.aftertax),
                 "canceled": hit.canceled,
