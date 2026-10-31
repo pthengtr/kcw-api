@@ -192,7 +192,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   .tabs{max-width:420px}
   main{padding-left:20px;padding-right:20px}
   .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .bar,#vendorSort,#doneMode,#holdQ{grid-column:1 / -1}
+  .bar,#vendorSort,#doneMode,#doneSort,#holdQ{grid-column:1 / -1}
   .order-filters{grid-template-columns:1fr 1fr}
   .line{padding:12px 14px}
 }
@@ -235,6 +235,10 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
       <div class="toggle" id="doneMode">
         <button type="button" id="doneBill" class="on">ตามบิล</button>
         <button type="button" id="doneProduct">ตามสินค้า</button>
+      </div>
+      <div class="toggle" id="doneSort">
+        <button type="button" id="sortOld">เก่าสุดก่อน</button>
+        <button type="button" id="sortNew" class="on">ใหม่สุดก่อน</button>
       </div>
       <div class="order-filters" id="billFilters">
         <input id="orderVendor" type="search" placeholder="กรองเจ้าหนี้" aria-label="กรองเจ้าหนี้" enterkeyhint="search" autocomplete="off"/>
@@ -288,7 +292,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"product", tab:"order", doneMode:"bill", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, orderVendor:"", orderBcode:"", hold:[], holdLoaded:false, holdQ:"", busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
+const state = {items:[], view:"product", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, orderVendor:"", orderBcode:"", hold:[], holdLoaded:false, holdQ:"", busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -1031,6 +1035,40 @@ function orderDateText(iso){
   if(Number.isNaN(d.getTime())) return raw.slice(0, 10);
   return new Intl.DateTimeFormat("en-GB", {timeZone:"Asia/Bangkok", day:"2-digit", month:"2-digit", year:"numeric"}).format(d);
 }
+function bangkokDay(value){
+  const raw = String(value || "").trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const d = new Date(raw);
+  if(Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Bangkok", year:"numeric", month:"2-digit", day:"2-digit"}).format(d);
+}
+function todayBangkok(){
+  return new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Bangkok", year:"numeric", month:"2-digit", day:"2-digit"}).format(new Date());
+}
+function ageDays(value){
+  const day = bangkokDay(value);
+  if(!day) return null;
+  const from = Date.parse(day + "T00:00:00Z");
+  const today = Date.parse(todayBangkok() + "T00:00:00Z");
+  if(Number.isNaN(from) || Number.isNaN(today)) return null;
+  return Math.max(0, Math.round((today - from) / 86400000));
+}
+function ageText(days){
+  if(days == null) return "";
+  if(days === 0) return "ค้างวันนี้";
+  return "ค้าง " + days + " วัน";
+}
+function sortByDay(rows, key, newest){
+  return rows.slice().sort((a, b) => {
+    const da = bangkokDay(a[key]);
+    const db = bangkokDay(b[key]);
+    if(!da && !db) return 0;
+    if(!da) return 1;
+    if(!db) return -1;
+    if(da === db) return 0;
+    return newest ? (da < db ? 1 : -1) : (da < db ? -1 : 1);
+  });
+}
 function renderOrders(){
   const host = document.getElementById("orders");
   const all = state.orders || [];
@@ -1038,7 +1076,7 @@ function renderOrders(){
     host.innerHTML = '<div class="empty">ยังไม่มีใบสั่งซื้อ</div>';
     return;
   }
-  const orders = all.filter(orderVisible);
+  const orders = sortByDay(all.filter(orderVisible), "ordered_at", state.orderSort !== "old");
   if(!orders.length){
     host.innerHTML = '<div class="empty">ไม่พบใบสั่งซื้อตามตัวกรอง</div>';
     return;
@@ -1142,6 +1180,7 @@ function setDoneMode(mode){
   document.getElementById("doneProduct").classList.toggle("on", product);
   document.getElementById("billFilters").hidden = product;
   document.getElementById("holdQ").hidden = !product;
+  syncDoneSort();
   document.getElementById("orders").hidden = product;
   document.getElementById("holdList").hidden = !product;
   if(product){
@@ -1166,6 +1205,20 @@ document.getElementById("tabOrder").onclick = () => setTab("order");
 document.getElementById("tabDone").onclick = () => setTab("done");
 document.getElementById("doneBill").onclick = () => setDoneMode("bill");
 document.getElementById("doneProduct").onclick = () => setDoneMode("product");
+function syncDoneSort(){
+  const newest = (state.doneMode === "product" ? state.holdSort : state.orderSort) !== "old";
+  document.getElementById("sortOld").classList.toggle("on", !newest);
+  document.getElementById("sortNew").classList.toggle("on", newest);
+}
+function setDoneSort(dir){
+  if(state.doneMode === "product") state.holdSort = dir;
+  else state.orderSort = dir;
+  syncDoneSort();
+  if(state.doneMode === "product") renderHold();
+  else if(state.ordersLoaded) renderOrders();
+}
+document.getElementById("sortOld").onclick = () => setDoneSort("old");
+document.getElementById("sortNew").onclick = () => setDoneSort("new");
 function holdMatch(row){
   const q = state.holdQ.trim().toLowerCase();
   if(!q) return true;
@@ -1174,6 +1227,7 @@ function holdMatch(row){
 function holdLineHtml(row){
   const id = row.iclow_id;
   const when = [row.docdate, row.docno].filter(Boolean).join(" · ");
+  const age = ageText(ageDays(row.docdate));
   const actions = STAMP ? `<div class="line-actions"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${tradeButton(row.bcode)}</div>` : tradeButton(row.bcode);
   return `<div class="line plain">
     <div class="line-main">
@@ -1181,7 +1235,7 @@ function holdLineHtml(row){
       <div>
         <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
         <div class="meta">${esc(row.vendor_name ? row.vendor_name + " · " + row.vendor : (row.vendor || "ไม่ระบุเจ้าหนี้"))}</div>
-        ${when ? `<div class="meta">${esc(when)}</div>` : ""}
+        ${when || age ? `<div class="meta">${esc(when)}${when && age ? " · " : ""}${age ? `<span class="badge wait">${esc(age)}</span>` : ""}</div>` : ""}
         ${actions}
       </div>
     </div>
@@ -1190,7 +1244,7 @@ function holdLineHtml(row){
 }
 function renderHold(){
   const host = document.getElementById("holdList");
-  const rows = (state.hold || []).filter(holdMatch);
+  const rows = sortByDay((state.hold || []).filter(holdMatch), "docdate", state.holdSort !== "old");
   if(!state.holdLoaded){
     host.innerHTML = spinner("กำลังโหลดสินค้าที่สั่งแล้ว…");
     return;
