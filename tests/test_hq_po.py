@@ -906,7 +906,7 @@ def test_cancel_line_returns_the_row_to_iclow(monkeypatch):
     service.cancel_order_line("o1", "l1")
     assert reverted[0][1] == "HP6910-AAAA"
     assert reverted[0][0][0]["iclow_id"] == 9
-    assert marked == [("o1", "l1", "vendor_unavailable")]
+    assert marked == [("o1", "l1", "line_canceled")]
 
     monkeypatch.setattr(
         service,
@@ -921,3 +921,257 @@ def test_cancel_line_returns_the_row_to_iclow(monkeypatch):
         assert exc.code == "already_received"
     else:
         raise AssertionError("expected already_received")
+
+
+class _DismissResult:
+    def __init__(self, row=None, rowcount=1):
+        self.rowcount = rowcount
+        self._row = row
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self._row
+
+
+class _DismissConn:
+    def __init__(self, row, *, icmas_count=1, iclow_count=1):
+        self.row = row
+        self.icmas_count = icmas_count
+        self.iclow_count = iclow_count
+        self.sql: list[tuple[str, dict | None]] = []
+
+    def execute(self, statement, params=None):
+        query = str(statement)
+        self.sql.append((query, params))
+        if "SELECT" in query:
+            return _DismissResult(self.row)
+        if "ICMAS" in query:
+            return _DismissResult(rowcount=self.icmas_count)
+        return _DismissResult(rowcount=self.iclow_count)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _DismissEngine:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def begin(self):
+        return self.conn
+
+
+def test_dismiss_waiting_sets_low_stock_and_cancels_open_iclow(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _DismissConn(
+        {"ID": 7, "BCODE": "A1", "ORDERED": "N", "RECEIVED": "N", "CANCELED": "N"},
+        iclow_count=2,
+    )
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    result = stamp.dismiss_waiting(7)
+    assert result == {"iclow_id": 7, "bcode": "A1", "qtymin": -1, "iclow_canceled": 2}
+    updates = [query for query, _params in conn.sql if "UPDATE" in query]
+    assert any("QTYMIN = -1" in query and "ICMAS" in query for query in updates)
+    assert any("CANCELED = 'Y'" in query and "ICLOW" in query for query in updates)
+    assert all(params["bcode"] == "A1" for query, params in conn.sql if "UPDATE" in query)
+
+
+def test_dismiss_waiting_refuses_a_line_already_ordered(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _DismissConn(
+        {"ID": 7, "BCODE": "A1", "ORDERED": "Y", "RECEIVED": "N", "CANCELED": "N"}
+    )
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    try:
+        stamp.dismiss_waiting(7)
+    except HqPoError as exc:
+        assert exc.code == "already_ordered"
+    else:
+        raise AssertionError("expected already_ordered")
+    assert not any("UPDATE" in query for query, _params in conn.sql)
+
+
+def test_dismiss_waiting_line_requires_the_stamp_flag(monkeypatch):
+    from src.hq_po import service
+
+    class _Settings:
+        stamp_enabled = False
+
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: _Settings())
+    try:
+        service.dismiss_waiting_line(7)
+    except HqPoError as exc:
+        assert exc.code == "stamp_disabled"
+    else:
+        raise AssertionError("expected stamp_disabled")
+
+
+def test_page_confirms_before_removing_a_waiting_line():
+    html = page(user_name="Pannawit", stamp_enabled=True)
+    assert "data-dismiss" in html
+    assert "นำออก" in html
+    assert "ตั้งสต็อกต่ำเป็น -1" in html
+    assert "ไม่ขึ้นในรายการรอสั่งอีก" in html
+    assert "/hq-po/api/waiting/" in html
+    assert 'row.source === "iclow"' in html
+    assert "ต้องเลือกเจ้าหนี้" in html
+    assert "ไม่มีสินค้ากับเจ้าหนี้นี้" in html
+    assert "มีสินค้าแล้ว" in html
+    assert "data-block-ordered" in html
+    assert "/hq-po/api/iclow/" in html
+
+
+def test_resolve_vendor_keeps_the_account_under_a_trail():
+    from src.hq_po.vendor_link import resolve_vendor
+
+    live = {"7MCP", "BK", "7SSY1"}
+    assert resolve_vendor("7MCPหมด", live) == {"status": "trail", "acctno": "7MCP", "raw": "7MCPหมด"}
+    assert resolve_vendor("MCไม่มี", live | {"MC"})["acctno"] == "MC"
+    assert resolve_vendor("BK1", live) == {"status": "trail", "acctno": "BK", "raw": "BK1"}
+    assert resolve_vendor("BK1หมด", live)["acctno"] == "BK"
+    assert resolve_vendor("7SSY1", live)["status"] == "linked"
+    assert resolve_vendor("7SSY1หมด", live)["acctno"] == "7SSY1"
+    assert resolve_vendor("2PARTS", live)["status"] == "unknown"
+    assert resolve_vendor("สั่งเอง", live)["acctno"] == ""
+    assert resolve_vendor("", live)["status"] == "unknown"
+    assert resolve_vendor("7SSY", live)["status"] == "unknown"
+
+
+def test_settle_waiting_vendor_strips_the_trail_and_tags_it(monkeypatch):
+    from src.hq_po import vendor_link
+
+    item = {"iclow_id": 3, "vendor": "BK1", "bcode": "A1", "vendor_name": None, "source": "iclow"}
+    monkeypatch.setattr(
+        "src.hq_po.iclow_read.fetch_live_vendors",
+        lambda _codes: {"BK": "บี.เค."},
+    )
+    monkeypatch.setattr(vendor_link, "_blocked_pairs", lambda _bcodes: {("A1", "BK")})
+    stored: list[tuple[str, str]] = []
+    rewritten: list[tuple[int, str]] = []
+
+    class _Settings:
+        stamp_enabled = True
+
+    monkeypatch.setattr(vendor_link, "get_hq_po_supabase_client", lambda: object(), raising=False)
+    monkeypatch.setattr("src.hq_po.config.get_hq_po_settings", lambda: _Settings())
+    monkeypatch.setattr(
+        "src.hq_po.db.block_product_vendor",
+        lambda _client, **kwargs: stored.append((kwargs["bcode"], kwargs["acctno"])),
+    )
+    monkeypatch.setattr(
+        "src.hq_po.stamp.rewrite_waiting_vendor",
+        lambda iclow_id, vendor: rewritten.append((iclow_id, vendor)),
+    )
+    # settle imports the client and settings from their modules inside the function.
+    monkeypatch.setattr("src.hq_po.db.get_hq_po_supabase_client", lambda: object())
+    vendor_link.settle_waiting_vendors([item])
+    assert item["vendor"] == "BK"
+    assert item["vendor_name"] == "บี.เค."
+    assert item["vendor_raw"] == "BK1"
+    assert item["vendor_blocked"] is True
+    assert stored == [("A1", "BK")]
+    assert rewritten == [(3, "BK")]
+
+
+def test_settle_unknown_vendor_asks_for_a_pick(monkeypatch):
+    from src.hq_po import vendor_link
+
+    item = {"iclow_id": 4, "vendor": "สั่งเอง", "bcode": "B2", "vendor_name": None}
+    monkeypatch.setattr("src.hq_po.iclow_read.fetch_live_vendors", lambda _codes: {})
+    monkeypatch.setattr(vendor_link, "_blocked_pairs", lambda _bcodes: set())
+    vendor_link.settle_waiting_vendors([item])
+    assert item["vendor"] == ""
+    assert item["vendor_raw"] == "สั่งเอง"
+    assert item["vendor_blocked"] is False
+
+
+def test_orderable_vendor_must_be_live_and_not_blocked(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda codes: {"BK": "บี.เค."} if "BK" in codes else {})
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+    monkeypatch.setattr(service, "active_blocks_for_bcodes", lambda _client, _codes: {("A1", "BK")})
+    try:
+        service._assert_orderable_vendors([{"bcode": "A1", "vendor": "BK"}])
+    except HqPoError as exc:
+        assert exc.code == "vendor_unavailable"
+    else:
+        raise AssertionError("expected vendor_unavailable")
+    monkeypatch.setattr(service, "active_blocks_for_bcodes", lambda _client, _codes: set())
+    try:
+        service._assert_orderable_vendors([{"bcode": "A1", "vendor": "2PARTS"}])
+    except HqPoError as exc:
+        assert exc.code == "vendor_mismatch"
+        assert "APMAS" in str(exc)
+    else:
+        raise AssertionError("expected vendor_mismatch")
+    service._assert_orderable_vendors([{"bcode": "A1", "vendor": "BK"}])
+
+
+def test_mark_unavailable_sends_an_ordered_line_back_with_the_original_vendor(monkeypatch):
+    from src.hq_po import service
+
+    class _Settings:
+        stamp_enabled = True
+
+    row = {
+        "iclow_id": 9,
+        "bcode": "A1",
+        "vendor": "BK1",
+        "ordered": "Y",
+        "received": "N",
+        "canceled": "N",
+        "docno": "PO6908-1",
+    }
+    released: list[int] = []
+    rewritten: list[tuple[int, str]] = []
+    blocked: list[tuple[str, str]] = []
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: _Settings())
+    monkeypatch.setattr(service, "fetch_iclow_by_ids", lambda _ids: {9: row})
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda _codes: {"BK": "บี.เค."})
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+    monkeypatch.setattr(service, "open_lines_for_iclow", lambda _client, _ids: {})
+    monkeypatch.setattr(service, "fetch_vendor_names", lambda _codes: {"BK": "บี.เค."})
+    monkeypatch.setattr(
+        service,
+        "block_product_vendor",
+        lambda _client, **kwargs: blocked.append((kwargs["bcode"], kwargs["acctno"])),
+    )
+    monkeypatch.setattr(
+        "src.hq_po.stamp.release_to_waiting",
+        lambda iclow_id: released.append(iclow_id),
+    )
+    monkeypatch.setattr(
+        "src.hq_po.stamp.rewrite_waiting_vendor",
+        lambda iclow_id, vendor: rewritten.append((iclow_id, vendor)),
+    )
+    result = service.mark_product_unavailable(9, marked_by="Pannawit")
+    assert result["vendor"] == "BK"
+    assert result["vendor_blocked"] is True
+    assert blocked == [("A1", "BK")]
+    assert released == [9]
+    assert rewritten == [(9, "BK")]
+
+
+def test_rewrite_waiting_vendor_refuses_an_ordered_row(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _DismissConn({"ID": 7}, iclow_count=0)
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    try:
+        stamp.rewrite_waiting_vendor(7, "BK")
+    except HqPoError as exc:
+        assert exc.code == "stamp_conflict"
+    else:
+        raise AssertionError("expected stamp_conflict")
+    updates = [query for query, _params in conn.sql if "UPDATE" in query]
+    assert updates
+    assert "VENDOR" in updates[0]
+    assert "ORDERED" in updates[0]

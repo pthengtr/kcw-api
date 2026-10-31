@@ -73,6 +73,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .flag{display:inline-block;margin-top:6px;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;line-height:1.35}
 .flag.switch{background:#ffedd5;color:#9a3412}
 .flag.reorder{background:#dbeafe;color:#1e3a8a}
+.flag.unavailable{background:#fee2e2;color:#991b1b}
 #hist{position:fixed;inset:0;z-index:40;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center}
 #hist[hidden]{display:none}
 .hist-card{background:#fff;width:min(720px,100%);max-height:86vh;overflow:auto;border-radius:16px 16px 0 0;padding:14px 14px calc(16px + env(safe-area-inset-bottom))}
@@ -335,11 +336,14 @@ function qtyText(n){
 function vendorTitle(row){
   const name = row.vendor_name || "";
   const code = row.vendor || "";
-  if(!code) return "ไม่ระบุเจ้าหนี้";
+  if(!code){
+    const raw = String(row.vendor_raw || "").trim();
+    return raw ? `ต้องเลือกเจ้าหนี้ · เดิม ${raw}` : "ต้องเลือกเจ้าหนี้";
+  }
   return name ? `${name} · ${code}` : code;
 }
 function haystack(row){
-  row._hay = [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name].join(" ").toLowerCase();
+  row._hay = [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name, row.vendor_raw].join(" ").toLowerCase();
   return row._hay;
 }
 function validBcode(row){
@@ -397,11 +401,15 @@ function thumbHtml(row){
   return `<img class="thumb" alt="" loading="lazy" src="${esc(row.photo)}" onerror="this.remove()"/>`;
 }
 function flagHtml(row){
+  const parts = [];
+  if(row && row.vendor_blocked) parts.push(`<div class="flag unavailable">ไม่มีสินค้ากับเจ้าหนี้นี้</div>`);
   const mark = row && row.release;
-  if(!mark || !mark.label) return "";
-  const kind = mark.kind === "reorder" ? "reorder" : "switch";
-  const dot = kind === "reorder" ? "🔵" : "🟠";
-  return `<div class="flag ${kind}">${dot} ${esc(mark.label)}</div>`;
+  if(mark && mark.label){
+    const kind = mark.kind === "reorder" ? "reorder" : "switch";
+    const dot = kind === "reorder" ? "🔵" : "🟠";
+    parts.push(`<div class="flag ${kind}">${dot} ${esc(mark.label)}</div>`);
+  }
+  return parts.join("");
 }
 function tradeButton(bcode){
   const code = String(bcode || "").trim();
@@ -433,6 +441,7 @@ function supplierLabel(s){
   if(name) bits.push(name);
   if(acct && acct !== name) bits.push(acct);
   if(!bits.length) bits.push(acct || "—");
+  if(s.unavailable) bits.push("ไม่มีสินค้า");
   if(s.fresh) bits.push("เจ้าหนี้ใหม่");
   else if(Number(s.bills) > 0) bits.push(String(s.bills) + " บิล");
   if(!s.fresh && s.last_date) bits.push(String(s.last_date));
@@ -460,11 +469,12 @@ function unitHtml(row){
 function supplierSelect(row){
   const key = esc(rowKey(row));
   const options = row.suppliers || [];
+  const blocked = !!row.vendor_blocked;
   const opts = options.map(s => {
-    const selected = String(row.vendor || "") === String(s.acctno || "") ? " selected" : "";
+    const selected = !blocked && !s.unavailable && String(row.vendor || "") === String(s.acctno || "") ? " selected" : "";
     return `<option value="${esc(s.acctno || "")}"${selected}>${esc(supplierLabel(s))}</option>`;
   }).join("");
-  const empty = options.length ? "" : `<option value="">เลือกเจ้าหนี้</option>`;
+  const empty = options.length && !blocked ? "" : `<option value="">เลือกเจ้าหนี้</option>`;
   const ap = row.apOpen
     ? apEditorHtml(rowKey(row), row)
     : `<button type="button" class="peer-btn" data-new-ap="${key}">เลือกเจ้าหนี้ใหม่</button>`;
@@ -484,16 +494,27 @@ function apRowFromKey(key){
   if(key === "catalog") return state.catalogPick;
   return findRow(key);
 }
+function orderableVendor(row){
+  return !!(row && row.confirmable && STAMP && row.vendor && !row.vendor_blocked);
+}
 function productTools(row){
   const key = esc(rowKey(row));
   const order = (row.confirmable && STAMP)
-    ? (row.vendor
+    ? (orderableVendor(row)
         ? `<button type="button" class="order-btn" data-order="${key}">สั่งกับเจ้าหนี้นี้</button>`
         : `<button type="button" class="order-btn" data-vendors="${key}">เลือกเจ้าหนี้ก่อนสั่ง</button>`)
     : "";
   const trade = tradeButton(row.bcode);
+  const stock = (STAMP && row.source === "iclow" && row.iclow_id && row.vendor && !row.vendor_blocked)
+    ? `<button type="button" class="peer-btn" data-block="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">ไม่มีสินค้ากับเจ้าหนี้นี้</button>`
+    : "";
+  const back = (STAMP && row.vendor_blocked && row.vendor)
+    ? (row.iclow_id && row.source === "iclow"
+        ? `<button type="button" class="peer-btn" data-unblock="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">มีสินค้าแล้ว</button>`
+        : `<button type="button" class="peer-btn" data-clear-block="${esc(row.bcode||"")}" data-acct="${esc(row.vendor||"")}">มีสินค้าแล้ว</button>`)
+    : "";
   if(!row.bcode) return order;
-  return `${order}<div class="line-actions"><button type="button" class="peer-btn" data-vendors="${key}">เปลี่ยนเจ้าหนี้</button><button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${trade}</div><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div>`;
+  return `${order}<div class="line-actions"><button type="button" class="peer-btn" data-vendors="${key}">เปลี่ยนเจ้าหนี้</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${trade}</div><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div>`;
 }
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
@@ -503,7 +524,7 @@ function qtyCell(row){
 }
 function lineHtml(row, mode){
   const pick = mode === "pick";
-  const check = !pick ? "" : (row.confirmable && STAMP
+  const check = !pick ? "" : (orderableVendor(row)
     ? `<input type="checkbox" data-key="${esc(rowKey(row))}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"${row.picked ? " checked" : ""}/>`
     : `<input type="checkbox" disabled/>`);
   const incoming = Number(row.incoming_qty);
@@ -515,7 +536,10 @@ function lineHtml(row, mode){
   const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${packText}${incomingText}`;
   const fresh = !pick && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
   const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}${fresh}</div>`;
-  const tools = pick ? "" : productTools(row);
+  const tools = pick && orderableVendor(row) ? "" : productTools(row);
+  const dismiss = (STAMP && row.source === "iclow" && row.iclow_id)
+    ? `<button type="button" class="ghost" data-dismiss="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">นำออก</button>`
+    : "";
   return `<div class="line${pick ? "" : " plain"}${pick && row.picked ? " picked" : ""}" id="line-${esc(rowKey(row))}">
     ${check}
     <div class="line-main">
@@ -530,13 +554,14 @@ function lineHtml(row, mode){
       ${row.last_date ? `<div class="meta">เคยสั่ง ${esc(row.last_date)}${Number(row.bills) > 0 ? " · " + esc(String(row.bills)) + " บิล" : ""}</div>` : ""}
       ${recHtml(row)}
       ${tools}
+      ${dismiss}
       </div>
     </div>
     ${qtyCell(row)}
   </div>`;
 }
 function selectAllHtml(rows){
-  const selectable = (rows || []).filter(row => row.confirmable && STAMP);
+  const selectable = (rows || []).filter(orderableVendor);
   if(!selectable.length) return "";
   const all = selectable.every(row => row.picked);
   return `<label class="select-all"><input type="checkbox" data-select-all aria-label="เลือกทั้งหมด"${all ? " checked" : ""}/>เลือกทั้งหมด</label>`;
@@ -618,6 +643,7 @@ function setVendorSort(sort){
 function sameVendor(row, acct, name){
   const v = String(row.vendor || "").trim();
   const n = String(row.vendor_name || "").trim();
+  if(!acct && !name) return !v;
   if(acct && (v === acct || n === acct)) return true;
   if(name && (v === name || n === name)) return true;
   return false;
@@ -750,7 +776,7 @@ function renderList(){
   const named = state.items.find(row => sameVendor(row, state.vendorKey, state.vendorName));
   const title = state.vendorName
     ? (state.vendorName + (state.vendorKey ? " · " + state.vendorKey : ""))
-    : (named ? vendorTitle(named) : (state.vendorKey || "ไม่ระบุเจ้าหนี้"));
+    : (named ? vendorTitle(named) : (state.vendorKey || "ต้องเลือกเจ้าหนี้"));
   const waiting = lines.filter(row => row.source !== "insight" && row.source !== "history");
   const ai = lines.filter(row => row.source === "insight");
   const past = lines.filter(row => row.source === "history");
@@ -1092,7 +1118,10 @@ function renderOrders(){
       const lineCancel = canReturn
         ? `<button type="button" class="ghost" data-cancel-line="${esc(order.order_id)}" data-line="${esc(line.line_id)}" data-bcode="${esc(line.bcode||"")}">ยกเลิกบรรทัด</button>`
         : "";
-      return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div>${productMeta(line)}<div class="meta">${esc(rec.label||"")}${pi}</div>${lineCancel}</div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
+      const noStock = canReturn && line.can_mark_unavailable && line.iclow_id
+        ? `<button type="button" class="ghost" data-block-ordered="${esc(String(line.iclow_id))}" data-bcode="${esc(line.bcode||"")}">ไม่มีสินค้า</button>`
+        : "";
+      return `<div class="line"><div></div><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div>${productMeta(line)}<div class="meta">${esc(rec.label||"")}${pi}</div>${noStock}${lineCancel}</div><div class="qty">${esc(qtyText(line.qty))}</div></div>`;
     }).join("");
     const anyReceived = (order.lines||[]).some(line => (line.receive||{}).received);
     const cancel = STAMP && !anyReceived && order.receive_label!=="รับแล้ว"
@@ -1123,6 +1152,89 @@ async function loadOrders(){
   } catch (err) {
     host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>';
   }
+}
+async function dismissWaiting(iclowId, bcode){
+  if(state.busy || !iclowId) return;
+  const name = bcode ? ` ${bcode}` : "";
+  if(!confirm(`นำออก${name}?\nจะตั้งสต็อกต่ำเป็น -1 และสินค้านี้จะไม่ขึ้นในรายการรอสั่งอีก`)) return;
+  setBusy(true, "กำลังนำออก…");
+  let failed = null;
+  let gone = bcode;
+  try {
+    const res = await fetch("/hq-po/api/waiting/" + encodeURIComponent(iclowId) + "/dismiss", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "นำออกไม่สำเร็จ");
+    else if(data.bcode) gone = data.bcode;
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "นำออกไม่สำเร็จ"); return; }
+  state.items = state.items.filter(row => !(row.source === "iclow" && row.bcode === gone));
+  renderList();
+}
+async function markUnavailable(iclowId, bcode, ordered){
+  if(state.busy || !iclowId) return;
+  const name = bcode ? ` ${bcode}` : "";
+  const word = ordered
+    ? `ทำเครื่องหมาย${name} ว่าไม่มีสินค้า แล้วส่งกลับหน้ารอสั่ง?`
+    : `ทำเครื่องหมาย${name} ว่าไม่มีสินค้ากับเจ้าหนี้นี้?`;
+  if(!confirm(word)) return;
+  setBusy(true, "กำลังทำเครื่องหมาย…");
+  let failed = null;
+  try {
+    const res = await fetch("/hq-po/api/iclow/" + encodeURIComponent(iclowId) + "/unavailable", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "ทำเครื่องหมายไม่สำเร็จ");
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "ทำเครื่องหมายไม่สำเร็จ"); return; }
+  await loadSuggest();
+  if(ordered){
+    if(state.ordersLoaded) await loadOrders();
+    if(state.holdLoaded) await loadHold();
+    setTab("order");
+  }
+}
+async function clearUnavailable(iclowId, bcode){
+  if(state.busy || !iclowId) return;
+  const name = bcode ? ` ${bcode}` : "";
+  if(!confirm(`เอาเครื่องหมายไม่มีสินค้าออกจาก${name}?`)) return;
+  setBusy(true, "กำลังเอาเครื่องหมายออก…");
+  let failed = null;
+  try {
+    const res = await fetch("/hq-po/api/iclow/" + encodeURIComponent(iclowId) + "/available", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "เอาเครื่องหมายออกไม่สำเร็จ");
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "เอาเครื่องหมายออกไม่สำเร็จ"); return; }
+  await loadSuggest();
+}
+async function clearNamedBlock(bcode, acct){
+  if(state.busy || !bcode || !acct) return;
+  if(!confirm(`เอาเครื่องหมายไม่มีสินค้าออกจาก ${bcode}?`)) return;
+  setBusy(true, "กำลังเอาเครื่องหมายออก…");
+  let failed = null;
+  try {
+    const res = await fetch("/hq-po/api/blocks/clear", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({bcode: bcode, acctno: acct})});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "เอาเครื่องหมายออกไม่สำเร็จ");
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "เอาเครื่องหมายออกไม่สำเร็จ"); return; }
+  state.insightLoaded = false;
+  await loadSuggest();
 }
 async function cancelLine(orderId, lineId, bcode){
   if(state.busy) return;
@@ -1228,7 +1340,10 @@ function holdLineHtml(row){
   const id = row.iclow_id;
   const when = [row.docdate, row.docno].filter(Boolean).join(" · ");
   const age = ageText(ageDays(row.docdate));
-  const actions = STAMP ? `<div class="line-actions"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${tradeButton(row.bcode)}</div>` : tradeButton(row.bcode);
+  const noStock = STAMP && row.can_mark_unavailable
+    ? `<button type="button" class="peer-btn" data-block-ordered="${esc(id)}" data-bcode="${esc(row.bcode||"")}">ไม่มีสินค้า</button>`
+    : "";
+  const actions = STAMP ? `<div class="line-actions"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${noStock}${tradeButton(row.bcode)}</div>` : tradeButton(row.bcode);
   return `<div class="line plain">
     <div class="line-main">
       ${thumbHtml(row)}
@@ -1474,7 +1589,9 @@ document.getElementById("holdList").onclick = (e) => {
   const trade = e.target.closest("[data-trade]");
   if(trade){ openTrade(trade.getAttribute("data-trade") || ""); return; }
   const rel = e.target.closest("[data-release]");
-  if(rel){ releaseHold(rel.getAttribute("data-release") || "", rel.getAttribute("data-kind") || ""); }
+  if(rel){ releaseHold(rel.getAttribute("data-release") || "", rel.getAttribute("data-kind") || ""); return; }
+  const blocked = e.target.closest("[data-block-ordered]");
+  if(blocked) markUnavailable(blocked.getAttribute("data-block-ordered") || "", blocked.getAttribute("data-bcode") || "", true);
 };
 document.getElementById("histHq").onclick = () => { if(histCode) openTrade(histCode, "hq"); };
 document.getElementById("histSyp").onclick = () => { if(histCode) openTrade(histCode, "syp"); };
@@ -1647,6 +1764,7 @@ function applyNewVendor(row, acct, name){
   } else if(name && !hit.name) hit.name = name;
   row.vendor = acct;
   row.vendor_name = hit.name || name || "";
+  row.vendor_blocked = !!(hit && hit.unavailable);
   row.apOpen = false;
   row._hay = "";
   haystack(row);
@@ -1661,14 +1779,28 @@ function applyNewVendor(row, acct, name){
     box.dataset.open = "1";
     box.innerHTML = supplierSelect(row);
   }
+  syncOrderButton(row);
+}
+function syncOrderButton(row){
+  if(!row) return;
+  const key = rowKey(row);
   const line = document.getElementById("line-" + key);
-  const shown = line && line.querySelector("[data-vendor-label]");
-  if(shown) shown.textContent = vendorTitle(row) + (vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "");
-  const orderBtn = line && line.querySelector(".order-btn");
-  if(orderBtn && row.vendor){
+  if(!line) return;
+  const shown = line.querySelector("[data-vendor-label]");
+  if(shown){
+    const extra = row.vendor_blocked ? " · ไม่มีสินค้า" : (vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "");
+    shown.textContent = vendorTitle(row) + extra;
+  }
+  const orderBtn = line.querySelector(".order-btn");
+  if(!orderBtn) return;
+  if(row.vendor && !row.vendor_blocked){
     orderBtn.textContent = "สั่งกับเจ้าหนี้นี้";
     orderBtn.removeAttribute("data-vendors");
     orderBtn.setAttribute("data-order", key);
+  } else {
+    orderBtn.textContent = "เลือกเจ้าหนี้ก่อนสั่ง";
+    orderBtn.removeAttribute("data-order");
+    orderBtn.setAttribute("data-vendors", key);
   }
 }
 function toggleNewAp(key){
@@ -1983,6 +2115,26 @@ document.getElementById("catalog").onchange = (e) => {
   state.catalogPick.vendor_name = hit.name || "";
 };
 document.getElementById("list").onclick = (e) => {
+  const dismiss = e.target.closest("[data-dismiss]");
+  if(dismiss){
+    dismissWaiting(dismiss.getAttribute("data-dismiss") || "", dismiss.getAttribute("data-bcode") || "");
+    return;
+  }
+  const block = e.target.closest("[data-block]");
+  if(block){
+    markUnavailable(block.getAttribute("data-block") || "", block.getAttribute("data-bcode") || "", false);
+    return;
+  }
+  const unblock = e.target.closest("[data-unblock]");
+  if(unblock){
+    clearUnavailable(unblock.getAttribute("data-unblock") || "", unblock.getAttribute("data-bcode") || "");
+    return;
+  }
+  const named = e.target.closest("[data-clear-block]");
+  if(named){
+    clearNamedBlock(named.getAttribute("data-clear-block") || "", named.getAttribute("data-acct") || "");
+    return;
+  }
   const trade = e.target.closest("[data-trade]");
   if(trade){ openTrade(trade.getAttribute("data-trade") || ""); return; }
   const unit = e.target.closest("[data-unit]");
@@ -2088,17 +2240,10 @@ document.getElementById("list").onchange = (e) => {
   if(hit && row){
     row.vendor = hit.acctno;
     row.vendor_name = hit.name || "";
+    row.vendor_blocked = !!hit.unavailable;
     row._hay = "";
     haystack(row);
-    const line = document.getElementById("line-" + rowKey(row));
-    const shown = line && line.querySelector("[data-vendor-label]");
-    if(shown) shown.textContent = vendorTitle(row) + (vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "");
-    const orderBtn = line && line.querySelector(".order-btn");
-    if(orderBtn && row.vendor){
-      orderBtn.textContent = "สั่งกับเจ้าหนี้นี้";
-      orderBtn.removeAttribute("data-vendors");
-      orderBtn.setAttribute("data-order", rowKey(row));
-    }
+    syncOrderButton(row);
   }
 };
 document.getElementById("dockConfirm").onclick = () => openSheet(checkedRows());
@@ -2147,6 +2292,11 @@ document.getElementById("orders").onclick = (e) => {
   const lineBtn = e.target.closest("[data-cancel-line]");
   if(lineBtn){
     cancelLine(lineBtn.getAttribute("data-cancel-line"), lineBtn.getAttribute("data-line"), lineBtn.getAttribute("data-bcode") || "");
+    return;
+  }
+  const noStock = e.target.closest("[data-block-ordered]");
+  if(noStock){
+    markUnavailable(noStock.getAttribute("data-block-ordered") || "", noStock.getAttribute("data-bcode") || "", true);
     return;
   }
   const btn = e.target.closest("[data-cancel]");

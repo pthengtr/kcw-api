@@ -265,3 +265,76 @@ def release_marks_for(client: Client, iclow_ids: list[int]) -> dict[int, dict[st
 
 def upsert_release_mark(client: Client, row: dict[str, Any]) -> None:
     _table(client, "release_marks").upsert(row, on_conflict="iclow_id").execute()
+
+
+def active_blocks_for_bcodes(client: Client, bcodes: list[str]) -> set[tuple[str, str]]:
+    """Active (bcode, acctno) pairs. A cleared tag is not a block."""
+    codes: list[str] = []
+    seen: set[str] = set()
+    for raw in bcodes:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    found: set[tuple[str, str]] = set()
+    for start in range(0, len(codes), 80):
+        chunk = codes[start : start + 80]
+        rows = _rows(
+            _table(client, "product_vendor_blocks")
+            .select("bcode,acctno")
+            .in_("bcode", chunk)
+            .is_("cleared_at", "null")
+            .execute()
+        )
+        for row in rows:
+            bcode = str(row.get("bcode") or "").strip()
+            acct = str(row.get("acctno") or "").strip()
+            if bcode and acct:
+                found.add((bcode, acct))
+    return found
+
+
+def block_product_vendor(
+    client: Client,
+    *,
+    bcode: str,
+    acctno: str,
+    reason: str,
+    marked_by: str | None,
+) -> None:
+    """Remember that this product is not available from this account. Idempotent."""
+    product = str(bcode or "").strip()
+    acct = str(acctno or "").strip()
+    if not product or not acct:
+        raise HqPoError("missing", "ไม่มีสินค้าหรือเจ้าหนี้ให้ทำเครื่องหมาย")
+    existing = _rows(
+        _table(client, "product_vendor_blocks")
+        .select("block_id")
+        .eq("bcode", product)
+        .eq("acctno", acct)
+        .is_("cleared_at", "null")
+        .limit(1)
+        .execute()
+    )
+    if existing:
+        return
+    _table(client, "product_vendor_blocks").insert(
+        {
+            "bcode": product,
+            "acctno": acct,
+            "reason": (reason or "")[:80],
+            "marked_by": (marked_by or "")[:120] or None,
+        }
+    ).execute()
+
+
+def clear_product_vendor_block(client: Client, *, bcode: str, acctno: str) -> None:
+    """The vendor has the product again. The old row stays, with cleared_at set."""
+    product = str(bcode or "").strip()
+    acct = str(acctno or "").strip()
+    if not product or not acct:
+        raise HqPoError("missing", "ไม่มีสินค้าหรือเจ้าหนี้ให้เอาเครื่องหมายออก")
+    now = datetime.now(timezone.utc).isoformat()
+    _table(client, "product_vendor_blocks").update({"cleared_at": now}).eq("bcode", product).eq(
+        "acctno", acct
+    ).is_("cleared_at", "null").execute()

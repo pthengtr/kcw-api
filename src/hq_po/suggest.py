@@ -404,6 +404,9 @@ def build_suggest() -> dict[str, Any]:
     attach_catalog(items, products)
     _attach_photos(items)
     _attach_release_marks(items)
+    from src.hq_po.vendor_link import settle_waiting_vendors
+
+    settle_waiting_vendors(items)
     return {
         "items": sort_products(items),
         "stock_ok": stock_ok,
@@ -427,4 +430,7 @@ def build_insight_only() -> dict[str, Any]:
     _attach_parts9(lines)
     attach_catalog(lines)
     _attach_photos(lines)
+    from src.hq_po.vendor_link import apply_vendor_blocks
+
+    apply_vendor_blocks(lines)
     return {"items": lines}

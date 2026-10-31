@@ -7,6 +7,9 @@ from typing import Any
 
 from src.hq_po.config import get_hq_po_settings
 from src.hq_po.db import (
+    active_blocks_for_bcodes,
+    block_product_vendor,
+    clear_product_vendor_block,
     get_hq_po_supabase_client,
     get_order,
     insert_order,
@@ -54,6 +57,7 @@ from src.hq_po.insight import (
 )
 from src.hq_po.stamp import (
     cancel_created,
+    dismiss_waiting as dismiss_waiting_iclow,
     insert_ordered_lines,
     release_to_waiting,
     revert_ordered,
@@ -99,7 +103,11 @@ def incoming_payload() -> dict[str, Any]:
         names = fetch_vendor_names([row.get("vendor") or "" for row in rows])
     except Exception:
         names = {}
-    return {"items": [_incoming_item(row, names) for row in rows]}
+    items = [_incoming_item(row, names) for row in rows]
+    from src.hq_po.vendor_link import annotate_markable
+
+    annotate_markable(items, vendor_of=lambda row: row.get("vendor"))
+    return {"items": items}
 
 
 def product_insight_payload(bcode: str, site: str = "hq") -> dict[str, Any]:
@@ -174,6 +182,17 @@ def release_incoming(iclow_id: int, kind: str) -> dict[str, Any]:
     )
     shown = release_badge(badge["kind"], vendor) or badge
     return {"iclow_id": iclow_n, "bcode": live.get("bcode") or "", "release": shown}
+
+
+def dismiss_waiting_line(iclow_id: int) -> dict[str, Any]:
+    """Set low stock to -1 and drop the product's open รอสั่ง ICLOW rows."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่นำออกจากรอสั่ง",
+        )
+    return dismiss_waiting_iclow(iclow_id)
 
 
 def vendor_search_payload(query: str) -> dict[str, Any]:
@@ -436,6 +455,14 @@ def suppliers_payload(bcode: str, *, current: str = "", current_name: str = "") 
         rows = suppliers_for_bcode(code, current=current, current_name=current_name)
     except Exception as exc:
         raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ทางเลือกไม่ได้") from exc
+    blocked: set[str] = set()
+    try:
+        pairs = active_blocks_for_bcodes(get_hq_po_supabase_client(), [code])
+        blocked = {acct for product, acct in pairs if product == code}
+    except Exception:
+        blocked = set()
+    for row in rows:
+        row["unavailable"] = str(row.get("acctno") or "").strip() in blocked
     return {"suppliers": rows}
 
 
@@ -644,6 +671,25 @@ def _assert_supplier_choices(
             raise HqPoError("vendor_mismatch", f"{bcode} ไม่เคยรับจาก {asked}")
 
 
+def _assert_orderable_vendors(lines: list[dict[str, Any]]) -> None:
+    """Every ordered line uses a live APMAS account that still supplies the product."""
+    if not lines:
+        return
+    live = _live_accounts([str(line.get("vendor") or "") for line in lines])
+    bcodes = [str(line.get("bcode") or "").strip() for line in lines]
+    try:
+        blocked = active_blocks_for_bcodes(get_hq_po_supabase_client(), bcodes)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "ตรวจเจ้าหนี้ที่ไม่มีสินค้าไม่ได้") from exc
+    for line in lines:
+        vendor = str(line.get("vendor") or "").strip()
+        bcode = str(line.get("bcode") or "").strip() or "รายการ"
+        if not vendor or vendor not in live:
+            raise HqPoError("vendor_mismatch", f"{bcode} ต้องเลือกเจ้าหนี้จาก APMAS")
+        if (bcode, vendor) in blocked:
+            raise HqPoError("vendor_unavailable", f"{bcode} ไม่มีสินค้ากับ {vendor}")
+
+
 def _resolve_peer(lines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """A replacement code ordered as its own line. It does not need an AI policy."""
     codes = []
@@ -758,6 +804,7 @@ def confirm_order(
                 "มีรายการที่อยู่ในใบสั่งซื้อแล้ว: " + ", ".join(row["message"] for row in skipped),
             )
         raise HqPoError("empty", "ยังไม่ได้เลือกรายการ")
+    _assert_orderable_vendors(planned)
     to_stamp = [line for line in planned if not _created_flag(line)]
     to_insert = [line for line in planned if _created_flag(line)]
     if to_insert:
@@ -865,6 +912,17 @@ def _attach_receive(orders: list[dict[str, Any]]) -> list[dict[str, Any]]:
             order["receive_label"] = "ค้างรับ"
     lines = [line for order in orders for line in (order.get("lines") or [])]
     attach_catalog(lines)
+    from src.hq_po.vendor_link import annotate_markable
+
+    def _line_vendor(line: dict[str, Any]) -> str:
+        try:
+            iclow_id = int(line.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            iclow_id = 0
+        row = live.get(iclow_id) or {}
+        return str(row.get("vendor") or "")
+
+    annotate_markable(lines, vendor_of=_line_vendor)
     return orders
 
 
@@ -912,7 +970,7 @@ def cancel_order(order_id: str, *, reason: str | None = None) -> dict[str, Any]:
 
 
 def cancel_order_line(order_id: str, line_id: str, *, reason: str | None = None) -> dict[str, Any]:
-    """Drop one line the vendor cannot supply and return that ICLOW row to รอสั่ง."""
+    """Return one line to รอสั่ง. This does not mark the vendor as out of stock."""
     settings = get_hq_po_settings()
     if not settings.stamp_enabled:
         raise HqPoError(
@@ -949,5 +1007,118 @@ def cancel_order_line(order_id: str, line_id: str, *, reason: str | None = None)
     # A line the vendor cannot fill goes back to the waiting list, including a
     # row this app inserted. Whole-order cancel still retires those inserted rows.
     revert_ordered([line], docno=docno)
-    mark_line_canceled(client, order_id, wanted, reason=reason or "vendor_unavailable")
+    mark_line_canceled(client, order_id, wanted, reason=reason or "line_canceled")
     return get_order(client, order_id) or {"order_id": order_id, "status": "ordered"}
+
+
+def _resolved_account(row: dict[str, Any]) -> tuple[str, str]:
+    """(acctno, raw) for a live ICLOW vendor. Unknown codes raise."""
+    from src.hq_po.vendor_link import _codes_to_check, resolve_vendor
+
+    raw = str(row.get("vendor") or "").strip()
+    bcode = str(row.get("bcode") or "").strip()
+    if not bcode:
+        raise HqPoError("missing", "แถวนี้ไม่มีรหัสสินค้า")
+    resolved = resolve_vendor(raw, set(_live_accounts(_codes_to_check([raw]))))
+    if resolved["status"] == "unknown":
+        raise HqPoError("vendor_mismatch", f"{bcode} รหัสเจ้าหนี้ไม่อยู่ใน APMAS")
+    return resolved["acctno"], raw
+
+
+def mark_product_unavailable(iclow_id: int, *, marked_by: str | None = None) -> dict[str, Any]:
+    """Tag the product as not available from its vendor and, if ordered, send it back."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่ทำเครื่องหมาย",
+        )
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    live = fetch_iclow_by_ids([iclow_n]).get(iclow_n)
+    if not live:
+        raise HqPoError("missing", f"ไม่พบ ICLOW {iclow_n}")
+    if str(live.get("received") or "").strip().upper() == "Y":
+        raise HqPoError("already_received", "รับของแล้ว ทำเครื่องหมายไม่ได้")
+    if str(live.get("canceled") or "").strip().upper() == "Y":
+        raise HqPoError("missing", "รายการนี้ถูกยกเลิกแล้ว")
+    acct, raw = _resolved_account(live)
+    bcode = str(live.get("bcode") or "").strip()
+    client = get_hq_po_supabase_client()
+    block_product_vendor(
+        client,
+        bcode=bcode,
+        acctno=acct,
+        reason="vendor_unavailable",
+        marked_by=marked_by,
+    )
+    ordered = str(live.get("ordered") or "").strip().upper() == "Y"
+    if ordered:
+        held = open_lines_for_iclow(client, [iclow_n]).get(iclow_n) or {}
+        if held.get("line_id") and held.get("order_id"):
+            cancel_order_line(
+                str(held["order_id"]),
+                str(held["line_id"]),
+                reason="vendor_unavailable",
+            )
+        else:
+            from src.hq_po.stamp import release_to_waiting
+
+            release_to_waiting(iclow_n)
+    if acct != raw:
+        from src.hq_po.stamp import rewrite_waiting_vendor
+
+        rewrite_waiting_vendor(iclow_n, acct)
+    name = ""
+    try:
+        name = fetch_vendor_names([acct]).get(acct) or ""
+    except Exception:
+        name = ""
+    return {
+        "iclow_id": iclow_n,
+        "bcode": bcode,
+        "vendor": acct,
+        "vendor_name": name or None,
+        "vendor_blocked": True,
+    }
+
+
+def clear_named_block(bcode: str, acctno: str) -> dict[str, Any]:
+    """The vendor has this product again. Used when the line has no ICLOW row."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่เอาเครื่องหมายออก",
+        )
+    product = str(bcode or "").strip()
+    acct = str(acctno or "").strip()
+    if not product or not acct:
+        raise HqPoError("missing", "ไม่มีสินค้าหรือเจ้าหนี้ให้เอาเครื่องหมายออก")
+    if acct not in _live_accounts([acct]):
+        raise HqPoError("vendor_mismatch", f"{product} รหัสเจ้าหนี้ไม่อยู่ใน APMAS")
+    clear_product_vendor_block(get_hq_po_supabase_client(), bcode=product, acctno=acct)
+    return {"bcode": product, "vendor": acct, "vendor_blocked": False}
+
+
+def clear_product_unavailable(iclow_id: int) -> dict[str, Any]:
+    """The vendor has this product again. The line can be ordered from them."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่เอาเครื่องหมายออก",
+        )
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    live = fetch_iclow_by_ids([iclow_n]).get(iclow_n)
+    if not live:
+        raise HqPoError("missing", f"ไม่พบ ICLOW {iclow_n}")
+    acct, _raw = _resolved_account(live)
+    bcode = str(live.get("bcode") or "").strip()
+    clear_product_vendor_block(get_hq_po_supabase_client(), bcode=bcode, acctno=acct)
+    return {"iclow_id": iclow_n, "bcode": bcode, "vendor": acct, "vendor_blocked": False}

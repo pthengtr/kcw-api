@@ -22,6 +22,12 @@ def _engine():
 
 def _permission(exc: Exception) -> HqPoError | None:
     msg = str(exc)
+    if "permission was denied" in msg and "ICMAS" in msg:
+        return HqPoError(
+            "iclow_permission_denied",
+            "python_writer ยังไม่มีสิทธิ์เขียน dbo.ICMAS บน KSS — "
+            "รัน scripts/sql/grant_hq_po_writer.sql ด้วย SQL admin",
+        )
     if "permission was denied" in msg and "ICLOW" in msg:
         return HqPoError(
             "iclow_permission_denied",
@@ -257,6 +263,141 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
                 if result.rowcount != 1:
                     bcode = line.get("bcode") or line["iclow_id"]
                     raise HqPoError("stamp_conflict", f"สั่ง {bcode} ไม่ได้ เพราะแถว ICLOW เปลี่ยนไปแล้ว")
+    except HqPoError:
+        raise
+    except Exception as exc:
+        denied = _permission(exc)
+        if denied:
+            raise denied from exc
+        raise HqPoError("iclow_update_failed", str(exc)) from exc
+
+
+def dismiss_waiting(iclow_id: int) -> dict[str, Any]:
+    """Take one product off รอสั่ง the way PARTS9 does.
+
+    QTYMIN -1 is the legacy do-not-order mark, so a later low-stock pass does
+    not open a new waiting row. The open unordered ICLOW rows for that product
+    are set CANCELED='Y', which is what the legacy รอสั่งซื้อ list excludes.
+    A ค้างรับ row (already ordered, not received) is left alone.
+    """
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    if iclow_n <= 0:
+        raise HqPoError("missing", "ไม่พบแถว ICLOW")
+    canceled = 0
+    bcode = ""
+    try:
+        engine = _engine()
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1
+                      CONVERT(bigint, ID) AS ID,
+                      LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
+                      LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) AS ORDERED,
+                      LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(RECEIVED,'')))) AS RECEIVED,
+                      LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) AS CANCELED
+                    FROM dbo.ICLOW
+                    WHERE CONVERT(bigint, ID) = :iclow_id
+                    """
+                ),
+                {"iclow_id": iclow_n},
+            ).mappings().first()
+            if not row:
+                raise HqPoError("missing", "ไม่พบแถว ICLOW")
+            ordered = str(row.get("ORDERED") or "").strip().upper()
+            received = str(row.get("RECEIVED") or "").strip().upper()
+            canceled_flag = str(row.get("CANCELED") or "").strip().upper()
+            bcode = str(row.get("BCODE") or "").strip()
+            if not bcode:
+                raise HqPoError("missing", "แถวนี้ไม่มีรหัสสินค้า")
+            if canceled_flag == "Y":
+                raise HqPoError("missing", "รายการนี้ถูกนำออกแล้ว")
+            if received == "Y":
+                raise HqPoError("already_received", "รับของแล้ว นำออกจากรอสั่งไม่ได้")
+            if ordered == "Y":
+                raise HqPoError("already_ordered", "รายการนี้อยู่ในค้างรับ ไม่ใช่รายการรอสั่ง")
+            if ordered == "X":
+                raise HqPoError("missing", "รายการนี้ไม่อยู่ในรอสั่ง")
+            product = conn.execute(
+                text(
+                    """
+                    UPDATE dbo.ICMAS
+                    SET QTYMIN = -1
+                    WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
+                    """
+                ),
+                {"bcode": bcode},
+            )
+            if product.rowcount < 1:
+                raise HqPoError("missing", f"ไม่พบ {bcode} ใน ICMAS")
+            iclow = conn.execute(
+                text(
+                    f"""
+                    UPDATE dbo.ICLOW
+                    SET CANCELED = 'Y'
+                    WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
+                      AND {_ORDERED_N}
+                      AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) <> 'X'
+                      AND {_RECEIVED_N}
+                      AND {_NOT_CANCELED}
+                    """
+                ),
+                {"bcode": bcode},
+            )
+            canceled = int(iclow.rowcount or 0)
+            if canceled < 1:
+                raise HqPoError("stamp_conflict", "นำออกไม่ได้ เพราะแถว ICLOW เปลี่ยนไปแล้ว")
+    except HqPoError:
+        raise
+    except Exception as exc:
+        denied = _permission(exc)
+        if denied:
+            raise denied from exc
+        raise HqPoError("iclow_update_failed", str(exc)) from exc
+    return {
+        "iclow_id": iclow_n,
+        "bcode": bcode,
+        "qtymin": -1,
+        "iclow_canceled": canceled,
+    }
+
+
+def rewrite_waiting_vendor(iclow_id: int, vendor: str) -> None:
+    """Put the original APMAS account back on a waiting row. Ordered rows stay put."""
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    if iclow_n <= 0:
+        raise HqPoError("missing", "ไม่พบแถว ICLOW")
+    acct = _clip(vendor, 10)
+    if not acct:
+        raise HqPoError("vendor_mismatch", "ไม่มีเจ้าหนี้")
+    try:
+        engine = _engine()
+        with engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    f"""
+                    UPDATE dbo.ICLOW
+                    SET VENDOR = :vendor
+                    WHERE CONVERT(bigint, ID) = :iclow_id
+                      AND {_ORDERED_N}
+                      AND {_RECEIVED_N}
+                      AND {_NOT_CANCELED}
+                    """
+                ),
+                {"iclow_id": iclow_n, "vendor": acct},
+            )
+            if result.rowcount != 1:
+                raise HqPoError(
+                    "stamp_conflict",
+                    "แก้เจ้าหนี้ไม่ได้ เพราะแถวถูกสั่งหรือรับแล้ว",
+                )
     except HqPoError:
         raise
     except Exception as exc:
