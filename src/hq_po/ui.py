@@ -75,10 +75,28 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .flag.reorder{background:#dbeafe;color:#1e3a8a}
 #hist{position:fixed;inset:0;z-index:40;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center}
 #hist[hidden]{display:none}
-.hist-card{background:#fff;width:min(560px,100%);max-height:86vh;overflow:auto;border-radius:16px 16px 0 0;padding:14px 14px calc(16px + env(safe-area-inset-bottom))}
+.hist-card{background:#fff;width:min(720px,100%);max-height:86vh;overflow:auto;border-radius:16px 16px 0 0;padding:14px 14px calc(16px + env(safe-area-inset-bottom))}
 .hist-card h2{margin:8px 0;font-size:16px}
 .hist-card h3{margin:14px 0 6px;font-size:13px;color:var(--blue-deep)}
 .hist-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hist-site{margin:10px 0 4px}
+.istatus{display:inline-block;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700}
+.istatus.ok{background:var(--ok-bg);color:var(--ok)}
+.istatus.warn{background:var(--warn-bg);color:var(--warn)}
+.istatus.bad{background:#fee2e2;color:#991b1b}
+.istatus.order{background:var(--blue-soft);color:var(--blue-deep)}
+.ikpis,.istock{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ikpi{background:var(--blue-wash);border-radius:10px;padding:8px}
+.ikpi .l{color:var(--muted);font-size:11px}
+.ikpi .v{font-weight:700;color:var(--blue-deep);font-size:14px}
+.ibars{display:flex;align-items:flex-end;gap:3px;height:88px;margin-top:8px}
+.ibar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0;height:100%}
+.ibar span{display:block;width:100%;max-width:16px;background:var(--blue);border-radius:4px 4px 0 0}
+.ibar em{font-style:normal;font-size:9px;color:var(--muted);margin-top:2px}
+.itable{width:100%;border-collapse:collapse;font-size:12px}
+.itable th,.itable td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
+.itable th{color:var(--muted);font-weight:650}
+.itable .num{text-align:right;font-variant-numeric:tabular-nums}
 .hist-top button{min-height:36px;border:0;background:transparent;color:var(--blue);font-weight:700}
 .ai{color:var(--blue);font-size:12px;margin-top:6px;padding:6px 8px;background:var(--blue-wash);border-radius:8px;line-height:1.4}
 .qty{text-align:right;font-weight:700;font-size:16px;color:var(--blue-deep);white-space:nowrap}
@@ -174,7 +192,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   .tabs{max-width:420px}
   main{padding-left:20px;padding-right:20px}
   .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .bar,#vendorSort{grid-column:1 / -1}
+  .bar,#vendorSort,#doneMode,#holdQ{grid-column:1 / -1}
   .order-filters{grid-template-columns:1fr 1fr}
   .line{padding:12px 14px}
 }
@@ -186,7 +204,6 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   <p id="who"></p>
   <div class="tabs">
     <button type="button" id="tabOrder" class="on">รอสั่ง</button>
-    <button type="button" id="tabHold">ค้างรับ</button>
     <button type="button" id="tabDone">สั่งแล้ว</button>
   </div>
 </header>
@@ -213,19 +230,20 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <div id="insightNote" class="insight" hidden></div>
     <div id="list"><div class="spin-wrap"><span class="spin" aria-hidden="true"></span><span>กำลังโหลดรายการรอสั่ง…</span></div></div>
   </section>
-  <section id="holdView" hidden>
-    <div class="toolbar">
-      <input id="holdQ" type="search" placeholder="ค้นรหัส ชื่อสินค้า หรือเจ้าหนี้" aria-label="ค้นค้างรับ" enterkeyhint="search" autocomplete="off"/>
-    </div>
-    <p class="count">ของที่สั่งแล้วแต่ยังไม่รับ</p>
-    <div id="holdList"></div>
-  </section>
   <section id="doneView" hidden>
-    <div class="toolbar order-filters">
-      <input id="orderVendor" type="search" placeholder="กรองเจ้าหนี้" aria-label="กรองเจ้าหนี้" enterkeyhint="search" autocomplete="off"/>
-      <input id="orderBcode" type="search" placeholder="กรองรหัสสินค้า" aria-label="กรองรหัสสินค้า" enterkeyhint="search" autocomplete="off"/>
+    <div class="toolbar">
+      <div class="toggle" id="doneMode">
+        <button type="button" id="doneBill" class="on">ตามบิล</button>
+        <button type="button" id="doneProduct">ตามสินค้า</button>
+      </div>
+      <div class="order-filters" id="billFilters">
+        <input id="orderVendor" type="search" placeholder="กรองเจ้าหนี้" aria-label="กรองเจ้าหนี้" enterkeyhint="search" autocomplete="off"/>
+        <input id="orderBcode" type="search" placeholder="กรองรหัสสินค้า" aria-label="กรองรหัสสินค้า" enterkeyhint="search" autocomplete="off"/>
+      </div>
+      <input id="holdQ" type="search" placeholder="ค้นรหัส ชื่อสินค้า หรือเจ้าหนี้" aria-label="ค้นสินค้าที่สั่งแล้ว" enterkeyhint="search" autocomplete="off" hidden/>
     </div>
     <div id="orders"></div>
+    <div id="holdList" hidden></div>
   </section>
 </main>
 <div id="dock" hidden><button type="button" id="dockConfirm">ดูใบส่งเจ้าหนี้</button></div>
@@ -256,7 +274,11 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <div id="printSheet" aria-hidden="true"></div>
 <div id="hist" hidden>
   <div class="hist-card">
-    <div class="hist-top"><strong id="histTitle">ประวัติ</strong><button type="button" id="histClose">ปิด</button></div>
+    <div class="hist-top"><strong id="histTitle">Insight</strong><button type="button" id="histClose">ปิด</button></div>
+    <div class="toggle hist-site" id="histSite">
+      <button type="button" id="histHq" class="on">HQ</button>
+      <button type="button" id="histSyp">SYP</button>
+    </div>
     <div id="histBody"></div>
   </div>
 </div>
@@ -266,7 +288,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"product", tab:"order", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, orderVendor:"", orderBcode:"", hold:[], holdLoaded:false, holdQ:"", busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
+const state = {items:[], view:"product", tab:"order", doneMode:"bill", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, orderVendor:"", orderBcode:"", hold:[], holdLoaded:false, holdQ:"", busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -380,7 +402,7 @@ function flagHtml(row){
 function tradeButton(bcode){
   const code = String(bcode || "").trim();
   if(!code) return "";
-  return `<button type="button" class="peer-btn" data-trade="${esc(code)}">ประวัติซื้อขาย</button>`;
+  return `<button type="button" class="peer-btn" data-trade="${esc(code)}">Insight</button>`;
 }
 function productMeta(row){
   const id = [];
@@ -1113,21 +1135,37 @@ document.getElementById("q").oninput = (e) => {
   state.q = e.target.value;
   scheduleRender(state.loading ? "" : "กำลังค้นหา…", state.loading ? 0 : 180);
 };
+function setDoneMode(mode){
+  const product = mode === "product";
+  state.doneMode = product ? "product" : "bill";
+  document.getElementById("doneBill").classList.toggle("on", !product);
+  document.getElementById("doneProduct").classList.toggle("on", product);
+  document.getElementById("billFilters").hidden = product;
+  document.getElementById("holdQ").hidden = !product;
+  document.getElementById("orders").hidden = product;
+  document.getElementById("holdList").hidden = !product;
+  if(product){
+    if(!state.holdLoaded) loadHold();
+    else renderHold();
+  }else if(!state.ordersLoaded){
+    loadOrders();
+  }else{
+    renderOrders();
+  }
+}
 function setTab(name){
   state.tab = name;
   document.getElementById("tabOrder").classList.toggle("on", name === "order");
-  document.getElementById("tabHold").classList.toggle("on", name === "hold");
   document.getElementById("tabDone").classList.toggle("on", name === "done");
   document.getElementById("orderView").hidden = name !== "order";
-  document.getElementById("holdView").hidden = name !== "hold";
   document.getElementById("doneView").hidden = name !== "done";
   syncDock();
-  if(name === "hold") loadHold();
-  if(name === "done") loadOrders();
+  if(name === "done") setDoneMode(state.doneMode);
 }
 document.getElementById("tabOrder").onclick = () => setTab("order");
-document.getElementById("tabHold").onclick = () => setTab("hold");
 document.getElementById("tabDone").onclick = () => setTab("done");
+document.getElementById("doneBill").onclick = () => setDoneMode("bill");
+document.getElementById("doneProduct").onclick = () => setDoneMode("product");
 function holdMatch(row){
   const q = state.holdQ.trim().toLowerCase();
   if(!q) return true;
@@ -1154,18 +1192,18 @@ function renderHold(){
   const host = document.getElementById("holdList");
   const rows = (state.hold || []).filter(holdMatch);
   if(!state.holdLoaded){
-    host.innerHTML = spinner("กำลังโหลดค้างรับ…");
+    host.innerHTML = spinner("กำลังโหลดสินค้าที่สั่งแล้ว…");
     return;
   }
   if(!rows.length){
-    host.innerHTML = '<div class="empty">ไม่มีค้างรับ</div>';
+    host.innerHTML = '<div class="empty">ไม่มีสินค้าที่สั่งแล้วและยังไม่รับ</div>';
     return;
   }
   host.innerHTML = `<div class="card">${rows.map(holdLineHtml).join("")}</div>`;
 }
 async function loadHold(){
   const host = document.getElementById("holdList");
-  host.innerHTML = spinner("กำลังโหลดค้างรับ…");
+  host.innerHTML = spinner("กำลังโหลดสินค้าที่สั่งแล้ว…");
   try {
     const res = await fetch("/hq-po/api/incoming");
     const data = await res.json().catch(() => ({}));
@@ -1178,30 +1216,175 @@ async function loadHold(){
     host.innerHTML = '<div class="empty">โหลดค้างรับไม่ได้</div>';
   }
 }
-function histRows(title, rows, vendor){
-  if(!rows.length) return `<h3>${esc(title)}</h3><div class="meta">ไม่มีรายการ</div>`;
-  const body = rows.map(row => {
-    const who = vendor ? (row.name ? row.name + (row.acctno ? " · " + row.acctno : "") : row.acctno) : row.name;
-    const price = row.price ? " · " + moneyText(row.price) : "";
-    return `<div class="meta">${esc(row.date || "")} · ${esc(row.billno || "")}${who ? " · " + esc(who) : ""} · ${esc(qtyText(row.qty))} ${esc(row.ui || "")}${esc(price)}</div>`;
-  }).join("");
-  return `<h3>${esc(title)}</h3>${body}`;
+let histGen = 0;
+let histCode = "";
+let histSite = "hq";
+function liveInsight(bcode){
+  const code = String(bcode || "").trim();
+  const row = (state.items || []).find(item => String(item.bcode || "").trim() === code)
+    || (state.hold || []).find(item => String(item.bcode || "").trim() === code)
+    || {};
+  return {qtyHq: row.hq_qtyoh2, qtySyp: row.syp_qtyoh2, ui1: row.ui || row.ui1 || "", descr: row.descr || ""};
 }
-async function openTrade(bcode){
+function insightHtml(ins, live){
+  const st = (ins && ins.status) || "no_movement";
+  if(st === "working") return '<div class="empty">กำลังสร้าง insight…</div>';
+  if(st === "no_movement" || !ins || !ins.insight) return '<div class="empty">ไม่มีการเคลื่อนไหวใน 5 ปี</div>';
+  const i = ins.insight || {};
+  const pol = ins.policy || {};
+  const der = i.derived || {};
+  const dash = i.dashboard || der.dashboard || {};
+  const num = (v) => {
+    if(v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const pick = (...vals) => {
+    for(const v of vals){ if(v != null && v !== "") return v; }
+    return null;
+  };
+  const sales = dash.sales || {};
+  const ch = dash.channels_12m || {};
+  const pm = dash.price_margin || {};
+  const stk = dash.stock || {};
+  const purch = i.purchase || {};
+  const ic = i.icmas || {};
+  const tr = i.trends || {};
+  const mg = i.margin || {};
+  const fl = der.flags || {};
+  const dem = der.demand || {};
+  const holdBlk = der.holding || {};
+  const od = der.order || {};
+  const mgDer = der.margin || {};
+  const td = der.trend || {};
+  const xfer = der.transfer || {};
+  const unit = String(pick(stk.unit, purch.order_unit, pol.order_unit, live.ui1, od.ui1, "") || "");
+  const qtyU = (n) => {
+    if(n == null) return "—";
+    return esc(qtyText(n)) + (unit ? " " + esc(unit) : "");
+  };
+  const moneyU = (n) => {
+    if(n == null) return "—";
+    const text = moneyText(n);
+    if(!text) return "—";
+    return esc(text) + (unit ? " บาท/" + esc(unit) : "");
+  };
+  const latestMo = num(pick(sales.latest_month, dem.qty_30d, pol.sales_qty_30d));
+  const avg3 = num(pick(sales.avg_3m, dem.monthly_from_90d));
+  const avg12 = num(pick(sales.avg_12m, dem.monthly_from_12m, i.typical_monthly_qty, pol.typical_monthly_qty));
+  const tot12 = num(pick(sales.total_12m, dem.qty_12m, pol.sales_qty_12m));
+  const trendMap = {hot:"ร้อน", growing:"เติบโต", flat:"คงที่", declining:"ลดลง", dead:"ตาย", lumpy:"กระจุก", seasonal:"ตามฤดูกาล", unknown:"ไม่ชัด"};
+  const trend = String(pick(sales.trend, tr.m12, i.trend_label, pol.trend_12m, td["12m"]) || "");
+  const trendTh = trendMap[trend.toLowerCase()] || trend || "—";
+  const chHq = num(pick(ch.hq, (dem.by_channel_12m || {}).hq_store));
+  const chSyp = num(pick(ch.syp, (dem.by_channel_12m || {}).syp_store));
+  const chOn = num(pick(ch.online, (dem.by_channel_12m || {}).online));
+  const chSum = (chHq || 0) + (chSyp || 0) + (chOn || 0);
+  const pct = (part, given) => {
+    const n = num(given);
+    if(n != null) return n;
+    return chSum ? (part || 0) / chSum * 100 : null;
+  };
+  const qtyHq = num(live.qtyHq);
+  const qtySyp = num(live.qtySyp);
+  const qtyTotal = (qtyHq != null || qtySyp != null) ? (qtyHq || 0) + (qtySyp || 0) : null;
+  const target = num(pick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
+  const reorder = num(pick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
+  const lot = num(pick(stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
+  const coverWeeks = num(pick(pol.suggested_cover_weeks, holdBlk.cover_weeks, i.suggested_cover_weeks));
+  const coverDays = coverWeeks != null ? Math.round(coverWeeks * 7) : null;
+  const dead = pick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
+  const orderOk = pick(purch.order_ok, pol.order_ok, fl.order_ok);
+  let orderStatus = "caution";
+  if(dead === "yes") orderStatus = "dead_stock";
+  else if(qtyTotal != null && target != null && qtyTotal >= target) orderStatus = "no_order_needed";
+  else if(qtyTotal != null && reorder != null && qtyTotal <= reorder) orderStatus = "should_order";
+  else if(orderOk === "caution" || dead === "maybe" || orderOk === "no") orderStatus = "caution";
+  else if(qtyTotal != null && target != null && qtyTotal < target) orderStatus = "should_order";
+  else if(orderOk === "yes") orderStatus = "no_order_needed";
+  const statusMap = {
+    no_order_needed: ["ok", "🟢 ยังไม่ต้องสั่ง"],
+    should_order: ["order", "🔵 ควรสั่ง"],
+    caution: ["warn", "🟠 ระวัง"],
+    dead_stock: ["bad", "🔴 Dead Stock"]
+  };
+  const stInfo = statusMap[orderStatus] || ["warn", orderStatus];
+  const avgBuy = num(pick(pm.avg_buy, mgDer.avg_buy_12m));
+  const avgSell = num(pick(pm.avg_sell, mgDer.avg_sell_12m));
+  const marginPct = num(pick(pm.margin_pct, mgDer.realized_pct_12m, pol.margin_pct_12m, mg.list_pct, pol.margin_pct_list));
+  const sypTarget = num(pick(xfer.syp_safe_holding, pol.rec_transfer_qty_to_syp));
+  const suppliers = (dash.suppliers || der.suppliers_12m || []).slice(0, 3);
+  const customers = (dash.customers || der.customers_12m || []).slice(0, 3);
+  const kpi = (label, value) => `<div class="ikpi"><div class="l">${esc(label)}</div><div class="v">${value}</div></div>`;
+  const series = ins.monthly_sales || [];
+  const maxBar = Math.max(1, ...series.map(s => Number(s.qty) || 0));
+  const bars = series.length ? `<div class="ibars">${series.map(s => {
+    const n = Number(s.qty) || 0;
+    const h = Math.max(2, Math.round(n / maxBar * 64));
+    return `<div class="ibar"><span style="height:${h}px"></span><em>${esc(String(s.ym || "").slice(5))}</em></div>`;
+  }).join("")}</div>` : "";
+  const share = (n) => n == null ? "—" : esc(qtyText(n)) + "%";
+  const people = (rows, price) => {
+    if(!rows.length) return `<tr><td class="meta" colspan="3">—</td></tr>`;
+    return rows.map(row => {
+      const name = row.name || row.acctno || "—";
+      const extra = price
+        ? `<td class="num">${moneyU(num(row.avg_price))}</td>`
+        : `<td class="num">${share(num(row.pct_of_sales))}</td>`;
+      return `<tr><td>${esc(name)}</td><td class="num">${qtyU(num(row.qty))}</td>${extra}</tr>`;
+    }).join("");
+  };
+  const photo = ins.photo ? `<img class="thumb" alt="" src="${esc(ins.photo)}" onerror="this.remove()"/>` : "";
+  const summary = ins.summary ? `<div class="meta">${esc(ins.summary)}</div>` : "";
+  const when = [ins.facts_as_of ? "ข้อมูลถึง " + ins.facts_as_of : "", ins.generated_at ? "สร้าง " + ins.generated_at : ""].filter(Boolean).join(" · ");
+  return `${photo}<div style="margin-top:8px"><span class="istatus ${stInfo[0]}">${esc(stInfo[1])}</span></div>
+    ${summary}
+    <h3>ยอดขาย · ${esc(trendTh)}</h3>
+    <div class="ikpis">${kpi("เดือนล่าสุด", qtyU(latestMo))}${kpi("เฉลี่ย 3 เดือน", qtyU(avg3))}${kpi("เฉลี่ยช่วงข้อมูล", qtyU(avg12))}${kpi("รวม 12 เดือน", qtyU(tot12))}</div>
+    ${bars}
+    <h3>Stock</h3>
+    <div class="istock">${kpi("คงเหลือรวม", qtyU(qtyTotal))}${kpi("Safety Stock", qtyU(target) + (coverDays != null ? `<div class="l">ประมาณ ${esc(String(coverDays))} วัน</div>` : ""))}${kpi("จุดสั่งซื้อ", qtyU(reorder))}${kpi("ล็อตแนะนำ", qtyU(lot))}</div>
+    <h3>ช่องทางขาย 12 เดือน</h3>
+    <table class="itable"><thead><tr><th>ช่องทาง</th><th class="num">ยอดขาย</th><th class="num">สัดส่วน</th></tr></thead><tbody>
+      <tr><td>HQ</td><td class="num">${qtyU(chHq)}</td><td class="num">${share(pct(chHq, ch.hq_pct))}</td></tr>
+      <tr><td>SYP</td><td class="num">${qtyU(chSyp)}</td><td class="num">${share(pct(chSyp, ch.syp_pct))}</td></tr>
+      <tr><td>Online</td><td class="num">${qtyU(chOn)}</td><td class="num">${share(pct(chOn, ch.online_pct))}</td></tr>
+    </tbody></table>
+    <h3>ราคาและมาร์จิ้น</h3>
+    <table class="itable"><tbody>
+      <tr><td>ราคาซื้อเฉลี่ย</td><td class="num">${moneyU(avgBuy)}</td></tr>
+      <tr><td>ราคาขายเฉลี่ย</td><td class="num">${moneyU(avgSell)}</td></tr>
+      <tr><td>Margin</td><td class="num">${marginPct == null ? "—" : esc(qtyText(marginPct)) + "%"}</td></tr>
+    </tbody></table>
+    <h3>SYP</h3>
+    <div class="ikpis">${kpi("คงเหลือ SYP", qtyU(qtySyp))}${kpi("เป้าโอน", qtyU(sypTarget))}</div>
+    <h3>เจ้าหลัก</h3>
+    <table class="itable"><thead><tr><th>เจ้าหนี้</th><th class="num">ยอดซื้อ</th><th class="num">ราคาเฉลี่ย</th></tr></thead><tbody>${people(suppliers, true)}</tbody></table>
+    <h3>ลูกค้าหลัก</h3>
+    <table class="itable"><thead><tr><th>ลูกค้า</th><th class="num">ยอดซื้อ</th><th class="num">สัดส่วน</th></tr></thead><tbody>${people(customers, false)}</tbody></table>
+    ${when ? `<div class="meta">${esc(when)}</div>` : ""}`;
+}
+async function openTrade(bcode, site){
   const code = String(bcode || "").trim();
   if(!code) return;
+  histCode = code;
+  histSite = site === "syp" ? "syp" : "hq";
+  const gen = ++histGen;
   const box = document.getElementById("hist");
-  document.getElementById("histTitle").textContent = code;
-  document.getElementById("histBody").innerHTML = spinner("กำลังโหลดประวัติ…");
+  document.getElementById("histTitle").textContent = code + " · " + histSite.toUpperCase();
+  document.getElementById("histHq").classList.toggle("on", histSite !== "syp");
+  document.getElementById("histSyp").classList.toggle("on", histSite === "syp");
+  document.getElementById("histBody").innerHTML = spinner("กำลังโหลด insight…");
   box.hidden = false;
   try {
-    const res = await fetch("/hq-po/api/history/" + encodeURIComponent(code));
+    const res = await fetch("/hq-po/api/history/" + encodeURIComponent(code) + "?site=" + histSite);
     const data = await res.json().catch(() => ({}));
-    if(!res.ok) throw new Error(data.message || "โหลดประวัติไม่ได้");
-    const photo = data.photo ? `<img class="thumb" alt="" src="${esc(data.photo)}" onerror="this.remove()"/>` : "";
-    document.getElementById("histBody").innerHTML = photo + histRows("ประวัติซื้อ", data.purchases || [], true) + histRows("ประวัติขาย", data.sales || [], false);
+    if(gen !== histGen) return;
+    if(!res.ok) throw new Error(data.message || "โหลด insight ไม่ได้");
+    document.getElementById("histBody").innerHTML = insightHtml(data, liveInsight(code));
   } catch (err) {
-    document.getElementById("histBody").innerHTML = '<div class="empty">โหลดประวัติไม่ได้</div>';
+    if(gen !== histGen) return;
+    document.getElementById("histBody").innerHTML = '<div class="empty">โหลด insight ไม่ได้</div>';
   }
 }
 async function releaseHold(id, kind){
@@ -1227,6 +1410,7 @@ async function releaseHold(id, kind){
   if(failed){ alert(failed.message || "ยกเลิกค้างรับไม่สำเร็จ"); return; }
   await loadHold();
   await loadSuggest();
+  setTab("order");
 }
 document.getElementById("holdQ").oninput = (e) => {
   state.holdQ = e.target.value;
@@ -1238,6 +1422,8 @@ document.getElementById("holdList").onclick = (e) => {
   const rel = e.target.closest("[data-release]");
   if(rel){ releaseHold(rel.getAttribute("data-release") || "", rel.getAttribute("data-kind") || ""); }
 };
+document.getElementById("histHq").onclick = () => { if(histCode) openTrade(histCode, "hq"); };
+document.getElementById("histSyp").onclick = () => { if(histCode) openTrade(histCode, "syp"); };
 document.getElementById("histClose").onclick = () => { document.getElementById("hist").hidden = true; };
 document.getElementById("hist").onclick = (e) => { if(e.target.id === "hist") document.getElementById("hist").hidden = true; };
 function onOrderFilter(key, value){
