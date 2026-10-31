@@ -16,7 +16,7 @@ from src.hq_po.service import (
     insight_only_payload,
     list_open_orders,
     release_incoming,
-    trade_history_payload,
+    product_insight_payload,
     peers_payload,
     product_search_payload,
     suggest_payload,
@@ -330,12 +330,12 @@ def api_incoming(request: Request):
 
 
 @router.get("/api/history/{bcode}")
-def api_history(bcode: str, request: Request):
+def api_history(bcode: str, request: Request, site: str = "hq"):
     _, err = _require_api(request)
     if err:
         return err
     try:
-        return trade_history_payload(bcode)
+        return product_insight_payload(bcode, site)
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "missing" else 502)
     except Exception as exc:

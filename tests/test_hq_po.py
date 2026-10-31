@@ -21,6 +21,24 @@ from src.hq_po.stock import parts9_order_qty
 from src.hq_po.ui import page
 
 
+def test_product_insight_payload_uses_the_selected_site(monkeypatch):
+    from src.hq_po.service import product_insight_payload
+
+    seen = {}
+
+    def fake(site, bcode):
+        seen["site"] = site
+        seen["bcode"] = bcode
+        return {"status": "ready", "summary": "ok", "insight": {"demand_hint": "ขายสม่ำเสมอ"}}
+
+    monkeypatch.setattr("src.parts9_explorer.insights.lookup_insight", fake)
+    monkeypatch.setattr("src.hq_po.service.thumb_url", lambda code: "")
+    payload = product_insight_payload("12054177", "SYP")
+    assert seen == {"site": "syp", "bcode": "12054177"}
+    assert payload["site"] == "syp"
+    assert payload["status"] == "ready"
+
+
 def test_release_badge_names_the_old_vendor():
     switch = release_badge("switch", "7SKKS")
     reorder = release_badge("reorder", "7SKKS")

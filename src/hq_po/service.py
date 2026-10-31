@@ -34,7 +34,6 @@ from src.hq_po.iclow_read import (
     fetch_incoming_lines,
     fetch_incoming_qty,
     fetch_live_vendors,
-    fetch_trade_history,
     thumb_url,
     fetch_ordered_product_rows,
     fetch_to_order_rows,
@@ -103,17 +102,24 @@ def incoming_payload() -> dict[str, Any]:
     return {"items": [_incoming_item(row, names) for row in rows]}
 
 
-def trade_history_payload(bcode: str) -> dict[str, Any]:
+def product_insight_payload(bcode: str, site: str = "hq") -> dict[str, Any]:
+    """Explorer product insight for one site. HQ and SYP are separate reads."""
     code = str(bcode or "").strip()
     if not code:
         raise HqPoError("missing", "ไม่มีรหัสสินค้า")
+    site_l = "syp" if str(site or "").strip().lower() == "syp" else "hq"
     try:
-        history = fetch_trade_history(code)
+        from src.parts9_explorer.insights import lookup_insight
+
+        insight = lookup_insight(site_l, code)
     except Exception as exc:
-        raise HqPoError("vendor_mismatch", "อ่านประวัติซื้อขายไม่ได้") from exc
-    history["bcode"] = code
-    history["photo"] = thumb_url(code)
-    return history
+        raise HqPoError("vendor_mismatch", "อ่าน insight ไม่ได้") from exc
+    if not isinstance(insight, dict):
+        insight = {"status": "no_movement", "bcode": code, "site": site_l}
+    insight["bcode"] = code
+    insight["site"] = site_l
+    insight["photo"] = thumb_url(code)
+    return insight
 
 
 def release_incoming(iclow_id: int, kind: str) -> dict[str, Any]:
