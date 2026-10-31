@@ -10,6 +10,7 @@ LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
+LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 LINE_CONTENT_URL_BASE = "https://api-data.line.me/v2/bot/message"
 
 
@@ -57,6 +58,22 @@ def reply_line_payload(reply_token: str, messages: list[dict]):
     }
 
     resp = requests.post(LINE_REPLY_URL, headers=headers, json=payload, timeout=15)
+    resp.raise_for_status()
+
+
+def push_line_message(to: str, text: str):
+    if not (to or "").strip():
+        raise ValueError("Missing LINE user id")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+    }
+    payload = {
+        "to": to,
+        "messages": [{"type": "text", "text": (text or "")[:5000]}],
+    }
+    resp = requests.post(LINE_PUSH_URL, headers=headers, json=payload, timeout=15)
     resp.raise_for_status()
 
 

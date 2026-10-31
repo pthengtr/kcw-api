@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily 10:00 Asia/Bangkok TAR net LINE push
+
+[Timer]
+OnCalendar=*-*-* 10:00:00
+Timezone=Asia/Bangkok
+Persistent=true
+AccuracySec=1min
+Unit=kcw-tar-transfer-push.service
+
+[Install]
+WantedBy=timers.target

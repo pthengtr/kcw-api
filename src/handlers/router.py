@@ -1,4 +1,8 @@
 from src.handlers.sales import handle_sales_query
+from src.handlers.tar_transfer import (
+    handle_tar_transfer_command,
+    is_tar_transfer_command,
+)
 from src.handlers.product import handle_product_query_response
 from src.handlers.job import handle_job_query, is_job_request
 from src.handlers.history import handle_history_query, is_history_request
@@ -188,6 +192,12 @@ def route_user_text(
         return handle_product_scan_command(line_user_id=line_user_id)
     if is_job_request(text):
         return handle_job_query(engine, text, access=access)
+
+    if is_tar_transfer_command(text):
+        access_row = dict(access or {})
+        if line_user_id and not access_row.get("line_user_id"):
+            access_row["line_user_id"] = line_user_id
+        return handle_tar_transfer_command(engine, text, access_row)
 
     if text.startswith("ยอดขาย"):
         cmd = "ยอดขาย"

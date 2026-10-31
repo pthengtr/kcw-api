@@ -1,0 +1,10 @@
+[Unit]
+Description=Push yesterday TAR-CNTAR net to LINE
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/kcw-api
+EnvironmentFile=%h/projects/kcw-api/.env
+Environment=TZ=Asia/Bangkok
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/projects/kcw-api/.venv/bin/python -m src.tar_transfer.push
