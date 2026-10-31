@@ -12,8 +12,11 @@ from src.hq_po.service import (
     cancel_order,
     cancel_order_line,
     confirm_order,
+    incoming_payload,
     insight_only_payload,
     list_open_orders,
+    release_incoming,
+    trade_history_payload,
     peers_payload,
     product_search_payload,
     suggest_payload,
@@ -38,6 +41,10 @@ class ConfirmBody(BaseModel):
 
 class CancelBody(BaseModel):
     reason: str | None = None
+
+
+class ReleaseBody(BaseModel):
+    kind: str = ""
 
 
 class SheetLineBody(BaseModel):
@@ -307,6 +314,43 @@ def api_sheet(body: SheetBody, request: Request):
         return build_sheet_forms([group.model_dump() for group in body.groups])
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "empty" else 409)
+
+
+@router.get("/api/incoming")
+def api_incoming(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return incoming_payload()
+    except HqPoError as exc:
+        return _error(exc, 502)
+    except Exception as exc:
+        return JSONResponse({"error": "incoming_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/history/{bcode}")
+def api_history(bcode: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return trade_history_payload(bcode)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 502)
+    except Exception as exc:
+        return JSONResponse({"error": "history_failed", "message": str(exc)}, status_code=502)
+
+
+@router.post("/api/incoming/{iclow_id}/release")
+def api_release(iclow_id: int, body: ReleaseBody, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return release_incoming(iclow_id, body.kind)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
 
 
 @router.get("/api/orders")

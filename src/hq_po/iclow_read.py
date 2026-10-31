@@ -70,7 +70,7 @@ def fetch_to_order_rows() -> list[dict[str, Any]]:
     sql = text(
         f"""
         SELECT {_SELECT}
-        FROM dbo.ICLOW
+        FROM dbo.ICLOW WITH (NOLOCK)
         WHERE {_NOT_CANCELED} AND {_ORDERED_N}
           AND {_NV('BCODE', 40)} LIKE '%[0-9]%'
         ORDER BY {_NV('VENDOR', 40)}, {_NV('BCODE', 40)}, ID
@@ -112,7 +112,7 @@ def fetch_iclow_by_ids(iclow_ids: list[int]) -> dict[int, dict[str, Any]]:
             sql = text(
                 f"""
                 SELECT {_SELECT}
-                FROM dbo.ICLOW
+                FROM dbo.ICLOW WITH (NOLOCK)
                 WHERE CONVERT(bigint, ID) IN ({placeholders})
                 """
             )
@@ -128,7 +128,7 @@ def fetch_incoming_qty() -> dict[str, float]:
     sql = text(
         f"""
         SELECT {_NV('BCODE', 40)} AS BCODE, SUM({_QTY}) AS QTY
-        FROM dbo.ICLOW
+        FROM dbo.ICLOW WITH (NOLOCK)
         WHERE {_NV('ORDERED', 10)} = 'Y'
           AND {_NV('RECEIVED', 10)} <> 'Y'
           AND {_NOT_CANCELED}
@@ -142,6 +142,139 @@ def fetch_incoming_qty() -> dict[str, float]:
             qty = _qty(row.get("QTY"))
             if bcode and qty > 0:
                 out[bcode] = qty
+    return out
+
+
+def thumb_url(bcode: str) -> str:
+    """First public product photo. An empty string means the line has no picture."""
+    code = str(bcode or "").strip()
+    if not code:
+        return ""
+    try:
+        from src.parts9_explorer.search import product_image_urls
+
+        urls = product_image_urls(code)
+    except Exception:
+        return ""
+    return urls[0] if urls else ""
+
+
+def fetch_incoming_lines() -> list[dict[str, Any]]:
+    """HQ ICLOW lines already ordered and not received. This is the ค้างรับ list."""
+    engine = get_site_engine("hq")
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    sql = text(
+        f"""
+        SELECT {_SELECT},
+          CONVERT(varchar(10), DOCDATE, 23) AS DOCDATE
+        FROM dbo.ICLOW WITH (NOLOCK)
+        WHERE {_NV('ORDERED', 10)} = 'Y'
+          AND {_NV('RECEIVED', 10)} <> 'Y'
+          AND {_NOT_CANCELED}
+          AND {_NV('BCODE', 40)} LIKE '%[0-9]%'
+        ORDER BY {_NV('VENDOR', 40)}, {_NV('BCODE', 40)}, ID
+        OFFSET :off ROWS FETCH NEXT :lim ROWS ONLY
+        """
+    )
+    with engine.connect() as conn:
+        while True:
+            batch = conn.execute(sql, {"off": offset, "lim": _PAGE}).mappings().all()
+            if not batch:
+                break
+            for row in batch:
+                parsed = _row_from_mapping(row)
+                parsed["docdate"] = str(row.get("DOCDATE") or "")[:10]
+                rows.append(parsed)
+            if len(batch) < _PAGE:
+                break
+            offset += _PAGE
+            if offset >= 2000:
+                break
+    return rows
+
+
+def fetch_trade_history(bcode: str, *, limit: int = 8) -> dict[str, list[dict[str, Any]]]:
+    """Recent HQ purchases and sales for one product."""
+    code = str(bcode or "").strip()
+    empty: dict[str, list[dict[str, Any]]] = {"purchases": [], "sales": []}
+    if not code:
+        return empty
+    lim = max(1, min(int(limit or 8), 20))
+    engine = get_site_engine("hq")
+    purchases = text(
+        f"""
+        SELECT TOP {lim}
+          LTRIM(RTRIM(CONVERT(nvarchar(40), d.BILLNO))) AS BILLNO,
+          CONVERT(varchar(10), d.BILLDATE, 23) AS BILLDATE,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), d.ACCTNO))) AS ACCTNO,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(a.ACCTNAME,'')))) AS ACCTNAME,
+          d.QTY AS QTY,
+          LTRIM(RTRIM(CONVERT(nvarchar(20), COALESCE(d.UI,'')))) AS UI,
+          d.PRICE AS PRICE
+        FROM dbo.PIDET d WITH (NOLOCK)
+        LEFT JOIN dbo.APMAS a WITH (NOLOCK)
+          ON LTRIM(RTRIM(CONVERT(nvarchar(40), a.ACCTNO))) = LTRIM(RTRIM(CONVERT(nvarchar(40), d.ACCTNO)))
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), d.BCODE))) = :bcode
+          AND UPPER(LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(d.CANCELED,''))))) <> 'Y'
+          AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(d.JOURMODE,'')))) <> '0'
+        ORDER BY d.BILLDATE DESC, d.BILLNO DESC
+        """
+    )
+    sales = text(
+        f"""
+        SELECT TOP {lim}
+          LTRIM(RTRIM(CONVERT(nvarchar(40), d.BILLNO))) AS BILLNO,
+          CONVERT(varchar(10), d.BILLDATE, 23) AS BILLDATE,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(m.ACCTNAME,'')))) AS ACCTNAME,
+          d.QTY AS QTY,
+          LTRIM(RTRIM(CONVERT(nvarchar(20), COALESCE(d.UI,'')))) AS UI,
+          d.PRICE AS PRICE
+        FROM dbo.SIDET d WITH (NOLOCK)
+        LEFT JOIN dbo.SIMAS m WITH (NOLOCK)
+          ON d.BILLNO = m.BILLNO
+         AND d.BILLDATE = m.BILLDATE
+         AND d.BILLTYPE = m.BILLTYPE
+         AND d.JOURMODE = m.JOURMODE
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), d.BCODE))) = :bcode
+          AND UPPER(LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(d.CANCELED,''))))) <> 'Y'
+          AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(d.JOURMODE,'')))) <> '0'
+        ORDER BY d.BILLDATE DESC, d.BILLNO DESC
+        """
+    )
+
+    def _money(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number != number:
+            return None
+        return round(number, 2)
+
+    def _pack(row: Any, *, vendor: bool) -> dict[str, Any]:
+        item = {
+            "billno": str(row.get("BILLNO") or "").strip(),
+            "date": str(row.get("BILLDATE") or "")[:10],
+            "name": str(row.get("ACCTNAME") or "").strip(),
+            "qty": _qty(row.get("QTY")),
+            "ui": str(row.get("UI") or "").strip(),
+            "price": _money(row.get("PRICE")),
+        }
+        if vendor:
+            item["acctno"] = str(row.get("ACCTNO") or "").strip()
+        return item
+
+    out = {"purchases": [], "sales": []}
+    with engine.connect() as conn:
+        out["purchases"] = [
+            _pack(row, vendor=True)
+            for row in conn.execute(purchases, {"bcode": code}).mappings().all()
+        ]
+        out["sales"] = [
+            _pack(row, vendor=False)
+            for row in conn.execute(sales, {"bcode": code}).mappings().all()
+        ]
     return out
 
 
@@ -166,7 +299,7 @@ def fetch_unordered_bcodes(bcodes: list[str]) -> set[str]:
             sql = text(
                 f"""
                 SELECT DISTINCT {_NV('BCODE', 40)} AS BCODE
-                FROM dbo.ICLOW
+                FROM dbo.ICLOW WITH (NOLOCK)
                 WHERE {_NV('BCODE', 40)} IN ({placeholders})
                   AND {_NOT_CANCELED}
                   AND {_ORDERED_N}

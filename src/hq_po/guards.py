@@ -270,3 +270,16 @@ def chosen_pack(asked_ui: Any, product: dict[str, Any] | None) -> tuple[str, flo
     if ui1 and asked == ui1:
         return ui1, 1.0
     return None
+
+
+def release_badge(kind: str, vendor: str) -> dict[str, str] | None:
+    """Status shown on รอสั่ง after a ค้างรับ line is sent back."""
+    code = str(vendor or "").strip()
+    key = str(kind or "").strip()
+    if key == "switch":
+        label = f"เปลี่ยนเจ้าสั่ง (เดิม {code})" if code else "เปลี่ยนเจ้าสั่ง"
+    elif key == "reorder":
+        label = f"สั่งย้ำเจ้าเดิม ({code})" if code else "สั่งย้ำเจ้าเดิม"
+    else:
+        return None
+    return {"kind": key, "previous_vendor": code, "label": label}

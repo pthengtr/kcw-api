@@ -9,6 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from src.hq_po.group import sort_products
+from src.hq_po.guards import release_badge
 from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
     fetch_incoming_qty,
@@ -16,6 +17,7 @@ from src.hq_po.iclow_read import (
     fetch_to_order_rows,
     fetch_vendor_names,
     supplier_choices,
+    thumb_url,
 )
 from src.hq_po.insight import (
     annotate_iclow_items,
@@ -273,6 +275,42 @@ def _attach_parts9(
             item["parts9_qty"] = qty
 
 
+def _attach_photos(items: list[dict[str, Any]]) -> None:
+    for item in items:
+        bcode = str(item.get("bcode") or "").strip()
+        if bcode and not item.get("photo"):
+            item["photo"] = thumb_url(bcode)
+
+
+def _attach_release_marks(items: list[dict[str, Any]]) -> None:
+    ids: list[int] = []
+    for item in items:
+        try:
+            iclow_id = int(item.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if iclow_id > 0:
+            ids.append(iclow_id)
+    if not ids:
+        return
+    try:
+        from src.hq_po.db import get_hq_po_supabase_client, release_marks_for
+
+        marks = release_marks_for(get_hq_po_supabase_client(), ids)
+    except Exception:
+        logger.warning("hq po release-mark lookup failed", exc_info=True)
+        return
+    for item in items:
+        try:
+            iclow_id = int(item.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        mark = marks.get(iclow_id) or {}
+        badge = release_badge(str(mark.get("kind") or ""), str(mark.get("previous_vendor") or ""))
+        if badge:
+            item["release"] = badge
+
+
 def _catalog_for(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     try:
         return fetch_sheet_products(bcodes)
@@ -364,6 +402,8 @@ def build_suggest() -> dict[str, Any]:
             annotate_iclow_items(items, policies, incoming=incoming)
     _attach_parts9(items, parts9)
     attach_catalog(items, products)
+    _attach_photos(items)
+    _attach_release_marks(items)
     return {
         "items": sort_products(items),
         "stock_ok": stock_ok,
@@ -386,4 +426,5 @@ def build_insight_only() -> dict[str, Any]:
     lines = _ensure_insight_future(policies, iclow_bcodes, incoming).result()
     _attach_parts9(lines)
     attach_catalog(lines)
+    _attach_photos(lines)
     return {"items": lines}
