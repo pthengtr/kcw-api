@@ -10,6 +10,10 @@ import argparse
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from src.bot.line_bot import push_line_message
 from src.db import get_engine
 from src.handlers.sales import handle_sales_query

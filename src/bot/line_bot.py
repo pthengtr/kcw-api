@@ -6,17 +6,23 @@ import hashlib
 import requests
 
 
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 LINE_CONTENT_URL_BASE = "https://api-data.line.me/v2/bot/message"
 
 
+def _channel_secret() -> str:
+    # Read at call time. CLI jobs load .env after this module is imported.
+    return (os.getenv("LINE_CHANNEL_SECRET") or "").strip()
+
+
+def _access_token() -> str:
+    return (os.getenv("LINE_CHANNEL_ACCESS_TOKEN") or "").strip()
+
+
 def verify_line_signature(body: bytes, signature: str) -> bool:
     digest = hmac.new(
-        LINE_CHANNEL_SECRET.encode("utf-8"),
+        _channel_secret().encode("utf-8"),
         body,
         hashlib.sha256,
     ).digest()
@@ -35,7 +41,7 @@ def download_line_message_content(message_id: str) -> tuple[bytes, str]:
         raise ValueError("Missing LINE message_id")
 
     headers = {
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {_access_token()}",
     }
 
     url = f"{LINE_CONTENT_URL_BASE}/{message_id}/content"
@@ -49,7 +55,7 @@ def download_line_message_content(message_id: str) -> tuple[bytes, str]:
 def reply_line_payload(reply_token: str, messages: list[dict]):
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {_access_token()}",
     }
 
     payload = {
@@ -67,7 +73,7 @@ def push_line_message(to: str, text: str):
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {_access_token()}",
     }
     payload = {
         "to": to,

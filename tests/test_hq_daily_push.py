@@ -1,3 +1,4 @@
+import src.bot.line_bot as line_bot
 from src.hq_daily_push import fail_names, format_hq_failure, log_excerpt, ok_names
 from src.tar_transfer.push import line_user_ids_for_names, name_tokens
 
@@ -51,6 +52,23 @@ def test_names_match_display_words():
     assert line_user_ids_for_names(engine, ["peung", "turbo"]) == ["Upeung", "Uturbo"]
     assert "ice" in name_tokens("January Ice")
     assert "phu" in name_tokens("PHU Nattapon W.")
+
+
+def test_push_reads_token_set_after_import(monkeypatch):
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["auth"] = headers["Authorization"]
+        return _Resp()
+
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "late-token")
+    monkeypatch.setattr(line_bot.requests, "post", fake_post)
+    line_bot.push_line_message("U1", "hi")
+    assert captured["auth"] == "Bearer late-token"
 
 
 def test_default_recipients(monkeypatch):
