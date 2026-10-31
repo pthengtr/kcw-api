@@ -14,10 +14,19 @@ from src.hq_po.guards import (
     plan_confirm,
     plan_created,
     receive_view,
+    release_badge,
 )
 from src.hq_po.insight import ai_recommendation, annotate_iclow_items, insight_only_lines
 from src.hq_po.stock import parts9_order_qty
 from src.hq_po.ui import page
+
+
+def test_release_badge_names_the_old_vendor():
+    switch = release_badge("switch", "7SKKS")
+    reorder = release_badge("reorder", "7SKKS")
+    assert switch["label"] == "เปลี่ยนเจ้าสั่ง (เดิม 7SKKS)"
+    assert reorder["label"] == "สั่งย้ำเจ้าเดิม (7SKKS)"
+    assert release_badge("other", "7SKKS") is None
 
 
 NOW = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)

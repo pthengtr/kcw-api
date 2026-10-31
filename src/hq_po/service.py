@@ -14,6 +14,8 @@ from src.hq_po.db import (
     mark_line_canceled,
     mark_order_canceled,
     open_lines_for_iclow,
+    release_marks_for,
+    upsert_release_mark,
 )
 from src.hq_po.docno import make_docno, make_short_id
 from src.hq_po.guards import (
@@ -23,13 +25,17 @@ from src.hq_po.guards import (
     plan_confirm,
     plan_created,
     receive_view,
+    release_badge,
     skip_already_open,
 )
 from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
     fetch_iclow_by_ids,
+    fetch_incoming_lines,
     fetch_incoming_qty,
     fetch_live_vendors,
+    fetch_trade_history,
+    thumb_url,
     fetch_ordered_product_rows,
     fetch_to_order_rows,
     fetch_sheet_products,
@@ -47,7 +53,13 @@ from src.hq_po.insight import (
     load_insight_policies,
     load_insight_policies_for_supplier,
 )
-from src.hq_po.stamp import cancel_created, insert_ordered_lines, revert_ordered, stamp_ordered
+from src.hq_po.stamp import (
+    cancel_created,
+    insert_ordered_lines,
+    release_to_waiting,
+    revert_ordered,
+    stamp_ordered,
+)
 from src.hq_po.suggest import attach_catalog, build_insight_only, build_suggest, suppliers_for_bcode
 
 
@@ -60,6 +72,102 @@ def suggest_payload() -> dict[str, Any]:
 
 def insight_only_payload() -> dict[str, Any]:
     return build_insight_only()
+
+
+def _incoming_item(row: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
+    vendor = str(row.get("vendor") or "").strip()
+    return {
+        "iclow_id": row.get("iclow_id"),
+        "vendor": vendor,
+        "vendor_name": names.get(vendor) or "",
+        "bcode": row.get("bcode") or "",
+        "descr": row.get("descr") or "",
+        "qty": row.get("qty") or 0,
+        "ui": row.get("ui") or "",
+        "docno": row.get("docno") or "",
+        "docdate": row.get("docdate") or "",
+        "photo": thumb_url(str(row.get("bcode") or "")),
+    }
+
+
+def incoming_payload() -> dict[str, Any]:
+    """ค้างรับ from PARTS9 ICLOW, including lines the old PO screen ordered."""
+    try:
+        rows = fetch_incoming_lines()
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "อ่านค้างรับไม่ได้") from exc
+    try:
+        names = fetch_vendor_names([row.get("vendor") or "" for row in rows])
+    except Exception:
+        names = {}
+    return {"items": [_incoming_item(row, names) for row in rows]}
+
+
+def trade_history_payload(bcode: str) -> dict[str, Any]:
+    code = str(bcode or "").strip()
+    if not code:
+        raise HqPoError("missing", "ไม่มีรหัสสินค้า")
+    try:
+        history = fetch_trade_history(code)
+    except Exception as exc:
+        raise HqPoError("vendor_mismatch", "อ่านประวัติซื้อขายไม่ได้") from exc
+    history["bcode"] = code
+    history["photo"] = thumb_url(code)
+    return history
+
+
+def release_incoming(iclow_id: int, kind: str) -> dict[str, Any]:
+    """Cancel one ค้างรับ line and send it back to รอสั่ง with a status."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่ยกเลิกค้างรับ",
+        )
+    badge = release_badge(kind, "")
+    if not badge:
+        raise HqPoError("missing", "เลือกได้แค่เปลี่ยนเจ้าหรือสั่งย้ำเจ้าเดิม")
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    live = fetch_iclow_by_ids([iclow_n]).get(iclow_n)
+    if not live:
+        raise HqPoError("missing", f"ไม่พบ ICLOW {iclow_n}")
+    if str(live.get("received") or "").strip().upper() == "Y":
+        raise HqPoError("already_received", "รับของแล้ว ยกเลิกค้างรับไม่ได้")
+    if str(live.get("canceled") or "").strip().upper() == "Y":
+        raise HqPoError("missing", "รายการนี้ถูกยกเลิกแล้ว")
+    if str(live.get("ordered") or "").strip().upper() != "Y":
+        raise HqPoError("missing", "รายการนี้ไม่ได้อยู่ในค้างรับ")
+    vendor = str(live.get("vendor") or "").strip()
+    try:
+        name = fetch_vendor_names([vendor]).get(vendor) or ""
+    except Exception:
+        name = ""
+    client = get_hq_po_supabase_client()
+    held = open_lines_for_iclow(client, [iclow_n]).get(iclow_n) or {}
+    if held.get("line_id") and held.get("order_id"):
+        mark_line_canceled(
+            client,
+            str(held["order_id"]),
+            str(held["line_id"]),
+            reason=badge["kind"],
+        )
+    release_to_waiting(iclow_n)
+    upsert_release_mark(
+        client,
+        {
+            "iclow_id": iclow_n,
+            "bcode": str(live.get("bcode") or "").strip(),
+            "kind": badge["kind"],
+            "previous_vendor": vendor,
+            "previous_vendor_name": name or None,
+            "previous_docno": str(live.get("docno") or "").strip() or None,
+        },
+    )
+    shown = release_badge(badge["kind"], vendor) or badge
+    return {"iclow_id": iclow_n, "bcode": live.get("bcode") or "", "release": shown}
 
 
 def vendor_search_payload(query: str) -> dict[str, Any]:

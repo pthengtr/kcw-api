@@ -266,6 +266,43 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
         raise HqPoError("iclow_update_failed", str(exc)) from exc
 
 
+def release_to_waiting(iclow_id: int) -> None:
+    """Return one ค้างรับ row to รอสั่ง. Refuses a line PARTS9 already received."""
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    if iclow_n <= 0:
+        raise HqPoError("missing", "ไม่พบแถว ICLOW")
+    try:
+        engine = _engine()
+        with engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    f"""
+                    UPDATE dbo.ICLOW
+                    SET ORDERED = 'N',
+                        DOCNO = '',
+                        DOCDATE = NULL
+                    WHERE CONVERT(bigint, ID) = :iclow_id
+                      AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) = 'Y'
+                      AND {_RECEIVED_N}
+                      AND {_NOT_CANCELED}
+                    """
+                ),
+                {"iclow_id": iclow_n},
+            )
+            if result.rowcount != 1:
+                raise HqPoError("stamp_conflict", "ยกเลิกค้างรับไม่ได้ เพราะรับแล้วหรือแถวเปลี่ยนไปแล้ว")
+    except HqPoError:
+        raise
+    except Exception as exc:
+        denied = _permission(exc)
+        if denied:
+            raise denied from exc
+        raise HqPoError("iclow_update_failed", str(exc)) from exc
+
+
 def revert_ordered(lines: list[dict[str, Any]], *, docno: str) -> None:
     """Clear our ORDERED stamp. Refuses rows PIMAS already received or that no longer carry our DOCNO."""
     doc = (docno or "").strip()

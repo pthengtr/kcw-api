@@ -54,7 +54,7 @@ def open_lines_for_iclow(client: Client, iclow_ids: list[int]) -> dict[int, dict
         chunk = ids[start : start + 80]
         lines = _rows(
             _table(client, "lines")
-            .select("iclow_id,bcode,order_id")
+            .select("iclow_id,bcode,order_id,line_id")
             .in_("iclow_id", chunk)
             .is_("canceled_at", "null")
             .execute()
@@ -84,6 +84,7 @@ def open_lines_for_iclow(client: Client, iclow_ids: list[int]) -> dict[int, dict
                 "bcode": line.get("bcode"),
                 "docno": str(parent.get("docno") or "").strip(),
                 "order_id": line.get("order_id"),
+                "line_id": line.get("line_id"),
             }
     return found
 
@@ -230,3 +231,37 @@ def list_orders(client: Client, *, limit: int = 80) -> list[dict[str, Any]]:
     for header in headers:
         header["lines"] = by_order.get(header.get("order_id"), [])
     return headers
+
+
+def release_marks_for(client: Client, iclow_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Cancel decisions that send a ค้างรับ line back to รอสั่ง."""
+    ids: list[int] = []
+    seen: set[int] = set()
+    for raw in iclow_ids:
+        try:
+            iclow_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if iclow_id > 0 and iclow_id not in seen:
+            seen.add(iclow_id)
+            ids.append(iclow_id)
+    found: dict[int, dict[str, Any]] = {}
+    for start in range(0, len(ids), 80):
+        chunk = ids[start : start + 80]
+        rows = _rows(
+            _table(client, "release_marks")
+            .select("iclow_id,bcode,kind,previous_vendor,previous_vendor_name,previous_docno")
+            .in_("iclow_id", chunk)
+            .execute()
+        )
+        for row in rows:
+            try:
+                iclow_id = int(row.get("iclow_id"))
+            except (TypeError, ValueError):
+                continue
+            found[iclow_id] = row
+    return found
+
+
+def upsert_release_mark(client: Client, row: dict[str, Any]) -> None:
+    _table(client, "release_marks").upsert(row, on_conflict="iclow_id").execute()
