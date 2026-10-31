@@ -40,12 +40,25 @@ def explicit_push_user_ids() -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-def push_recipient_ids(engine) -> list[str]:
-    explicit = explicit_push_user_ids()
-    if explicit:
-        return explicit
-    names = push_names()
-    if not names:
+def name_tokens(display_name: str) -> set[str]:
+    """Compact form plus each word, so 'phu' matches 'PHU Nattapon W.'."""
+    raw = display_name or ""
+    compact = "".join(raw.split()).casefold()
+    tokens = {compact} if compact else set()
+    for word in raw.replace(".", " ").split():
+        cleaned = "".join(ch for ch in word.casefold() if ch.isalnum())
+        if cleaned:
+            tokens.add(cleaned)
+    return tokens
+
+
+def line_user_ids_for_names(engine, names: list[str]) -> list[str]:
+    wanted = []
+    for part in names:
+        token = "".join(part.split()).casefold()
+        if token and token not in wanted:
+            wanted.append(token)
+    if not wanted:
         return []
     with engine.connect() as conn:
         rows = conn.execute(
@@ -59,10 +72,17 @@ def push_recipient_ids(engine) -> list[str]:
         ).fetchall()
     found = []
     for line_user_id, display_name in rows:
-        folded = "".join((display_name or "").split()).casefold()
-        if folded in names:
+        tokens = name_tokens(display_name or "")
+        if any(token in tokens for token in wanted) and line_user_id not in found:
             found.append(line_user_id)
     return found
+
+
+def push_recipient_ids(engine) -> list[str]:
+    explicit = explicit_push_user_ids()
+    if explicit:
+        return explicit
+    return line_user_ids_for_names(engine, push_names())
 
 
 def state_path() -> Path:
