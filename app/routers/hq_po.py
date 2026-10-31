@@ -11,10 +11,14 @@ from src.hq_po.guards import HqPoError
 from src.hq_po.service import (
     cancel_order,
     cancel_order_line,
+    clear_named_block,
+    clear_product_unavailable,
     confirm_order,
+    dismiss_waiting_line,
     incoming_payload,
     insight_only_payload,
     list_open_orders,
+    mark_product_unavailable,
     release_incoming,
     product_insight_payload,
     peers_payload,
@@ -41,6 +45,11 @@ class ConfirmBody(BaseModel):
 
 class CancelBody(BaseModel):
     reason: str | None = None
+
+
+class ClearBlockBody(BaseModel):
+    bcode: str = ""
+    acctno: str = ""
 
 
 class ReleaseBody(BaseModel):
@@ -340,6 +349,56 @@ def api_history(bcode: str, request: Request, site: str = "hq"):
         return _error(exc, 400 if exc.code == "missing" else 502)
     except Exception as exc:
         return JSONResponse({"error": "history_failed", "message": str(exc)}, status_code=502)
+
+
+def _actor(ident) -> str | None:
+    if ident is None:
+        return None
+    return getattr(ident, "display_name", None) or getattr(ident, "line_user_id", None)
+
+
+@router.post("/api/iclow/{iclow_id}/unavailable")
+def api_mark_unavailable(iclow_id: int, request: Request):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return mark_product_unavailable(iclow_id, marked_by=_actor(ident))
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.post("/api/blocks/clear")
+def api_clear_block(body: ClearBlockBody, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return clear_named_block(body.bcode, body.acctno)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.post("/api/iclow/{iclow_id}/available")
+def api_clear_unavailable(iclow_id: int, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return clear_product_unavailable(iclow_id)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.post("/api/waiting/{iclow_id}/dismiss")
+def api_dismiss_waiting(iclow_id: int, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return dismiss_waiting_line(iclow_id)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
 
 
 @router.post("/api/incoming/{iclow_id}/release")

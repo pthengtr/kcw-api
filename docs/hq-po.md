@@ -17,6 +17,8 @@ Supabase `hq_po` is the purchase order. PARTS9 `POMAS` / `PODET` are not written
 
 Cancel of the whole order is allowed only while every line is still unreceived and `DOCNO` is still ours. A row that was already on ICLOW returns to the waiting list. A row this app inserted is marked `CANCELED='Y'` and does not return.
 
+**นำออก** on a รอสั่ง line asks for confirmation, then sets HQ `ICMAS.QTYMIN` to `-1` (the legacy qtylo do-not-order mark) and sets `CANCELED='Y'` on that product's unordered, unreceived ICLOW rows. ค้างรับ rows stay. The product leaves this list and the legacy รอสั่งซื้อ list, and a later low-stock insert does not recreate it.
+
 ## Enable the stamp
 
 Listing works with the stamp flag off. Confirm and cancel refuse until both of these are done:
@@ -30,7 +32,7 @@ systemctl --user enable --now kcw-hq-po.service
 
 Optional URLs for the LINE button: `HQ_PO_PUBLIC_BASE_URL`, `HQ_PO_TAILSCALE_BASE_URL`. If unset, the bot rewrites the HQ explorer heartbeat onto port 8793.
 
-Apply the Supabase migrations `20261009120000_hq_po_schema.sql` and `20261009120100_hq_po_grants.sql` before confirming an order.
+Apply the Supabase migrations `20261009120000_hq_po_schema.sql`, `20261009120100_hq_po_grants.sql`, `20261031170000_hq_po_release_marks.sql`, and `20261031183000_hq_po_product_vendor_blocks.sql` before confirming an order. A product marked not available from a vendor is stored in `hq_po.product_vendor_blocks`.
 
 ## Known limit
 
