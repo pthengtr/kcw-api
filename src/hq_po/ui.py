@@ -79,7 +79,11 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .hist-card{background:#fff;width:min(720px,100%);max-height:86vh;overflow:auto;border-radius:16px 16px 0 0;padding:14px 14px calc(16px + env(safe-area-inset-bottom))}
 .hist-card h2{margin:8px 0;font-size:16px}
 .hist-card h3{margin:14px 0 6px;font-size:13px;color:var(--blue-deep)}
-.hist-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hist-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.hist-id{min-width:0;flex:1}
+.hist-id strong{display:block}
+#histName{margin-top:2px;font-size:14px;font-weight:650;color:var(--text);line-height:1.35}
+#histModel{margin-top:1px}
 .hist-site{margin:10px 0 4px}
 .istatus{display:inline-block;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700}
 .istatus.ok{background:var(--ok-bg);color:var(--ok)}
@@ -279,7 +283,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <div id="printSheet" aria-hidden="true"></div>
 <div id="hist" hidden>
   <div class="hist-card">
-    <div class="hist-top"><strong id="histTitle">Insight</strong><button type="button" id="histClose">ปิด</button></div>
+    <div class="hist-top"><div class="hist-id"><strong id="histTitle">Insight</strong><div id="histName" hidden></div><div id="histModel" class="meta" hidden></div></div><button type="button" id="histClose">ปิด</button></div>
     <div class="toggle hist-site" id="histSite">
       <button type="button" id="histHq" class="on">HQ</button>
       <button type="button" id="histSyp">SYP</button>
@@ -1393,7 +1397,17 @@ function liveInsight(bcode){
   const row = (state.items || []).find(item => String(item.bcode || "").trim() === code)
     || (state.hold || []).find(item => String(item.bcode || "").trim() === code)
     || {};
-  return {qtyHq: row.hq_qtyoh2, qtySyp: row.syp_qtyoh2, ui1: row.ui || row.ui1 || "", descr: row.descr || ""};
+  return {qtyHq: row.hq_qtyoh2, qtySyp: row.syp_qtyoh2, ui1: row.ui || row.ui1 || "", descr: row.descr || "", model: row.model || ""};
+}
+function showInsightIdentity(live){
+  const name = String((live && live.descr) || "").trim();
+  const model = String((live && live.model) || "").trim();
+  const nameEl = document.getElementById("histName");
+  const modelEl = document.getElementById("histModel");
+  nameEl.textContent = name;
+  nameEl.hidden = !name;
+  modelEl.textContent = model ? "ชื่อรุ่น " + model : "";
+  modelEl.hidden = !model;
 }
 function insightHtml(ins, live){
   const st = (ins && ins.status) || "no_movement";
@@ -1540,7 +1554,9 @@ async function openTrade(bcode, site){
   histSite = site === "syp" ? "syp" : "hq";
   const gen = ++histGen;
   const box = document.getElementById("hist");
+  const live = liveInsight(code);
   document.getElementById("histTitle").textContent = code + " · " + histSite.toUpperCase();
+  showInsightIdentity(live);
   document.getElementById("histHq").classList.toggle("on", histSite !== "syp");
   document.getElementById("histSyp").classList.toggle("on", histSite === "syp");
   document.getElementById("histBody").innerHTML = spinner("กำลังโหลด insight…");
@@ -1550,7 +1566,9 @@ async function openTrade(bcode, site){
     const data = await res.json().catch(() => ({}));
     if(gen !== histGen) return;
     if(!res.ok) throw new Error(data.message || "โหลด insight ไม่ได้");
-    document.getElementById("histBody").innerHTML = insightHtml(data, liveInsight(code));
+    const shown = liveInsight(code);
+    showInsightIdentity(shown);
+    document.getElementById("histBody").innerHTML = insightHtml(data, shown);
   } catch (err) {
     if(gen !== histGen) return;
     document.getElementById("histBody").innerHTML = '<div class="empty">โหลด insight ไม่ได้</div>';

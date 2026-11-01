@@ -336,6 +336,9 @@ def test_page_defaults_product_view():
     assert "กำลังค้นหา" in html
     assert 'id="qStatus"' in html
     assert "ชื่อรุ่น" in html
+    assert 'id="histName"' in html
+    assert 'id="histModel"' in html
+    assert 'model: row.model || ""' in html
     assert "เบอร์แท้" in html
     assert "เบอร์โรงงาน" in html
     assert "ยี่ห้อ" in html
