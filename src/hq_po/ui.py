@@ -69,7 +69,12 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .line .meta{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
 .line-main{display:flex;gap:8px;min-width:0}
 .line-main > div{min-width:0;flex:1}
-.thumb{width:52px;height:52px;object-fit:cover;border-radius:8px;background:#e2e8f0;flex:none}
+.thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
+.thumb{width:52px;height:52px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
+#photo{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.78);display:flex;align-items:center;justify-content:center;padding:48px 16px 16px}
+#photo[hidden]{display:none}
+#photo img{max-width:min(960px,100%);max-height:calc(100vh - 88px);object-fit:contain;border-radius:12px;background:#fff}
+#photoClose{position:absolute;top:12px;right:12px;min-height:40px;border:0;border-radius:10px;background:#fff;color:var(--blue-deep);font-weight:700;padding:8px 14px}
 .flag{display:inline-block;margin-top:6px;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;line-height:1.35}
 .flag.switch{background:#ffedd5;color:#9a3412}
 .flag.reorder{background:#dbeafe;color:#1e3a8a}
@@ -291,6 +296,10 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <div id="histBody"></div>
   </div>
 </div>
+<div id="photo" hidden>
+  <button type="button" id="photoClose">ปิด</button>
+  <img id="photoImg" alt="">
+</div>
 <div id="busy" hidden>
   <div class="busy-card"><span class="spin" aria-hidden="true"></span><div id="busyText">กำลังดำเนินการ…</div></div>
 </div>
@@ -402,7 +411,22 @@ function moneyText(n){
 }
 function thumbHtml(row){
   if(!row || !row.photo) return "";
-  return `<img class="thumb" alt="" loading="lazy" src="${esc(row.photo)}" onerror="this.remove()"/>`;
+  const label = String(row.bcode || "").trim();
+  return `<button type="button" class="thumb-btn" data-photo="${esc(row.photo)}" aria-label="ดูรูปเต็ม${label ? " " + esc(label) : ""}"><img class="thumb" alt="" loading="lazy" src="${esc(row.photo)}" onerror="this.closest('button').remove()"/></button>`;
+}
+function openPhoto(src){
+  const url = String(src || "").trim();
+  if(!url) return;
+  const img = document.getElementById("photoImg");
+  img.alt = "รูปสินค้า";
+  img.src = url;
+  document.getElementById("photo").hidden = false;
+}
+function closePhoto(){
+  const box = document.getElementById("photo");
+  if(!box || box.hidden) return;
+  box.hidden = true;
+  document.getElementById("photoImg").removeAttribute("src");
 }
 function flagHtml(row){
   const parts = [];
@@ -1517,7 +1541,7 @@ function insightHtml(ins, live){
       return `<tr><td>${esc(name)}</td><td class="num">${qtyU(num(row.qty))}</td>${extra}</tr>`;
     }).join("");
   };
-  const photo = ins.photo ? `<img class="thumb" alt="" src="${esc(ins.photo)}" onerror="this.remove()"/>` : "";
+  const photo = thumbHtml({photo: ins.photo, bcode: ins.bcode});
   const summary = ins.summary ? `<div class="meta">${esc(ins.summary)}</div>` : "";
   const when = [ins.facts_as_of ? "ข้อมูลถึง " + ins.facts_as_of : "", ins.generated_at ? "สร้าง " + ins.generated_at : ""].filter(Boolean).join(" · ");
   return `${photo}<div style="margin-top:8px"><span class="istatus ${stInfo[0]}">${esc(stInfo[1])}</span></div>
@@ -1603,6 +1627,17 @@ document.getElementById("holdQ").oninput = (e) => {
   state.holdQ = e.target.value;
   if(state.holdLoaded) renderHold();
 };
+document.addEventListener("click", (e) => {
+  const shot = e.target.closest("[data-photo]");
+  if(shot){
+    openPhoto(shot.getAttribute("data-photo") || "");
+    return;
+  }
+  if(e.target.id === "photo" || e.target.closest("#photoClose")) closePhoto();
+});
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Escape") closePhoto();
+});
 document.getElementById("holdList").onclick = (e) => {
   const trade = e.target.closest("[data-trade]");
   if(trade){ openTrade(trade.getAttribute("data-trade") || ""); return; }

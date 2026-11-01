@@ -362,6 +362,9 @@ def test_page_defaults_product_view():
     assert "data-key" in html
     assert "PARTS9" in html
     assert "ดูใบส่งเจ้าหนี้" in html
+    assert 'id="photo"' in html
+    assert "data-photo" in html
+    assert "function openPhoto" in html
     assert "แบบย่อ" in html
     assert "แบบเต็ม" in html
     assert "คัดลอกส่งฝ่ายขาย" in html
