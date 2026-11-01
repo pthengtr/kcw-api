@@ -529,8 +529,8 @@ function productTools(row){
   const key = esc(rowKey(row));
   const order = (row.confirmable && STAMP)
     ? (orderableVendor(row)
-        ? `<button type="button" class="order-btn" data-order="${key}">สั่งกับเจ้าหนี้นี้</button>`
-        : `<button type="button" class="order-btn" data-vendors="${key}">เลือกเจ้าหนี้ก่อนสั่ง</button>`)
+        ? `<button type="button" class="order-btn" data-order="${key}">สั่งกับบริษัทนี้</button>`
+        : `<button type="button" class="order-btn" data-vendors="${key}">เลือกบริษัทก่อนสั่ง</button>`)
     : "";
   const trade = tradeButton(row.bcode);
   const stock = (STAMP && row.source === "iclow" && row.iclow_id && row.vendor && !row.vendor_blocked)
@@ -1492,9 +1492,12 @@ function insightHtml(ins, live){
     if(n != null) return n;
     return chSum ? (part || 0) / chSum * 100 : null;
   };
-  const qtyHq = num(live.qtyHq);
-  const qtySyp = num(live.qtySyp);
-  const qtyTotal = (qtyHq != null || qtySyp != null) ? (qtyHq || 0) + (qtySyp || 0) : null;
+  const stBlk = der.stock || {};
+  const qtyHq = num(pick(live.qtyHq, stk.hq, stBlk.qtyoh_hq, pol.qtyoh_hq));
+  const qtySyp = num(pick(live.qtySyp, stk.syp, stBlk.qtyoh_syp, pol.qtyoh_syp));
+  const qtyTotal = (qtyHq != null || qtySyp != null)
+    ? (qtyHq || 0) + (qtySyp || 0)
+    : num(pick(stk.total, stBlk.company_qtyoh));
   const target = num(pick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
   const reorder = num(pick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
   const lot = num(pick(stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
@@ -1550,7 +1553,7 @@ function insightHtml(ins, live){
     <div class="ikpis">${kpi("เดือนล่าสุด", qtyU(latestMo))}${kpi("เฉลี่ย 3 เดือน", qtyU(avg3))}${kpi("เฉลี่ยช่วงข้อมูล", qtyU(avg12))}${kpi("รวม 12 เดือน", qtyU(tot12))}</div>
     ${bars}
     <h3>Stock</h3>
-    <div class="istock">${kpi("คงเหลือรวม", qtyU(qtyTotal))}${kpi("Safety Stock", qtyU(target) + (coverDays != null ? `<div class="l">ประมาณ ${esc(String(coverDays))} วัน</div>` : ""))}${kpi("จุดสั่งซื้อ", qtyU(reorder))}${kpi("ล็อตแนะนำ", qtyU(lot))}</div>
+    <div class="istock">${kpi("คงเหลือรวม", qtyU(qtyTotal))}${kpi("คงเหลือ HQ", qtyU(qtyHq))}${kpi("คงเหลือ SYP", qtyU(qtySyp))}${kpi("Safety Stock", qtyU(target) + (coverDays != null ? `<div class="l">ประมาณ ${esc(String(coverDays))} วัน</div>` : ""))}${kpi("จุดสั่งซื้อ", qtyU(reorder))}${kpi("ล็อตแนะนำ", qtyU(lot))}</div>
     <h3>ช่องทางขาย 12 เดือน</h3>
     <table class="itable"><thead><tr><th>ช่องทาง</th><th class="num">ยอดขาย</th><th class="num">สัดส่วน</th></tr></thead><tbody>
       <tr><td>HQ</td><td class="num">${qtyU(chHq)}</td><td class="num">${share(pct(chHq, ch.hq_pct))}</td></tr>
@@ -1847,11 +1850,11 @@ function syncOrderButton(row){
   const orderBtn = line.querySelector(".order-btn");
   if(!orderBtn) return;
   if(row.vendor && !row.vendor_blocked){
-    orderBtn.textContent = "สั่งกับเจ้าหนี้นี้";
+    orderBtn.textContent = "สั่งกับบริษัทนี้";
     orderBtn.removeAttribute("data-vendors");
     orderBtn.setAttribute("data-order", key);
   } else {
-    orderBtn.textContent = "เลือกเจ้าหนี้ก่อนสั่ง";
+    orderBtn.textContent = "เลือกบริษัทก่อนสั่ง";
     orderBtn.removeAttribute("data-order");
     orderBtn.setAttribute("data-vendors", key);
   }
@@ -2267,6 +2270,44 @@ document.getElementById("list").oninput = (e) => {
   const row = findRow(input.dataset.qty || "");
   if(row) row.order_qty = input.value;
 };
+async function chooseSupplier(row, pick){
+  const hit = row && (row.suppliers || []).find(s => s.acctno === pick.value);
+  if(!hit || !row) return;
+  if(hit.unavailable){
+    const name = row.bcode ? ` ${row.bcode}` : "";
+    if(!confirm(`เอาเครื่องหมายไม่มีสินค้าออกจาก${name} แล้วสั่งกับบริษัทนี้?`)){
+      pick.value = "";
+      return;
+    }
+    setBusy(true, "กำลังเอาเครื่องหมายออก…");
+    let failed = null;
+    try {
+      const res = await fetch("/hq-po/api/blocks/clear", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({bcode: row.bcode, acctno: hit.acctno}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok) failed = new Error(data.message || "เอาเครื่องหมายออกไม่สำเร็จ");
+    } catch (err) {
+      failed = err;
+    } finally {
+      setBusy(false);
+    }
+    if(failed){
+      alert(failed.message || "เอาเครื่องหมายออกไม่สำเร็จ");
+      pick.value = "";
+      return;
+    }
+    hit.unavailable = false;
+  }
+  row.vendor = hit.acctno;
+  row.vendor_name = hit.name || "";
+  row.vendor_blocked = false;
+  row._hay = "";
+  haystack(row);
+  renderList();
+}
 document.getElementById("list").onchange = (e) => {
   const all = e.target.closest("input[data-select-all]");
   if(all){
@@ -2288,16 +2329,7 @@ document.getElementById("list").onchange = (e) => {
   }
   const pick = e.target.closest("select[data-pick]");
   if(!pick){ syncDock(); return; }
-  const row = findRow(pick.dataset.pick || "");
-  const hit = row && (row.suppliers || []).find(s => s.acctno === pick.value);
-  if(hit && row){
-    row.vendor = hit.acctno;
-    row.vendor_name = hit.name || "";
-    row.vendor_blocked = !!hit.unavailable;
-    row._hay = "";
-    haystack(row);
-    syncOrderButton(row);
-  }
+  chooseSupplier(findRow(pick.dataset.pick || ""), pick);
 };
 document.getElementById("dockConfirm").onclick = () => openSheet(checkedRows());
 document.getElementById("sheetClose").onclick = () => closeSheet();
