@@ -24,6 +24,7 @@ from src.hq_po.insight import (
     insight_only_lines,
     load_insight_policies,
     load_insight_policies_for,
+    stock_codes_for_insight,
 )
 from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty, schedule_qtyoh2_refresh
 
@@ -188,9 +189,10 @@ def _compute_insight_only(
 ) -> list[dict[str, Any]]:
     """Live gap for products that are not already on the ICLOW list.
 
-    This scans every insight SKU, so it must not block the ICLOW response.
+    Only a fresh policy can be recommended. The stock read stays off the
+    waiting-list response; the AI tab is what waits for it.
     """
-    codes = [b for b in policies if b not in iclow_bcodes]
+    codes = stock_codes_for_insight(policies, set(iclow_bcodes))
     hq, syp, ok = fetch_dual_stock(codes) if codes else ({}, {}, True)
     lines = (
         insight_only_lines(

@@ -92,28 +92,126 @@ def _fetch_icmas_meta(
                 continue
             qtymin = _parse_qty(row["QTYMIN"])
             mtp2 = _parse_qty(row["MTP2"]) or 1.0
-            blocked = qtymin < 0
-            if blocked and not include_blocked:
+            if qtymin < 0 and not include_blocked:
                 continue
             loc1 = (row["location1"] or "").strip()
             loc2 = (row["location2"] or "").strip()
-            out[bcode] = {
-                "qtyoh2": _parse_qty(row["QTYOH2"]),
-                "qtymin": qtymin,
-                "blocked": blocked,
-                "descr": (row["descr"] or "").strip(),
-                "model": (row["model"] or "").strip(),
-                "brand": (row["brand"] or "").strip(),
-                "pcode": (row["pcode"] or "").strip(),
-                "mcode": (row["mcode"] or "").strip(),
-                "ui1": (row["ui1"] or "").strip(),
-                "ui2": (row["ui2"] or "").strip(),
-                "mtp2": mtp2 if mtp2 > 0 else 1.0,
-                "location1": loc1,
-                "location2": loc2,
-                "location": _format_location(loc1, loc2),
-            }
+            out[bcode] = _icmas_meta_from_row(row, qtymin=qtymin, mtp2=mtp2, loc1=loc1, loc2=loc2)
     return out
+
+
+def _icmas_meta_from_row(row, *, qtymin: float, mtp2: float, loc1: str, loc2: str) -> dict[str, Any]:
+    return {
+        "qtyoh2": _parse_qty(row["QTYOH2"]),
+        "qtymin": qtymin,
+        "blocked": qtymin < 0,
+        "descr": (row["descr"] or "").strip(),
+        "model": (row["model"] or "").strip(),
+        "brand": (row["brand"] or "").strip(),
+        "pcode": (row["pcode"] or "").strip(),
+        "mcode": (row["mcode"] or "").strip(),
+        "ui1": (row["ui1"] or "").strip(),
+        "ui2": (row["ui2"] or "").strip(),
+        "mtp2": mtp2 if mtp2 > 0 else 1.0,
+        "location1": loc1,
+        "location2": loc2,
+        "location": _format_location(loc1, loc2),
+    }
+
+
+def _icmas_meta_map(rows, *, include_blocked: bool) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        bcode = (row["bcode"] or "").strip()
+        if not bcode:
+            continue
+        qtymin = _parse_qty(row["QTYMIN"])
+        if qtymin < 0 and not include_blocked:
+            continue
+        mtp2 = _parse_qty(row["MTP2"]) or 1.0
+        loc1 = (row["location1"] or "").strip()
+        loc2 = (row["location2"] or "").strip()
+        out[bcode] = _icmas_meta_from_row(row, qtymin=qtymin, mtp2=mtp2, loc1=loc1, loc2=loc2)
+    return out
+
+
+_ICMAS_META_COLUMNS = """
+  LTRIM(RTRIM(CONVERT(nvarchar(40), {bcode}))) AS bcode,
+  LTRIM(RTRIM(COALESCE({descr}, ''))) AS descr,
+  LTRIM(RTRIM(COALESCE({model}, ''))) AS model,
+  LTRIM(RTRIM(COALESCE({brand}, ''))) AS brand,
+  LTRIM(RTRIM(COALESCE({pcode}, ''))) AS pcode,
+  LTRIM(RTRIM(COALESCE({mcode}, ''))) AS mcode,
+  {qtyoh2} AS QTYOH2,
+  {qtymin} AS QTYMIN,
+  LTRIM(RTRIM(COALESCE({ui1}, ''))) AS ui1,
+  LTRIM(RTRIM(COALESCE({ui2}, ''))) AS ui2,
+  {mtp2} AS MTP2,
+  LTRIM(RTRIM(COALESCE({location1}, ''))) AS location1,
+  LTRIM(RTRIM(COALESCE({location2}, ''))) AS location2
+"""
+
+
+def _fetch_icmas_meta_bulk(
+    engine: Engine, bcodes: list[str], *, include_blocked: bool = False
+) -> dict[str, dict[str, Any]]:
+    """One join for a large code list.
+
+    SYP is a round trip away, and a few hundred separate IN-lists cost more than
+    the read itself. PARTS9 is compatibility level 100, so OPENJSON is not there.
+    A temp table keeps the BCODE index and comes back in one query.
+    """
+    codes: list[str] = []
+    seen: set[str] = set()
+    for raw in bcodes:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if not codes:
+        return {}
+    columns = _ICMAS_META_COLUMNS.format(
+        bcode="i.BCODE",
+        descr="i.DESCR",
+        model="i.MODEL",
+        brand="i.BRAND",
+        pcode="i.PCODE",
+        mcode="i.MCODE",
+        qtyoh2="i.QTYOH2",
+        qtymin="i.QTYMIN",
+        ui1="i.UI1",
+        ui2="i.UI2",
+        mtp2="i.MTP2",
+        location1="i.LOCATION1",
+        location2="i.LOCATION2",
+    )
+    drop_sql = text(
+        "IF OBJECT_ID('tempdb..#kcw_icmas_codes') IS NOT NULL DROP TABLE #kcw_icmas_codes"
+    )
+    with engine.begin() as conn:
+        conn.execute(drop_sql)
+        conn.execute(text("CREATE TABLE #kcw_icmas_codes (bcode nvarchar(40) NOT NULL PRIMARY KEY)"))
+        raw_conn = conn.connection.driver_connection
+        cursor = raw_conn.cursor()
+        try:
+            cursor.fast_executemany = True
+            cursor.executemany(
+                "INSERT INTO #kcw_icmas_codes (bcode) VALUES (?)",
+                [(code,) for code in codes],
+            )
+        finally:
+            cursor.close()
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT {columns}
+                FROM dbo.ICMAS AS i WITH (NOLOCK)
+                INNER JOIN #kcw_icmas_codes AS w ON w.bcode = i.BCODE
+                """
+            )
+        ).mappings().all()
+        conn.execute(drop_sql)
+    return _icmas_meta_map(rows, include_blocked=include_blocked)
 
 
 def fetch_local_icmas_meta(
@@ -406,6 +504,8 @@ def _suggest_from_icmas_low_stock(engine: Engine, *, limit: int) -> dict[str, di
 
 
 _INSIGHT_STOCK_CHUNK = 400
+# Above this, separate IN-lists lose to one temp-table join. Measured on SYP.
+_BULK_ICMAS_MIN = 800
 _INSIGHT_ONLY_TTL_SEC = 300.0
 _insight_only_lock = threading.Lock()
 _insight_only_cache: tuple[float, frozenset[str], list[dict[str, Any]]] | None = None
@@ -414,6 +514,16 @@ _insight_only_cache: tuple[float, frozenset[str], list[dict[str, Any]]] | None =
 def _fetch_icmas_chunked(site_key: str, bcodes: list[str]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     codes = [b for b in bcodes if (b or "").strip()]
+    if not codes:
+        return {}
+    key = (site_key or "hq").strip().lower()
+    if len(codes) >= _BULK_ICMAS_MIN and not _should_use_peer_for_site(key):
+        try:
+            return _fetch_icmas_meta_bulk(
+                get_site_engine(key), codes, include_blocked=True
+            )
+        except Exception:
+            logger.warning("bulk ICMAS read failed for %s; reading in chunks", key, exc_info=True)
     for start in range(0, len(codes), _INSIGHT_STOCK_CHUNK):
         chunk = codes[start : start + _INSIGHT_STOCK_CHUNK]
         out.update(_fetch_site_icmas(site_key, chunk, include_blocked=True))
