@@ -81,7 +81,7 @@ def _fetch_icmas_meta(
           LTRIM(RTRIM(COALESCE(LOCATION1, ''))) AS location1,
           LTRIM(RTRIM(COALESCE(LOCATION2, ''))) AS location2
         FROM dbo.ICMAS WITH (NOLOCK)
-        WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) IN ({placeholders})
+        WHERE BCODE IN ({placeholders})
         """
     )
     out: dict[str, dict[str, Any]] = {}

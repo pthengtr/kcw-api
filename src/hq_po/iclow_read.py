@@ -432,7 +432,7 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
                   MTP2,
                   PRICE1, COSTLAST, COSTNET
                 FROM dbo.ICMAS
-                WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) IN ({placeholders})
+                WHERE BCODE IN ({placeholders})
                 """
             )
             for row in conn.execute(sql, params).mappings().all():
