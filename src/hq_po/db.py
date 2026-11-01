@@ -50,8 +50,8 @@ def open_lines_for_iclow(client: Client, iclow_ids: list[int]) -> dict[int, dict
             seen.add(iclow_id)
             ids.append(iclow_id)
     found: dict[int, dict[str, Any]] = {}
-    for start in range(0, len(ids), 80):
-        chunk = ids[start : start + 80]
+    for start in range(0, len(ids), 250):
+        chunk = ids[start : start + 250]
         lines = _rows(
             _table(client, "lines")
             .select("iclow_id,bcode,order_id,line_id")
@@ -246,8 +246,8 @@ def release_marks_for(client: Client, iclow_ids: list[int]) -> dict[int, dict[st
             seen.add(iclow_id)
             ids.append(iclow_id)
     found: dict[int, dict[str, Any]] = {}
-    for start in range(0, len(ids), 80):
-        chunk = ids[start : start + 80]
+    for start in range(0, len(ids), 250):
+        chunk = ids[start : start + 250]
         rows = _rows(
             _table(client, "release_marks")
             .select("iclow_id,bcode,kind,previous_vendor,previous_vendor_name,previous_docno")
@@ -277,8 +277,8 @@ def active_blocks_for_bcodes(client: Client, bcodes: list[str]) -> set[tuple[str
             seen.add(code)
             codes.append(code)
     found: set[tuple[str, str]] = set()
-    for start in range(0, len(codes), 80):
-        chunk = codes[start : start + 80]
+    for start in range(0, len(codes), 250):
+        chunk = codes[start : start + 250]
         rows = _rows(
             _table(client, "product_vendor_blocks")
             .select("bcode,acctno")

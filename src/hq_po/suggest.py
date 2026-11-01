@@ -25,7 +25,7 @@ from src.hq_po.insight import (
     load_insight_policies,
     load_insight_policies_for,
 )
-from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty
+from src.hq_po.stock import fetch_dual_stock, fetch_parts9_qty, schedule_qtyoh2_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -360,33 +360,60 @@ def build_suggest() -> dict[str, Any]:
         [row for row in fetch_to_order_rows() if _valid_bcode(row.get("bcode"))]
     )
     bcodes = [str(row.get("bcode") or "").strip() for row in rows if str(row.get("bcode") or "").strip()]
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        catalog_fut = pool.submit(_catalog_for, bcodes)
+    # The ledger rebuild scans PIDET and SIDET. It runs after this response.
+    schedule_qtyoh2_refresh(bcodes)
+
+    def _names() -> dict[str, str]:
         try:
-            names = fetch_vendor_names([row["vendor"] for row in rows])
+            return fetch_vendor_names([row["vendor"] for row in rows])
         except Exception:
             logger.warning("hq po vendor name lookup failed", exc_info=True)
-            names = {}
-        # Same ledger rebuild as the AI tab. These rows are on screen, so a
-        # stale QTYOH2 must not be the on-hand the list shows.
-        hq, syp, stock_ok = fetch_dual_stock(bcodes, refresh=True)
-        incoming: dict[str, float] = {}
+            return {}
+
+    def _incoming() -> dict[str, float]:
         try:
-            incoming = fetch_incoming_qty()
+            return fetch_incoming_qty()
         except Exception:
             logger.warning("hq po incoming qty read failed", exc_info=True)
+            return {}
+
+    def _parts9() -> dict[str, float]:
         try:
-            parts9 = fetch_parts9_qty(bcodes)
+            return fetch_parts9_qty(bcodes)
         except Exception:
             logger.warning("hq po parts9 qty read failed", exc_info=True)
-            parts9 = {}
+            return {}
+
+    def _policies() -> dict[str, dict[str, Any]]:
         try:
-            policies = load_insight_policies_for(bcodes) if stock_ok else {}
+            return load_insight_policies_for(bcodes)
         except Exception:
             logger.warning("hq po insight policy read failed", exc_info=True)
-            policies = {}
-        products = catalog_fut.result()
-    items = [_iclow_item(row, names) for row in rows]
+            return {}
+
+    def _settle(items: list[dict[str, Any]]) -> None:
+        from src.hq_po.vendor_link import settle_waiting_vendors
+
+        settle_waiting_vendors(items)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        names_f = pool.submit(_names)
+        stock_f = pool.submit(fetch_dual_stock, bcodes)
+        incoming_f = pool.submit(_incoming)
+        parts9_f = pool.submit(_parts9)
+        policies_f = pool.submit(_policies)
+        products_f = pool.submit(_catalog_for, bcodes)
+        names = names_f.result()
+        items = [_iclow_item(row, names) for row in rows]
+        settle_f = pool.submit(_settle, items)
+        marks_f = pool.submit(_attach_release_marks, items)
+        hq, syp, stock_ok = stock_f.result()
+        incoming = incoming_f.result()
+        parts9 = parts9_f.result()
+        policies = policies_f.result() if stock_ok else {}
+        products = products_f.result()
+        settle_f.result()
+        marks_f.result()
     if stock_ok:
         for item in items:
             bcode = item.get("bcode") or ""
@@ -403,10 +430,6 @@ def build_suggest() -> dict[str, Any]:
     _attach_parts9(items, parts9)
     attach_catalog(items, products)
     _attach_photos(items)
-    _attach_release_marks(items)
-    from src.hq_po.vendor_link import settle_waiting_vendors
-
-    settle_waiting_vendors(items)
     return {
         "items": sort_products(items),
         "stock_ok": stock_ok,

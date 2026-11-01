@@ -218,7 +218,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <div class="toolbar">
       <div class="toggle">
         <button type="button" id="viewProduct" class="on">ตามสินค้า</button>
-        <button type="button" id="viewVendor">ตามเจ้าหนี้</button>
+        <button type="button" id="viewVendor">ตามบริษัท</button>
       </div>
       <div class="toggle">
         <button type="button" id="srcAll" class="on">ทั้งหมด</button>
@@ -406,7 +406,7 @@ function thumbHtml(row){
 }
 function flagHtml(row){
   const parts = [];
-  if(row && row.vendor_blocked) parts.push(`<div class="flag unavailable">ไม่มีสินค้ากับเจ้าหนี้นี้</div>`);
+  if(row && row.vendor_blocked) parts.push(`<div class="flag unavailable">บริษัทนี้สินค้าหมด</div>`);
   const mark = row && row.release;
   if(mark && mark.label){
     const kind = mark.kind === "reorder" ? "reorder" : "switch";
@@ -510,7 +510,7 @@ function productTools(row){
     : "";
   const trade = tradeButton(row.bcode);
   const stock = (STAMP && row.source === "iclow" && row.iclow_id && row.vendor && !row.vendor_blocked)
-    ? `<button type="button" class="peer-btn" data-block="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">ไม่มีสินค้ากับเจ้าหนี้นี้</button>`
+    ? `<button type="button" class="peer-btn" data-block="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">บริษัทนี้สินค้าหมด</button>`
     : "";
   const back = (STAMP && row.vendor_blocked && row.vendor)
     ? (row.iclow_id && row.source === "iclow"
@@ -1183,7 +1183,7 @@ async function markUnavailable(iclowId, bcode, ordered){
   const name = bcode ? ` ${bcode}` : "";
   const word = ordered
     ? `ทำเครื่องหมาย${name} ว่าไม่มีสินค้า แล้วส่งกลับหน้ารอสั่ง?`
-    : `ทำเครื่องหมาย${name} ว่าไม่มีสินค้ากับเจ้าหนี้นี้?`;
+    : `ทำเครื่องหมาย${name} ว่าบริษัทนี้สินค้าหมด?`;
   if(!confirm(word)) return;
   setBusy(true, "กำลังทำเครื่องหมาย…");
   let failed = null;

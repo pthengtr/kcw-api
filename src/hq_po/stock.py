@@ -15,6 +15,8 @@ _REFRESH_CHUNK = 200
 _FRESH_SEC = 120.0
 _fresh_lock = threading.Lock()
 _fresh_until: dict[str, float] = {}
+_refresh_job_lock = threading.Lock()
+_refresh_job_busy = False
 
 
 def parts9_order_qty(*, qtyget: Any, qtymin: Any, qtyoh: Any) -> float | None:
@@ -119,6 +121,34 @@ def refresh_qtyoh2(bcodes: list[str], *, sites: tuple[str, ...] = ("hq", "syp"))
             _fresh_until[code] = until
 
 
+def schedule_qtyoh2_refresh(bcodes: list[str]) -> None:
+    """Rebuild on-hand after the waiting list is already being read.
+
+    The PIDET/SIDET scan takes several seconds and usually changes nothing,
+    because HQ purchases already update QTYOH2. The list must not wait for it.
+    """
+    codes = _codes(bcodes)
+    if not codes:
+        return
+    global _refresh_job_busy
+    with _refresh_job_lock:
+        if _refresh_job_busy:
+            return
+        _refresh_job_busy = True
+
+    def job() -> None:
+        global _refresh_job_busy
+        try:
+            # Let the waiting-list reads finish before the ledger scan starts.
+            time.sleep(1.0)
+            refresh_qtyoh2(codes)
+        finally:
+            with _refresh_job_lock:
+                _refresh_job_busy = False
+
+    threading.Thread(target=job, name="hq-po-qty-refresh", daemon=True).start()
+
+
 def fetch_parts9_qty(bcodes: list[str]) -> dict[str, float]:
     """HQ ICMAS reorder qty keyed by product code."""
     codes = _codes(bcodes)
@@ -141,7 +171,7 @@ def fetch_parts9_qty(bcodes: list[str]) -> dict[str, float]:
                   LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
                   QTYGET, QTYMIN, QTYOH2
                 FROM dbo.ICMAS
-                WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) IN ({placeholders})
+                WHERE BCODE IN ({placeholders})
                 """
             )
             for row in conn.execute(sql, params).mappings().all():

@@ -317,7 +317,7 @@ def test_parts9_order_qty_prefers_lot_then_min_gap():
 def test_page_defaults_product_view():
     html = page(user_name="Pannawit", stamp_enabled=False)
     assert 'id="viewProduct" class="on"' in html
-    assert "ตามเจ้าหนี้" in html
+    assert "ตามบริษัท" in html
     assert "ตามสินค้า" in html
     assert 'id="vendorSort"' in html
     assert 'id="sortCount" class="on"' in html
@@ -397,11 +397,12 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: [row])
     monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
     refreshed: list[bool] = []
+    scheduled: list[list[str]] = []
 
     def dual_stock(codes, refresh=False):
         refreshed.append(refresh)
-        # Stored QTYOH2 is 0. The list must show the rebuilt ledger qty.
-        qty = 10 if refresh else 0
+        # Stored QTYOH2 is what the first paint shows. The ledger rebuild is separate.
+        qty = 10 if refresh else 4
         return (
             {"A1": {"qtyoh2": qty, "mtp2": 1, "blocked": False, "descr": "bolt"}},
             {"A1": {"qtyoh2": 0, "mtp2": 1, "blocked": False}},
@@ -409,6 +410,7 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
         )
 
     monkeypatch.setattr(suggest, "fetch_dual_stock", dual_stock)
+    monkeypatch.setattr(suggest, "schedule_qtyoh2_refresh", lambda codes: scheduled.append(list(codes)))
     monkeypatch.setattr(
         suggest,
         "load_insight_policies_for",
@@ -435,8 +437,9 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     assert scanned == []
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
-    assert payload["items"][0]["hq_qtyoh2"] == 10
-    assert refreshed == [True]
+    assert payload["items"][0]["hq_qtyoh2"] == 4
+    assert refreshed == [False]
+    assert scheduled == [["A1"]]
 
 
 def test_suggest_drops_a_line_with_no_product_code(monkeypatch):
@@ -449,6 +452,7 @@ def test_suggest_drops_a_line_with_no_product_code(monkeypatch):
     ]
     monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: rows)
     monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
+    monkeypatch.setattr(suggest, "schedule_qtyoh2_refresh", lambda _codes: None)
     monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes, refresh=False: ({}, {}, False))
     monkeypatch.setattr(suggest, "fetch_incoming_qty", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
@@ -471,6 +475,7 @@ def test_suggest_attaches_model_codes_brand_price_and_cost(monkeypatch):
     }
     monkeypatch.setattr(suggest, "fetch_to_order_rows", lambda: [row])
     monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"V1": "Vendor"})
+    monkeypatch.setattr(suggest, "schedule_qtyoh2_refresh", lambda _codes: None)
     monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes, refresh=False: ({}, {}, False))
     monkeypatch.setattr(suggest, "load_insight_policies", lambda: {})
     monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
@@ -1025,7 +1030,7 @@ def test_page_confirms_before_removing_a_waiting_line():
     assert "/hq-po/api/waiting/" in html
     assert 'row.source === "iclow"' in html
     assert "ต้องเลือกเจ้าหนี้" in html
-    assert "ไม่มีสินค้ากับเจ้าหนี้นี้" in html
+    assert "บริษัทนี้สินค้าหมด" in html
     assert "มีสินค้าแล้ว" in html
     assert "data-block-ordered" in html
     assert "/hq-po/api/iclow/" in html
