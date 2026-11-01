@@ -198,6 +198,25 @@ def build_insight_only_item(
     }
 
 
+def stock_codes_for_insight(
+    policies: dict[str, dict[str, Any]],
+    iclow_bcodes: set[str],
+    *,
+    now: datetime | None = None,
+) -> list[str]:
+    """Codes the AI tab still has to price.
+
+    A policy older than the fresh window cannot be recommended, so it does not
+    need a live stock read.
+    """
+    held = iclow_bcodes or set()
+    return [
+        bcode
+        for bcode, policy in policies.items()
+        if bcode not in held and is_fresh(policy.get("generated_at"), now=now)
+    ]
+
+
 def insight_only_lines(
     policies: dict[str, dict[str, Any]],
     *,

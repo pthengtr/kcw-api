@@ -187,6 +187,42 @@ def test_insight_only_skips_iclow_and_blocked():
     assert lines[0]["iclow_id"] is None
 
 
+def test_insight_stock_read_skips_waiting_and_stale_policies(monkeypatch):
+    from src.hq_po import suggest
+    from src.hq_po.insight import stock_codes_for_insight
+
+    fresh_at = datetime.now(timezone.utc).isoformat()
+    stale_at = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    policies = {
+        "WAIT": _policy(bcode="WAIT", generated_at=fresh_at),
+        "STALE": _policy(bcode="STALE", generated_at=stale_at, safe_holding_qty=50),
+        "FRESH": _policy(bcode="FRESH", generated_at=fresh_at, safe_holding_qty=8),
+    }
+    assert stock_codes_for_insight(policies, {"WAIT"}) == ["FRESH"]
+
+    calls: list[tuple[list[str], bool]] = []
+
+    def dual(codes, refresh=False):
+        calls.append((list(codes), refresh))
+        meta = {
+            code: {"qtyoh2": 0, "mtp2": 1, "blocked": False, "descr": code}
+            for code in codes
+        }
+        return meta, {code: {"qtyoh2": 0, "mtp2": 1, "blocked": False} for code in codes}, True
+
+    monkeypatch.setattr(suggest, "fetch_dual_stock", dual)
+    monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _vendors: {})
+    suggest._insight_cache = None
+    try:
+        lines = suggest._compute_insight_only(policies, frozenset({"WAIT"}), {})
+    finally:
+        suggest._insight_cache = None
+    assert calls[0] == (["FRESH"], False)
+    assert [line["bcode"] for line in lines] == ["FRESH"]
+    assert calls[-1][0] == ["FRESH"]
+    assert calls[-1][1] is True
+
+
 def test_stamp_and_revert_guards():
     assert can_stamp_row(_live()) is None
     assert can_stamp_row(_live(ordered="Y")) == "already_ordered"
@@ -326,6 +362,9 @@ def test_page_defaults_product_view():
     assert "data-key" in html
     assert "PARTS9" in html
     assert "ดูใบส่งเจ้าหนี้" in html
+    assert 'id="photo"' in html
+    assert "data-photo" in html
+    assert "function openPhoto" in html
     assert "แบบย่อ" in html
     assert "แบบเต็ม" in html
     assert "คัดลอกส่งฝ่ายขาย" in html
