@@ -1,4 +1,8 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import src.bot.line_bot as line_bot
+import src.hq_daily_push as hq_daily_push
 from src.hq_daily_push import fail_names, format_hq_failure, log_excerpt, ok_names
 from src.tar_transfer.push import line_user_ids_for_names, name_tokens
 
@@ -76,6 +80,35 @@ def test_default_recipients(monkeypatch):
     monkeypatch.delenv("HQ_DAILY_PUSH_FAIL_NAMES", raising=False)
     assert ok_names() == ["peung", "phu", "ice"]
     assert fail_names() == ["peung", "turbo"]
+
+
+def test_ok_push_uses_today_before_seven_pm(monkeypatch):
+    fixed = datetime(2026, 11, 1, 16, 30, tzinfo=ZoneInfo("Asia/Bangkok"))
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed.replace(tzinfo=None)
+            return fixed.astimezone(tz)
+
+    captured = {}
+
+    monkeypatch.setattr(hq_daily_push, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(hq_daily_push, "get_engine", lambda: object())
+    monkeypatch.setattr(
+        hq_daily_push,
+        "handle_sales_query",
+        lambda engine, text: captured.setdefault("text", text),
+    )
+    monkeypatch.setattr(
+        hq_daily_push,
+        "push_to",
+        lambda engine, names, message: message,
+    )
+
+    assert hq_daily_push.push_ok() == "ยอดขาย 2026-11-01"
+    assert captured["text"] == "ยอดขาย 2026-11-01"
 
 
 def test_failure_message_includes_step_and_log(tmp_path):

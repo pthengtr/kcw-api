@@ -1,6 +1,8 @@
 """LINE notice when the HQ daily pipeline finishes.
 
-Success sends the same text as the ยอดขาย command to peung, phu, and ice.
+Success sends today's ยอดขาย (Bangkok date) to peung, phu, and ice.
+A bare ยอดขาย command uses yesterday before 19:00, so the daily push
+always passes today's date.
 Failure sends the failed step to peung and turbo.
 """
 
@@ -8,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import os
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -21,6 +25,7 @@ from src.tar_transfer.push import line_user_ids_for_names
 
 DEFAULT_OK_NAMES = "peung,phu,ice"
 DEFAULT_FAIL_NAMES = "peung,turbo"
+BANGKOK = ZoneInfo("Asia/Bangkok")
 
 
 def _names(env_name: str, default: str) -> list[str]:
@@ -69,9 +74,13 @@ def push_to(engine, names: list[str], message: str) -> str:
     return f"pushed to {len(recipients)} user(s)"
 
 
+def bangkok_today() -> str:
+    return datetime.now(BANGKOK).date().isoformat()
+
+
 def push_ok() -> str:
     engine = get_engine()
-    message = handle_sales_query(engine, "ยอดขาย")
+    message = handle_sales_query(engine, f"ยอดขาย {bangkok_today()}")
     return push_to(engine, ok_names(), message)
 
 
@@ -84,7 +93,7 @@ def push_fail(step: str, code: int, log_path: str = "") -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Push the HQ daily run result to LINE")
     sub = parser.add_subparsers(dest="mode", required=True)
-    sub.add_parser("ok", help="Send ยอดขาย to peung, phu, and ice")
+    sub.add_parser("ok", help="Send today's ยอดขาย to peung, phu, and ice")
     fail = sub.add_parser("fail", help="Send the failure to peung and turbo")
     fail.add_argument("--code", type=int, default=1)
     fail.add_argument("--step", default="")
