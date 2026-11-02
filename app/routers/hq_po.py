@@ -15,6 +15,7 @@ from src.hq_po.service import (
     clear_product_unavailable,
     confirm_order,
     dismiss_waiting_line,
+    drop_incoming,
     incoming_payload,
     insight_only_payload,
     get_open_order,
@@ -398,6 +399,17 @@ def api_dismiss_waiting(iclow_id: int, request: Request):
         return err
     try:
         return dismiss_waiting_line(iclow_id)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.post("/api/incoming/{iclow_id}/drop")
+def api_drop_incoming(iclow_id: int, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return drop_incoming(iclow_id)
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "missing" else 409)
 
