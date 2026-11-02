@@ -173,10 +173,10 @@ def issue(invoice_id: str, payload: dict, actor: str) -> dict:
         raise ToBillError("missing", "ไม่พบใบเต็ม", status=404)
     if current.get("status") != "draft":
         raise ToBillError("not_draft", "ออกเอกสารได้เฉพาะฉบับร่าง")
-    if problem or not _seller_ready():
-        db.save_buyer(invoice_id, buyer)
-        if problem:
-            raise ToBillError("buyer", problem, status=400)
+    db.save_buyer(invoice_id, buyer)
+    if problem:
+        raise ToBillError("buyer", problem, status=400)
+    if not _seller_ready():
         raise ToBillError(
             "seller_tax",
             "ยังไม่ได้ตั้งเลขประจำตัวผู้เสียภาษีของผู้ขาย (TO_BILL_SELLER_TAX_ID)",
