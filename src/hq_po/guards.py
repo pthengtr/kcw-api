@@ -20,8 +20,8 @@ def can_stamp_row(row: dict[str, Any]) -> str | None:
     if _flag(row.get("received")) == "Y":
         return "already_received"
     ordered = _flag(row.get("ordered"))
-    # X is hidden from รอสั่ง. It is not a row this screen may stamp.
-    if ordered in {"Y", "X"}:
+    # X is the legacy release from ordered back to รอสั่ง, so it can be stamped again.
+    if ordered == "Y":
         return "already_ordered"
     return None
 
@@ -45,6 +45,9 @@ def skip_already_open(
             continue
         live = live_by_id.get(iclow_id)
         if not live:
+            kept.append(raw)
+            continue
+        if _flag(live.get("ordered")) == "X":
             kept.append(raw)
             continue
         hit = open_by_id.get(iclow_id) or {}

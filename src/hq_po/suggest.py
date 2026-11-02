@@ -170,6 +170,8 @@ def _iclow_item(row: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
         "mtp2": 1.0,
         "hq_blocked": False,
         "propose_meta": None,
+        "prior_order": row.get("prior_order") or None,
+        "legacy_docno": str(row.get("legacy_docno") or "").strip(),
     }
 
 
@@ -327,15 +329,86 @@ def _valid_bcode(value: Any) -> bool:
     return bool(code) and any(ch.isdigit() for ch in code)
 
 
-def _without_held_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Hide ORDERED=X and lines that already belong to an open HQ PO.
+def _doc(docs: list[dict[str, str]], docno: str, order_id: str = "") -> None:
+    doc = str(docno or "").strip()
+    if not doc or any(item.get("docno") == doc for item in docs):
+        return
+    docs.append({"docno": doc, "order_id": str(order_id or "").strip()})
 
-    Those rows are not รอสั่ง. Leaving them on the list makes save fail with
-    มีรายการที่อยู่ในใบสั่งซื้อแล้ว.
+
+def describe_holds(
+    rows: list[dict[str, Any]],
+    held: dict[int, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Say whether a product is on รอสั่ง, and which older PO it came back from.
+
+    ORDERED=X is the legacy move from ordered back to รอสั่ง, so it stays on
+    the list. A line already on an open HQ PO, with any other status, does not.
     """
-    visible = [row for row in rows if str(row.get("ordered") or "").strip().upper() != "X"]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        bcode = str(row.get("bcode") or "").strip()
+        if bcode:
+            grouped.setdefault(bcode, []).append(row)
+    out: dict[str, dict[str, Any]] = {}
+    for bcode, group in grouped.items():
+        visible = False
+        docs: list[dict[str, str]] = []
+        for row in group:
+            try:
+                iclow_id = int(row.get("iclow_id") or 0)
+            except (TypeError, ValueError):
+                iclow_id = 0
+            ordered = str(row.get("ordered") or "").strip().upper()
+            parent = held.get(iclow_id) or {}
+            parent_doc = str(parent.get("docno") or "").strip()
+            parent_id = str(parent.get("order_id") or "").strip()
+            iclow_doc = str(row.get("docno") or "").strip()
+            returned = ordered == "X"
+            if returned or not parent:
+                visible = True
+            if returned or parent:
+                _doc(docs, parent_doc, parent_id)
+                if iclow_doc != parent_doc:
+                    _doc(docs, iclow_doc)
+        out[bcode] = {"waiting": visible, "docs": docs}
+    return out
+
+
+def visible_waiting_rows(
+    rows: list[dict[str, Any]],
+    held: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep ORDERED=X. Hide any other line that already belongs to an open HQ PO."""
+    visible: list[dict[str, Any]] = []
+    for row in rows:
+        ordered = str(row.get("ordered") or "").strip().upper()
+        try:
+            iclow_id = int(row.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            iclow_id = 0
+        parent = held.get(iclow_id) or {}
+        if ordered != "X" and parent:
+            continue
+        item = dict(row)
+        if ordered == "X":
+            parent_doc = str(parent.get("docno") or "").strip()
+            parent_id = str(parent.get("order_id") or "").strip()
+            iclow_doc = str(row.get("docno") or "").strip()
+            if parent_doc.upper().startswith("HP") and parent_id:
+                item["prior_order"] = {"docno": parent_doc, "order_id": parent_id}
+            if iclow_doc and iclow_doc != parent_doc:
+                item["legacy_docno"] = iclow_doc
+            elif parent_doc and not parent_doc.upper().startswith("HP"):
+                item["legacy_docno"] = parent_doc
+        visible.append(item)
+    return visible
+
+
+def _without_held_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop lines already on an open HQ PO. ORDERED=X stays, with that PO linked."""
     ids: list[int] = []
-    for row in visible:
+    for row in rows:
         try:
             iclow_id = int(row.get("iclow_id") or 0)
         except (TypeError, ValueError):
@@ -343,17 +416,15 @@ def _without_held_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if iclow_id > 0:
             ids.append(iclow_id)
     if not ids:
-        return visible
+        return visible_waiting_rows(rows, {})
     try:
         from src.hq_po.db import get_hq_po_supabase_client, open_lines_for_iclow
 
         held = open_lines_for_iclow(get_hq_po_supabase_client(), ids)
     except Exception:
         logger.warning("hq po open-line lookup failed", exc_info=True)
-        return visible
-    if not held:
-        return visible
-    return [row for row in visible if int(row.get("iclow_id") or 0) not in held]
+        return visible_waiting_rows(rows, {})
+    return visible_waiting_rows(rows, held)
 
 
 def build_suggest() -> dict[str, Any]:
