@@ -13,7 +13,7 @@ from src.to_bill.buyers import (
 )
 from src.to_bill.config import get_to_bill_settings
 from src.to_bill.errors import ToBillError
-from src.to_bill.kinds import normalize_kind, parse_pay_via, series_for
+from src.to_bill.kinds import list_kind, normalize_kind, parse_pay_via, series_for
 from src.to_bill.kss import LiveBill, load_tad, search_tad
 from src.to_bill import db
 
@@ -251,15 +251,16 @@ def printed(invoice_id: str, actor: str) -> None:
     db.mark_printed(invoice_id, actor)
 
 
-def month_list(*, status: str, q: str, yymm: str) -> dict:
-    from src.to_bill.numbering import buddhist_yymm
+def month_list(*, status: str, q: str, yymm: str, kind: str = "") -> dict:
+    from src.to_bill.numbering import buddhist_yymm, recent_months
 
     token = (yymm or "").strip() or buddhist_yymm()
+    wanted = list_kind(kind)
     try:
-        rows = db.list_invoices(status=status, q=q, yymm=token)
+        rows = db.list_invoices(status=status, q=q, yymm=token, kind=wanted)
     except ValueError as exc:
         raise ToBillError("yymm", "เดือนไม่ถูกต้อง", status=400) from exc
-    return {"yymm": token, "rows": rows}
+    return {"yymm": token, "kind": wanted, "months": recent_months(), "rows": rows}
 
 
 def buyers(q: str) -> dict:

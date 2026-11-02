@@ -10,6 +10,16 @@ def normalize_kind(raw: str | None) -> str:
     return "rvo" if str(raw or "").strip().lower() == "rvo" else "to"
 
 
+def list_kind(raw: str | None) -> str:
+    """List filter: tax invoice, receipt, or blank for both."""
+    text = str(raw or "").strip().lower()
+    if text == "rvo":
+        return "rvo"
+    if text == "to":
+        return "to"
+    return ""
+
+
 def series_for(kind: str | None) -> str:
     return "RVO" if normalize_kind(kind) == "rvo" else "TO"
 

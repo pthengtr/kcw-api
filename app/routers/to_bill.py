@@ -209,12 +209,12 @@ def api_search(request: Request, q: str = ""):
 
 
 @router.get("/api/invoices")
-def api_list(request: Request, status: str = "", q: str = "", yymm: str = ""):
+def api_list(request: Request, status: str = "", q: str = "", yymm: str = "", kind: str = ""):
     _, err = _require_api(request)
     if err:
         return err
     try:
-        return month_list(status=status, q=q, yymm=yymm)
+        return month_list(status=status, q=q, yymm=yymm, kind=kind)
     except ToBillError as exc:
         return _error(exc)
 
