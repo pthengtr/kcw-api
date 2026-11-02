@@ -220,12 +220,12 @@ def suggest_buyers(q: str) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def peek_next_docno(on: date | None = None) -> str:
+def peek_next_docno(on: date | None = None, *, series: str = "TO") -> str:
     yymm = buddhist_yymm(on)
     with _connect() as conn:
         row = conn.execute(
-            "select last_seq from to_bill.counters where yymm = %s",
-            (yymm,),
+            "select last_seq from to_bill.counters where series = %s and yymm = %s",
+            (series, yymm),
         ).fetchone()
     last = int(row["last_seq"]) if row else 0
     return format_docno(yymm, last + 1)
@@ -401,19 +401,12 @@ def issue_invoice(invoice_id: str, bill: LiveBill, buyer: Buyer, actor: str) -> 
                 raise ToBillError("not_draft", "ออกเอกสารได้เฉพาะฉบับร่าง")
             if str(current["tad_billno"]) != bill.billno:
                 raise ToBillError("bill_mismatch", "บิล KSS ไม่ตรงกับฉบับร่าง")
-            conn.execute(
-                """
-                insert into to_bill.counters (yymm, last_seq)
-                values (%s, 0)
-                on conflict (yymm) do nothing
-                """,
-                (yymm,),
-            )
             counter = conn.execute(
                 """
-                update to_bill.counters
-                set last_seq = last_seq + 1
-                where yymm = %s
+                insert into to_bill.counters (series, yymm, last_seq)
+                values ('TO', %s, 1)
+                on conflict (series, yymm)
+                do update set last_seq = to_bill.counters.last_seq + 1
                 returning last_seq
                 """,
                 (yymm,),
