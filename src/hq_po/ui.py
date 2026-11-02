@@ -179,8 +179,8 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 .po-lines summary::-webkit-details-marker{display:none}
 .po-lines summary::before{content:"▸";font-size:12px;color:var(--muted);transition:transform .15s}
 .po-lines[open] summary::before{transform:rotate(90deg)}
-.actions{padding:10px 12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
-.actions button{width:100%;min-height:44px;background:var(--blue);color:#fff;border:0;border-radius:12px;padding:10px 12px;font-weight:650;font-size:14px}
+.actions{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-wrap:nowrap;gap:8px}
+.actions button{flex:1 1 0;min-width:0;min-height:44px;background:var(--blue);color:#fff;border:0;border-radius:12px;padding:10px 8px;font-weight:650;font-size:14px}
 .actions button.ghost{background:#fff;color:var(--warn);border:1px solid #fdba74}
 .actions button:disabled{opacity:.6}
 .empty,.spin-wrap{color:var(--muted);padding:28px 16px;text-align:center}
@@ -1212,7 +1212,7 @@ function renderOrders(){
     const open = doneQuery() ? " open" : "";
     const body = lines || '<div class="line plain"><div class="meta">ไม่มีรายการสินค้า</div></div>';
     const linesBlock = `<details class="po-lines"${open}><summary>รายการสินค้า ${n} รายการ</summary>${body}</details>`;
-    return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}${whenHtml}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${linesBlock}${actions}</div>`;
+    return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}${whenHtml}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${actions}${linesBlock}</div>`;
   }).join("");
 }
 async function loadOrders(){
