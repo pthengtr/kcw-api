@@ -11,6 +11,7 @@ from src.to_bill.buyers import (
 )
 from src.to_bill.kss import LiveBill, LiveLine, like_prefix
 from src.to_bill.net import is_private_lan
+from src.to_bill.kinds import parse_pay_via, pay_via_label
 from src.to_bill.numbering import buddhist_yymm, format_docno, month_bounds
 from src.to_bill.service import changed_from_kss
 from src.to_bill.sheet import build_sheet
@@ -22,6 +23,7 @@ def test_docno_padding_and_overflow():
     assert format_docno("6910", 1) == "TO6910-001"
     assert format_docno("6910", 999) == "TO6910-999"
     assert format_docno("6910", 1000) == "TO6910-1000"
+    assert format_docno("6911", 2, "RVO") == "RVO6911-002"
 
 
 def test_buddhist_month_and_bounds():
@@ -151,7 +153,9 @@ def test_sheet_names_the_tad_and_buyer():
         },
         seller_tax_id="0105537000000",
     )
-    assert "ใบกำกับภาษี/ใบเสร็จรับเงิน" in html
+    assert "ใบกำกับภาษี" in html
+    assert "ใบกำกับภาษี/ใบเสร็จรับเงิน" not in html
+    assert "ใบเสร็จรับเงิน" not in html
     assert "ใบกำกับภาษีเต็มรูป" not in html
     assert "FULL TAX INVOICE" not in html
     assert html.count("(ต้นฉบับ)") == 1
@@ -179,6 +183,35 @@ def test_sheet_names_the_tad_and_buyer():
     assert "1234567890123" in html
     assert "0105537000000" in html
     assert "class='void'" not in html
+
+
+def test_receipt_sheet_names_payment():
+    html = build_sheet(
+        {
+            "status": "issued",
+            "doc_kind": "rvo",
+            "docno": "RVO6911-001",
+            "source_docno": "TO6911-001",
+            "tad_billno": "TAD6911-008",
+            "pay_via": "platform",
+            "customer_name": "บริษัท ทดสอบ จำกัด",
+            "address": "1 ถนนทดสอบ",
+            "tax_id": "1234567890123",
+            "branch_label": "สำนักงานใหญ่",
+            "beforetax": 100,
+            "tax": 7,
+            "aftertax": 107,
+            "lines": [],
+        },
+        seller_tax_id="0105537000000",
+    )
+    assert "ใบเสร็จรับเงิน" in html
+    assert "ใบกำกับภาษี/ใบเสร็จรับเงิน" not in html
+    assert "ชำระผ่านแพลตฟอร์ม" in html
+    assert "อ้างอิงใบกำกับภาษี TO6911-001" in html
+    assert pay_via_label("cod") == "เก็บเงินปลายทาง (COD)"
+    assert parse_pay_via("platform") == "platform"
+    assert parse_pay_via("") is None
 
 
 def test_void_sheet_has_watermark():

@@ -13,6 +13,7 @@ from src.to_bill.buyers import (
 )
 from src.to_bill.config import get_to_bill_settings
 from src.to_bill.errors import ToBillError
+from src.to_bill.kinds import normalize_kind, parse_pay_via, series_for
 from src.to_bill.kss import LiveBill, load_tad, search_tad
 from src.to_bill import db
 
@@ -67,10 +68,11 @@ def _decorate(row: dict, live: LiveBill | None) -> dict:
     out["seller_ready"] = _seller_ready()
     status = row.get("status")
     if status == "draft":
-        out["kss_changed"] = bool(live and changed_from_kss(row, live))
+        receipt = row.get("doc_kind") == "rvo"
+        out["kss_changed"] = False if receipt else bool(live and changed_from_kss(row, live))
         out["armas_prefill"] = armas_prefill(live.armas) if live else None
         try:
-            out["next_docno"] = db.peek_next_docno()
+            out["next_docno"] = db.peek_next_docno(series=series_for(str(row.get("doc_kind") or "to")))
         except Exception:
             out["next_docno"] = ""
         out["sheet_html"] = ""
@@ -95,7 +97,9 @@ def search(q: str) -> dict:
     opened = db.open_for_bills([hit.billno for hit in hits])
     rows = []
     for hit in hits:
-        link = opened.get(hit.billno)
+        docs = opened.get(hit.billno) or []
+        tax = next((row for row in docs if row.get("doc_kind") != "rvo"), None)
+        receipt = next((row for row in docs if row.get("doc_kind") == "rvo"), None)
         rows.append(
             {
                 "billno": hit.billno,
@@ -106,27 +110,32 @@ def search(q: str) -> dict:
                 "online_po": hit.online_po,
                 "aftertax": float(hit.aftertax),
                 "canceled": hit.canceled,
-                "open": link,
+                "open": tax,
+                "receipt": receipt,
             }
         )
     return {"q": (q or "").strip(), "hits": rows}
 
 
-def open_draft(billno: str, actor: str) -> dict:
+def open_draft(billno: str, actor: str, kind: str = "to") -> dict:
     exact = (billno or "").strip().upper()
     if not exact.startswith("TAD"):
         raise ToBillError("bill", "ใช้ได้กับบิล TAD ของสำนักงานใหญ่", status=400)
-    existing = db.find_open(exact)
+    doc_kind = normalize_kind(kind)
+    existing = db.find_open(exact, doc_kind)
     if existing:
         live = _load_live(exact)
         decorated = _decorate(existing, live)
         decorated["generic_name"] = is_generic_party(str(existing.get("acctname_kss") or ""))
         return decorated
+    if doc_kind == "rvo":
+        created = db.create_receipt_draft(exact, actor)
+        return _decorate(created, _load_live(exact))
     live = load_tad(exact)
     if not live:
         raise ToBillError("missing", "ไม่พบบิล TAD ใน KSS", status=404)
     if live.canceled:
-        raise ToBillError("canceled", "บิลนี้ถูกยกเลิกใน KSS จึงออกใบเต็มไม่ได้")
+        raise ToBillError("canceled", "บิลนี้ถูกยกเลิกใน KSS จึงออกใบกำกับไม่ได้")
     created = db.create_draft(live, actor)
     return _decorate(created, live)
 
@@ -145,6 +154,9 @@ def refresh(invoice_id: str, actor: str) -> dict:
         raise ToBillError("missing", "ไม่พบใบเต็ม", status=404)
     if current.get("status") != "draft":
         raise ToBillError("not_draft", "ดึงใหม่ได้เฉพาะฉบับร่าง")
+    if current.get("doc_kind") == "rvo":
+        saved = db.refresh_receipt(invoice_id, actor)
+        return _decorate(saved, _load_live(str(saved.get("tad_billno") or "")))
     live = load_tad(str(current.get("tad_billno") or ""))
     if not live:
         raise ToBillError("missing", "ไม่พบบิล TAD ใน KSS", status=404)
@@ -152,12 +164,19 @@ def refresh(invoice_id: str, actor: str) -> dict:
     return _decorate(saved, live)
 
 
+def _pay_via(payload: dict) -> str | None:
+    try:
+        return parse_pay_via(payload.get("pay_via"))
+    except ValueError as exc:
+        raise ToBillError("pay_via", str(exc), status=400) from exc
+
+
 def save(invoice_id: str, payload: dict) -> dict:
     try:
         buyer = parse_buyer(payload)
     except ValueError as exc:
         raise ToBillError("buyer", str(exc), status=400) from exc
-    saved = db.save_buyer(invoice_id, buyer)
+    saved = db.save_buyer(invoice_id, buyer, _pay_via(payload))
     live = _load_live(str(saved.get("tad_billno") or ""))
     return _decorate(saved, live)
 
@@ -167,31 +186,54 @@ def issue(invoice_id: str, payload: dict, actor: str) -> dict:
         buyer = parse_buyer(payload)
     except ValueError as exc:
         raise ToBillError("buyer", str(exc), status=400) from exc
+    pay_via = _pay_via(payload)
     problem = validate_buyer(buyer)
     current = db.get_invoice(invoice_id)
     if not current:
-        raise ToBillError("missing", "ไม่พบใบเต็ม", status=404)
+        raise ToBillError("missing", "ไม่พบเอกสาร", status=404)
     if current.get("status") != "draft":
         raise ToBillError("not_draft", "ออกเอกสารได้เฉพาะฉบับร่าง")
-    db.save_buyer(invoice_id, buyer)
+    receipt = current.get("doc_kind") == "rvo"
+    if not receipt:
+        pay_via = None
+    db.save_buyer(invoice_id, buyer, pay_via)
     if problem:
         raise ToBillError("buyer", problem, status=400)
+    if receipt and not pay_via:
+        raise ToBillError("pay_via", "เลือกช่องทางชำระเงิน", status=400)
     if not _seller_ready():
         raise ToBillError(
             "seller_tax",
             "ยังไม่ได้ตั้งเลขประจำตัวผู้เสียภาษีของผู้ขาย (TO_BILL_SELLER_TAX_ID)",
         )
+    if receipt:
+        issued = db.issue_invoice(
+            invoice_id,
+            buyer,
+            actor,
+            series="RVO",
+            pay_via=pay_via,
+            bill=None,
+        )
+        return _decorate(issued, _load_live(str(issued.get("tad_billno") or "")))
     live = load_tad(str(current.get("tad_billno") or ""))
     if not live:
         raise ToBillError("missing", "ไม่พบบิล TAD ใน KSS", status=404)
     if live.canceled:
-        raise ToBillError("canceled", "บิลนี้ถูกยกเลิกใน KSS จึงออกใบเต็มไม่ได้")
+        raise ToBillError("canceled", "บิลนี้ถูกยกเลิกใน KSS จึงออกใบกำกับไม่ได้")
     if changed_from_kss(current, live):
         raise ToBillError(
             "stale",
             "ข้อมูล KSS เปลี่ยนแล้ว กดดึงจาก KSS อีกครั้งก่อนออกเอกสาร",
         )
-    issued = db.issue_invoice(invoice_id, live, buyer, actor)
+    issued = db.issue_invoice(
+        invoice_id,
+        buyer,
+        actor,
+        series="TO",
+        pay_via=None,
+        bill=live,
+    )
     return _decorate(issued, live)
 
 
