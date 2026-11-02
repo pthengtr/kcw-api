@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -29,6 +31,7 @@ router = APIRouter(prefix="/to-bill", tags=["kcw-to-bill"])
 
 class DraftBody(BaseModel):
     tad_billno: str = ""
+    doc_kind: str = "to"
 
 
 class BuyerBody(BaseModel):
@@ -39,6 +42,7 @@ class BuyerBody(BaseModel):
     branch_label: str = ""
     branch_no: str = ""
     email: str = ""
+    pay_via: str = ""
 
 
 class VoidBody(BaseModel):
@@ -156,8 +160,17 @@ def _error(exc: ToBillError):
     )
 
 
+def _page_query(tad: str | None, kind: str | None) -> str:
+    parts = []
+    if tad and tad.strip():
+        parts.append("tad=" + quote(tad.strip()))
+    if kind and kind.strip():
+        parts.append("kind=" + quote(kind.strip()))
+    return ("?" + "&".join(parts)) if parts else ""
+
+
 @router.get("/", response_class=HTMLResponse)
-def home(request: Request, t: str | None = None, tad: str | None = None):
+def home(request: Request, t: str | None = None, tad: str | None = None, kind: str | None = None):
     ident, err = _require(request)
     if err and t:
         try:
@@ -168,9 +181,7 @@ def home(request: Request, t: str | None = None, tad: str | None = None):
     if err:
         return err
     if t:
-        dest = "/to-bill/"
-        if tad:
-            dest += f"?tad={tad}"
+        dest = "/to-bill/" + _page_query(tad, kind)
         resp = RedirectResponse(url=dest, status_code=303)
         _set_session(resp, ident)
         resp.headers["Cache-Control"] = "no-store"
@@ -182,11 +193,8 @@ def home(request: Request, t: str | None = None, tad: str | None = None):
 
 
 @router.get("/new")
-def new_from_link(tad: str = ""):
-    dest = "/to-bill/"
-    if tad.strip():
-        dest += f"?tad={tad.strip()}"
-    return RedirectResponse(url=dest, status_code=307)
+def new_from_link(tad: str = "", kind: str = ""):
+    return RedirectResponse(url="/to-bill/" + _page_query(tad, kind), status_code=307)
 
 
 @router.get("/api/search")
@@ -239,7 +247,7 @@ def api_draft(request: Request, body: DraftBody):
     if err:
         return err
     try:
-        return open_draft(body.tad_billno, _actor(ident))
+        return open_draft(body.tad_billno, _actor(ident), body.doc_kind)
     except ToBillError as exc:
         return _error(exc)
 

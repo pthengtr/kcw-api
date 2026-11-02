@@ -9,6 +9,7 @@ from decimal import Decimal
 from src.hq_po.sheet import COMPANY_ADDRESS, COMPANY_BRANCH, COMPANY_NAME, COMPANY_PHONE
 from src.pay_notes.baht_text import baht_text
 from src.to_bill.buyers import shop_label
+from src.to_bill.kinds import pay_via_label
 
 _MONTHS = (
     "มกราคม",
@@ -99,6 +100,12 @@ def build_sheet(invoice: dict, *, seller_tax_id: str) -> str:
     )
 
 
+def _is_receipt(invoice: dict) -> bool:
+    if str(invoice.get("doc_kind") or "") == "rvo":
+        return True
+    return str(invoice.get("docno") or "").strip().upper().startswith("RVO")
+
+
 def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
     voided = invoice.get("status") == "void"
     lines = invoice.get("lines") or []
@@ -148,14 +155,27 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
     if shop:
         document.append(_field("ร้านค้า", _esc(shop)))
     document.append(_field("ออกเอกสาร", _esc(_thai_date(invoice.get("issued_at")))))
+    receipt = _is_receipt(invoice)
+    paid = pay_via_label(invoice.get("pay_via"))
+    if receipt and paid:
+        document.append(_field("การชำระเงิน", _esc(paid)))
     watermark = "<div class='void'>ยกเลิก</div>" if voided else ""
     reason = ""
     if voided and invoice.get("void_reason"):
         reason = f"<p class='reason'>เหตุผลที่ยกเลิก: {_esc(invoice.get('void_reason'))}</p>"
-    note = (
-        f"<span class='keep'>ออกแทนใบกำกับภาษีอย่างย่อ {_esc(invoice.get('tad_billno'))}</span> "
-        f"<span class='keep'>วันที่ {_esc(_slash_date(invoice.get('bill_date')))} ซึ่งยกเลิกแล้ว</span>"
-    )
+    if receipt:
+        source = str(invoice.get("source_docno") or "").strip()
+        ref = f"อ้างอิงใบกำกับภาษี {_esc(source)}" if source else "อ้างอิงใบกำกับภาษี"
+        note = (
+            f"<span class='keep'>{ref}</span> "
+            f"<span class='keep'>จากใบกำกับภาษีอย่างย่อ {_esc(invoice.get('tad_billno'))}</span>"
+        )
+    else:
+        note = (
+            f"<span class='keep'>ออกแทนใบกำกับภาษีอย่างย่อ {_esc(invoice.get('tad_billno'))}</span> "
+            f"<span class='keep'>วันที่ {_esc(_slash_date(invoice.get('bill_date')))} ซึ่งยกเลิกแล้ว</span>"
+        )
+    heading = "ใบเสร็จรับเงิน" if receipt else "ใบกำกับภาษี"
     signs = "".join(
         _signature(title)
         for title in (
@@ -175,7 +195,7 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
       <div class="addr">เลขประจำตัวผู้เสียภาษี {_esc(seller_tax_id)}</div>
     </div>
     <div class="doc">
-      <h1>ใบกำกับภาษี/ใบเสร็จรับเงิน</h1>
+      <h1>{heading}</h1>
       <p class="mark">({_esc(copy_label)})</p>
     </div>
   </div>

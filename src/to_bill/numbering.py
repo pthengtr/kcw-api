@@ -16,17 +16,18 @@ def buddhist_yymm(on: date | datetime | None = None) -> str:
     return f"{(day.year + 543) % 100:02d}{day.month:02d}"
 
 
-def format_docno(yymm: str, seq: int) -> str:
-    """TO6910-001. Past 999 the sequence is not truncated."""
+def format_docno(yymm: str, seq: int, series: str = "TO") -> str:
+    """TO6910-001 or RVO6910-001. Past 999 the sequence is not truncated."""
     token = (yymm or "").strip()
     if len(token) != 4 or not token.isdigit():
         raise ValueError("yymm")
     number = int(seq)
     if number < 1:
         raise ValueError("seq")
+    prefix = "RVO" if str(series or "").strip().upper() == "RVO" else "TO"
     if number < 1000:
-        return f"TO{token}-{number:03d}"
-    return f"TO{token}-{number}"
+        return f"{prefix}{token}-{number:03d}"
+    return f"{prefix}{token}-{number}"
 
 
 def month_bounds(yymm: str) -> tuple[datetime, datetime]:

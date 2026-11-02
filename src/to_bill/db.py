@@ -72,6 +72,9 @@ def public_invoice(row: dict[str, Any], lines: list[dict[str, Any]] | None = Non
         "created_by": row.get("created_by") or "",
         "created_at": _iso(row.get("created_at")),
         "updated_at": _iso(row.get("updated_at")),
+        "doc_kind": row.get("doc_kind") or "to",
+        "pay_via": row.get("pay_via") or "",
+        "source_docno": row.get("source_docno") or "",
     }
     if lines is not None:
         out["lines"] = [
@@ -103,7 +106,7 @@ def _lines_for(conn, invoice_id: str) -> list[dict[str, Any]]:
     )
 
 
-def open_for_bills(billnos: list[str]) -> dict[str, dict[str, Any]]:
+def open_for_bills(billnos: list[str]) -> dict[str, list[dict[str, Any]]]:
     wanted = []
     seen: set[str] = set()
     for raw in billnos:
@@ -116,21 +119,25 @@ def open_for_bills(billnos: list[str]) -> dict[str, dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            select invoice_id, tad_billno, status, docno
+            select invoice_id, tad_billno, status, docno, doc_kind
             from to_bill.invoices
             where tad_billno = any(%s)
               and status in ('draft', 'issued')
+            order by tad_billno, doc_kind
             """,
             (wanted,),
         ).fetchall()
-    return {
-        str(row["tad_billno"]): {
-            "invoice_id": str(row["invoice_id"]),
-            "status": row["status"],
-            "docno": row["docno"],
-        }
-        for row in rows
-    }
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["tad_billno"]), []).append(
+            {
+                "invoice_id": str(row["invoice_id"]),
+                "status": row["status"],
+                "docno": row["docno"],
+                "doc_kind": row["doc_kind"] or "to",
+            }
+        )
+    return grouped
 
 
 def get_invoice(invoice_id: str) -> dict[str, Any] | None:
@@ -228,7 +235,7 @@ def peek_next_docno(on: date | None = None, *, series: str = "TO") -> str:
             (series, yymm),
         ).fetchone()
     last = int(row["last_seq"]) if row else 0
-    return format_docno(yymm, last + 1)
+    return format_docno(yymm, last + 1, series)
 
 
 def _insert_lines(conn, invoice_id: str, bill: LiveBill) -> None:
@@ -275,11 +282,11 @@ def create_draft(bill: LiveBill, actor: str) -> dict[str, Any]:
                 row = conn.execute(
                     """
                     insert into to_bill.invoices (
-                      tad_billno, status, bill_date, acctno, acctname_kss, online_po,
+                      tad_billno, status, doc_kind, bill_date, acctno, acctname_kss, online_po,
                       beforetax, tax, aftertax, discount, kss_canceled, source_read_at,
                       created_by
                     ) values (
-                      %s, 'draft', %s, %s, %s, %s,
+                      %s, 'draft', 'to', %s, %s, %s, %s,
                       %s, %s, %s, %s, %s, now(),
                       %s
                     )
@@ -299,23 +306,95 @@ def create_draft(bill: LiveBill, actor: str) -> dict[str, Any]:
                 lines = _lines_for(conn, invoice_id)
             return public_invoice(row, lines)
     except UniqueViolation as exc:
-        existing = open_for_bills([bill.billno]).get(bill.billno)
+        existing = find_open(bill.billno, "to")
         if not existing:
-            raise ToBillError("conflict", "มีใบเต็มของบิลนี้อยู่แล้ว") from exc
-        loaded = get_invoice(existing["invoice_id"])
-        if not loaded:
-            raise ToBillError("conflict", "มีใบเต็มของบิลนี้อยู่แล้ว") from exc
-        return loaded
+            raise ToBillError("conflict", "มีใบกำกับของบิลนี้อยู่แล้ว") from exc
+        return existing
 
 
-def find_open(billno: str) -> dict[str, Any] | None:
-    found = open_for_bills([billno]).get(billno.strip().upper())
+def find_open(billno: str, kind: str = "to") -> dict[str, Any] | None:
+    from src.to_bill.kinds import normalize_kind
+
+    wanted = normalize_kind(kind)
+    rows = open_for_bills([billno]).get(billno.strip().upper()) or []
+    found = next((row for row in rows if normalize_kind(row.get("doc_kind")) == wanted), None)
     if not found:
         return None
     return get_invoice(found["invoice_id"])
 
 
-def save_buyer(invoice_id: str, buyer: Buyer) -> dict[str, Any]:
+def create_receipt_draft(billno: str, actor: str) -> dict[str, Any]:
+    from psycopg.errors import UniqueViolation
+
+    key = billno.strip().upper()
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                source = conn.execute(
+                    """
+                    select invoice_id, docno
+                    from to_bill.invoices
+                    where tad_billno = %s
+                      and doc_kind = 'to'
+                      and status = 'issued'
+                    for update
+                    """,
+                    (key,),
+                ).fetchone()
+                if not source or not source["docno"]:
+                    raise ToBillError(
+                        "need_tax",
+                        "ออกใบกำกับภาษีก่อน จึงสร้างใบเสร็จได้",
+                        status=409,
+                    )
+                row = conn.execute(
+                    """
+                    insert into to_bill.invoices (
+                      tad_billno, status, doc_kind, source_docno,
+                      bill_date, acctno, acctname_kss, online_po,
+                      beforetax, tax, aftertax, discount, kss_canceled, source_read_at,
+                      customer_name, address, phone, tax_id, branch_label, email,
+                      created_by
+                    )
+                    select
+                      tad_billno, 'draft', 'rvo', docno,
+                      bill_date, acctno, acctname_kss, online_po,
+                      beforetax, tax, aftertax, discount, kss_canceled, now(),
+                      customer_name, address, phone, tax_id, branch_label, email,
+                      %s
+                    from to_bill.invoices
+                    where invoice_id = %s
+                    returning *
+                    """,
+                    (actor, source["invoice_id"]),
+                ).fetchone()
+                conn.execute(
+                    """
+                    insert into to_bill.lines
+                      (invoice_id, line_no, bcode, detail, qty, ui, price, amount)
+                    select %s, line_no, bcode, detail, qty, ui, price, amount
+                    from to_bill.lines
+                    where invoice_id = %s
+                    """,
+                    (row["invoice_id"], source["invoice_id"]),
+                )
+                conn.execute(
+                    """
+                    insert into to_bill.events (invoice_id, action, actor, note)
+                    values (%s, 'created', %s, %s)
+                    """,
+                    (row["invoice_id"], actor, source["docno"]),
+                )
+                lines = _lines_for(conn, str(row["invoice_id"]))
+            return public_invoice(row, lines)
+    except UniqueViolation as exc:
+        existing = find_open(key, "rvo")
+        if not existing:
+            raise ToBillError("conflict", "มีใบเสร็จของบิลนี้อยู่แล้ว") from exc
+        return existing
+
+
+def save_buyer(invoice_id: str, buyer: Buyer, pay_via: str | None = None) -> dict[str, Any]:
     with _connect() as conn:
         with conn.transaction():
             row = conn.execute(
@@ -327,6 +406,7 @@ def save_buyer(invoice_id: str, buyer: Buyer) -> dict[str, Any]:
                     tax_id = %s,
                     branch_label = %s,
                     email = %s,
+                    pay_via = case when doc_kind = 'rvo' then %s else null end,
                     updated_at = now()
                 where invoice_id = %s
                   and status = 'draft'
@@ -339,6 +419,7 @@ def save_buyer(invoice_id: str, buyer: Buyer) -> dict[str, Any]:
                     buyer.tax_id,
                     buyer.branch_label,
                     buyer.email,
+                    pay_via,
                     invoice_id,
                 ),
             ).fetchone()
@@ -387,73 +468,224 @@ def refresh_draft(invoice_id: str, bill: LiveBill, actor: str) -> dict[str, Any]
     return public_invoice(row, lines)
 
 
-def issue_invoice(invoice_id: str, bill: LiveBill, buyer: Buyer, actor: str) -> dict[str, Any]:
+def refresh_receipt(invoice_id: str, actor: str) -> dict[str, Any]:
+    with _connect() as conn:
+        with conn.transaction():
+            current = conn.execute(
+                """
+                select tad_billno, status, doc_kind
+                from to_bill.invoices
+                where invoice_id = %s
+                for update
+                """,
+                (invoice_id,),
+            ).fetchone()
+            if not current or current["status"] != "draft" or current["doc_kind"] != "rvo":
+                raise ToBillError("not_draft", "ดึงใหม่ได้เฉพาะฉบับร่างใบเสร็จ", status=409)
+            source = conn.execute(
+                """
+                select invoice_id, docno
+                from to_bill.invoices
+                where tad_billno = %s
+                  and doc_kind = 'to'
+                  and status = 'issued'
+                for update
+                """,
+                (current["tad_billno"],),
+            ).fetchone()
+            if not source:
+                raise ToBillError("need_tax", "ไม่พบใบกำกับภาษีที่ออกแล้ว", status=409)
+            row = conn.execute(
+                """
+                update to_bill.invoices as draft
+                set bill_date = src.bill_date,
+                    acctno = src.acctno,
+                    acctname_kss = src.acctname_kss,
+                    online_po = src.online_po,
+                    beforetax = src.beforetax,
+                    tax = src.tax,
+                    aftertax = src.aftertax,
+                    discount = src.discount,
+                    kss_canceled = src.kss_canceled,
+                    source_docno = src.docno,
+                    source_read_at = now(),
+                    updated_at = now()
+                from to_bill.invoices as src
+                where draft.invoice_id = %s
+                  and src.invoice_id = %s
+                returning draft.*
+                """,
+                (invoice_id, source["invoice_id"]),
+            ).fetchone()
+            conn.execute("delete from to_bill.lines where invoice_id = %s", (invoice_id,))
+            conn.execute(
+                """
+                insert into to_bill.lines
+                  (invoice_id, line_no, bcode, detail, qty, ui, price, amount)
+                select %s, line_no, bcode, detail, qty, ui, price, amount
+                from to_bill.lines
+                where invoice_id = %s
+                """,
+                (invoice_id, source["invoice_id"]),
+            )
+            conn.execute(
+                """
+                insert into to_bill.events (invoice_id, action, actor, note)
+                values (%s, 'refreshed', %s, %s)
+                """,
+                (invoice_id, actor, source["docno"]),
+            )
+            lines = _lines_for(conn, invoice_id)
+    return public_invoice(row, lines)
+
+
+def _take_number(conn, series: str, yymm: str) -> str:
+    counter = conn.execute(
+        """
+        insert into to_bill.counters (series, yymm, last_seq)
+        values (%s, %s, 1)
+        on conflict (series, yymm)
+        do update set last_seq = to_bill.counters.last_seq + 1
+        returning last_seq
+        """,
+        (series, yymm),
+    ).fetchone()
+    return format_docno(yymm, int(counter["last_seq"]), series)
+
+
+def issue_invoice(
+    invoice_id: str,
+    buyer: Buyer,
+    actor: str,
+    *,
+    series: str,
+    pay_via: str | None,
+    bill: LiveBill | None,
+) -> dict[str, Any]:
     yymm = buddhist_yymm()
     with _connect() as conn:
         with conn.transaction():
             current = conn.execute(
-                "select status, tad_billno from to_bill.invoices where invoice_id = %s for update",
+                """
+                select status, tad_billno, doc_kind
+                from to_bill.invoices
+                where invoice_id = %s
+                for update
+                """,
                 (invoice_id,),
             ).fetchone()
             if not current:
-                raise ToBillError("missing", "ไม่พบใบเต็ม", status=404)
+                raise ToBillError("missing", "ไม่พบเอกสาร", status=404)
             if current["status"] != "draft":
                 raise ToBillError("not_draft", "ออกเอกสารได้เฉพาะฉบับร่าง")
-            if str(current["tad_billno"]) != bill.billno:
-                raise ToBillError("bill_mismatch", "บิล KSS ไม่ตรงกับฉบับร่าง")
-            counter = conn.execute(
-                """
-                insert into to_bill.counters (series, yymm, last_seq)
-                values ('TO', %s, 1)
-                on conflict (series, yymm)
-                do update set last_seq = to_bill.counters.last_seq + 1
-                returning last_seq
-                """,
-                (yymm,),
-            ).fetchone()
-            docno = format_docno(yymm, int(counter["last_seq"]))
-            row = conn.execute(
-                """
-                update to_bill.invoices
-                set docno = %s,
-                    status = 'issued',
-                    bill_date = %s,
-                    acctno = %s,
-                    acctname_kss = %s,
-                    online_po = %s,
-                    beforetax = %s,
-                    tax = %s,
-                    aftertax = %s,
-                    discount = %s,
-                    kss_canceled = %s,
-                    source_read_at = now(),
-                    customer_name = %s,
-                    address = %s,
-                    phone = %s,
-                    tax_id = %s,
-                    branch_label = %s,
-                    email = %s,
-                    issued_at = now(),
-                    issued_by = %s,
-                    updated_at = now()
-                where invoice_id = %s
-                returning *
-                """,
-                (
-                    docno,
-                    *_snapshot_params(bill),
-                    buyer.customer_name,
-                    buyer.address,
-                    buyer.phone,
-                    buyer.tax_id,
-                    buyer.branch_label,
-                    buyer.email,
-                    actor,
-                    invoice_id,
-                ),
-            ).fetchone()
-            conn.execute("delete from to_bill.lines where invoice_id = %s", (invoice_id,))
-            _insert_lines(conn, invoice_id, bill)
+            kind = current["doc_kind"] or "to"
+            if series == "RVO" and kind != "rvo":
+                raise ToBillError("kind", "เอกสารนี้ไม่ใช่ใบเสร็จ")
+            if series != "RVO" and kind == "rvo":
+                raise ToBillError("kind", "เอกสารนี้เป็นใบเสร็จ")
+            source_docno = None
+            if kind == "rvo":
+                if pay_via not in {"platform", "cod"}:
+                    raise ToBillError("pay_via", "เลือกช่องทางชำระเงิน", status=400)
+                source = conn.execute(
+                    """
+                    select docno
+                    from to_bill.invoices
+                    where tad_billno = %s
+                      and doc_kind = 'to'
+                      and status = 'issued'
+                    for update
+                    """,
+                    (current["tad_billno"],),
+                ).fetchone()
+                if not source or not source["docno"]:
+                    raise ToBillError(
+                        "need_tax",
+                        "ออกใบกำกับภาษีก่อน จึงออกใบเสร็จได้",
+                        status=409,
+                    )
+                source_docno = source["docno"]
+                docno = _take_number(conn, "RVO", yymm)
+                row = conn.execute(
+                    """
+                    update to_bill.invoices
+                    set docno = %s,
+                        status = 'issued',
+                        source_docno = %s,
+                        pay_via = %s,
+                        customer_name = %s,
+                        address = %s,
+                        phone = %s,
+                        tax_id = %s,
+                        branch_label = %s,
+                        email = %s,
+                        issued_at = now(),
+                        issued_by = %s,
+                        updated_at = now()
+                    where invoice_id = %s
+                    returning *
+                    """,
+                    (
+                        docno,
+                        source_docno,
+                        pay_via,
+                        buyer.customer_name,
+                        buyer.address,
+                        buyer.phone,
+                        buyer.tax_id,
+                        buyer.branch_label,
+                        buyer.email,
+                        actor,
+                        invoice_id,
+                    ),
+                ).fetchone()
+            else:
+                if bill is None or str(current["tad_billno"]) != bill.billno:
+                    raise ToBillError("bill_mismatch", "บิล KSS ไม่ตรงกับฉบับร่าง")
+                docno = _take_number(conn, "TO", yymm)
+                row = conn.execute(
+                    """
+                    update to_bill.invoices
+                    set docno = %s,
+                        status = 'issued',
+                        pay_via = null,
+                        bill_date = %s,
+                        acctno = %s,
+                        acctname_kss = %s,
+                        online_po = %s,
+                        beforetax = %s,
+                        tax = %s,
+                        aftertax = %s,
+                        discount = %s,
+                        kss_canceled = %s,
+                        source_read_at = now(),
+                        customer_name = %s,
+                        address = %s,
+                        phone = %s,
+                        tax_id = %s,
+                        branch_label = %s,
+                        email = %s,
+                        issued_at = now(),
+                        issued_by = %s,
+                        updated_at = now()
+                    where invoice_id = %s
+                    returning *
+                    """,
+                    (
+                        docno,
+                        *_snapshot_params(bill),
+                        buyer.customer_name,
+                        buyer.address,
+                        buyer.phone,
+                        buyer.tax_id,
+                        buyer.branch_label,
+                        buyer.email,
+                        actor,
+                        invoice_id,
+                    ),
+                ).fetchone()
+                conn.execute("delete from to_bill.lines where invoice_id = %s", (invoice_id,))
+                _insert_lines(conn, invoice_id, bill)
             conn.execute(
                 """
                 insert into to_bill.events (invoice_id, action, actor, note)

@@ -154,27 +154,39 @@ async function api(path, options) {
   if (!res.ok) throw new Error(data.message || data.error || "ไม่สำเร็จ");
   return data;
 }
-function chip(hit) {
-  const parts = [];
-  if (hit.canceled) parts.push("<span class='chip bad'>ยกเลิกใน KSS</span>");
-  if (hit.open && hit.open.status === "issued") parts.push(`<span class="chip ok">ออกแล้ว ${esc(hit.open.docno)}</span>`);
-  else if (hit.open && hit.open.status === "draft") parts.push("<span class='chip warn'>ฉบับร่าง</span>");
-  else if (!hit.canceled) parts.push("<span class='chip'>ยังไม่มีใบเต็ม</span>");
-  return parts.join(" ");
+function docChip(doc, issuedLabel, draftLabel, emptyLabel) {
+  if (doc && doc.status === "issued") return `<span class="chip ok">${issuedLabel} ${esc(doc.docno)}</span>`;
+  if (doc && doc.status === "draft") return `<span class="chip warn">${draftLabel}</span>`;
+  return emptyLabel ? `<span class="chip">${emptyLabel}</span>` : "";
+}
+function docButton(billno, doc, kind) {
+  const receipt = kind === "rvo";
+  const name = receipt ? "ใบเสร็จ" : "ใบกำกับ";
+  if (doc && doc.status === "issued") return `<button type="button" data-open="${esc(billno)}" data-kind="${kind}">เปิด${name} ${esc(doc.docno)}</button>`;
+  if (doc) return `<button type="button" data-open="${esc(billno)}" data-kind="${kind}">เปิด${name}ฉบับร่าง</button>`;
+  return `<button type="button" ${receipt ? "class='ghost'" : ""} data-open="${esc(billno)}" data-kind="${kind}">สร้าง${receipt ? "ใบเสร็จรับเงิน" : "ใบกำกับภาษี"}</button>`;
 }
 function renderHits(rows) {
   if (!rows.length) { hits.innerHTML = "<p class='meta'>ไม่พบ TAD</p>"; return; }
-  hits.innerHTML = rows.map(hit => `
+  hits.innerHTML = rows.map(hit => {
+    const tax = hit.open;
+    const receipt = hit.receipt;
+    const buttons = [docButton(hit.billno, tax, "to")];
+    if ((tax && tax.status === "issued") || receipt) buttons.push(docButton(hit.billno, receipt, "rvo"));
+    if (hit.canceled && !tax) buttons[0] = buttons[0].replace("<button ", "<button disabled ");
+    return `
     <article class="hit">
       <strong>${esc(hit.billno)}</strong>
-      ${chip(hit)}
+      ${hit.canceled ? "<span class='chip bad'>ยกเลิกใน KSS</span>" : ""}
+      ${docChip(tax, "ใบกำกับ", "ใบกำกับฉบับร่าง", hit.canceled ? "" : "ยังไม่มีใบกำกับ")}
+      ${docChip(receipt, "ใบเสร็จ", "ใบเสร็จฉบับร่าง", "")}
       <div class="meta">${esc(hit.bill_date || "")} · ${money(hit.aftertax)} บาท
         ${hit.online_po ? " · ออเดอร์ " + esc(hit.online_po) : ""}</div>
       <div class="meta">ชื่อใน KSS ${esc(hit.acctname || "—")}</div>
       ${hit.shop_label ? `<div class="meta">ร้านค้า ${esc(hit.shop_label)}</div>` : ""}
-      <div class="actions"><button type="button" data-open="${esc(hit.billno)}" ${hit.canceled && !hit.open ? "disabled" : ""}>${hit.open ? "เปิด" : "สร้างใบเต็ม"}</button></div>
-    </article>
-  `).join("");
+      <div class="actions">${buttons.join("")}</div>
+    </article>`;
+  }).join("");
 }
 function branchFields(inv) {
   const branch = inv.branch_label || "สำนักงานใหญ่";
@@ -206,10 +218,13 @@ function renderEditor(inv) {
     return;
   }
   const prefill = inv.armas_prefill;
+  const receipt = inv.doc_kind === "rvo";
+  const docName = receipt ? "ใบเสร็จรับเงิน" : "ใบกำกับภาษี";
   editor.innerHTML = `
     <div class="grid">
       <div>
-        <h2 style="margin:0 0 8px">${esc(inv.tad_billno)} <span class="chip">ฉบับร่าง</span></h2>
+        <h2 style="margin:0 0 8px">${esc(docName)} · ${esc(inv.tad_billno)} <span class="chip">ฉบับร่าง</span></h2>
+        ${receipt && inv.source_docno ? `<p class="meta">อ้างอิงใบกำกับ ${esc(inv.source_docno)}</p>` : ""}
         ${inv.kss_canceled ? "<p class='banner'>บิลนี้ถูกยกเลิกใน KSS ออกเอกสารไม่ได้</p>" : ""}
         ${inv.kss_changed ? "<p class='banner'>ยอดใน KSS เปลี่ยนจากฉบับร่าง กดดึงจาก KSS อีกครั้งก่อนออกเอกสาร</p>" : ""}
         <p class="meta">ชื่อใน KSS ${esc(inv.acctname_kss || "—")}
@@ -227,7 +242,7 @@ function renderEditor(inv) {
         </table>
         <p class="meta">ก่อนภาษี ${money(inv.beforetax)} · ภาษี ${money(inv.tax)} · รวม ${money(inv.aftertax)}</p>
         <div class="actions">
-          <button type="button" class="ghost" id="refreshBtn">ดึงจาก KSS อีกครั้ง</button>
+          <button type="button" class="ghost" id="refreshBtn">${receipt ? "ดึงจากใบกำกับอีกครั้ง" : "ดึงจาก KSS อีกครั้ง"}</button>
           ${prefill ? "<button type='button' class='ghost' id='prefillBtn'>เติมจากบัญชี KSS</button>" : ""}
         </div>
       </div>
@@ -239,6 +254,13 @@ function renderEditor(inv) {
         ${branchFields(inv)}
         <label class="field"><span>โทร</span><input id="phone" value="${esc(inv.phone)}"></label>
         <label class="field"><span>อีเมล</span><input id="email" value="${esc(inv.email)}"></label>
+        ${receipt ? `<label class="field"><span>การชำระเงิน</span>
+          <select id="payVia">
+            <option value="" ${inv.pay_via ? "" : "selected"}>เลือก</option>
+            <option value="platform" ${inv.pay_via === "platform" ? "selected" : ""}>ชำระผ่านแพลตฟอร์ม</option>
+            <option value="cod" ${inv.pay_via === "cod" ? "selected" : ""}>เก็บเงินปลายทาง (COD)</option>
+          </select>
+        </label>` : ""}
         <p class="meta" id="nextNo">${inv.seller_ready ? "เลขถัดไปโดยประมาณ " + esc(inv.next_docno || "") + " — เลขจริงจองตอนออกเอกสาร" : "ยังตั้งเลขผู้เสียภาษีผู้ขายไม่ได้ จึงออกเอกสารไม่ได้"}</p>
         <p class="err" id="formErr"></p>
         <div class="actions">
@@ -262,7 +284,8 @@ function payload() {
     branch_label: branch === "branch" ? "สาขาที่" : "สำนักงานใหญ่",
     branch_no: branch === "branch" ? document.getElementById("branchNo").value : "",
     phone: document.getElementById("phone").value,
-    email: document.getElementById("email").value
+    email: document.getElementById("email").value,
+    pay_via: document.getElementById("payVia") ? document.getElementById("payVia").value : ""
   };
 }
 function applyBuyer(row) {
@@ -284,14 +307,14 @@ async function suggestBuyers() {
     btn.addEventListener("click", () => applyBuyer(data.buyers[Number(btn.dataset.buyer)]));
   });
 }
-async function openBill(billno) {
+async function openBill(billno, kind) {
   editor.hidden = false;
   editor.innerHTML = "<p class='meta'>กำลังเปิด</p>";
   try {
     const inv = await api("/to-bill/api/drafts", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({tad_billno: billno})
+      body: JSON.stringify({tad_billno: billno, doc_kind: kind === "rvo" ? "rvo" : "to"})
     });
     renderEditor(inv);
   } catch (err) {
@@ -316,7 +339,7 @@ document.getElementById("searchForm").addEventListener("submit", async (event) =
 });
 hits.addEventListener("click", (event) => {
   const btn = event.target.closest("[data-open]");
-  if (btn) openBill(btn.dataset.open);
+  if (btn) openBill(btn.dataset.open, btn.dataset.kind || "to");
 });
 document.getElementById("showSearch").addEventListener("click", () => {
   document.getElementById("searchPanel").hidden = false;
@@ -341,9 +364,9 @@ document.getElementById("listForm").addEventListener("submit", async (event) => 
     const rows = data.rows || [];
     list.innerHTML = rows.length ? rows.map(row => `
       <article class="inv">
-        <button type="button" class="ghost" data-id="${esc(row.invoice_id)}">${esc(row.docno || row.tad_billno)}</button>
+        <button type="button" class="ghost" data-id="${esc(row.invoice_id)}">${esc(row.doc_kind === "rvo" ? "ใบเสร็จ" : "ใบกำกับ")} ${esc(row.docno || row.tad_billno)}</button>
         <span class="chip">${esc(row.status)}</span>
-        <div class="meta">${esc(row.customer_name || "ยังไม่ระบุผู้ซื้อ")} · ${esc(row.tad_billno)} · ${money(row.aftertax)}</div>
+        <div class="meta">${esc(row.customer_name || "ยังไม่ระบุผู้ซื้อ")} · ${esc(row.tad_billno)} · ${money(row.aftertax)}${row.pay_via === "platform" ? " · ชำระผ่านแพลตฟอร์ม" : row.pay_via === "cod" ? " · เก็บเงินปลายทาง (COD)" : ""}</div>
       </article>`).join("") : "<p class='meta'>ไม่มีเอกสารในเดือนนี้</p>";
   } catch (err) {
     list.innerHTML = `<p class="err">${esc(err.message)}</p>`;
@@ -383,7 +406,7 @@ editor.addEventListener("click", async (event) => {
   }
 });
 const params = new URLSearchParams(location.search);
-if (params.get("tad")) openBill(params.get("tad"));
+if (params.get("tad")) openBill(params.get("tad"), params.get("kind") === "rvo" ? "rvo" : "to");
 </script>
 </body>
 </html>
