@@ -416,6 +416,9 @@ def test_page_defaults_product_view():
     assert "จะไปใบของ" not in html
     assert "hqpo-view" not in html
     assert "ยกเลิกบรรทัด" in html
+    assert "ไม่เอาแล้ว" in html
+    assert "data-drop" in html
+    assert "/hq-po/api/incoming/" in html
     assert "data-cancel-line" in html
     assert 'id="todayBox"' in html
     assert "ยอดรวมก่อนภาษี" in html
@@ -1287,6 +1290,57 @@ def test_mark_unavailable_sends_an_ordered_line_back_with_the_original_vendor(mo
     assert blocked == [("A1", "BK")]
     assert released == [9]
     assert rewritten == [(9, "BK")]
+
+
+def test_drop_incoming_cancels_the_row_and_closes_the_po_line(monkeypatch):
+    from src.hq_po import service
+
+    class _Settings:
+        stamp_enabled = True
+
+    row = {
+        "iclow_id": 9,
+        "bcode": "A1",
+        "vendor": "BK",
+        "ordered": "Y",
+        "received": "N",
+        "canceled": "N",
+        "docno": "HP6911-A1B2",
+    }
+    closed: list[tuple[str, str, str]] = []
+    canceled: list[int] = []
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: _Settings())
+    monkeypatch.setattr(service, "fetch_iclow_by_ids", lambda _ids: {9: row})
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+    monkeypatch.setattr(
+        service,
+        "open_lines_for_iclow",
+        lambda _client, _ids: {9: {"order_id": "ord", "line_id": "ln"}},
+    )
+    monkeypatch.setattr(
+        service,
+        "mark_line_canceled",
+        lambda _client, order_id, line_id, reason=None: closed.append((order_id, line_id, reason)),
+    )
+    monkeypatch.setattr(service, "cancel_incoming", lambda iclow_id: canceled.append(iclow_id))
+    result = service.drop_incoming(9)
+    assert result == {"iclow_id": 9, "bcode": "A1"}
+    assert closed == [("ord", "ln", "dropped")]
+    assert canceled == [9]
+
+
+def test_cancel_incoming_sets_canceled_on_one_ordered_row(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _DismissConn({"ID": 9}, iclow_count=1)
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    stamp.cancel_incoming(9)
+    updates = [(query, params) for query, params in conn.sql if "UPDATE" in query]
+    assert len(updates) == 1
+    query, params = updates[0]
+    assert "CANCELED = 'Y'" in query
+    assert "ORDERED" in query
+    assert params["iclow_id"] == 9
 
 
 def test_rewrite_waiting_vendor_refuses_an_ordered_row(monkeypatch):

@@ -179,7 +179,8 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 .po-lines summary::-webkit-details-marker{display:none}
 .po-lines summary::before{content:"▸";font-size:12px;color:var(--muted);transition:transform .15s}
 .po-lines[open] summary::before{transform:rotate(90deg)}
-.actions{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-wrap:nowrap;gap:8px}
+.actions{padding:10px 12px;border-top:1px solid var(--line);display:flex;flex-wrap:nowrap;gap:8px}
+.line-actions button.ghost{display:inline-flex;align-items:center;margin-top:0;min-height:36px}
 .actions button{flex:1 1 0;min-width:0;min-height:44px;background:var(--blue);color:#fff;border:0;border-radius:12px;padding:10px 8px;font-weight:650;font-size:14px}
 .actions button.ghost{background:#fff;color:var(--warn);border:1px solid #fdba74}
 .actions button:disabled{opacity:.6}
@@ -1212,7 +1213,7 @@ function renderOrders(){
     const open = doneQuery() ? " open" : "";
     const body = lines || '<div class="line plain"><div class="meta">ไม่มีรายการสินค้า</div></div>';
     const linesBlock = `<details class="po-lines"${open}><summary>รายการสินค้า ${n} รายการ</summary>${body}</details>`;
-    return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}${whenHtml}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${actions}${linesBlock}</div>`;
+    return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}${whenHtml}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${linesBlock}${actions}</div>`;
   }).join("");
 }
 async function loadOrders(){
@@ -1418,7 +1419,10 @@ function holdLineHtml(row){
   const noStock = STAMP && row.can_mark_unavailable
     ? `<button type="button" class="peer-btn" data-block-ordered="${esc(id)}" data-bcode="${esc(row.bcode||"")}">ไม่มีสินค้า</button>`
     : "";
-  const actions = STAMP ? `<div class="line-actions"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${noStock}${tradeButton(row.bcode)}</div>` : tradeButton(row.bcode);
+  const drop = STAMP
+    ? `<button type="button" class="ghost" data-drop="${esc(id)}" data-bcode="${esc(row.bcode||"")}">ไม่เอาแล้ว</button>`
+    : "";
+  const actions = STAMP ? `<div class="line-actions"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${drop}${noStock}${tradeButton(row.bcode)}</div>` : tradeButton(row.bcode);
   return `<div class="line plain">
     <div class="line-main">
       ${thumbHtml(row)}
@@ -1673,6 +1677,25 @@ async function releaseHold(id, kind){
   await loadSuggest();
   setTab("order");
 }
+async function dropHold(id, bcode){
+  if(state.busy || !id) return;
+  const name = bcode ? ` ${bcode}` : "";
+  if(!confirm(`นำ${name} ออกจากค้างรับ?\nแถวนี้จะไม่กลับไปรายการรอสั่ง`)) return;
+  setBusy(true, "กำลังนำออกจากค้างรับ…");
+  let failed = null;
+  try {
+    const res = await fetch("/hq-po/api/incoming/" + encodeURIComponent(id) + "/drop", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok) failed = new Error(data.message || "นำออกจากค้างรับไม่สำเร็จ");
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "นำออกจากค้างรับไม่สำเร็จ"); return; }
+  await loadHold();
+  if(state.ordersLoaded) await loadOrders();
+}
 document.getElementById("doneQ").oninput = (e) => {
   state.doneQ = e.target.value;
   if(state.doneMode === "product"){
@@ -1697,6 +1720,8 @@ document.getElementById("holdList").onclick = (e) => {
   if(trade){ openTrade(trade.getAttribute("data-trade") || ""); return; }
   const rel = e.target.closest("[data-release]");
   if(rel){ releaseHold(rel.getAttribute("data-release") || "", rel.getAttribute("data-kind") || ""); return; }
+  const drop = e.target.closest("[data-drop]");
+  if(drop){ dropHold(drop.getAttribute("data-drop") || "", drop.getAttribute("data-bcode") || ""); return; }
   const blocked = e.target.closest("[data-block-ordered]");
   if(blocked) markUnavailable(blocked.getAttribute("data-block-ordered") || "", blocked.getAttribute("data-bcode") || "", true);
 };

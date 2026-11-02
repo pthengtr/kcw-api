@@ -58,6 +58,7 @@ from src.hq_po.insight import (
 )
 from src.hq_po.stamp import (
     cancel_created,
+    cancel_incoming,
     dismiss_waiting as dismiss_waiting_iclow,
     insert_ordered_lines,
     release_to_waiting,
@@ -189,6 +190,40 @@ def release_incoming(iclow_id: int, kind: str) -> dict[str, Any]:
     )
     shown = release_badge(badge["kind"], vendor) or badge
     return {"iclow_id": iclow_n, "bcode": live.get("bcode") or "", "release": shown}
+
+
+def drop_incoming(iclow_id: int) -> dict[str, Any]:
+    """Take one ค้างรับ line off the list. It does not return to รอสั่ง."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่นำออกจากค้างรับ",
+        )
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    live = fetch_iclow_by_ids([iclow_n]).get(iclow_n)
+    if not live:
+        raise HqPoError("missing", f"ไม่พบ ICLOW {iclow_n}")
+    if str(live.get("received") or "").strip().upper() == "Y":
+        raise HqPoError("already_received", "รับของแล้ว นำออกจากค้างรับไม่ได้")
+    if str(live.get("canceled") or "").strip().upper() == "Y":
+        raise HqPoError("missing", "รายการนี้ถูกยกเลิกแล้ว")
+    if str(live.get("ordered") or "").strip().upper() != "Y":
+        raise HqPoError("missing", "รายการนี้ไม่ได้อยู่ในค้างรับ")
+    client = get_hq_po_supabase_client()
+    held = open_lines_for_iclow(client, [iclow_n]).get(iclow_n) or {}
+    if held.get("line_id") and held.get("order_id"):
+        mark_line_canceled(
+            client,
+            str(held["order_id"]),
+            str(held["line_id"]),
+            reason="dropped",
+        )
+    cancel_incoming(iclow_n)
+    return {"iclow_id": iclow_n, "bcode": live.get("bcode") or ""}
 
 
 def dismiss_waiting_line(iclow_id: int) -> dict[str, Any]:
