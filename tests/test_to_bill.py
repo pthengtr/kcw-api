@@ -11,8 +11,8 @@ from src.to_bill.buyers import (
 )
 from src.to_bill.kss import LiveBill, LiveLine, like_prefix
 from src.to_bill.net import is_private_lan
-from src.to_bill.kinds import parse_pay_via, pay_via_label
-from src.to_bill.numbering import buddhist_yymm, format_docno, month_bounds
+from src.to_bill.kinds import list_kind, parse_pay_via, pay_via_label
+from src.to_bill.numbering import buddhist_yymm, format_docno, month_bounds, recent_months
 from src.to_bill.service import changed_from_kss
 from src.to_bill.sheet import build_sheet
 from src.handlers.to_bill_entry import is_to_bill_command
@@ -31,6 +31,17 @@ def test_buddhist_month_and_bounds():
     start, end = month_bounds("6910")
     assert start.isoformat().startswith("2026-10-01")
     assert end.isoformat().startswith("2026-11-01")
+
+
+def test_recent_months_and_list_kind():
+    months = recent_months(3, date(2026, 11, 2))
+    assert [item["yymm"] for item in months] == ["6911", "6910", "6909"]
+    assert months[0]["label"] == "พฤศจิกายน 2569"
+    assert recent_months(2, date(2026, 1, 15))[1] == {"yymm": "6812", "label": "ธันวาคม 2568"}
+    assert list_kind("rvo") == "rvo"
+    assert list_kind("to") == "to"
+    assert list_kind("") == ""
+    assert list_kind("ทั้งหมด") == ""
 
 
 def test_shop_label_names_the_marketplace_channel():

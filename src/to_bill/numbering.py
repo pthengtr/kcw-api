@@ -5,6 +5,21 @@ from zoneinfo import ZoneInfo
 
 BKK = ZoneInfo("Asia/Bangkok")
 
+THAI_MONTHS = (
+    "มกราคม",
+    "กุมภาพันธ์",
+    "มีนาคม",
+    "เมษายน",
+    "พฤษภาคม",
+    "มิถุนายน",
+    "กรกฎาคม",
+    "สิงหาคม",
+    "กันยายน",
+    "ตุลาคม",
+    "พฤศจิกายน",
+    "ธันวาคม",
+)
+
 
 def buddhist_yymm(on: date | datetime | None = None) -> str:
     if isinstance(on, datetime):
@@ -28,6 +43,31 @@ def format_docno(yymm: str, seq: int, series: str = "TO") -> str:
     if number < 1000:
         return f"{prefix}{token}-{number:03d}"
     return f"{prefix}{token}-{number}"
+
+
+def recent_months(count: int = 24, on: date | datetime | None = None) -> list[dict[str, str]]:
+    """Newest Buddhist month first, for the online invoice list."""
+    if isinstance(on, datetime):
+        day = on.astimezone(BKK).date()
+    elif isinstance(on, date):
+        day = on
+    else:
+        day = datetime.now(BKK).date()
+    year, month = day.year, day.month
+    out: list[dict[str, str]] = []
+    for _ in range(max(1, count)):
+        be_year = year + 543
+        out.append(
+            {
+                "yymm": f"{be_year % 100:02d}{month:02d}",
+                "label": f"{THAI_MONTHS[month - 1]} {be_year}",
+            }
+        )
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    return out
 
 
 def month_bounds(yymm: str) -> tuple[datetime, datetime]:

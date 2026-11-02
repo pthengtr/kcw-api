@@ -39,6 +39,9 @@ button:disabled { opacity:.55; cursor:default; }
 .field { display:grid; gap:4px; margin-bottom:8px; font-size:14px; }
 .field span { color:#475467; font-size:12px; }
 .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+#listForm .field { margin:0; }
+#listForm select { min-width:9.5rem; }
+#yymm { min-width:12.5rem; }
 @media (max-width:800px) { .grid { grid-template-columns:1fr; } }
 .tof { font-family: Prompt, "Noto Sans Thai", sans-serif; color:#111; background:#fff; padding:18px 16px 22px; max-width:860px; margin:0 auto; position:relative; line-height:1.45; }
 .tof + .tof { margin-top:28px; border-top:1px dashed #d0d5dd; padding-top:28px; }
@@ -114,15 +117,26 @@ button:disabled { opacity:.55; cursor:default; }
   </section>
   <section class="panel noprint" id="listPanel" hidden>
     <form id="listForm" class="row">
-      <input id="yymm" placeholder="6910" maxlength="4" style="width:6rem">
-      <select id="status">
-        <option value="">ทั้งหมด</option>
-        <option value="draft">ฉบับร่าง</option>
-        <option value="issued">ออกแล้ว</option>
-        <option value="void">ยกเลิก</option>
-      </select>
-      <input id="lq" placeholder="เลขที่ หรือชื่อผู้ซื้อ" style="flex:1; min-width:12rem">
-      <button type="submit">แสดง</button>
+      <label class="field"><span>เดือน</span>
+        <select id="yymm"></select>
+      </label>
+      <label class="field"><span>เอกสาร</span>
+        <select id="kind">
+          <option value="">ทั้งหมด</option>
+          <option value="to">ใบกำกับ</option>
+          <option value="rvo">ใบเสร็จ</option>
+        </select>
+      </label>
+      <label class="field"><span>สถานะ</span>
+        <select id="status">
+          <option value="">ทั้งหมด</option>
+          <option value="draft">ฉบับร่าง</option>
+          <option value="issued">ออกแล้ว</option>
+          <option value="void">ยกเลิก</option>
+        </select>
+      </label>
+      <input id="lq" placeholder="เลขที่ หรือชื่อผู้ซื้อ" style="flex:1; min-width:12rem; align-self:end">
+      <button type="submit" style="align-self:end">แสดง</button>
     </form>
     <div id="list"></div>
   </section>
@@ -350,28 +364,53 @@ document.getElementById("showList").addEventListener("click", () => {
   document.getElementById("listPanel").hidden = false;
   document.getElementById("listForm").requestSubmit();
 });
+function fillMonths(months, selected) {
+  const sel = document.getElementById("yymm");
+  const want = selected || sel.value || "";
+  sel.innerHTML = (months || []).map(month =>
+    `<option value="${esc(month.yymm)}">${esc(month.label)}</option>`
+  ).join("");
+  if (want && ![...sel.options].some(option => option.value === want)) {
+    sel.insertAdjacentHTML("beforeend", `<option value="${esc(want)}">${esc(want)}</option>`);
+  }
+  if (want) sel.value = want;
+}
+function kindLabel(kind) {
+  if (kind === "rvo") return "ใบเสร็จ";
+  if (kind === "to") return "ใบกำกับ";
+  return "เอกสาร";
+}
 document.getElementById("listForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const kind = document.getElementById("kind").value;
   const params = new URLSearchParams({
     yymm: document.getElementById("yymm").value,
+    kind: kind,
     status: document.getElementById("status").value,
     q: document.getElementById("lq").value
   });
   list.innerHTML = "<p class='meta'>กำลังโหลด</p>";
   try {
     const data = await api("/to-bill/api/invoices?" + params.toString());
-    document.getElementById("yymm").value = data.yymm || "";
+    fillMonths(data.months || [], data.yymm || "");
     const rows = data.rows || [];
-    list.innerHTML = rows.length ? rows.map(row => `
+    const month = (data.months || []).find(item => item.yymm === data.yymm);
+    const heading = `<p class="meta">${esc(month ? month.label : (data.yymm || ""))} · ${esc(kindLabel(data.kind || kind))}</p>`;
+    list.innerHTML = heading + (rows.length ? rows.map(row => `
       <article class="inv">
         <button type="button" class="ghost" data-id="${esc(row.invoice_id)}">${esc(row.doc_kind === "rvo" ? "ใบเสร็จ" : "ใบกำกับ")} ${esc(row.docno || row.tad_billno)}</button>
         <span class="chip">${esc(row.status)}</span>
         <div class="meta">${esc(row.customer_name || "ยังไม่ระบุผู้ซื้อ")} · ${esc(row.tad_billno)} · ${money(row.aftertax)}${row.pay_via === "platform" ? " · ชำระผ่านแพลตฟอร์ม" : row.pay_via === "cod" ? " · เก็บเงินปลายทาง (COD)" : ""}</div>
-      </article>`).join("") : "<p class='meta'>ไม่มีเอกสารในเดือนนี้</p>";
+      </article>`).join("") : `<p class='meta'>ไม่มี${esc(kindLabel(data.kind || kind))}ในเดือนนี้</p>`);
   } catch (err) {
     list.innerHTML = `<p class="err">${esc(err.message)}</p>`;
   }
 });
+for (const id of ["yymm", "kind", "status"]) {
+  document.getElementById(id).addEventListener("change", () => {
+    if (!document.getElementById("listPanel").hidden) document.getElementById("listForm").requestSubmit();
+  });
+}
 list.addEventListener("click", (event) => {
   const btn = event.target.closest("[data-id]");
   if (btn) openId(btn.dataset.id);

@@ -164,10 +164,11 @@ def get_invoice_by_docno(docno: str) -> dict[str, Any] | None:
     return public_invoice(row, lines)
 
 
-def list_invoices(*, status: str, q: str, yymm: str) -> list[dict[str, Any]]:
+def list_invoices(*, status: str, q: str, yymm: str, kind: str = "") -> list[dict[str, Any]]:
     start, end = month_bounds(yymm)
     like = f"%{q.strip()}%" if q.strip() else ""
     status_filter = status.strip()
+    kind_filter = kind if kind in ("to", "rvo") else ""
     with _connect() as conn:
         rows = conn.execute(
             """
@@ -176,6 +177,7 @@ def list_invoices(*, status: str, q: str, yymm: str) -> list[dict[str, Any]]:
             where coalesce(issued_at, created_at) >= %s
               and coalesce(issued_at, created_at) < %s
               and (%s = '' or status = %s)
+              and (%s = '' or coalesce(nullif(doc_kind, ''), 'to') = %s)
               and (
                 %s = ''
                 or coalesce(docno, '') ilike %s
@@ -185,7 +187,18 @@ def list_invoices(*, status: str, q: str, yymm: str) -> list[dict[str, Any]]:
             order by coalesce(issued_at, created_at) desc
             limit 200
             """,
-            (start, end, status_filter, status_filter, like, like, like, like),
+            (
+                start,
+                end,
+                status_filter,
+                status_filter,
+                kind_filter,
+                kind_filter,
+                like,
+                like,
+                like,
+                like,
+            ),
         ).fetchall()
     return [public_invoice(row) for row in rows]
 
