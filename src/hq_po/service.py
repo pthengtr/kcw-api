@@ -33,6 +33,7 @@ from src.hq_po.guards import (
 )
 from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
+    fetch_hold_rows,
     fetch_iclow_by_ids,
     fetch_incoming_lines,
     fetch_incoming_qty,
@@ -63,7 +64,13 @@ from src.hq_po.stamp import (
     revert_ordered,
     stamp_ordered,
 )
-from src.hq_po.suggest import attach_catalog, build_insight_only, build_suggest, suppliers_for_bcode
+from src.hq_po.suggest import (
+    attach_catalog,
+    build_insight_only,
+    build_suggest,
+    describe_holds,
+    suppliers_for_bcode,
+)
 
 
 def suggest_payload() -> dict[str, Any]:
@@ -376,6 +383,58 @@ def _on_hand(meta: dict[str, Any] | None) -> float | None:
         return None
 
 
+def lookup_holds(bcodes: list[str]) -> dict[str, dict[str, Any]]:
+    """Visible รอสั่ง flag, or the PO numbers that keep the product off that list."""
+    rows = fetch_hold_rows(bcodes)
+    ids: list[int] = []
+    for row in rows:
+        try:
+            iclow_id = int(row.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            iclow_id = 0
+        if iclow_id > 0:
+            ids.append(iclow_id)
+    held: dict[int, dict[str, Any]] = {}
+    if ids:
+        try:
+            held = open_lines_for_iclow(get_hq_po_supabase_client(), ids)
+        except Exception:
+            held = {}
+    return describe_holds(rows, held)
+
+
+def _raise_if_held(bcode: str, holds: dict[str, dict[str, Any]], unordered: set[str]) -> None:
+    info = holds.get(bcode)
+    blocked = _hold_block(bcode, info)
+    if blocked:
+        raise blocked
+    if info is not None and not info.get("waiting"):
+        raise HqPoError("already_on_iclow", f"{bcode} ไม่อยู่ในรายการรอสั่ง")
+    if info is None and bcode in unordered:
+        raise HqPoError("already_on_iclow", f"{bcode} มีในรายการรอสั่งแล้ว ให้สั่งจากแถวนั้น")
+
+
+def _hold_block(bcode: str, info: dict[str, Any] | None) -> HqPoError | None:
+    if not info:
+        return None
+    if info.get("waiting"):
+        return HqPoError("already_on_iclow", f"{bcode} มีในรายการรอสั่งแล้ว ให้สั่งจากแถวนั้น")
+    docs = []
+    for doc in info.get("docs") or []:
+        if isinstance(doc, dict):
+            text = str(doc.get("docno") or "").strip()
+        else:
+            text = str(doc).strip()
+        if text:
+            docs.append(text)
+    if not docs:
+        return None
+    return HqPoError(
+        "already_on_iclow",
+        f"{bcode} อยู่ในใบ {' และ '.join(docs)} แล้ว จึงไม่ขึ้นในรายการรอสั่ง",
+    )
+
+
 def product_search_payload(query: str) -> dict[str, Any]:
     """ICMAS products that can be added even when they are not on the waiting list."""
     try:
@@ -390,9 +449,13 @@ def product_search_payload(query: str) -> dict[str, Any]:
     except Exception:
         history, catalog = {}, {}
     try:
-        waiting = fetch_unordered_bcodes(codes)
+        holds = lookup_holds(codes)
     except Exception:
-        waiting = set()
+        try:
+            found = fetch_unordered_bcodes(codes)
+        except Exception:
+            found = set()
+        holds = {bcode: {"waiting": True, "docs": []} for bcode in found}
     from src.hq_po.stock import fetch_dual_stock
 
     hq, syp, ok = fetch_dual_stock(codes, refresh=True)
@@ -441,7 +504,8 @@ def product_search_payload(query: str) -> dict[str, Any]:
                 "hq_qtyoh2": hq_qty,
                 "syp_qtyoh2": syp_qty,
                 "company_qtyoh2": company,
-                "waiting": bcode in waiting,
+                "waiting": bool((holds.get(bcode) or {}).get("waiting")),
+                "hold_docs": list((holds.get(bcode) or {}).get("docs") or []),
             }
         )
     return {"products": products}
@@ -510,6 +574,10 @@ def _resolve_created(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     if not codes:
         return {}
     refresh_qtyoh2(codes)
+    try:
+        holds = lookup_holds(codes)
+    except Exception:
+        holds = {}
     unordered = fetch_unordered_bcodes(codes)
     incoming = fetch_incoming_qty()
     try:
@@ -522,8 +590,7 @@ def _resolve_created(bcodes: list[str]) -> dict[str, dict[str, Any]]:
         raise HqPoError("stock_unavailable", "อ่านสต็อกเพื่อสั่ง AI ไม่สำเร็จ")
     out: dict[str, dict[str, Any]] = {}
     for bcode in codes:
-        if bcode in unordered:
-            raise HqPoError("already_on_iclow", f"{bcode} มีในรายการรอสั่งแล้ว ให้สั่งจากแถว ICLOW")
+        _raise_if_held(bcode, holds, unordered)
         policy = policies.get(bcode)
         if not policy:
             raise HqPoError("not_confirmable", f"{bcode} ไม่มีคำแนะนำ AI")
@@ -701,6 +768,10 @@ def _resolve_peer(lines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             codes.append(bcode)
     if not codes:
         return {}
+    try:
+        holds = lookup_holds(codes)
+    except Exception:
+        holds = {}
     unordered = fetch_unordered_bcodes(codes)
     try:
         products = fetch_sheet_products(codes)
@@ -716,8 +787,7 @@ def _resolve_peer(lines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         bcode = str(raw.get("bcode") or "").strip()
         if not bcode or bcode in out:
             continue
-        if bcode in unordered:
-            raise HqPoError("already_on_iclow", f"{bcode} มีในรายการรอสั่งแล้ว ให้สั่งจากแถวนั้น")
+        _raise_if_held(bcode, holds, unordered)
         product = products.get(bcode) or {}
         if not product:
             raise HqPoError("missing", f"ไม่พบสินค้า {bcode}")
@@ -777,7 +847,9 @@ def confirm_order(
     if existing:
         ids = [int(line["iclow_id"]) for line in existing]
         live = fetch_iclow_by_ids(ids)
-        existing, skipped = skip_already_open(existing, live, open_lines_for_iclow(client, ids))
+        opened = open_lines_for_iclow(client, ids)
+        existing, skipped = skip_already_open(existing, live, opened)
+        _release_returned_lines(client, existing, live, opened)
         if existing:
             ids = [int(line["iclow_id"]) for line in existing]
             try:
@@ -924,6 +996,38 @@ def _attach_receive(orders: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     annotate_markable(lines, vendor_of=_line_vendor)
     return orders
+
+
+def _release_returned_lines(
+    client: Any,
+    lines: list[dict[str, Any]],
+    live: dict[int, dict[str, Any]],
+    opened: dict[int, dict[str, Any]],
+) -> None:
+    """ORDERED=X is back on รอสั่ง. Drop the old open HQ line so it can be ordered again."""
+    for line in lines:
+        try:
+            iclow_id = int(line.get("iclow_id"))
+        except (TypeError, ValueError):
+            continue
+        row = live.get(iclow_id) or {}
+        if str(row.get("ordered") or "").strip().upper() != "X":
+            continue
+        hit = opened.get(iclow_id) or {}
+        order_id = str(hit.get("order_id") or "").strip()
+        line_id = str(hit.get("line_id") or "").strip()
+        if not order_id or not line_id:
+            continue
+        mark_line_canceled(client, order_id, line_id, reason="returned_to_waiting")
+
+
+def get_open_order(order_id: str) -> dict[str, Any]:
+    client = get_hq_po_supabase_client()
+    order = get_order(client, order_id)
+    if not order:
+        raise HqPoError("missing", "ไม่พบใบสั่งซื้อ")
+    attached = _attach_receive([order])
+    return attached[0] if attached else order
 
 
 def list_open_orders() -> list[dict[str, Any]]:

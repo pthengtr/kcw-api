@@ -228,6 +228,56 @@ def fetch_unordered_bcodes(bcodes: list[str]) -> set[str]:
     return out
 
 
+def fetch_hold_rows(bcodes: list[str]) -> list[dict[str, Any]]:
+    """Unordered ICLOW rows, including ORDERED=X, so a hidden line can name its PO."""
+    codes = []
+    seen: set[str] = set()
+    for raw in bcodes:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if not codes:
+        return []
+    engine = get_site_engine("hq")
+    out: list[dict[str, Any]] = []
+    with engine.connect() as conn:
+        for start in range(0, len(codes), 80):
+            chunk = codes[start : start + 80]
+            params = {f"b{n}": code for n, code in enumerate(chunk)}
+            placeholders = ", ".join(f":b{n}" for n in range(len(chunk)))
+            sql = text(
+                f"""
+                SELECT
+                  CONVERT(bigint, ID) AS ID,
+                  {_NV('BCODE', 40)} AS BCODE,
+                  {_NV('ORDERED', 10)} AS ORDERED,
+                  {_NV('DOCNO', 80)} AS DOCNO
+                FROM dbo.ICLOW WITH (NOLOCK)
+                WHERE {_NV('BCODE', 40)} IN ({placeholders})
+                  AND {_NOT_CANCELED}
+                  AND {_ORDERED_N}
+                """
+            )
+            for row in conn.execute(sql, params).mappings().all():
+                bcode = str(row.get("BCODE") or "").strip()
+                if not bcode:
+                    continue
+                try:
+                    iclow_id = int(row.get("ID") or 0)
+                except (TypeError, ValueError):
+                    iclow_id = 0
+                out.append(
+                    {
+                        "iclow_id": iclow_id,
+                        "bcode": bcode,
+                        "ordered": str(row.get("ORDERED") or "").strip().upper(),
+                        "docno": str(row.get("DOCNO") or "").strip(),
+                    }
+                )
+    return out
+
+
 _SUPPLIER_LIMIT = 12
 
 

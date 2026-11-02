@@ -320,8 +320,6 @@ def dismiss_waiting(iclow_id: int) -> dict[str, Any]:
                 raise HqPoError("already_received", "รับของแล้ว นำออกจากรอสั่งไม่ได้")
             if ordered == "Y":
                 raise HqPoError("already_ordered", "รายการนี้อยู่ในค้างรับ ไม่ใช่รายการรอสั่ง")
-            if ordered == "X":
-                raise HqPoError("missing", "รายการนี้ไม่อยู่ในรอสั่ง")
             product = conn.execute(
                 text(
                     """
@@ -341,7 +339,6 @@ def dismiss_waiting(iclow_id: int) -> dict[str, Any]:
                     SET CANCELED = 'Y'
                     WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
                       AND {_ORDERED_N}
-                      AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) <> 'X'
                       AND {_RECEIVED_N}
                       AND {_NOT_CANCELED}
                     """

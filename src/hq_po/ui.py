@@ -44,7 +44,6 @@ main{padding:12px 12px calc(20px + env(safe-area-inset-bottom));max-width:860px;
 body.has-dock main{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 .note{background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;margin-bottom:12px}
 .toolbar{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
-.order-filters{display:grid;grid-template-columns:1fr;gap:8px}
 .toggle{display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px}
 .toggle button{flex:1;min-height:38px;border:0;background:transparent;border-radius:9px;padding:7px 8px;font-size:13px;color:var(--muted);font-weight:600}
 .toggle button.on{background:var(--blue);color:#fff}
@@ -53,6 +52,11 @@ body.has-dock main{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 #addProduct{flex:none;min-height:44px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;padding:8px 12px;font-size:14px}
 .search-status{display:flex;align-items:center;gap:8px;margin:0;color:var(--blue-deep);font-size:13px;font-weight:650}
 .search-status[hidden]{display:none}
+.today{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.today .cell{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.today .l{color:var(--muted);font-size:12px;font-weight:650}
+.today .v{margin-top:2px;font-size:18px;font-weight:700;color:var(--blue-deep);line-height:1.3;overflow-wrap:anywhere}
+.today .note{grid-column:1 / -1}
 input[type=search]{width:100%;min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:16px;background:#fff;color:var(--text)}
 input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .count{font-size:12px;color:var(--muted);padding:0 2px}
@@ -134,6 +138,9 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .pick-row{display:flex;gap:8px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:8px}
 .pick-row .grow{flex:1;min-width:0}
 .pick-row button.choose{flex:none;min-height:40px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;padding:8px 12px}
+.doc-link{border:0;background:transparent;color:var(--blue);font-weight:700;padding:0;text-decoration:underline;font-size:inherit}
+#poBox{position:fixed;inset:0;z-index:45;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center}
+#poBox[hidden]{display:none}
 #catalog{position:fixed;inset:0;z-index:18;background:var(--bg);overflow:auto;padding:12px 12px calc(24px + env(safe-area-inset-bottom))}
 #catalog[hidden]{display:none}
 .catalog-top{display:flex;gap:8px;margin-bottom:10px}
@@ -202,8 +209,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   .tabs{max-width:420px}
   main{padding-left:20px;padding-right:20px}
   .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .bar,#vendorSort,#doneMode,#doneSort,#holdQ{grid-column:1 / -1}
-  .order-filters{grid-template-columns:1fr 1fr}
+  .bar,#vendorSort,#doneMode,#doneSort,#doneQ{grid-column:1 / -1}
   .line{padding:12px 14px}
 }
 </style>
@@ -250,12 +256,9 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
         <button type="button" id="sortOld">เก่าสุดก่อน</button>
         <button type="button" id="sortNew" class="on">ใหม่สุดก่อน</button>
       </div>
-      <div class="order-filters" id="billFilters">
-        <input id="orderVendor" type="search" placeholder="กรองเจ้าหนี้" aria-label="กรองเจ้าหนี้" enterkeyhint="search" autocomplete="off"/>
-        <input id="orderBcode" type="search" placeholder="กรองรหัสสินค้า" aria-label="กรองรหัสสินค้า" enterkeyhint="search" autocomplete="off"/>
-      </div>
-      <input id="holdQ" type="search" placeholder="ค้นรหัส ชื่อสินค้า หรือเจ้าหนี้" aria-label="ค้นสินค้าที่สั่งแล้ว" enterkeyhint="search" autocomplete="off" hidden/>
+      <input id="doneQ" type="search" placeholder="ค้นรหัส ชื่อสินค้า หรือเจ้าหนี้" aria-label="ค้นรหัส ชื่อสินค้า หรือเจ้าหนี้" enterkeyhint="search" autocomplete="off"/>
     </div>
+    <div id="todayBox" class="today" hidden></div>
     <div id="orders"></div>
     <div id="holdList" hidden></div>
   </section>
@@ -286,6 +289,12 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   <div id="catalogBody"></div>
 </div>
 <div id="printSheet" aria-hidden="true"></div>
+<div id="poBox" hidden>
+  <div class="hist-card">
+    <div class="hist-top"><h2 id="poBoxTitle">ใบสั่ง</h2><button type="button" id="poBoxClose">ปิด</button></div>
+    <div id="poBoxBody"></div>
+  </div>
+</div>
 <div id="hist" hidden>
   <div class="hist-card">
     <div class="hist-top"><div class="hist-id"><strong id="histTitle">Insight</strong><div id="histName" hidden></div><div id="histModel" class="meta" hidden></div></div><button type="button" id="histClose">ปิด</button></div>
@@ -306,7 +315,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"product", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, orderVendor:"", orderBcode:"", hold:[], holdLoaded:false, holdQ:"", busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
+const state = {items:[], view:"product", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, doneQ:"", hold:[], holdLoaded:false, busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -401,6 +410,42 @@ function recHtml(row){
   const reason = row.propose_meta && row.propose_meta.reason
     ? `<div class="ai">${esc(row.propose_meta.reason)}</div>` : "";
   return `<div class="recs">${p9el}${aiel}</div>${reason}`;
+}
+function lineAmount(line){
+  const qty = Number(line && line.qty);
+  const cost = Number(line && line.cost);
+  if(!(qty > 0) || !(cost > 0)) return null;
+  const ui = String(line.ui || "").trim();
+  const ui2 = String(line.ui2 || "").trim();
+  const mtp = Number(line.mtp2);
+  const unit = ui && ui2 && ui === ui2 && mtp > 1 ? cost * mtp : cost;
+  return Math.round(qty * unit * 100) / 100;
+}
+function renderToday(){
+  const box = document.getElementById("todayBox");
+  if(!box) return;
+  box.hidden = false;
+  if(!state.ordersLoaded){
+    box.innerHTML = `<div class="note">${spinner("กำลังสรุปวันนี้…")}</div>`;
+    return;
+  }
+  const today = todayBangkok();
+  const orders = (state.orders || []).filter(order => bangkokDay(order.ordered_at) === today && (order.lines || []).length);
+  const vendors = new Set();
+  let total = 0;
+  let priced = false;
+  for(const order of orders){
+    const vendor = String(order.vendor_acctno || order.vendor_name || "").trim();
+    if(vendor) vendors.add(vendor);
+    for(const line of order.lines || []){
+      const amount = lineAmount(line);
+      if(amount == null) continue;
+      priced = true;
+      total += amount;
+    }
+  }
+  const money = priced ? moneyText(Math.round(total * 100) / 100) : "0.-";
+  box.innerHTML = `<div class="cell"><div class="l">วันนี้ สั่งแล้ว</div><div class="v">${vendors.size} บริษัท</div></div><div class="cell"><div class="l">จำนวนใบ</div><div class="v">${orders.length} ใบ</div></div><div class="cell"><div class="l">ยอดรวมก่อนภาษี</div><div class="v">${esc(money || "0.-")}</div></div>`;
 }
 function moneyText(n){
   const v = Number(n);
@@ -576,6 +621,7 @@ function lineHtml(row, mode){
       <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
       ${productMeta(row)}
       ${flagHtml(row)}
+      ${priorHtml(row)}
       ${vendorLine}
       ${unitHtml(row)}
       ${stock ? `<div class="meta">${stock}</div>` : ""}
@@ -1064,23 +1110,26 @@ function closeSheet(){
 function orderFilterText(value){
   return String(value || "").trim().toLowerCase();
 }
+function doneQuery(){
+  return orderFilterText(state.doneQ);
+}
+function orderHeaderMatches(order, q){
+  return [order.docno, order.vendor_name, order.vendor_acctno].join(" ").toLowerCase().includes(q);
+}
+function lineMatchesDone(line, q){
+  return [line.bcode, line.descr].join(" ").toLowerCase().includes(q);
+}
 function orderVisible(order){
-  const vendorQ = orderFilterText(state.orderVendor);
-  const codeQ = orderFilterText(state.orderBcode);
-  if(vendorQ){
-    const hay = [order.vendor_name, order.vendor_acctno].join(" ").toLowerCase();
-    if(!hay.includes(vendorQ)) return false;
-  }
-  if(codeQ){
-    return (order.lines || []).some(line => String(line.bcode || "").toLowerCase().includes(codeQ));
-  }
-  return true;
+  const q = doneQuery();
+  if(!q) return true;
+  if(orderHeaderMatches(order, q)) return true;
+  return (order.lines || []).some(line => lineMatchesDone(line, q));
 }
 function orderVisibleLines(order){
-  const codeQ = orderFilterText(state.orderBcode);
+  const q = doneQuery();
   const lines = order.lines || [];
-  if(!codeQ) return lines;
-  return lines.filter(line => String(line.bcode || "").toLowerCase().includes(codeQ));
+  if(!q || orderHeaderMatches(order, q)) return lines;
+  return lines.filter(line => lineMatchesDone(line, q));
 }
 function orderDateText(iso){
   const raw = String(iso || "").trim();
@@ -1135,7 +1184,7 @@ function renderOrders(){
     host.innerHTML = '<div class="empty">ไม่พบใบสั่งซื้อตามตัวกรอง</div>';
     return;
   }
-  const filtering = orderFilterText(state.orderVendor) || orderFilterText(state.orderBcode);
+  const filtering = doneQuery();
   const summary = filtering ? `<p class="count">${orders.length} ใบ</p>` : "";
   host.innerHTML = summary + orders.map(order => {
     const badge = order.receive_label==="รับแล้ว" ? "done" : "wait";
@@ -1160,7 +1209,7 @@ function renderOrders(){
     const when = orderDateText(order.ordered_at);
     const whenHtml = when ? `<span class="when">วันที่สั่ง ${esc(when)}</span>` : "";
     const n = orderVisibleLines(order).length;
-    const open = orderFilterText(state.orderBcode) ? " open" : "";
+    const open = doneQuery() ? " open" : "";
     const body = lines || '<div class="line plain"><div class="meta">ไม่มีรายการสินค้า</div></div>';
     const linesBlock = `<details class="po-lines"${open}><summary>รายการสินค้า ${n} รายการ</summary>${body}</details>`;
     return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}${whenHtml}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${linesBlock}${actions}</div>`;
@@ -1176,6 +1225,7 @@ async function loadOrders(){
     const data = await res.json();
     state.orders = data.orders || [];
     state.ordersLoaded = true;
+    renderToday();
     renderOrders();
   } catch (err) {
     host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>';
@@ -1318,18 +1368,15 @@ function setDoneMode(mode){
   state.doneMode = product ? "product" : "bill";
   document.getElementById("doneBill").classList.toggle("on", !product);
   document.getElementById("doneProduct").classList.toggle("on", product);
-  document.getElementById("billFilters").hidden = product;
-  document.getElementById("holdQ").hidden = !product;
   syncDoneSort();
+  renderToday();
   document.getElementById("orders").hidden = product;
   document.getElementById("holdList").hidden = !product;
+  if(!state.ordersLoaded) loadOrders();
+  else if(!product) renderOrders();
   if(product){
     if(!state.holdLoaded) loadHold();
     else renderHold();
-  }else if(!state.ordersLoaded){
-    loadOrders();
-  }else{
-    renderOrders();
   }
 }
 function setTab(name){
@@ -1360,7 +1407,7 @@ function setDoneSort(dir){
 document.getElementById("sortOld").onclick = () => setDoneSort("old");
 document.getElementById("sortNew").onclick = () => setDoneSort("new");
 function holdMatch(row){
-  const q = state.holdQ.trim().toLowerCase();
+  const q = doneQuery();
   if(!q) return true;
   return [row.bcode, row.descr, row.vendor, row.vendor_name, row.docno].join(" ").toLowerCase().includes(q);
 }
@@ -1626,9 +1673,13 @@ async function releaseHold(id, kind){
   await loadSuggest();
   setTab("order");
 }
-document.getElementById("holdQ").oninput = (e) => {
-  state.holdQ = e.target.value;
-  if(state.holdLoaded) renderHold();
+document.getElementById("doneQ").oninput = (e) => {
+  state.doneQ = e.target.value;
+  if(state.doneMode === "product"){
+    if(state.holdLoaded) renderHold();
+  }else if(state.ordersLoaded){
+    renderOrders();
+  }
 };
 document.addEventListener("click", (e) => {
   const shot = e.target.closest("[data-photo]");
@@ -1639,7 +1690,7 @@ document.addEventListener("click", (e) => {
   if(e.target.id === "photo" || e.target.closest("#photoClose")) closePhoto();
 });
 document.addEventListener("keydown", (e) => {
-  if(e.key === "Escape") closePhoto();
+  if(e.key === "Escape"){ closePhoto(); closePoDialog(); }
 });
 document.getElementById("holdList").onclick = (e) => {
   const trade = e.target.closest("[data-trade]");
@@ -1653,12 +1704,6 @@ document.getElementById("histHq").onclick = () => { if(histCode) openTrade(histC
 document.getElementById("histSyp").onclick = () => { if(histCode) openTrade(histCode, "syp"); };
 document.getElementById("histClose").onclick = () => { document.getElementById("hist").hidden = true; };
 document.getElementById("hist").onclick = (e) => { if(e.target.id === "hist") document.getElementById("hist").hidden = true; };
-function onOrderFilter(key, value){
-  state[key] = value;
-  if(state.ordersLoaded) renderOrders();
-}
-document.getElementById("orderVendor").oninput = (e) => onOrderFilter("orderVendor", e.target.value);
-document.getElementById("orderBcode").oninput = (e) => onOrderFilter("orderBcode", e.target.value);
 function peerLineHtml(owner, line){
   const bits = [];
   const cost = moneyText(line.cost);
@@ -1932,8 +1977,12 @@ function catalogHitHtml(row){
   const stock = row.company_qtyoh2 == null ? "" : `<div class="meta">คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}</div>`;
   const last = row.last_vendor_name || row.last_vendor || "";
   const lastLine = last ? `<div class="meta">เจ้าหนี้ล่าสุด ${esc(last)}${row.last_date ? " · " + esc(row.last_date) : ""}</div>` : "";
-  const wait = row.waiting ? `<div class="meta"><span class="badge wait">อยู่ในรายการรอสั่ง</span></div>` : "";
-  return `<div class="pick-row"><div class="grow"><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${stock}${lastLine}${wait}</div><button type="button" class="choose" data-catalog-choose="${esc(row.bcode || "")}">${row.waiting ? "ไปที่รายการ" : "เลือก"}</button></div>`;
+  const held = holdText(row);
+  const wait = row.waiting
+    ? `<div class="meta"><span class="badge wait">อยู่ในรายการรอสั่ง</span></div>`
+    : (held ? `<div class="meta"><span class="badge wait">อยู่ในใบสั่งแล้ว</span></div>` : "");
+  const action = row.waiting ? "ไปที่รายการ" : (held ? "ดูใบที่มีอยู่" : "เลือก");
+  return `<div class="pick-row"><div class="grow"><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${stock}${lastLine}${wait}</div><button type="button" class="choose" data-catalog-choose="${esc(row.bcode || "")}">${action}</button></div>`;
 }
 function catalogUnitHtml(row){
   const ui1 = String(row.ui1 || row.ui || "").trim();
@@ -1997,9 +2046,75 @@ async function lookupProducts(q){
     }
   }
 }
+function poDocs(raw){
+  return (raw || []).map(doc => {
+    if(doc && typeof doc === "object") return {docno: String(doc.docno || "").trim(), order_id: String(doc.order_id || "").trim()};
+    return {docno: String(doc || "").trim(), order_id: ""};
+  }).filter(doc => doc.docno);
+}
+function isHp(docno){
+  return /^HP/i.test(String(docno || "").trim());
+}
+function priorRefs(row){
+  const refs = [];
+  const prior = row && row.prior_order;
+  if(prior && prior.docno) refs.push({docno: String(prior.docno), order_id: String(prior.order_id || "")});
+  const legacy = String(row && row.legacy_docno || "").trim();
+  if(legacy && !refs.some(ref => ref.docno === legacy)) refs.push({docno: legacy, order_id: ""});
+  return refs;
+}
+function priorHtml(row){
+  const refs = priorRefs(row);
+  if(!refs.length) return "";
+  const bits = refs.map(ref => isHp(ref.docno) && ref.order_id
+    ? `<button type="button" class="doc-link" data-po="${esc(ref.order_id)}" data-docno="${esc(ref.docno)}">${esc(ref.docno)}</button>`
+    : esc(ref.docno));
+  return `<div class="meta">กลับมารอสั่ง ${bits.join(" · ")}</div>`;
+}
+function holdText(row){
+  const docs = poDocs(row && row.hold_docs);
+  if(!docs.length) return "";
+  return docs.map(doc => doc.docno).join(" และ ");
+}
+function openPoDialog(docs, title){
+  const list = poDocs(docs);
+  const box = document.getElementById("poBox");
+  document.getElementById("poBoxTitle").textContent = title || "ใบสั่ง";
+  const links = list.map(doc => isHp(doc.docno) && doc.order_id
+    ? `<button type="button" class="doc-link" data-load-po="${esc(doc.order_id)}" data-docno="${esc(doc.docno)}">${esc(doc.docno)}</button>`
+    : `<span>${esc(doc.docno)}</span>`).join(" · ");
+  document.getElementById("poBoxBody").innerHTML = `<div class="meta">${links || "ไม่มีเลขใบ"}</div><div data-po-detail></div>`;
+  box.hidden = false;
+  const hp = list.find(doc => isHp(doc.docno) && doc.order_id);
+  if(hp) loadPo(hp.order_id, hp.docno);
+}
+function closePoDialog(){
+  document.getElementById("poBox").hidden = true;
+}
+async function loadPo(orderId, docno){
+  const host = document.querySelector("#poBox [data-po-detail]");
+  if(!host) return;
+  host.innerHTML = spinner("กำลังเปิด " + (docno || "ใบสั่ง") + "…");
+  try {
+    const res = await fetch("/hq-po/api/orders/" + encodeURIComponent(orderId));
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(data.message || "เปิดใบสั่งไม่ได้");
+    const lines = (data.lines || []).filter(line => !line.canceled_at).map(line => `<div class="line plain"><div><div class="code"><span class="sku">${esc(line.bcode||"—")}</span>${esc(line.descr||"")}</div></div><div class="qty">${esc(qtyText(line.qty))}</div></div>`).join("");
+    const who = data.vendor_name || data.vendor_acctno || "";
+    host.innerHTML = `<h3>${esc(data.docno || docno || "")}${who ? " · " + esc(who) : ""}</h3>${lines || '<div class="empty">ไม่มีรายการ</div>'}`;
+    document.getElementById("poBoxTitle").textContent = data.docno || docno || "ใบสั่ง";
+  } catch (err) {
+    host.innerHTML = `<div class="empty">${esc(err.message || "เปิดใบสั่งไม่ได้")}</div>`;
+  }
+}
 function chooseCatalogProduct(bcode){
   const hit = state.catalogHits.find(row => String(row.bcode || "") === bcode);
   if(!hit) return;
+  const held = holdText(hit);
+  if(held && !hit.waiting){
+    openPoDialog(hit.hold_docs, hit.bcode || "ใบสั่ง");
+    return;
+  }
   if(hit.waiting){
     const existing = state.items.find(item => String(item.bcode || "") === bcode);
     closeCatalog();
@@ -2170,7 +2285,18 @@ document.getElementById("catalog").onchange = (e) => {
   state.catalogPick.vendor = hit.acctno;
   state.catalogPick.vendor_name = hit.name || "";
 };
+document.getElementById("poBoxClose").onclick = () => closePoDialog();
+document.getElementById("poBox").onclick = (e) => {
+  if(e.target.id === "poBox"){ closePoDialog(); return; }
+  const load = e.target.closest("[data-load-po]");
+  if(load) loadPo(load.getAttribute("data-load-po") || "", load.getAttribute("data-docno") || "");
+};
 document.getElementById("list").onclick = (e) => {
+  const po = e.target.closest("[data-po]");
+  if(po){
+    openPoDialog([{docno: po.getAttribute("data-docno") || "", order_id: po.getAttribute("data-po") || ""}]);
+    return;
+  }
   const dismiss = e.target.closest("[data-dismiss]");
   if(dismiss){
     dismissWaiting(dismiss.getAttribute("data-dismiss") || "", dismiss.getAttribute("data-bcode") || "");

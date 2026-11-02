@@ -226,7 +226,7 @@ def test_insight_stock_read_skips_waiting_and_stale_policies(monkeypatch):
 def test_stamp_and_revert_guards():
     assert can_stamp_row(_live()) is None
     assert can_stamp_row(_live(ordered="Y")) == "already_ordered"
-    assert can_stamp_row(_live(ordered="X")) == "already_ordered"
+    assert can_stamp_row(_live(ordered="X")) is None
     assert can_stamp_row(_live(received="Y")) == "already_received"
     assert can_stamp_row(_live(canceled="Y")) == "canceled"
     assert can_revert_row(_live(ordered="Y", docno="HP6910-A1B2"), "HP6910-A1B2") is None
@@ -237,20 +237,25 @@ def test_stamp_and_revert_guards():
 
 def test_skip_already_open_keeps_the_rest_of_the_po():
     lines = [
-        {"iclow_id": 1, "bcode": "OLD"},
+        {"iclow_id": 1, "bcode": "BACK"},
         {"iclow_id": 2, "bcode": "NEW"},
+        {"iclow_id": 3, "bcode": "HELD"},
     ]
     live = {
-        1: _live(iclow_id=1, bcode="OLD", ordered="X"),
+        1: _live(iclow_id=1, bcode="BACK", ordered="X"),
         2: _live(iclow_id=2, bcode="NEW"),
+        3: _live(iclow_id=3, bcode="HELD"),
     }
     kept, skipped = skip_already_open(
         lines,
         live,
-        {1: {"bcode": "OLD", "docno": "HP6910-DE07"}},
+        {
+            1: {"bcode": "BACK", "docno": "HP6910-31D4"},
+            3: {"bcode": "HELD", "docno": "HP6910-DE07"},
+        },
     )
-    assert [row["iclow_id"] for row in kept] == [2]
-    assert skipped[0]["bcode"] == "OLD"
+    assert [row["iclow_id"] for row in kept] == [1, 2]
+    assert skipped[0]["bcode"] == "HELD"
     assert skipped[0]["docno"] == "HP6910-DE07"
     assert "HP6910-DE07" in skipped[0]["message"]
 
@@ -412,10 +417,15 @@ def test_page_defaults_product_view():
     assert "hqpo-view" not in html
     assert "ยกเลิกบรรทัด" in html
     assert "data-cancel-line" in html
-    assert 'id="orderVendor"' in html
-    assert 'id="orderBcode"' in html
-    assert "กรองเจ้าหนี้" in html
-    assert "กรองรหัสสินค้า" in html
+    assert 'id="todayBox"' in html
+    assert "ยอดรวมก่อนภาษี" in html
+    assert "function renderToday" in html
+    assert 'id="doneQ"' in html
+    assert "ค้นรหัส ชื่อสินค้า หรือเจ้าหนี้" in html
+    assert 'id="orderVendor"' not in html
+    assert 'id="orderBcode"' not in html
+    assert "กรองเจ้าหนี้" not in html
+    assert "กรองรหัสสินค้า" not in html
     assert "function orderVisible" in html
     assert "ไม่พบใบสั่งซื้อตามตัวกรอง" in html
     assert "function orderDateText" in html
@@ -657,6 +667,7 @@ def test_chosen_pack_uses_small_unit_or_large_pack():
 def test_peer_line_resolves_without_an_ai_policy(monkeypatch):
     from src.hq_po import service
 
+    monkeypatch.setattr(service, "lookup_holds", lambda _codes: {})
     monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: set())
     monkeypatch.setattr(
         service,
@@ -676,6 +687,7 @@ def test_peer_line_resolves_without_an_ai_policy(monkeypatch):
     )
     assert resolved["B2"]["ui"] == "กล่อง"
     assert resolved["B2"]["propose_meta"]["iclow_origin"] == "created"
+    monkeypatch.setattr(service, "lookup_holds", lambda _codes: {})
     monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: {"B2"})
     try:
         service._resolve_peer([{"bcode": "B2", "vendor": "V2", "ui": "ชิ้น"}])
@@ -720,6 +732,7 @@ def test_history_reorder_uses_the_peer_path():
 def test_catalog_line_accepts_a_live_ap_without_purchase_history(monkeypatch):
     from src.hq_po import service
 
+    monkeypatch.setattr(service, "lookup_holds", lambda _codes: {})
     monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: set())
     monkeypatch.setattr(
         service,
@@ -777,6 +790,11 @@ def test_product_search_payload_marks_waiting_and_last_vendor(monkeypatch):
             {"01011980": {"acctno": "CAT", "name": "มาสเตอร์"}},
         ),
     )
+    monkeypatch.setattr(
+        service,
+        "lookup_holds",
+        lambda _codes: {"01011980": {"waiting": True, "docs": []}},
+    )
     monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: {"01011980"})
     monkeypatch.setattr(
         "src.hq_po.stock.fetch_dual_stock",
@@ -792,9 +810,68 @@ def test_product_search_payload_marks_waiting_and_last_vendor(monkeypatch):
     assert item["vendor"] == "YSR"
     assert item["last_vendor_name"] == "ยนต์เสรี"
     assert item["waiting"] is True
+    assert item["hold_docs"] == []
     assert item["company_qtyoh2"] == 3
     assert item["price"] == 120
     assert item["cost"] == 80
+
+
+def test_describe_holds_names_the_po_instead_of_calling_it_waiting():
+    from src.hq_po.suggest import describe_holds
+
+    rows = [
+        {"iclow_id": 118563, "bcode": "35050170", "ordered": "X", "docno": "PO6910-0407"},
+        {"iclow_id": 2, "bcode": "01011980", "ordered": "N", "docno": ""},
+    ]
+    held = {118563: {"docno": "HP6910-31D4", "order_id": "47bf"}}
+    found = describe_holds(rows, held)
+    assert found["35050170"]["waiting"] is True
+    assert found["35050170"]["docs"] == [
+        {"docno": "HP6910-31D4", "order_id": "47bf"},
+        {"docno": "PO6910-0407", "order_id": ""},
+    ]
+    assert found["01011980"]["waiting"] is True
+    assert found["01011980"]["docs"] == []
+
+
+def test_visible_waiting_rows_keep_ordered_x_and_link_the_hp():
+    from src.hq_po.suggest import visible_waiting_rows
+
+    rows = [
+        {"iclow_id": 118563, "bcode": "35050170", "ordered": "X", "docno": "PO6910-0407"},
+        {"iclow_id": 9, "bcode": "HELD", "ordered": "N", "docno": ""},
+    ]
+    held = {118563: {"docno": "HP6910-31D4", "order_id": "47bf"}, 9: {"docno": "HP1", "order_id": "x"}}
+    visible = visible_waiting_rows(rows, held)
+    assert [row["bcode"] for row in visible] == ["35050170"]
+    assert visible[0]["prior_order"] == {"docno": "HP6910-31D4", "order_id": "47bf"}
+    assert visible[0]["legacy_docno"] == "PO6910-0407"
+
+
+def test_product_search_reports_an_existing_po_as_not_waiting(monkeypatch):
+    from src.hq_po import service
+
+    monkeypatch.setattr(
+        service,
+        "search_products",
+        lambda _q: [{"bcode": "35050170", "descr": "ซีล", "ui": "หน่วย", "qtyoh2": 1}],
+    )
+    monkeypatch.setattr(service, "fetch_bcode_suppliers", lambda _codes: ({}, {}))
+    monkeypatch.setattr(
+        service,
+        "lookup_holds",
+        lambda _codes: {"35050170": {"waiting": False, "docs": ["HP6910-31D4", "PO6910-0407"]}},
+    )
+    monkeypatch.setattr(
+        "src.hq_po.stock.fetch_dual_stock",
+        lambda _codes, refresh=False: ({}, {}, False),
+    )
+    item = service.product_search_payload("35050170")["products"][0]
+    assert item["waiting"] is False
+    assert item["hold_docs"] == ["HP6910-31D4", "PO6910-0407"]
+    assert "อยู่ในใบสั่งแล้ว" in page()
+    assert 'id="poBox"' in page()
+    assert "data-po=" in page()
 
 
 def test_product_search_skips_a_short_query():

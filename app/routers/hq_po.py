@@ -17,6 +17,7 @@ from src.hq_po.service import (
     dismiss_waiting_line,
     incoming_payload,
     insight_only_payload,
+    get_open_order,
     list_open_orders,
     mark_product_unavailable,
     release_incoming,
@@ -410,6 +411,17 @@ def api_release(iclow_id: int, body: ReleaseBody, request: Request):
         return release_incoming(iclow_id, body.kind)
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.get("/api/orders/{order_id}")
+def api_order(order_id: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return get_open_order(order_id)
+    except HqPoError as exc:
+        return _error(exc, 404 if exc.code == "missing" else 409)
 
 
 @router.get("/api/orders")
