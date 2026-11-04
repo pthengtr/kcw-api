@@ -496,6 +496,41 @@ class TigerPayOpenApiClient:
             )
         return [item for item in data if isinstance(item, dict)]
 
+    def get_dispenser(self) -> list[dict[str, Any]]:
+        """GET api/dispenser with device-admin JWT.
+
+        Includes denominations the open cash endpoint omits when disabled.
+        """
+        token = self.login_device_admin()
+        status_code, payload = self._raw_request(
+            "GET",
+            "api/dispenser",
+            authorization=f"Bearer {token}",
+        )
+        if status_code == 401:
+            token = self.login_device_admin(force=True)
+            status_code, payload = self._raw_request(
+                "GET",
+                "api/dispenser",
+                authorization=f"Bearer {token}",
+            )
+        if status_code >= 400:
+            raise TigerPayOpenApiError(
+                _tiger_error_message(payload, "Failed to get dispenser inventory"),
+                status_code=status_code,
+                payload=payload,
+            )
+        data = _parse_envelope(payload)
+        if isinstance(data, dict):
+            return [data]
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        raise TigerPayOpenApiError(
+            "Dispenser inventory not found in response",
+            status_code=status_code,
+            payload=payload,
+        )
+
     def get_change_status(self) -> bool:
         status_code, payload = self._request("GET", "api/open/v2/payment/change_status")
         if status_code >= 400:
