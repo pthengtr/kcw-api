@@ -9,7 +9,9 @@ from app.main import app
 from src.tiger_pay.cash_inventory import (
     build_daily_report,
     hopper_moved_by_webhook,
+    merge_disabled_change_items,
     parse_cash_items,
+    parse_dispenser_denominations,
     score_change_level,
 )
 from src.tiger_pay.open_api import TigerPayOpenApiClient
@@ -74,6 +76,53 @@ def test_score_change_level_green_orange_red():
     )
     assert blocked == "red"
     assert "เครื่องทอนเงินไม่พร้อม" in blocked_reasons
+
+
+def test_disabled_watched_denom_is_kept_and_scored():
+    dispenser = parse_dispenser_denominations(
+        [
+            {
+                "denominations": [
+                    {
+                        "denominationType": "Banknote",
+                        "value": 100,
+                        "amount": 95,
+                        "enabled": False,
+                    },
+                    {
+                        "denominationType": "Banknote",
+                        "value": 1000,
+                        "amount": 0,
+                        "enabled": False,
+                    },
+                    {
+                        "denominationType": "Banknote",
+                        "value": 500,
+                        "amount": 76,
+                        "enabled": True,
+                    },
+                ]
+            }
+        ]
+    )
+    items = merge_disabled_change_items(
+        [{"type": "Banknote", "value": 500, "amount": 76}],
+        dispenser,
+        watched=WATCHED,
+    )
+    assert items == [
+        {"type": "Banknote", "value": 500, "amount": 76},
+        {"type": "Banknote", "value": 100, "amount": 95, "enabled": False},
+    ]
+    level, reasons = score_change_level(
+        items,
+        change_ready=True,
+        watched=WATCHED,
+        warn_pieces=10,
+        crit_pieces=2,
+    )
+    assert level == "orange"
+    assert any("100" in row and "ถูกปิด" in row for row in reasons)
 
 
 def test_score_ignores_watched_denoms_missing_from_device_list():

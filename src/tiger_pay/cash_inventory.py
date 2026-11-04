@@ -19,6 +19,68 @@ SNAPSHOT_TRIGGERS = frozenset({"webhook", "startup", "eod", "manual"})
 HOPPER_STATUSES = frozenset({"success", "fail", "cancel", "cancelled", "failed"})
 
 
+def parse_dispenser_denominations(raw: Any) -> list[dict[str, Any]]:
+    """Denominations from GET api/dispenser, including disabled cassettes."""
+    if isinstance(raw, dict):
+        dispensers: list[Any] = [raw]
+    elif isinstance(raw, list):
+        dispensers = raw
+    else:
+        return []
+    items: list[dict[str, Any]] = []
+    for dispenser in dispensers:
+        if not isinstance(dispenser, dict):
+            continue
+        denoms = dispenser.get("denominations")
+        if not isinstance(denoms, list):
+            continue
+        for entry in denoms:
+            if not isinstance(entry, dict):
+                continue
+            value = _as_number(entry.get("value") if "value" in entry else entry.get("denomination"))
+            amount = _as_number(entry.get("amount") if "amount" in entry else entry.get("quantity"))
+            if value is None or amount is None:
+                continue
+            kind = (
+                str(entry.get("denominationType") or entry.get("type") or "").strip()
+                or _infer_kind(value)
+            )
+            item: dict[str, Any] = {
+                "type": kind,
+                "value": int(value) if value == int(value) else value,
+                "amount": int(amount) if amount == int(amount) else amount,
+            }
+            if entry.get("enabled") is False:
+                item["enabled"] = False
+            items.append(item)
+    return items
+
+
+def merge_disabled_change_items(
+    cash_items: list[dict[str, Any]],
+    dispenser_items: list[dict[str, Any]],
+    *,
+    watched: tuple[int, ...],
+) -> list[dict[str, Any]]:
+    """Add change denominations the open cash API hides because they are disabled.
+
+    Enabled rows stay on the open cash list. A disabled row is kept when it is a
+    watched change denomination, or when it still holds notes.
+    """
+    present = {int(item["value"]) for item in cash_items}
+    merged = list(cash_items)
+    watched_set = set(watched)
+    for item in dispenser_items:
+        value = int(item["value"])
+        if value in present or item.get("enabled", True) is not False:
+            continue
+        if value not in watched_set and int(item["amount"]) <= 0:
+            continue
+        merged.append(item)
+        present.add(value)
+    return merged
+
+
 def parse_cash_items(raw: Any) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
@@ -57,15 +119,23 @@ def score_change_level(
         reasons.append("เครื่องทอนเงินไม่พร้อม")
 
     present: dict[int, int] = {}
+    disabled: set[int] = set()
     for item in items:
         value = int(item["value"])
         if value not in watched:
             continue
         present[value] = present.get(value, 0) + int(item["amount"])
+        if item.get("enabled") is False:
+            disabled.add(value)
 
     worst = "green"
     for value, count in sorted(present.items(), reverse=True):
         label = _denom_label(value, _kind_for_value(items, value))
+        if value in disabled:
+            reasons.append(f"{label} ถูกปิด เหลือ {count} ใบ")
+            if worst == "green":
+                worst = "orange"
+            continue
         if count <= crit_pieces:
             worst = "red"
             reasons.append(f"{label} เหลือ {count} ใบ")
@@ -166,6 +236,15 @@ def capture_snapshot(
         return None
 
     items = parse_cash_items(raw_items)
+    try:
+        dispenser_items = parse_dispenser_denominations(client.get_dispenser())
+        items = merge_disabled_change_items(
+            items,
+            dispenser_items,
+            watched=settings.tiger_pay_change_denoms,
+        )
+    except TigerPayOpenApiError:
+        logger.exception("dispenser denom snapshot failed trigger=%s", trigger)
     cash_box_items: list[dict[str, Any]] = []
     try:
         cash_box_items = parse_cash_items(client.get_cash_box())
