@@ -1250,6 +1250,8 @@ function printRequestBill(detail){
   const shortId = detail.short_id || detail.transfer_id || "";
   const shipAp = apCounterpartyLabel(fromB, toB);
   const recvAp = apCounterpartyLabel(toB, fromB);
+  const shipBills = (detail.shipments || []).map(s => s.ship_billno || s.tf_billno || "").filter(b => b);
+  const recvBills = (detail.shipments || []).map(s => s.receive_billno || "").filter(b => b);
   const rows = lines.map((ln,i)=>`<tr>
     <td class="num">${i+1}</td>
     <td><code>${ln.bcode||""}</code></td>
@@ -1266,6 +1268,8 @@ function printRequestBill(detail){
       · สถานะ ${badge(detail.status||"", fromB)}</p>
     <p class="meta" style="margin:0 0 .75rem">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)} · พิมพ์โดย ${USER}</p>
     <p class="meta" style="margin:0 0 .75rem">AP จัดออก (${branchLabel(fromB)}): ${shipAp||"—"} · AP รับเข้า (${branchLabel(toB)}): ${recvAp||"—"}</p>
+    ${shipBills.length ? `<p class="meta" style="margin:0 0 .5rem">ใบ TF จัดส่ง: ${shipBills.map(b=>`<a href="/parts9/?q=${encodeURIComponent(b)}" target="_blank" rel="noopener"><code>${escText(b)}</code></a>`).join(", ")}</p>` : ""}
+    ${recvBills.length ? `<p class="meta" style="margin:0 0 .75rem">บิลรับเข้า: ${recvBills.map(b=>`<code>${escText(b)}</code>`).join(", ")}</p>` : ""}
     <table><thead><tr><th class="num">#</th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6">ไม่มีรายการ</td></tr>'}</tbody></table>
     ${(()=>{ const shots=(detail.shipments||[]).flatMap(s=>s.photos||[]).filter(p=>p&&p.url); return shots.length?`<p style="margin:1rem 0 .35rem;font-size:12pt"><strong>หลักฐานการจัด</strong></p><div class="evidence">${shots.map(p=>`<img src="${String(p.url).replace(/"/g,"&quot;")}" alt="">`).join("")}</div>`:""; })()}
@@ -1352,12 +1356,18 @@ async function openRequestDetail(transferId){
     shipHtml = shipments.map((ship,i)=>{
       const shipBill = ship.ship_billno || ship.tf_billno || "—";
       const recvBill = ship.receive_billno || "";
+      const shipHref = shipBill && shipBill !== "—"
+        ? `/parts9/?q=${encodeURIComponent(shipBill)}`
+        : "";
+      const shipLabel = shipHref
+        ? `<a href="${escapeAttr(shipHref)}" target="_blank" rel="noopener"><code>${escText(shipBill)}</code></a>`
+        : (shipBill !== "—" ? `<code>${escText(shipBill)}</code>` : "—");
       const slines = (ship.lines||[]).map(sl=>{
         const open = Math.max(Number(sl.qty_shipped||0)-Number(sl.qty_received||0),0);
         return `<tr><td><code>${sl.bcode||""}</code></td><td class="num">${fmtQty(sl.qty_shipped)}</td><td class="num">${fmtQty(sl.qty_received)}</td><td class="num">${fmtQty(open)}</td></tr>`;
       }).join("");
       return `<div style="margin-top:.65rem">
-        <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · <code>${shipBill}</code>${recvBill ? ` · ใบรับ <code>${recvBill}</code>` : ""}</p>
+        <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · ${shipLabel}${recvBill ? ` · ใบรับ <code>${escText(recvBill)}</code>` : ""}</p>
         ${slines ? `<div class="table-wrap" style="margin-top:.35rem"><table><thead><tr><th>รหัส</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">ค้างรับ</th></tr></thead><tbody>${slines}</tbody></table></div>` : ""}
         ${evidenceHtml(ship.photos)}
       </div>`;
@@ -2742,11 +2752,15 @@ function statusMatchesSearch(r, query){
   const tid = String(r.transfer_id||"").toLowerCase();
   const dir = dirLabel(r.from_branch, r.to_branch).toLowerCase();
   const status = String(r.status||"").toLowerCase();
+  const shipBills = (r.ship_billnos || []).map(b=>String(b||"").toLowerCase());
+  const recvBills = (r.receive_billnos || []).map(b=>String(b||"").toLowerCase());
   return shortId.includes(q)
     || (qCompact.length > 0 && shortCompact.includes(qCompact))
     || tid.includes(q)
     || dir.includes(q)
-    || status.includes(q);
+    || status.includes(q)
+    || shipBills.some(b=>b.includes(q))
+    || recvBills.some(b=>b.includes(q));
 }
 async function renderStatus(el, {reuseItems=false}={}){
   const isDone = statusFilter === "done";
@@ -2777,7 +2791,7 @@ async function renderStatus(el, {reuseItems=false}={}){
     </div>
     <div class="card" style="margin-top:.75rem;padding:.75rem 1rem">
       <div class="search-bar" style="margin:0">
-        <input id="statusSearch" class="text-input" type="search" placeholder="ค้นหาบิล TRF (เลขที่ / ทิศทาง / สถานะ)" value="${escText(statusSearch)}" autocomplete="off" spellcheck="false"/>
+        <input id="statusSearch" class="text-input" type="search" placeholder="ค้นหาบิล TRF / TF (เลขที่ / ทิศทาง / สถานะ)" value="${escText(statusSearch)}" autocomplete="off" spellcheck="false"/>
       </div>
       <p id="statusSearchMeta" class="meta" style="margin:.5rem 0 0"${(q && (drafts.length + active.length)) ? "" : " hidden"}>${
         (q && (drafts.length + active.length))
@@ -2827,8 +2841,17 @@ async function renderStatus(el, {reuseItems=false}={}){
       const dateCells = isDone
         ? `<td>${dateOnly(r.requested_at||r.created_at)}</td><td>${dateOnly(r.last_received_at)}</td>`
         : `<td>${dateOnly(r.requested_at||r.created_at)}</td>`;
+      const recvBills = (r.receive_billnos || []).filter(Boolean);
+      const shipBills = (r.ship_billnos || []).filter(Boolean);
+      const poCell = `<div>เลข PO: <code>${escText(r.short_id)}</code></div>`;
+      const shipCell = shipBills.length
+        ? `<div class="meta">ใบ TF: ${shipBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
+        : "";
+      const recvCell = recvBills.length
+        ? `<div class="meta">บิลซื้อเข้า: ${recvBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
+        : "";
       return `<tr class="row-clickable" data-detail="${r.transfer_id}">
-        <td><code>${r.short_id}</code></td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
+        <td>${poCell}${shipCell}${recvCell}</td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
         <td>${badge(r.status,r.from_branch)}</td>
         <td>${pipeline(r.status)}</td>
         ${dateCells}
@@ -2846,8 +2869,18 @@ async function renderStatus(el, {reuseItems=false}={}){
         ? `<div class="item-field"><span class="lbl">วันขอ</span><span class="val">${dateOnly(r.requested_at||r.created_at)}</span></div>
            <div class="item-field"><span class="lbl">วันรับ</span><span class="val">${dateOnly(r.last_received_at)}</span></div>`
         : `<div class="item-field"><span class="lbl">วันที่</span><span class="val">${dateOnly(r.requested_at||r.created_at)}</span></div>`;
+      const recvBills = (r.receive_billnos || []).filter(Boolean);
+      const poMeta = `<div class="meta">เลข PO: <code>${escText(r.short_id)}</code></div>`;
+      const shipBills = (r.ship_billnos || []).filter(Boolean);
+      const shipMeta = shipBills.length
+        ? `<div class="meta">ใบ TF: ${shipBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
+        : "";
+      const recvMeta = recvBills.length
+        ? `<div class="meta">บิลซื้อเข้า: ${recvBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
+        : "";
       return `<div class="item-card row-clickable" data-detail="${r.transfer_id}">
         <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch)}</div>
+        ${poMeta}${shipMeta}${recvMeta}
         <div class="item-card-grid">
           <div class="item-field"><span class="lbl">ทิศทาง</span><span class="val dir">${dirLabel(r.from_branch,r.to_branch)}</span></div>
           ${dateFields}

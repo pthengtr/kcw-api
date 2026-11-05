@@ -607,6 +607,25 @@ def api_requests(
         fb = row.get("from_branch") or "HQ"
         tb = row.get("to_branch") or "SYP"
         row["direction_label"] = direction_label(fb, tb)
+        # Collect ship / receive bill numbers (PARTS9 TF / PIMAS) for this transfer, newest last.
+        ship_bills: list[str] = []
+        recv_bills: list[str] = []
+        for ship in ships:
+            # Ship TF bill from SIMAS/SIDET (or legacy tf_billno field).
+            bill_ship = (ship.get("ship_billno") or ship.get("tf_billno") or "").strip()
+            if bill_ship and bill_ship not in ship_bills:
+                ship_bills.append(bill_ship)
+            ship_id = ship.get("shipment_id")
+            if not ship_id:
+                continue
+            for rc in receipts_by_ship.get(ship_id) or []:
+                bill = (rc.get("receive_billno") or "").strip()
+                if bill and bill not in recv_bills:
+                    recv_bills.append(bill)
+        row["ship_billnos"] = ship_bills
+        row["last_ship_billno"] = ship_bills[-1] if ship_bills else None
+        row["receive_billnos"] = recv_bills
+        row["last_receive_billno"] = recv_bills[-1] if recv_bills else None
         status_l = (row.get("status") or "").lower()
         if scope_l == "active" and status_l in ("received", "complete"):
             continue
