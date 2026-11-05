@@ -177,6 +177,8 @@ body.busy #busy{display:flex}
   #printSheet th,#printSheet td{border:1px solid #ccc; padding:6px 8px; text-align:left}
   #printSheet th.num,#printSheet td.num{text-align:right}
   #printSheet .sig{margin-top:2rem; display:grid; grid-template-columns:1fr 1fr; gap:2rem}
+  #printSheet .evidence{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  #printSheet .evidence img{width:3.2cm;height:3.2cm;object-fit:cover;border:1px solid #ccc}
   #printSheet .sig-box{border-top:1px solid #999; padding-top:.5rem; font-size:10pt}
 }
 .action-grid{display:grid;gap:.85rem}
@@ -356,6 +358,14 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
 .qty-step{display:inline-flex;align-items:center;gap:.2rem}
 .qty-step button{width:1.85rem;height:1.85rem;border:1px solid var(--line);background:#fff;border-radius:8px;font:inherit;cursor:pointer;padding:0}
 .qty-step .qty-input{width:3.6rem;text-align:center}
+.evidence-row{display:flex;flex-wrap:wrap;gap:.45rem;margin:.55rem 0}
+.evidence-thumb{padding:0;border:1px solid var(--line);border-radius:10px;background:#fff;line-height:0;cursor:zoom-in}
+.evidence-thumb img{width:72px;height:72px;object-fit:cover;border-radius:9px;display:block}
+.prep-photo-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+#evidenceView{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.78);display:flex;align-items:center;justify-content:center;padding:48px 16px 16px}
+#evidenceView[hidden]{display:none}
+#evidenceView img{max-width:min(960px,100%);max-height:calc(100vh - 88px);object-fit:contain;border-radius:12px;background:#fff}
+#evidenceClose{position:absolute;top:12px;right:12px;min-height:40px;border:0;border-radius:10px;background:#fff;font-weight:700;padding:8px 14px}
 </style>
 </head>
 <body>
@@ -364,6 +374,10 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
 <div id="modalBackdrop" class="modal-backdrop"><div class="modal" id="modalBox"></div></div>
 <div id="confirmBackdrop" class="modal-backdrop" style="z-index:65"><div class="modal" id="confirmBox" style="max-width:420px"></div></div>
 <div id="printSheet" aria-hidden="true"></div>
+<div id="evidenceView" hidden>
+  <button type="button" id="evidenceClose">ปิด</button>
+  <img id="evidenceImg" alt="รูปสินค้าที่จัด">
+</div>
 <header class="hdr">
   <button id="btnBack" class="back-btn" style="display:none">← กลับ</button>
   <div class="hdr-main">
@@ -1254,6 +1268,7 @@ function printRequestBill(detail){
     <p class="meta" style="margin:0 0 .75rem">AP จัดออก (${branchLabel(fromB)}): ${shipAp||"—"} · AP รับเข้า (${branchLabel(toB)}): ${recvAp||"—"}</p>
     <table><thead><tr><th class="num">#</th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6">ไม่มีรายการ</td></tr>'}</tbody></table>
+    ${(()=>{ const shots=(detail.shipments||[]).flatMap(s=>s.photos||[]).filter(p=>p&&p.url); return shots.length?`<p style="margin:1rem 0 .35rem;font-size:12pt"><strong>หลักฐานการจัด</strong></p><div class="evidence">${shots.map(p=>`<img src="${String(p.url).replace(/"/g,"&quot;")}" alt="">`).join("")}</div>`:""; })()}
     <div class="sig">
       <div class="sig-box">ผู้ขอ · ${branchLabel(toB)}<br/>ลายเซ็น / วันที่</div>
       <div class="sig-box">ผู้จัด · ${branchLabel(fromB)}<br/>ลายเซ็น / วันที่</div>
@@ -1344,6 +1359,7 @@ async function openRequestDetail(transferId){
       return `<div style="margin-top:.65rem">
         <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · <code>${shipBill}</code>${recvBill ? ` · ใบรับ <code>${recvBill}</code>` : ""}</p>
         ${slines ? `<div class="table-wrap" style="margin-top:.35rem"><table><thead><tr><th>รหัส</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">ค้างรับ</th></tr></thead><tbody>${slines}</tbody></table></div>` : ""}
+        ${evidenceHtml(ship.photos)}
       </div>`;
     }).join("");
     shipHtml = `<div class="tool-section" style="margin-top:.75rem"><p class="tool-title">ใบ TF / การจัดส่ง</p>${shipHtml}</div>`;
@@ -1386,6 +1402,9 @@ async function openRequestDetail(transferId){
       ${canCancel ? `<button class="btn btn-ghost" id="btnDetailCancel">ยกเลิกคำขอ</button>` : ""}
       ${isDraft ? `<button class="btn btn-primary" id="btnDetailEdit">แก้ไขร่าง</button>` : ""}
     </div>`);
+  modal.box.querySelectorAll("[data-evidence]").forEach(btn=>{
+    btn.onclick = ()=>openEvidence(btn.getAttribute("data-evidence")||"");
+  });
   const printBtn = modal.box.querySelector("#btnDetailPrint");
   if(printBtn) printBtn.onclick = ()=>printRequestBill(detail);
   const pickAllBtn = modal.box.querySelector("#btnDetailStkAll");
@@ -2183,6 +2202,60 @@ async function renderRequest(el, opts){
   }
 }
 
+async function uploadPreparePhotos(transferId, files){
+  const body = new FormData();
+  for(const file of files) body.append("files", file, file.name || "prepare.jpg");
+  setBusy(true);
+  try{
+    const r = await fetch("/transfer/api/requests/"+transferId+"/prepare-photos",{
+      method:"POST", credentials:"same-origin", body,
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error || "อัปโหลดรูปไม่สำเร็จ");
+    return j.photos || [];
+  } finally { setBusy(false); }
+}
+function evidenceHtml(photos){
+  const shots = (photos||[]).filter(p=>p && p.url);
+  if(!shots.length) return "";
+  return `<div class="evidence-row">${shots.map(p=>`<button type="button" class="evidence-thumb" data-evidence="${escText(p.url)}" aria-label="ดูรูปหลักฐาน"><img alt="" src="${escText(p.url)}"/></button>`).join("")}</div>`;
+}
+function openEvidence(url){
+  const box = document.getElementById("evidenceView");
+  const img = document.getElementById("evidenceImg");
+  if(!box || !img || !url) return;
+  img.src = url;
+  box.hidden = false;
+}
+function closeEvidence(){
+  const box = document.getElementById("evidenceView");
+  if(!box || box.hidden) return;
+  box.hidden = true;
+  document.getElementById("evidenceImg").removeAttribute("src");
+}
+document.getElementById("evidenceClose").onclick = closeEvidence;
+document.getElementById("evidenceView").onclick = (e)=>{
+  if(e.target.id === "evidenceView" || e.target.closest("#evidenceClose")) closeEvidence();
+};
+function bindPreparePhotos(el, req){
+  const input = el.querySelector("#prepPhotoInput");
+  const preview = el.querySelector("#prepPhotoPreview");
+  if(!input || !preview) return;
+  const draw = ()=>{
+    const files = req._evidenceFiles || [];
+    preview.innerHTML = files.map(file=>`<span class="evidence-thumb"><img alt="" src="${URL.createObjectURL(file)}"/></span>`).join("")
+      + (files.length ? `<p class="meta">${files.length} รูป จะแนบไปกับใบ TF</p>` : "");
+  };
+  draw();
+  input.onchange = ()=>{
+    const next = [...(req._evidenceFiles||[]), ...Array.from(input.files||[])];
+    input.value = "";
+    if(next.length > 8){ alert("แนบได้ไม่เกิน 8 รูป"); return; }
+    req._evidenceFiles = next;
+    req._photoIds = null;
+    draw();
+  };
+}
 async function submitPrepare(request, qtyByLineId, shipAsByLineId, confirmAddCatalog){
   const shipAs = shipAsByLineId || request._shipAsDraft || {};
   const shipLines = (request.lines||[]).map(ln=>{
@@ -2196,6 +2269,7 @@ async function submitPrepare(request, qtyByLineId, shipAsByLineId, confirmAddCat
   if(!SHIP_WRITE && !confirm("โหมดทดสอบ: writer ปิดอยู่")) throw new Error("ยกเลิก");
   const body = {client_token:uuid(), lines:shipLines};
   if(confirmAddCatalog) body.confirm_add_catalog = true;
+  if(Array.isArray(request._photoIds) && request._photoIds.length) body.photo_ids = request._photoIds;
   try{
     return await api("/transfer/api/requests/"+request.transfer_id+"/prepare",{
       method:"POST",
@@ -2594,15 +2668,29 @@ async function renderPrepare(el){
           itemCards(confirmCards)
         )}
         ${shipBranch === "HQ" ? hqNoStockNoteHtml() : ""}
+        <div style="margin-top:.85rem">
+          <p class="meta">ถ่ายรูปของที่จัดแล้ว เป็นหลักฐานว่าจัดถูกต้อง ก่อนออกใบ TF</p>
+          <label class="btn btn-ghost" for="prepPhotoInput">ถ่ายรูปหรือเลือกรูป</label>
+          <input id="prepPhotoInput" class="prep-photo-input" type="file" accept="image/*" capture="environment" multiple>
+          <div id="prepPhotoPreview" class="evidence-row"></div>
+        </div>
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(2)">← แก้ไขจำนวน</button>
           <button class="btn btn-ghost" id="btnPrepPrint3" type="button">พิมพ์ใบจัด</button>
           <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันส่งสินค้า (ออกใบ TF)</button>
         </div>
       </div>`;
+    bindPreparePhotos(el, req);
     el.querySelector("#btnPrepPrint3").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnConfirmPrepare").onclick = async()=>{
+      const files = req._evidenceFiles || [];
+      if(!files.length){ alert("ถ่ายรูปสินค้าที่จัดก่อนออกใบ TF"); return; }
       try{
+        if(!(req._photoIds && req._photoIds.length)){
+          const uploaded = await uploadPreparePhotos(req.transfer_id, files);
+          req._photoIds = uploaded.map(p=>p.photo_id).filter(Boolean);
+        }
+        if(!req._photoIds.length) throw new Error("อัปโหลดรูปไม่สำเร็จ");
         const result = await submitPrepare(req, qtyMap, shipAsMap);
         const bill = result.ship_billno || result.tf_billno || "";
         showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");

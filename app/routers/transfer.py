@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,9 @@ from src.transfer.db import (
     get_shipment_by_token,
     get_transfer_supabase_client,
     insert_event,
+    insert_prepare_photo,
+    link_prepare_photos,
+    list_prepare_photos,
     list_lines,
     list_lines_by_transfers,
     list_need,
@@ -52,6 +55,14 @@ from src.transfer.db import (
     upsert_need_many,
 )
 from src.transfer.insight import clean_propose_meta
+from src.pay_notes.storage import public_url, upload_bytes
+from src.transfer.photos import (
+    MAX_PREPARE_PHOTOS,
+    PreparePhotoError,
+    image_suffix,
+    photo_ids_to_link,
+    prepare_photo_path,
+)
 from src.transfer.direction import (
     branches_for_direction,
     can_prepare_at_site,
@@ -153,6 +164,8 @@ class PrepareRequest(BaseModel):
     lines: list[dict[str, Any]] = Field(default_factory=list)
     # After UI confirm: create/link catalog pair then ส่งแทน (see needs_catalog_confirm).
     confirm_add_catalog: bool = False
+    # Evidence photos uploaded before the TF is issued.
+    photo_ids: list[str] = Field(default_factory=list)
 
 
 class ReceiveRequest(BaseModel):
@@ -639,6 +652,7 @@ def api_request_lines(
     for ship in shipments:
         ship["lines"] = ship_lines_by.get(ship["shipment_id"]) or []
         ship["fully_received"] = shipment_lines_fully_received(ship["lines"])
+    _attach_shipment_photos(client, transfer_id=transfer_id, shipments=shipments)
     progress = summarize_request_progress(lines)
     header = dict(header)
     header["status"] = derive_request_status(
@@ -760,6 +774,83 @@ def api_submit(transfer_id: str, request: Request):
     return req
 
 
+def _checked_photo_ids(
+    client, *, transfer_id: str, shipment_id: str, photo_ids: list[str]
+) -> list[str]:
+    if not photo_ids:
+        return []
+    rows = list_prepare_photos(client, transfer_id=transfer_id)
+    return photo_ids_to_link(
+        rows, transfer_id=transfer_id, shipment_id=shipment_id, photo_ids=photo_ids
+    )
+
+
+def _attach_shipment_photos(client, *, transfer_id: str, shipments: list[dict[str, Any]]) -> None:
+    rows = list_prepare_photos(client, transfer_id=transfer_id)
+    by_ship: dict[str, list[dict[str, str]]] = {}
+    for row in rows:
+        shipment_id = str(row.get("shipment_id") or "")
+        url = public_url(str(row.get("storage_path") or "")) or ""
+        if not shipment_id or not url:
+            continue
+        by_ship.setdefault(shipment_id, []).append(
+            {"photo_id": str(row.get("photo_id") or ""), "url": url}
+        )
+    for ship in shipments:
+        ship["photos"] = by_ship.get(str(ship.get("shipment_id") or "")) or []
+
+
+@router.post("/api/requests/{transfer_id}/prepare-photos")
+async def api_prepare_photos(
+    transfer_id: str,
+    request: Request,
+    files: list[UploadFile] = File(...),
+):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    client = get_transfer_supabase_client()
+    settings = _settings()
+    header = get_request(client, transfer_id)
+    if not header:
+        return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
+    from_branch = (header.get("from_branch") or "HQ").upper()
+    if not can_prepare_at_site(settings.site, from_branch):
+        return JSONResponse({"error": "จัดสินค้าได้เฉพาะสาขาต้นทาง"}, status_code=400)
+    uploads = [item for item in files if item is not None]
+    if not uploads:
+        return JSONResponse({"error": "ยังไม่มีรูป"}, status_code=400)
+    if len(uploads) > MAX_PREPARE_PHOTOS:
+        return JSONResponse(
+            {"error": f"แนบได้ไม่เกิน {MAX_PREPARE_PHOTOS} รูป"}, status_code=400
+        )
+    content_types = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+    saved: list[dict[str, str | None]] = []
+    for upload in uploads:
+        data = await upload.read()
+        try:
+            suffix = image_suffix(data)
+        except PreparePhotoError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        photo_id = str(uuid4())
+        path = prepare_photo_path(transfer_id, photo_id, suffix)
+        try:
+            upload_bytes(client, path, data, content_type=content_types[suffix])
+            insert_prepare_photo(
+                client,
+                photo_id=photo_id,
+                transfer_id=transfer_id,
+                storage_path=path,
+                actor=ident.display_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                {"error": "อัปโหลดรูปไม่สำเร็จ", "detail": str(exc)}, status_code=400
+            )
+        saved.append({"photo_id": photo_id, "url": public_url(path)})
+    return {"photos": saved}
+
+
 @router.post("/api/requests/{transfer_id}/prepare")
 def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
     ident, err = _require_api(request)
@@ -785,10 +876,22 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
     if existing_shipment:
         billno = existing_shipment.get("ship_billno") or existing_shipment.get("tf_billno")
         if billno:
+            shipment_id = existing_shipment["shipment_id"]
+            try:
+                photo_ids = _checked_photo_ids(
+                    client,
+                    transfer_id=transfer_id,
+                    shipment_id=shipment_id,
+                    photo_ids=body.photo_ids,
+                )
+                if photo_ids:
+                    link_prepare_photos(client, photo_ids=photo_ids, shipment_id=shipment_id)
+            except PreparePhotoError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
             return {
                 "ship_billno": billno,
                 "tf_billno": billno,
-                "shipment_id": existing_shipment["shipment_id"],
+                "shipment_id": shipment_id,
             }
     if list_shipments(client, transfer_id=transfer_id):
         return JSONResponse({"error": "จัดได้ครั้งเดียวต่อคำขอ"}, status_code=400)
@@ -979,6 +1082,12 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
     to_branch = (header.get("to_branch") or "SYP").upper()
     try:
+        pending_photo_ids = _checked_photo_ids(
+            client, transfer_id=transfer_id, shipment_id="", photo_ids=body.photo_ids
+        )
+    except PreparePhotoError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    try:
         result = post_transfer_ship(
             from_branch=from_branch,
             to_branch=to_branch,
@@ -1001,6 +1110,8 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             shipment_id = shipment["shipment_id"]
         if not shipment_has_lines(client, shipment_id):
             add_shipment_lines(client, shipment_id=shipment_id, lines=resolved_lines)
+        if pending_photo_ids:
+            link_prepare_photos(client, photo_ids=pending_photo_ids, shipment_id=shipment_id)
         for line in resolved_lines:
             bump_line_prepared(client, line_id=line["line_id"], qty_ship=line["qty_ship"])
             if line.get("requested_bcode") and line.get("requested_bcode") != line.get("bcode"):

@@ -53,8 +53,6 @@ _SIMPLE_STYLE = """
 .pos-vendor .v{font-weight:650}
 .pos table{width:100%;min-width:720px;border-collapse:collapse;font-size:12px}
 .pos th,.pos td{border-bottom:1px solid #bbb;padding:5px 4px;text-align:left;vertical-align:top}
-.pos-photo,.pof-photo{width:46px;height:46px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;border-radius:4px;display:block}
-.pic-wrap{display:flex;align-items:flex-start;gap:6px}
 .pos th{border-bottom:1.5px solid #111;font-size:11px;white-space:nowrap}
 .pos td.num,.pos th.num{text-align:right;white-space:nowrap}
 .pos-sign{display:flex;justify-content:space-between;gap:24px;margin-top:28px;font-size:13px}
@@ -94,8 +92,6 @@ _FULL_STYLE = """
 .pof table{width:100%;border-collapse:collapse;font-size:12px}
 .pof th{background:#7a1f33;color:#fff;font-weight:650;text-align:left;padding:6px 6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pof td{border-bottom:1px solid #eadfe3;padding:6px;vertical-align:top}
-.pof-photo{width:46px;height:46px;object-fit:contain;background:#fff;border:1px solid #eadfe3;border-radius:4px;display:block}
-.pof .pic-wrap{display:flex;align-items:flex-start;gap:6px}
 .pof td.num,.pof th.num{text-align:right;white-space:nowrap}
 .pof th.ctr,.pof td.ctr{text-align:center}
 .pof .sub{display:block;color:#475467;font-size:11px;margin-top:2px}
@@ -277,41 +273,6 @@ def _totals(lines: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _photo_html(url: str, css: str) -> str:
-    safe = html.escape(url, quote=True)
-    return (
-        f'<img class="{css}" src="{safe}" alt="" '
-        'onerror="this.remove()">'
-    )
-
-
-def _photo_urls(bcodes: list[str]) -> dict[str, str]:
-    """First public photo per product. Missing pictures stay blank."""
-    unique: list[str] = []
-    seen: set[str] = set()
-    for code in bcodes:
-        if code and code not in seen:
-            seen.add(code)
-            unique.append(code)
-    if not unique:
-        return {}
-    try:
-        from src.hq_po.iclow_read import thumb_url
-    except Exception:
-        logger.warning("hq po photo lookup unavailable", exc_info=True)
-        return {}
-    found: dict[str, str] = {}
-    for code in unique:
-        try:
-            url = thumb_url(code)
-        except Exception:
-            logger.warning("hq po photo lookup failed for %s", code, exc_info=True)
-            continue
-        if url:
-            found[code] = url
-    return found
-
-
 def _prepare_documents(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
     vendors: list[str] = []
@@ -352,7 +313,6 @@ def _prepare_documents(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     except Exception:
         logger.warning("hq po sheet product lookup failed", exc_info=True)
         products = {}
-    photos = _photo_urls(bcodes)
     documents: list[dict[str, Any]] = []
     for group in cleaned:
         vendor = _raw(group.get("vendor"))
@@ -380,7 +340,6 @@ def _prepare_documents(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "ui": _raw(raw.get("ui")) or _raw(product.get("ui")),
                     "price": price,
                     "amount": _line_amount(qty, price),
-                    "photo": photos.get(bcode) or "",
                 }
             )
         documents.append(
@@ -425,11 +384,9 @@ def _simple_page(doc: dict[str, Any]) -> str:
     )
     body = []
     for line in doc["lines"]:
-        photo = _photo_html(line["photo"], "pos-photo") if line.get("photo") else ""
-        code = f'<div class="pic-wrap">{photo}<div>{_e(line["bcode"])}</div></div>' if photo else _e(line["bcode"])
         body.append(
             "<tr>"
-            f"<td>{code}</td>"
+            f"<td>{_e(line['bcode'])}</td>"
             f"<td>{_e(line['name'])}</td>"
             f"<td>{_e(line['model'])}</td>"
             f"<td>{_e(line['no1'])}</td>"
@@ -482,7 +439,7 @@ def _simple_text(doc: dict[str, Any]) -> str:
     for label, value in _simple_vendor_rows(doc["vendor"]):
         lines.append(f"{label}: {value or '—'}")
     lines.append("")
-    lines.append("รหัสสินค้า\tชื่อสินค้า\tแบบ\tNO.1\tNO.2\tยี่ห้อ\tจำนวน\tหน่วย\tราคา/หน่วย\tรูป")
+    lines.append("รหัสสินค้า\tชื่อสินค้า\tแบบ\tNO.1\tNO.2\tยี่ห้อ\tจำนวน\tหน่วย\tราคา/หน่วย")
     for line in doc["lines"]:
         lines.append(
             "\t".join(
@@ -496,7 +453,6 @@ def _simple_text(doc: dict[str, Any]) -> str:
                     _qty_text(line["qty"]),
                     line["ui"] or "—",
                     _price_simple(line["price"]) or "—",
-                    line.get("photo") or "",
                 ]
             )
         )
@@ -521,16 +477,11 @@ def _full_page(doc: dict[str, Any]) -> str:
             qty_unit = f"{qty_unit} {line['ui']}"
         model = line["model"] or "—"
         brand = line["brand"] or "—"
-        photo = _photo_html(line["photo"], "pof-photo") if line.get("photo") else ""
-        detail = (
-            f"<b>{_e(line['bcode'])}</b> · {_e(line['name'])}"
-            f"<span class='sub'>รุ่น: {html.escape(model)} · ยี่ห้อ: {html.escape(brand)}</span>"
-        )
-        cell = f'<div class="pic-wrap">{photo}<div>{detail}</div></div>' if photo else detail
         body.append(
             "<tr>"
             f"<td class='ctr'>{line['seq']}</td>"
-            f"<td>{cell}</td>"
+            f"<td><b>{_e(line['bcode'])}</b> · {_e(line['name'])}"
+            f"<span class='sub'>รุ่น: {html.escape(model)} · ยี่ห้อ: {html.escape(brand)}</span></td>"
             f"<td>NO.1: {_e(line['no1'])}<span class='sub'>NO.2: {_e(line['no2'])}</span></td>"
             f"<td class='num'>{html.escape(qty_unit)}</td>"
             f"<td class='num'>{html.escape(_money(line['price']))}</td>"
@@ -640,11 +591,10 @@ def _full_text(doc: dict[str, Any]) -> str:
         qty_unit = _qty_text(line["qty"])
         if line["ui"]:
             qty_unit = f"{qty_unit} {line['ui']}"
-        photo = f" | รูป {line['photo']}" if line.get("photo") else ""
         lines.append(
             f"{line['seq']}. {line['bcode'] or '—'} {line['name'] or '—'} | รุ่น {line['model'] or '—'} | "
             f"ยี่ห้อ {line['brand'] or '—'} | NO.1 {line['no1'] or '—'} | NO.2 {line['no2'] or '—'} | "
-            f"{qty_unit} | {_money(line['price'])} | {_money(line['amount'])}{photo}"
+            f"{qty_unit} | {_money(line['price'])} | {_money(line['amount'])}"
         )
     totals = doc["totals"]
     lines.extend(

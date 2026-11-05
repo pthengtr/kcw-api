@@ -112,6 +112,9 @@ def test_transfer_page_renders():
     assert "bindLineSearch" in html
     assert "prepareStepBar" in html
     assert "openPrepareRequest" in html
+    assert "ถ่ายรูปสินค้าที่จัดก่อนออกใบ TF" in html
+    assert "/prepare-photos" in html
+    assert "หลักฐานการจัด" in html
     assert "@media (max-width:640px)" in html
     assert "max-width:1200px" in html
     assert "view-table" in html

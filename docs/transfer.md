@@ -20,7 +20,7 @@ Requester is always **`to_branch`** (branch that needs stock). Shipper is **`fro
 | **SYP → HQ** | HQ | SYP (3TF SIMAS on kss-pc) | HQ (3TF PIMAS on KSS) |
 
 1. **Requester** — draft with direction picker → submit
-2. **Shipper** (`from_branch`) — prepare queue → one click = one ship bill (partial qty on that bill is allowed; no second TF on the same request)
+2. **Shipper** (`from_branch`) — prepare queue → photograph the packed goods → one click = one ship bill (partial qty on that bill is allowed; no second TF on the same request). The photos are evidence on that TF and show on the request and on **พิมพ์ใบคำขอ**.
 3. **Receiver** (`to_branch`) — receive against shipment → PIMAS bill (stock in)
 
 Supabase `transfer.*` owns workflow; PARTS9 owns inventory at ship (SIMAS) + receive (PIMAS).
@@ -102,7 +102,8 @@ curl -s http://127.0.0.1:8792/health
 
 - `POST /transfer/api/requests/draft` — body `{direction: "to_syp"|"to_hq", lines: [...]}`
 - `POST /transfer/api/submit` — only at `to_branch`
-- `POST /transfer/api/prepare` — only at `from_branch`
+- `POST /transfer/api/requests/{id}/prepare-photos` — multipart evidence photos taken of the packed goods, before the TF
+- `POST /transfer/api/requests/{id}/prepare` — only at `from_branch`; `photo_ids` from the upload are stored on that shipment
 - `POST /transfer/api/receive` — only at `to_branch` (response includes `lines` for sticker print)
 - `POST /transfer/api/stickers/preview` — ICMAS-backed 5×3.5 cm preview + resolved fields
 - `POST /transfer/api/stickers/print` — `action=print` (LAN :9100) or `action=download` (.prn)
@@ -113,7 +114,7 @@ curl -s http://127.0.0.1:8792/health
 
 ## Schema
 
-Migrations: `20260829120000_transfer_schema.sql`, `20260830120000_transfer_direction.sql` (`from_branch`, `to_branch`, `ship_billno`).
+Migrations: `20260829120000_transfer_schema.sql`, `20260830120000_transfer_direction.sql` (`from_branch`, `to_branch`, `ship_billno`), `20261105100000_transfer_prepare_photos.sql` (`transfer.shipment_photos`).
 
 ## LINE
 
