@@ -581,6 +581,46 @@ def get_shipment_by_token(client: Client, *, transfer_id: str, client_token: str
     return rows[0] if rows else None
 
 
+def insert_prepare_photo(
+    client: Client,
+    *,
+    photo_id: str,
+    transfer_id: str,
+    storage_path: str,
+    actor: str | None,
+) -> dict[str, Any]:
+    row = {
+        "photo_id": photo_id,
+        "transfer_id": transfer_id,
+        "storage_path": storage_path,
+        "created_by": actor,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    resp = _table(client, "shipment_photos").insert(row).select("*").execute()
+    return _first_row(resp)
+
+
+def list_prepare_photos(client: Client, *, transfer_id: str) -> list[dict[str, Any]]:
+    resp = (
+        _table(client, "shipment_photos")
+        .select("*")
+        .eq("transfer_id", transfer_id)
+        .execute()
+    )
+    return _rows(resp)
+
+
+def link_prepare_photos(client: Client, *, photo_ids: list[str], shipment_id: str) -> None:
+    if not photo_ids:
+        return
+    (
+        _table(client, "shipment_photos")
+        .update({"shipment_id": shipment_id})
+        .in_("photo_id", photo_ids)
+        .execute()
+    )
+
+
 def list_shipments(client: Client, *, transfer_id: str) -> list[dict[str, Any]]:
     """List all shipments for a transfer."""
     resp = (
