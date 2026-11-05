@@ -191,6 +191,43 @@ def test_sheet_keeps_vendor_labels_when_card_is_missing(monkeypatch):
     assert "ยังไม่ออกเลข" in simple
 
 
+def test_sheet_attaches_product_photo(monkeypatch):
+    from src.hq_po import iclow_read
+
+    monkeypatch.setattr(iclow_read, "fetch_vendor_cards", lambda _acctnos: {})
+    monkeypatch.setattr(
+        iclow_read,
+        "fetch_sheet_products",
+        lambda _codes: {"13051964": {"descr": "ยาง", "ui": "แผ่น", "costlast": 45}},
+    )
+    monkeypatch.setattr(
+        iclow_read,
+        "thumb_url",
+        lambda code: "https://img.example/13051964.jpg" if code == "13051964" else "",
+    )
+    forms = build_sheet_forms(
+        [
+            {
+                "vendor": "SM",
+                "vendor_name": "สมชาย",
+                "docdate": "2026-10-09",
+                "lines": [
+                    {"bcode": "13051964", "qty": 2, "ui": "แผ่น"},
+                    {"bcode": "999", "descr": "ไม่มีรูป", "qty": 1, "ui": "ชิ้น"},
+                ],
+            }
+        ]
+    )
+    assert forms["simple_html"].count("https://img.example/13051964.jpg") == 1
+    assert forms["full_html"].count("https://img.example/13051964.jpg") == 1
+    assert 'class="pos-photo"' in forms["simple_html"]
+    assert 'class="pof-photo"' in forms["full_html"]
+    assert "ไม่มีรูป" in forms["simple_html"]
+    assert forms["simple_html"].count("<img") == 1
+    assert "https://img.example/13051964.jpg" in forms["simple_text"]
+    assert "https://img.example/13051964.jpg" in forms["full_text"]
+
+
 def test_sheet_rejects_empty_lines():
     with pytest.raises(HqPoError) as caught:
         build_sheet_forms([{"vendor": "V1", "lines": [{"bcode": "A", "qty": 0}]}])
