@@ -103,9 +103,10 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .ikpi{background:var(--blue-wash);border-radius:10px;padding:8px}
 .ikpi .l{color:var(--muted);font-size:11px}
 .ikpi .v{font-weight:700;color:var(--blue-deep);font-size:14px}
-.ibars{display:flex;align-items:flex-end;gap:3px;height:88px;margin-top:8px}
-.ibar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0;height:100%}
-.ibar span{display:block;width:100%;max-width:16px;background:var(--blue);border-radius:4px 4px 0 0}
+.ibars{display:flex;align-items:flex-end;gap:3px;height:112px;margin-top:8px;overflow-x:auto}
+.ibar{flex:1 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:18px;height:100%}
+.ibar span{display:block;width:100%;max-width:18px;background:var(--blue);border-radius:4px 4px 0 0}
+.ibar .ibar-qty{font-weight:700;font-size:9px;line-height:1.1;color:var(--blue-deep);margin-bottom:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ibar em{font-style:normal;font-size:9px;color:var(--muted);margin-top:2px}
 .itable{width:100%;border-collapse:collapse;font-size:12px}
 .itable th,.itable td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
@@ -1582,7 +1583,8 @@ function insightHtml(ins, live){
   const bars = series.length ? `<div class="ibars">${series.map(s => {
     const n = Number(s.qty) || 0;
     const h = Math.max(2, Math.round(n / maxBar * 64));
-    return `<div class="ibar"><span style="height:${h}px"></span><em>${esc(String(s.ym || "").slice(5))}</em></div>`;
+    const label = qtyText(n);
+    return `<div class="ibar" title="${esc(label)}"><b class="ibar-qty">${esc(label)}</b><span style="height:${h}px"></span><em>${esc(String(s.ym || "").slice(5))}</em></div>`;
   }).join("")}</div>` : "";
   const share = (n) => n == null ? "—" : esc(qtyText(n)) + "%";
   const people = (rows, price) => {
