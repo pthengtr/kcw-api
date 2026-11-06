@@ -1268,8 +1268,14 @@ function printRequestBill(detail){
       · สถานะ ${badge(detail.status||"", fromB)}</p>
     <p class="meta" style="margin:0 0 .75rem">สร้าง ${fmtDateTime(detail.created_at)} · ส่งคำขอ ${fmtDateTime(detail.requested_at)} · พิมพ์โดย ${USER}</p>
     <p class="meta" style="margin:0 0 .75rem">AP จัดออก (${branchLabel(fromB)}): ${shipAp||"—"} · AP รับเข้า (${branchLabel(toB)}): ${recvAp||"—"}</p>
-    ${shipBills.length ? `<p class="meta" style="margin:0 0 .5rem">ใบ TF จัดส่ง: ${shipBills.map(b=>`<a href="/parts9/?q=${encodeURIComponent(b)}" target="_blank" rel="noopener"><code>${escText(b)}</code></a>`).join(", ")}</p>` : ""}
-    ${recvBills.length ? `<p class="meta" style="margin:0 0 .75rem">บิลรับเข้า: ${recvBills.map(b=>`<code>${escText(b)}</code>`).join(", ")}</p>` : ""}
+    ${shipBills.length ? `<p class="meta" style="margin:0 0 .5rem">ใบ TF จัดส่ง: ${shipBills.map(b=>{
+      const href = `/parts9/?q=${encodeURIComponent(b)}`;
+      return `<a href="${escapeAttr(href)}" target="_blank" rel="noopener"><code>${escText(b)}</code></a>`;
+    }).join(", ")}</p>` : ""}
+    ${recvBills.length ? `<p class="meta" style="margin:0 0 .75rem">บิลรับเข้า: ${recvBills.map(b=>{
+      const href = `/parts9/?q=${encodeURIComponent(b)}`;
+      return `<a href="${escapeAttr(href)}" target="_blank" rel="noopener"><code>${escText(b)}</code></a>`;
+    }).join(", ")}</p>` : ""}
     <table><thead><tr><th class="num">#</th><th>รหัส</th><th>รายละเอียด</th><th class="num">ขอ</th><th class="num">จัด</th><th class="num">รับ</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6">ไม่มีรายการ</td></tr>'}</tbody></table>
     ${(()=>{ const shots=(detail.shipments||[]).flatMap(s=>s.photos||[]).filter(p=>p&&p.url); return shots.length?`<p style="margin:1rem 0 .35rem;font-size:12pt"><strong>หลักฐานการจัด</strong></p><div class="evidence">${shots.map(p=>`<img src="${String(p.url).replace(/"/g,"&quot;")}" alt="">`).join("")}</div>`:""; })()}
@@ -1362,12 +1368,18 @@ async function openRequestDetail(transferId){
       const shipLabel = shipHref
         ? `<a href="${escapeAttr(shipHref)}" target="_blank" rel="noopener"><code>${escText(shipBill)}</code></a>`
         : (shipBill !== "—" ? `<code>${escText(shipBill)}</code>` : "—");
+      const recvHref = recvBill
+        ? `/parts9/?q=${encodeURIComponent(recvBill)}`
+        : "";
+      const recvLabel = recvHref
+        ? `<a href="${escapeAttr(recvHref)}" target="_blank" rel="noopener"><code>${escText(recvBill)}</code></a>`
+        : (recvBill ? `<code>${escText(recvBill)}</code>` : "");
       const slines = (ship.lines||[]).map(sl=>{
         const open = Math.max(Number(sl.qty_shipped||0)-Number(sl.qty_received||0),0);
         return `<tr><td><code>${sl.bcode||""}</code></td><td class="num">${fmtQty(sl.qty_shipped)}</td><td class="num">${fmtQty(sl.qty_received)}</td><td class="num">${fmtQty(open)}</td></tr>`;
       }).join("");
       return `<div style="margin-top:.65rem">
-        <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · ${shipLabel}${recvBill ? ` · ใบรับ <code>${escText(recvBill)}</code>` : ""}</p>
+        <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · ${shipLabel}${recvBill ? ` · ใบรับ ${recvLabel}` : ""}</p>
         ${slines ? `<div class="table-wrap" style="margin-top:.35rem"><table><thead><tr><th>รหัส</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">ค้างรับ</th></tr></thead><tbody>${slines}</tbody></table></div>` : ""}
         ${evidenceHtml(ship.photos)}
       </div>`;
@@ -2266,6 +2278,40 @@ function bindPreparePhotos(el, req){
     draw();
   };
 }
+
+async function uploadReceivePhotos(shipmentId, files){
+  const body = new FormData();
+  for(const file of files) body.append("files", file, file.name || "receive.jpg");
+  setBusy(true);
+  try{
+    const r = await fetch("/transfer/api/shipments/"+shipmentId+"/photos",{
+      method:"POST", credentials:"same-origin", body,
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error || "อัปโหลดรูปไม่สำเร็จ");
+    return j.photos || [];
+  } finally { setBusy(false); }
+}
+
+function bindReceivePhotos(el, ship){
+  const input = el.querySelector("#recvPhotoInput");
+  const preview = el.querySelector("#recvPhotoPreview");
+  if(!input || !preview) return;
+  const draw = ()=>{
+    const files = ship._evidenceFiles || [];
+    preview.innerHTML = files.map(file=>`<span class="evidence-thumb"><img alt="" src="${URL.createObjectURL(file)}"/></span>`).join("")
+      + (files.length ? `<p class="meta">${files.length} รูป จะแนบไปกับใบ TF รับเข้า</p>` : "");
+  };
+  draw();
+  input.onchange = ()=>{
+    const next = [...(ship._evidenceFiles||[]), ...Array.from(input.files||[])];
+    input.value = "";
+    if(next.length > 8){ alert("แนบได้ไม่เกิน 8 รูป"); return; }
+    ship._evidenceFiles = next;
+    ship._photoIds = null;
+    draw();
+  };
+}
 async function submitPrepare(request, qtyByLineId, shipAsByLineId, confirmAddCatalog){
   const shipAs = shipAsByLineId || request._shipAsDraft || {};
   const shipLines = (request.lines||[]).map(ln=>{
@@ -2490,6 +2536,12 @@ async function renderReceive(el){
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">รับครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>`,
           itemCards(confirmCards)
         )}
+        <div style="margin-top:.85rem">
+          <p class="meta">ถ่ายรูปของที่รับเข้า เป็นหลักฐานว่ารับถูกต้อง</p>
+          <label class="btn btn-ghost" for="recvPhotoInput">ถ่ายรูปหรือเลือกรูป</label>
+          <input id="recvPhotoInput" class="prep-photo-input" type="file" accept="image/*" capture="environment" multiple>
+          <div id="recvPhotoPreview" class="evidence-row"></div>
+        </div>
         <label class="meta" style="display:flex;align-items:center;gap:.45rem;margin:.85rem 0 .25rem">
           <input id="chkPrintStickers" type="checkbox" class="pick-check" checked/>
           พิมพ์สติ๊กเกอร์บาร์โค้ดตามจำนวนที่รับ (1 ชิ้น = 1 ดวง)
@@ -2499,8 +2551,14 @@ async function renderReceive(el){
           <button class="btn btn-primary" id="btnConfirmReceive">ยืนยันรับเข้า (ออกใบ TF)</button>
         </div>
       </div>`;
+    bindReceivePhotos(el, ship);
     el.querySelector("#btnConfirmReceive").onclick = async()=>{
       try{
+        const files = ship._evidenceFiles || [];
+        if(files.length && !(ship._photoIds && ship._photoIds.length)){
+          const uploaded = await uploadReceivePhotos(ship.shipment_id, files);
+          ship._photoIds = uploaded.map(p=>p.photo_id).filter(Boolean);
+        }
         const wantPrint = !!(el.querySelector("#chkPrintStickers")||{}).checked;
         const result = await submitReceive(ship, qtyMap);
         const bill = result.receive_billno || "";
@@ -2694,13 +2752,12 @@ async function renderPrepare(el){
     el.querySelector("#btnPrepPrint3").onclick = ()=>printPrepareBill(req);
     el.querySelector("#btnConfirmPrepare").onclick = async()=>{
       const files = req._evidenceFiles || [];
-      if(!files.length){ alert("ถ่ายรูปสินค้าที่จัดก่อนออกใบ TF"); return; }
       try{
-        if(!(req._photoIds && req._photoIds.length)){
+        if(files.length && !(req._photoIds && req._photoIds.length)){
           const uploaded = await uploadPreparePhotos(req.transfer_id, files);
           req._photoIds = uploaded.map(p=>p.photo_id).filter(Boolean);
         }
-        if(!req._photoIds.length) throw new Error("อัปโหลดรูปไม่สำเร็จ");
+        if(files.length && !(req._photoIds && req._photoIds.length)) throw new Error("อัปโหลดรูปไม่สำเร็จ");
         const result = await submitPrepare(req, qtyMap, shipAsMap);
         const bill = result.ship_billno || result.tf_billno || "";
         showToast(bill ? ("จัดสินค้าแล้ว — ออกใบ "+bill) : "จัดสินค้าแล้ว");
@@ -2848,7 +2905,10 @@ async function renderStatus(el, {reuseItems=false}={}){
         ? `<div class="meta">ใบ TF: ${shipBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
         : "";
       const recvCell = recvBills.length
-        ? `<div class="meta">บิลซื้อเข้า: ${recvBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
+        ? `<div class="meta">บิลรับเข้า: ${recvBills.map(b=>{
+            const href = `/parts9/?q=${encodeURIComponent(b)}`;
+            return `<a href="${escapeAttr(href)}" target="_blank" rel="noopener"><code>${escText(b)}</code></a>`;
+          }).join(", ")}</div>`
         : "";
       return `<tr class="row-clickable" data-detail="${r.transfer_id}">
         <td>${poCell}${shipCell}${recvCell}</td><td class="dir">${dirLabel(r.from_branch,r.to_branch)}</td>
@@ -2876,7 +2936,10 @@ async function renderStatus(el, {reuseItems=false}={}){
         ? `<div class="meta">ใบ TF: ${shipBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
         : "";
       const recvMeta = recvBills.length
-        ? `<div class="meta">บิลซื้อเข้า: ${recvBills.map(b=>"<code>"+escText(b)+"</code>").join(", ")}</div>`
+        ? `<div class="meta">บิลรับเข้า: ${recvBills.map(b=>{
+            const href = `/parts9/?q=${encodeURIComponent(b)}`;
+            return `<a href="${escapeAttr(href)}" target="_blank" rel="noopener"><code>${escText(b)}</code></a>`;
+          }).join(", ")}</div>`
         : "";
       return `<div class="item-card row-clickable" data-detail="${r.transfer_id}">
         <div class="item-card-head"><code>${r.short_id}</code>${badge(r.status,r.from_branch)}</div>
