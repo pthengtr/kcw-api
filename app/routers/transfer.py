@@ -870,6 +870,75 @@ async def api_prepare_photos(
     return {"photos": saved}
 
 
+@router.post("/api/shipments/{shipment_id}/photos")
+async def api_shipment_photos(
+    shipment_id: str,
+    request: Request,
+    files: list[UploadFile] = File(...),
+):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    client = get_transfer_supabase_client()
+    settings = _settings()
+    resp = (
+        client.schema(TRANSFER_SCHEMA)
+        .from_("shipments")
+        .select("*")
+        .eq("shipment_id", shipment_id)
+        .limit(1)
+        .execute()
+    )
+    shipment = dict(resp.data[0]) if resp.data else None
+    if not shipment:
+        return JSONResponse({"error": "shipment ไม่พบ"}, status_code=404)
+    header = get_request(client, shipment["transfer_id"])
+    if not header:
+        return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
+    to_branch = (header.get("to_branch") or "SYP").upper()
+    if not can_receive_at_site(settings.site, to_branch):
+        return JSONResponse({"error": "รับสินค้าได้เฉพาะสาขาปลายทาง"}, status_code=400)
+    uploads = [item for item in files if item is not None]
+    if not uploads:
+        return JSONResponse({"error": "ยังไม่มีรูป"}, status_code=400)
+    if len(uploads) > MAX_PREPARE_PHOTOS:
+        return JSONResponse(
+            {"error": f"แนบได้ไม่เกิน {MAX_PREPARE_PHOTOS} รูป"}, status_code=400
+        )
+    content_types = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+    saved: list[dict[str, str | None]] = []
+    new_photo_ids: list[str] = []
+    transfer_id = shipment["transfer_id"]
+    for upload in uploads:
+        data = await upload.read()
+        try:
+            suffix = image_suffix(data)
+        except PreparePhotoError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        photo_id = str(uuid4())
+        path = prepare_photo_path(transfer_id, photo_id, suffix)
+        try:
+            upload_bytes(client, path, data, content_type=content_types[suffix])
+            insert_prepare_photo(
+                client,
+                photo_id=photo_id,
+                transfer_id=transfer_id,
+                storage_path=path,
+                actor=ident.display_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                {"error": "อัปโหลดรูปไม่สำเร็จ", "detail": str(exc)}, status_code=400
+            )
+        saved.append({"photo_id": photo_id, "url": public_url(path)})
+        new_photo_ids.append(photo_id)
+    try:
+        link_prepare_photos(client, photo_ids=new_photo_ids, shipment_id=str(shipment_id))
+    except PreparePhotoError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return {"photos": saved}
+
+
 @router.post("/api/requests/{transfer_id}/prepare")
 def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
     ident, err = _require_api(request)
