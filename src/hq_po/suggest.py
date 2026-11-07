@@ -60,6 +60,10 @@ def _attach_stock(item: dict[str, Any], hq: dict[str, Any] | None, syp: dict[str
     item["company_qtyoh2"] = hq_qty + syp_qty
     item["mtp2"] = float(hq.get("mtp2") or syp.get("mtp2") or 1) or 1.0
     item["hq_blocked"] = bool(hq.get("blocked"))
+    try:
+        item["hq_qtymin"] = float(hq["qtymin"]) if hq.get("qtymin") is not None else None
+    except (TypeError, ValueError, KeyError):
+        item["hq_qtymin"] = None
     if not item.get("descr"):
         item["descr"] = (hq.get("descr") or syp.get("descr") or "").strip()
     if not item.get("mcode"):

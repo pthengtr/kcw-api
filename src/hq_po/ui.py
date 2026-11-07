@@ -71,6 +71,9 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .line .code{font-weight:600;line-height:1.4;overflow-wrap:anywhere}
 .sku{display:inline-block;background:var(--blue-soft);color:var(--blue-deep);border-radius:6px;padding:0 6px;font-size:12px;font-weight:700;margin-right:4px;vertical-align:1px}
 .line .meta{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
+.stock-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.low-edit{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;font-weight:650}
+.low-in{width:64px;min-height:32px;font-size:14px;padding:4px 6px}
 .line-main{display:flex;gap:8px;min-width:0}
 .line-main > div{min-width:0;flex:1}
 .thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
@@ -597,18 +600,37 @@ function qtyCell(row){
   }
   return `<div class="qty-edit"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(selectedUnit(row))}</span></div>`;
 }
+function lowStockControl(row){
+  if(row.hq_qtymin == null || row.hq_qtymin === "") return "";
+  const L = Number(row.hq_qtymin);
+  if(!Number.isFinite(L)) return "";
+  if(L < 0) return `<span>L${esc(qtyText(L))}</span>`;
+  if(STAMP && row.bcode){
+    return `<label class="low-edit">L <input class="qty-in low-in" data-l="${esc(row.bcode)}" data-lkey="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(L))}" aria-label="สต็อกต่ำ ${esc(row.bcode||"")}"/></label>`;
+  }
+  return `<span>L ${esc(qtyText(L))}</span>`;
+}
+function stockLineHtml(row){
+  const bits = [];
+  if(row.company_qtyoh2 != null){
+    const incoming = Number(row.incoming_qty);
+    const incomingText = incoming > 0 ? ` · ค้างรับ ${esc(qtyText(incoming))}` : "";
+    const packs = Number(row.mtp2);
+    const ui2 = String(row.ui2 || "").trim();
+    const packText = packs > 1 && ui2
+      ? ` · ${esc(qtyText(Number(row.company_qtyoh2) / packs))} ${esc(ui2)}` : "";
+    bits.push(`<span>คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${packText}${incomingText}</span>`);
+  }
+  const low = lowStockControl(row);
+  if(low) bits.push(low);
+  if(!bits.length) return "";
+  return `<div class="meta stock-row">${bits.join("")}</div>`;
+}
 function lineHtml(row, mode){
   const pick = mode === "pick";
   const check = !pick ? "" : (orderableVendor(row)
     ? `<input type="checkbox" data-key="${esc(rowKey(row))}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"${row.picked ? " checked" : ""}/>`
     : `<input type="checkbox" disabled/>`);
-  const incoming = Number(row.incoming_qty);
-  const incomingText = incoming > 0 ? ` · ค้างรับ ${esc(qtyText(incoming))}` : "";
-  const packs = Number(row.mtp2);
-  const ui2 = String(row.ui2 || "").trim();
-  const packText = row.company_qtyoh2 != null && packs > 1 && ui2
-    ? ` · ${esc(qtyText(Number(row.company_qtyoh2) / packs))} ${esc(ui2)}` : "";
-  const stock = (row.company_qtyoh2==null) ? "" : `คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${packText}${incomingText}`;
   const fresh = !pick && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
   const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}${fresh}</div>`;
   const tools = pick && orderableVendor(row) ? "" : productTools(row);
@@ -626,7 +648,7 @@ function lineHtml(row, mode){
       ${priorHtml(row)}
       ${vendorLine}
       ${unitHtml(row)}
-      ${stock ? `<div class="meta">${stock}</div>` : ""}
+      ${stockLineHtml(row)}
       ${row.last_date ? `<div class="meta">เคยสั่ง ${esc(row.last_date)}${Number(row.bills) > 0 ? " · " + esc(String(row.bills)) + " บิล" : ""}</div>` : ""}
       ${recHtml(row)}
       ${tools}
@@ -1232,6 +1254,54 @@ async function loadOrders(){
   } catch (err) {
     host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>';
   }
+}
+async function saveLowStock(input){
+  if(state.busy || !STAMP || !input) return;
+  const bcode = String(input.getAttribute("data-l") || "").trim();
+  const key = String(input.getAttribute("data-lkey") || "").trim();
+  if(!bcode) return;
+  const row = key ? findRow(key) : state.items.find(item => item.bcode === bcode);
+  const prev = row && row.hq_qtymin != null ? Number(row.hq_qtymin) : null;
+  const value = Number(String(input.value || "").trim());
+  if(!Number.isFinite(value) || value <= 0){
+    alert("สต็อกต่ำ (L) ต้องมากกว่า 0\nถ้าไม่ต้องการสั่ง ให้กดนำออก");
+    input.value = prev != null && Number.isFinite(prev) && prev > 0 ? qtyText(prev) : "";
+    return;
+  }
+  if(prev != null && Number.isFinite(prev) && Math.abs(prev - value) < 1e-9){
+    input.value = qtyText(prev);
+    return;
+  }
+  setBusy(true, "กำลังบันทึก L…");
+  let failed = null;
+  let saved = null;
+  try {
+    const res = await fetch("/hq-po/api/products/" + encodeURIComponent(bcode) + "/qtymin", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({qtymin: value})
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "บันทึก L ไม่สำเร็จ");
+    else saved = data;
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){
+    alert(failed.message || "บันทึก L ไม่สำเร็จ");
+    input.value = prev != null && Number.isFinite(prev) && prev > 0 ? qtyText(prev) : "";
+    return;
+  }
+  const next = Number(saved && saved.qtymin);
+  state.items.forEach(item => {
+    if(item.bcode !== bcode) return;
+    item.hq_qtymin = Number.isFinite(next) ? next : value;
+    if(saved && saved.parts9_qty) item.parts9_qty = saved.parts9_qty;
+    else if(saved) delete item.parts9_qty;
+  });
+  renderList();
 }
 async function dismissWaiting(iclowId, bcode){
   if(state.busy || !iclowId) return;
@@ -2423,6 +2493,16 @@ document.getElementById("list").oninput = (e) => {
   const row = findRow(input.dataset.qty || "");
   if(row) row.order_qty = input.value;
 };
+document.getElementById("list").addEventListener("change", (e) => {
+  const input = e.target.closest("input[data-l]");
+  if(input) saveLowStock(input);
+});
+document.getElementById("list").addEventListener("keydown", (e) => {
+  const input = e.target.closest("input[data-l]");
+  if(!input || e.key !== "Enter") return;
+  e.preventDefault();
+  input.blur();
+});
 async function chooseSupplier(row, pick){
   const hit = row && (row.suppliers || []).find(s => s.acctno === pick.value);
   if(!hit || !row) return;

@@ -27,6 +27,7 @@ from src.hq_po.service import (
     product_search_payload,
     suggest_payload,
     suppliers_payload,
+    update_product_qtymin,
     vendor_insight_payload,
     vendor_ordered_payload,
     vendor_search_payload,
@@ -56,6 +57,10 @@ class ClearBlockBody(BaseModel):
 
 class ReleaseBody(BaseModel):
     kind: str = ""
+
+
+class QtyminBody(BaseModel):
+    qtymin: float | None = None
 
 
 class SheetLineBody(BaseModel):
@@ -399,6 +404,17 @@ def api_dismiss_waiting(iclow_id: int, request: Request):
         return err
     try:
         return dismiss_waiting_line(iclow_id)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.post("/api/products/{bcode}/qtymin")
+def api_update_qtymin(bcode: str, body: QtyminBody, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return update_product_qtymin(bcode, body.qtymin)
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "missing" else 409)
 

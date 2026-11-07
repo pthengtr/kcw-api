@@ -272,6 +272,67 @@ def stamp_ordered(lines: list[dict[str, Any]], *, docno: str, on: date | None = 
         raise HqPoError("iclow_update_failed", str(exc)) from exc
 
 
+def update_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:
+    """Write a positive HQ low-stock point (PARTS9 qtylo / ICMAS.QTYMIN).
+
+    Zero and negatives are refused here. Setting QTYMIN to -1 (do not restock)
+    stays on dismiss_waiting / นำออก so the waiting ICLOW rows are canceled too.
+    """
+    code = str(bcode or "").strip()
+    if not code:
+        raise HqPoError("missing", "ไม่มีรหัสสินค้า")
+    value = _num(qtymin)
+    if value is None or value != value:
+        raise HqPoError("missing", "สต็อกต่ำต้องเป็นตัวเลข")
+    if value <= 0:
+        raise HqPoError(
+            "missing",
+            "สต็อกต่ำต้องมากกว่า 0 — ถ้าไม่ต้องการสั่ง ให้กดนำออก",
+        )
+    from src.hq_po.stock import parts9_order_qty
+
+    try:
+        engine = _engine()
+        with engine.begin() as conn:
+            product = conn.execute(
+                text(
+                    """
+                    UPDATE dbo.ICMAS
+                    SET QTYMIN = :qtymin
+                    WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
+                    """
+                ),
+                {"bcode": code, "qtymin": value},
+            )
+            if product.rowcount < 1:
+                raise HqPoError("missing", f"ไม่พบ {code} ใน ICMAS")
+            row = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 QTYGET, QTYMIN, QTYOH2
+                    FROM dbo.ICMAS
+                    WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
+                    """
+                ),
+                {"bcode": code},
+            ).mappings().first()
+    except HqPoError:
+        raise
+    except Exception as exc:
+        denied = _permission(exc)
+        if denied:
+            raise denied from exc
+        raise HqPoError("iclow_update_failed", str(exc)) from exc
+    parts9 = None
+    if row:
+        parts9 = parts9_order_qty(
+            qtyget=row.get("QTYGET"),
+            qtymin=row.get("QTYMIN"),
+            qtyoh=row.get("QTYOH2"),
+        )
+    return {"bcode": code, "qtymin": value, "parts9_qty": parts9}
+
+
 def dismiss_waiting(iclow_id: int) -> dict[str, Any]:
     """Take one product off รอสั่ง the way PARTS9 does.
 
