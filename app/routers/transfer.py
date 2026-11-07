@@ -33,6 +33,8 @@ from src.transfer.db import (
     get_shipment_by_token,
     get_transfer_supabase_client,
     insert_event,
+    delete_prepare_photo,
+    get_prepare_photo,
     insert_prepare_photo,
     link_prepare_photos,
     list_prepare_photos,
@@ -55,13 +57,14 @@ from src.transfer.db import (
     upsert_need_many,
 )
 from src.transfer.insight import clean_propose_meta
-from src.pay_notes.storage import public_url, upload_bytes
+from src.pay_notes.storage import public_url, remove_paths, upload_bytes
 from src.transfer.photos import (
     MAX_PREPARE_PHOTOS,
     PreparePhotoError,
     image_suffix,
     photo_ids_to_link,
     prepare_photo_path,
+    remaining_photo_slots,
 )
 from src.transfer.direction import (
     branches_for_direction,
@@ -870,6 +873,19 @@ async def api_prepare_photos(
     return {"photos": saved}
 
 
+def _shipment_photo_access(
+    settings, header: dict[str, Any]
+) -> tuple[bool, str | None]:
+    """Prepare site or receive site may add/change evidence photos after TF."""
+    from_branch = (header.get("from_branch") or "HQ").upper()
+    to_branch = (header.get("to_branch") or "SYP").upper()
+    if can_prepare_at_site(settings.site, from_branch) or can_receive_at_site(
+        settings.site, to_branch
+    ):
+        return True, None
+    return False, "เพิ่ม/เปลี่ยนรูปได้เฉพาะสาขาต้นทางหรือปลายทางของคำขอนี้"
+
+
 @router.post("/api/shipments/{shipment_id}/photos")
 async def api_shipment_photos(
     shipment_id: str,
@@ -895,20 +911,28 @@ async def api_shipment_photos(
     header = get_request(client, shipment["transfer_id"])
     if not header:
         return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
-    to_branch = (header.get("to_branch") or "SYP").upper()
-    if not can_receive_at_site(settings.site, to_branch):
-        return JSONResponse({"error": "รับสินค้าได้เฉพาะสาขาปลายทาง"}, status_code=400)
+    ok, access_err = _shipment_photo_access(settings, header)
+    if not ok:
+        return JSONResponse({"error": access_err}, status_code=400)
     uploads = [item for item in files if item is not None]
     if not uploads:
         return JSONResponse({"error": "ยังไม่มีรูป"}, status_code=400)
-    if len(uploads) > MAX_PREPARE_PHOTOS:
+    transfer_id = shipment["transfer_id"]
+    existing = list_prepare_photos(client, transfer_id=str(transfer_id))
+    slots = remaining_photo_slots(existing, shipment_id=str(shipment_id))
+    if len(uploads) > slots:
         return JSONResponse(
-            {"error": f"แนบได้ไม่เกิน {MAX_PREPARE_PHOTOS} รูป"}, status_code=400
+            {
+                "error": (
+                    f"แนบได้ไม่เกิน {MAX_PREPARE_PHOTOS} รูปต่อใบจัด"
+                    + (f" (เหลืออีก {slots} รูป)" if slots else " (เต็มแล้ว)")
+                )
+            },
+            status_code=400,
         )
     content_types = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
     saved: list[dict[str, str | None]] = []
     new_photo_ids: list[str] = []
-    transfer_id = shipment["transfer_id"]
     for upload in uploads:
         data = await upload.read()
         try:
@@ -916,13 +940,13 @@ async def api_shipment_photos(
         except PreparePhotoError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         photo_id = str(uuid4())
-        path = prepare_photo_path(transfer_id, photo_id, suffix)
+        path = prepare_photo_path(str(transfer_id), photo_id, suffix)
         try:
             upload_bytes(client, path, data, content_type=content_types[suffix])
             insert_prepare_photo(
                 client,
                 photo_id=photo_id,
-                transfer_id=transfer_id,
+                transfer_id=str(transfer_id),
                 storage_path=path,
                 actor=ident.display_name,
             )
@@ -937,6 +961,56 @@ async def api_shipment_photos(
     except PreparePhotoError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return {"photos": saved}
+
+
+@router.delete("/api/shipments/{shipment_id}/photos/{photo_id}")
+def api_delete_shipment_photo(shipment_id: str, photo_id: str, request: Request):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    client = get_transfer_supabase_client()
+    settings = _settings()
+    resp = (
+        client.schema(TRANSFER_SCHEMA)
+        .from_("shipments")
+        .select("*")
+        .eq("shipment_id", shipment_id)
+        .limit(1)
+        .execute()
+    )
+    shipment = dict(resp.data[0]) if resp.data else None
+    if not shipment:
+        return JSONResponse({"error": "shipment ไม่พบ"}, status_code=404)
+    header = get_request(client, shipment["transfer_id"])
+    if not header:
+        return JSONResponse({"error": "transfer ไม่พบ"}, status_code=404)
+    ok, access_err = _shipment_photo_access(settings, header)
+    if not ok:
+        return JSONResponse({"error": access_err}, status_code=400)
+    row = get_prepare_photo(client, photo_id=str(photo_id))
+    if (
+        not row
+        or str(row.get("transfer_id") or "") != str(shipment["transfer_id"])
+        or str(row.get("shipment_id") or "") != str(shipment_id)
+    ):
+        return JSONResponse({"error": "ไม่พบรูปหลักฐานของใบจัดนี้"}, status_code=404)
+    path = str(row.get("storage_path") or "").strip()
+    try:
+        delete_prepare_photo(client, photo_id=str(photo_id))
+        if path:
+            remove_paths(client, [path])
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            {"error": "ลบรูปไม่สำเร็จ", "detail": str(exc)}, status_code=400
+        )
+    insert_event(
+        client,
+        transfer_id=str(shipment["transfer_id"]),
+        event_type="shipment_photo_deleted",
+        actor=ident.display_name,
+        payload={"shipment_id": str(shipment_id), "photo_id": str(photo_id)},
+    )
+    return {"ok": True, "photo_id": str(photo_id)}
 
 
 @router.post("/api/requests/{transfer_id}/prepare")

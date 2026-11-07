@@ -5,6 +5,8 @@ from src.transfer.photos import (
     image_suffix,
     photo_ids_to_link,
     prepare_photo_path,
+    remaining_photo_slots,
+    shipment_photo_count,
 )
 
 
@@ -39,3 +41,15 @@ def test_photo_ids_to_link_keeps_only_this_requests_unlinked_photos():
 
 def test_prepare_photo_path():
     assert prepare_photo_path("t1", "p1", ".jpg") == "public/transfer/t1/p1.jpg"
+
+
+def test_remaining_photo_slots_counts_only_linked_shipment():
+    rows = [
+        {"photo_id": "a", "shipment_id": "s1"},
+        {"photo_id": "b", "shipment_id": "s1"},
+        {"photo_id": "c", "shipment_id": "s2"},
+        {"photo_id": "d", "shipment_id": None},
+    ]
+    assert shipment_photo_count(rows, shipment_id="s1") == 2
+    assert remaining_photo_slots(rows, shipment_id="s1") == 6
+    assert remaining_photo_slots(rows, shipment_id="s9") == 8

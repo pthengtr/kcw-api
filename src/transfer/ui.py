@@ -361,6 +361,9 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
 .evidence-row{display:flex;flex-wrap:wrap;gap:.45rem;margin:.55rem 0}
 .evidence-thumb{padding:0;border:1px solid var(--line);border-radius:10px;background:#fff;line-height:0;cursor:zoom-in}
 .evidence-thumb img{width:72px;height:72px;object-fit:cover;border-radius:9px;display:block}
+.evidence-thumb-wrap{position:relative;display:inline-block}
+.evidence-remove{position:absolute;top:-6px;right:-6px;z-index:2;width:24px;height:24px;border:0;border-radius:999px;background:#b91c1c;color:#fff;font-weight:700;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.evidence-edit{margin-top:.35rem}
 .prep-photo-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 #evidenceView{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.78);display:flex;align-items:center;justify-content:center;padding:48px 16px 16px}
 #evidenceView[hidden]{display:none}
@@ -1378,10 +1381,11 @@ async function openRequestDetail(transferId){
         const open = Math.max(Number(sl.qty_shipped||0)-Number(sl.qty_received||0),0);
         return `<tr><td><code>${sl.bcode||""}</code></td><td class="num">${fmtQty(sl.qty_shipped)}</td><td class="num">${fmtQty(sl.qty_received)}</td><td class="num">${fmtQty(open)}</td></tr>`;
       }).join("");
-      return `<div style="margin-top:.65rem">
+      const canEditPhotos = canEditShipmentPhotos(fromB, toB);
+      return `<div style="margin-top:.65rem" data-ship-block="${escText(ship.shipment_id||"")}">
         <p class="meta" style="margin:0"><strong>ใบจัด ${i+1}</strong> · ${shipLabel}${recvBill ? ` · ใบรับ ${recvLabel}` : ""}</p>
         ${slines ? `<div class="table-wrap" style="margin-top:.35rem"><table><thead><tr><th>รหัส</th><th class="num">จัด</th><th class="num">รับแล้ว</th><th class="num">ค้างรับ</th></tr></thead><tbody>${slines}</tbody></table></div>` : ""}
-        ${evidenceHtml(ship.photos)}
+        ${evidenceHtml(ship.photos, {editable: canEditPhotos, shipmentId: ship.shipment_id||""})}
       </div>`;
     }).join("");
     shipHtml = `<div class="tool-section" style="margin-top:.75rem"><p class="tool-title">ใบ TF / การจัดส่ง</p>${shipHtml}</div>`;
@@ -1424,9 +1428,7 @@ async function openRequestDetail(transferId){
       ${canCancel ? `<button class="btn btn-ghost" id="btnDetailCancel">ยกเลิกคำขอ</button>` : ""}
       ${isDraft ? `<button class="btn btn-primary" id="btnDetailEdit">แก้ไขร่าง</button>` : ""}
     </div>`);
-  modal.box.querySelectorAll("[data-evidence]").forEach(btn=>{
-    btn.onclick = ()=>openEvidence(btn.getAttribute("data-evidence")||"");
-  });
+  bindDetailEvidence(modal, transferId);
   const printBtn = modal.box.querySelector("#btnDetailPrint");
   if(printBtn) printBtn.onclick = ()=>printRequestBill(detail);
   const pickAllBtn = modal.box.querySelector("#btnDetailStkAll");
@@ -2237,10 +2239,82 @@ async function uploadPreparePhotos(transferId, files){
     return j.photos || [];
   } finally { setBusy(false); }
 }
-function evidenceHtml(photos){
+function canEditShipmentPhotos(fromBranch, toBranch){
+  const fromB = String(fromBranch||"").toUpperCase();
+  const toB = String(toBranch||"").toUpperCase();
+  return SITE === fromB || SITE === toB;
+}
+function evidenceHtml(photos, {editable=false, shipmentId=""}={}){
   const shots = (photos||[]).filter(p=>p && p.url);
-  if(!shots.length) return "";
-  return `<div class="evidence-row">${shots.map(p=>`<button type="button" class="evidence-thumb" data-evidence="${escText(p.url)}" aria-label="ดูรูปหลักฐาน"><img alt="" src="${escText(p.url)}"/></button>`).join("")}</div>`;
+  const sid = String(shipmentId||"");
+  let html = "";
+  if(shots.length){
+    html += `<div class="evidence-row">${shots.map(p=>{
+      const remove = editable && p.photo_id && sid
+        ? `<button type="button" class="evidence-remove" data-photo-del="${escText(p.photo_id)}" data-shipment="${escText(sid)}" title="ลบรูป" aria-label="ลบรูป">×</button>`
+        : "";
+      return `<span class="evidence-thumb-wrap">${remove}<button type="button" class="evidence-thumb" data-evidence="${escText(p.url)}" aria-label="ดูรูปหลักฐาน"><img alt="" src="${escText(p.url)}"/></button></span>`;
+    }).join("")}</div>`;
+  } else if(editable && sid){
+    html += `<p class="meta" style="margin:.45rem 0 0">ยังไม่มีรูปหลักฐาน — อัปโหลดทีหลังได้</p>`;
+  }
+  if(editable && sid){
+    const label = shots.length ? "เพิ่ม/เปลี่ยนรูป" : "เพิ่มรูปหลักฐาน";
+    const inputId = "detailPhoto_"+sid.replace(/[^a-zA-Z0-9_-]/g,"");
+    html += `<div class="evidence-edit">
+      <label class="btn btn-ghost" for="${inputId}">${label}</label>
+      <input id="${inputId}" class="prep-photo-input" type="file" accept="image/*" capture="environment" multiple data-ship-photo="${escText(sid)}">
+    </div>`;
+  }
+  return html;
+}
+function bindDetailEvidence(modal, transferId){
+  if(!modal || !modal.box) return;
+  modal.box.querySelectorAll("[data-evidence]").forEach(btn=>{
+    btn.onclick = ()=>openEvidence(btn.getAttribute("data-evidence")||"");
+  });
+  modal.box.querySelectorAll("[data-photo-del]").forEach(btn=>{
+    btn.onclick = async (e)=>{
+      e.stopPropagation();
+      const photoId = btn.getAttribute("data-photo-del")||"";
+      const shipmentId = btn.getAttribute("data-shipment")||"";
+      if(!photoId || !shipmentId) return;
+      const ok = await uiConfirm("ลบรูปหลักฐานนี้?");
+      if(!ok) return;
+      try{
+        await deleteShipmentPhoto(shipmentId, photoId);
+        showToast("ลบรูปแล้ว");
+        modal.close();
+        openRequestDetail(transferId);
+      }catch(err){ alert(err.message); }
+    };
+  });
+  modal.box.querySelectorAll("[data-ship-photo]").forEach(input=>{
+    input.onchange = async ()=>{
+      const shipmentId = input.getAttribute("data-ship-photo")||"";
+      const files = Array.from(input.files||[]);
+      input.value = "";
+      if(!shipmentId || !files.length) return;
+      if(files.length > 8){ alert("แนบได้ไม่เกิน 8 รูป"); return; }
+      try{
+        await uploadReceivePhotos(shipmentId, files);
+        showToast("อัปโหลดรูปแล้ว");
+        modal.close();
+        openRequestDetail(transferId);
+      }catch(err){ alert(err.message); }
+    };
+  });
+}
+async function deleteShipmentPhoto(shipmentId, photoId){
+  setBusy(true);
+  try{
+    const r = await fetch("/transfer/api/shipments/"+shipmentId+"/photos/"+photoId,{
+      method:"DELETE", credentials:"same-origin",
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error || "ลบรูปไม่สำเร็จ");
+    return j;
+  } finally { setBusy(false); }
 }
 function openEvidence(url){
   const box = document.getElementById("evidenceView");

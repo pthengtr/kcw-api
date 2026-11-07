@@ -57,3 +57,14 @@ def photo_ids_to_link(
         if linked and linked != target:
             raise PreparePhotoError("รูปนี้ถูกแนบกับใบโอนอื่นแล้ว")
     return wanted
+
+
+def shipment_photo_count(rows: list[dict], *, shipment_id: str) -> int:
+    target = str(shipment_id or "")
+    if not target:
+        return 0
+    return sum(1 for row in rows if str(row.get("shipment_id") or "") == target)
+
+
+def remaining_photo_slots(rows: list[dict], *, shipment_id: str) -> int:
+    return max(0, MAX_PREPARE_PHOTOS - shipment_photo_count(rows, shipment_id=shipment_id))
