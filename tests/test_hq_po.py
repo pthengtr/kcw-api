@@ -461,7 +461,15 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
         # Stored QTYOH2 is what the first paint shows. The ledger rebuild is separate.
         qty = 10 if refresh else 4
         return (
-            {"A1": {"qtyoh2": qty, "mtp2": 1, "blocked": False, "descr": "bolt"}},
+            {
+                "A1": {
+                    "qtyoh2": qty,
+                    "qtymin": 5,
+                    "mtp2": 1,
+                    "blocked": False,
+                    "descr": "bolt",
+                }
+            },
             {"A1": {"qtyoh2": 0, "mtp2": 1, "blocked": False}},
             True,
         )
@@ -495,6 +503,7 @@ def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
     assert [item["bcode"] for item in payload["items"]] == ["A1"]
     assert payload["items"][0]["source"] == "iclow"
     assert payload["items"][0]["hq_qtyoh2"] == 4
+    assert payload["items"][0]["hq_qtymin"] == 5
     assert refreshed == [False]
     assert scheduled == [["A1"]]
 
@@ -1114,6 +1123,67 @@ def test_dismiss_waiting_sets_low_stock_and_cancels_open_iclow(monkeypatch):
     assert all(params["bcode"] == "A1" for query, params in conn.sql if "UPDATE" in query)
 
 
+class _QtyminConn:
+    def __init__(self, *, icmas_count=1, after=None):
+        self.icmas_count = icmas_count
+        self.after = after or {"QTYGET": 0, "QTYMIN": 8, "QTYOH2": 2}
+        self.sql: list[tuple[str, dict | None]] = []
+
+    def execute(self, statement, params=None):
+        query = str(statement)
+        self.sql.append((query, params))
+        if "UPDATE" in query:
+            return _DismissResult(rowcount=self.icmas_count)
+        return _DismissResult(self.after)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+def test_update_qtymin_writes_positive_low_stock(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _QtyminConn(after={"QTYGET": 0, "QTYMIN": 8, "QTYOH2": 2})
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    result = stamp.update_qtymin("A1", 8)
+    assert result == {"bcode": "A1", "qtymin": 8.0, "parts9_qty": 6.0}
+    updates = [query for query, params in conn.sql if "UPDATE" in query]
+    assert len(updates) == 1
+    assert "QTYMIN = :qtymin" in updates[0]
+    assert conn.sql[0][1] == {"bcode": "A1", "qtymin": 8.0}
+
+
+def test_update_qtymin_refuses_zero_and_negative():
+    from src.hq_po import stamp
+
+    for bad in (0, -1, -3.5):
+        try:
+            stamp.update_qtymin("A1", bad)
+        except HqPoError as exc:
+            assert exc.code == "missing"
+            assert "มากกว่า 0" in str(exc)
+        else:
+            raise AssertionError(f"expected refusal for {bad}")
+
+
+def test_update_product_qtymin_requires_the_stamp_flag(monkeypatch):
+    from src.hq_po import service
+
+    class _Settings:
+        stamp_enabled = False
+
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: _Settings())
+    try:
+        service.update_product_qtymin("A1", 5)
+    except HqPoError as exc:
+        assert exc.code == "stamp_disabled"
+    else:
+        raise AssertionError("expected stamp_disabled")
+
+
 def test_dismiss_waiting_refuses_a_line_already_ordered(monkeypatch):
     from src.hq_po import stamp
 
@@ -1158,6 +1228,11 @@ def test_page_confirms_before_removing_a_waiting_line():
     assert "มีสินค้าแล้ว" in html
     assert "data-block-ordered" in html
     assert "/hq-po/api/iclow/" in html
+    assert "data-l=" in html
+    assert "/hq-po/api/products/" in html
+    assert "qtymin" in html
+    assert "ต้องมากกว่า 0" in html
+    assert "saveLowStock" in html
 
 
 def test_resolve_vendor_keeps_the_account_under_a_trail():

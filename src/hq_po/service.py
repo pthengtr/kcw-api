@@ -64,6 +64,7 @@ from src.hq_po.stamp import (
     release_to_waiting,
     revert_ordered,
     stamp_ordered,
+    update_qtymin as update_qtymin_icmas,
 )
 from src.hq_po.suggest import (
     attach_catalog,
@@ -237,12 +238,32 @@ def dismiss_waiting_line(iclow_id: int) -> dict[str, Any]:
     return dismiss_waiting_iclow(iclow_id)
 
 
+def update_product_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:
+    """Set HQ ICMAS.QTYMIN (L) to a positive reorder point. L-1 stays on นำออก."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังแก้สต็อกต่ำไม่ได้",
+        )
+    return update_qtymin_icmas(bcode, qtymin)
+
+
 def vendor_search_payload(query: str) -> dict[str, Any]:
     try:
         rows = search_vendors(query)
     except Exception as exc:
         raise HqPoError("vendor_mismatch", "หาเจ้าหนี้ไม่ได้") from exc
     return {"vendors": rows}
+
+
+def _history_qtymin(hq: dict[str, Any] | None) -> float | None:
+    if hq is None or hq.get("qtymin") is None:
+        return None
+    try:
+        return float(hq.get("qtymin"))
+    except (TypeError, ValueError):
+        return None
 
 
 def _history_item(
@@ -286,6 +307,7 @@ def _history_item(
         "last_date": row.get("last_date") or "",
         "bills": row.get("bills") or 0,
         "parts9_qty": parts9,
+        "hq_qtymin": _history_qtymin(hq),
         "propose_meta": {"iclow_origin": "history"},
     }
 

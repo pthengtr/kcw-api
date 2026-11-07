@@ -194,6 +194,7 @@ def build_insight_only_item(
         "company_qtyoh2": hq_qty + syp_qty,
         "mtp2": mtp2,
         "hq_blocked": bool(hq_meta.get("blocked")),
+        "hq_qtymin": _num(hq_meta.get("qtymin")),
         "propose_meta": propose_meta_from_advice(advice, source="insight"),
     }
 
