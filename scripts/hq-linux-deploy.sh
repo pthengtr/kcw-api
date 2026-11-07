@@ -90,6 +90,29 @@ fi
 if systemctl --user cat kcw-to-bill.service &>/dev/null; then
   _units+=(kcw-to-bill)
 fi
+
+# รับสินค้าเข้า is HQ-only. Install once, then restart with the other units.
+_install_hq_receive_unit() {
+  local src="${REPO}/scripts/systemd/kcw-hq-receive.service"
+  local dest="${HOME}/.config/systemd/user/kcw-hq-receive.service"
+  if systemctl --user cat kcw-hq-receive.service &>/dev/null; then
+    return 0
+  fi
+  if [[ ! -f "$src" ]]; then
+    echo "WARNING: kcw-hq-receive unit file missing; service not restarted" >&2
+    return 0
+  fi
+  mkdir -p "${HOME}/.config/systemd/user"
+  cp "$src" "$dest"
+  systemctl --user daemon-reload
+  systemctl --user enable kcw-hq-receive.service
+}
+if ! _install_hq_receive_unit; then
+  echo "WARNING: could not install kcw-hq-receive.service" >&2
+fi
+if systemctl --user cat kcw-hq-receive.service &>/dev/null; then
+  _units+=(kcw-hq-receive)
+fi
 for u in "${_units[@]}"; do
   systemctl --user restart "${u}.service"
 done

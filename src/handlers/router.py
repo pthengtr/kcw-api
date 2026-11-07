@@ -54,6 +54,10 @@ from src.handlers.hq_po_entry import (
     is_hq_po_command,
     handle_hq_po_command,
 )
+from src.handlers.hq_receive_entry import (
+    is_hq_receive_command,
+    handle_hq_receive_command,
+)
 from src.handlers.to_bill_entry import (
     is_to_bill_command,
     handle_to_bill_command,
@@ -166,6 +170,16 @@ def route_user_text(
 
     if is_hq_po_command(text):
         return handle_hq_po_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+            access=access,
+        )
+
+    if is_hq_receive_command(text):
+        return handle_hq_receive_command(
             engine,
             line_user_id=line_user_id or "unknown",
             display_name=(access or {}).get("display_name")

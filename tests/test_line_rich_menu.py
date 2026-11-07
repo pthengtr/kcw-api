@@ -7,14 +7,14 @@ from pathlib import Path
 
 from src.handlers.companion_entry import is_companion_command
 from src.handlers.explorer_entry import is_explorer_command
-from src.handlers.image import is_image_command
+from src.handlers.hq_receive_entry import is_hq_receive_command
 from src.handlers.transfer_entry import is_transfer_command
 from src.handlers.pay_notes_entry import is_pay_notes_command
 from src.handlers.stock_check_entry import is_stock_check_command
 
 SPEC = Path(__file__).resolve().parents[1] / "scripts" / "line_rich_menu" / "menu_spec.json"
 
-EXPECTED_TEXTS = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "โอนสินค้า", "รูป", "ชำระเจ้าหนี้"]
+EXPECTED_TEXTS = ["เช็คสต็อก", "ไทเกอร์", "ค้นหา", "โอนสินค้า", "รับสินค้า", "ชำระเจ้าหนี้"]
 
 
 def test_rich_menu_message_actions_match_handlers():
@@ -28,7 +28,7 @@ def test_rich_menu_message_actions_match_handlers():
     assert is_companion_command(texts[1])
     assert is_explorer_command(texts[2])
     assert is_transfer_command(texts[3])
-    assert is_image_command(texts[4])
+    assert is_hq_receive_command(texts[4])
     assert is_pay_notes_command(texts[5])
     for area in areas:
         assert area["action"]["type"] == "message"

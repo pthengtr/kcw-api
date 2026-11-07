@@ -8,6 +8,7 @@ from src.handlers.image import is_image_command
 from src.handlers.pay_notes_entry import is_pay_notes_command
 from src.handlers.stock_check_entry import is_stock_check_command
 from src.handlers.hq_po_entry import is_hq_po_command
+from src.handlers.hq_receive_entry import is_hq_receive_command
 from src.handlers.to_bill_entry import is_to_bill_command
 from src.handlers.transfer_entry import is_transfer_command
 
@@ -49,6 +50,7 @@ def handle_services_menu() -> dict:
         _msg_button("ค้นหา PARTS9", "ค้นหา"),
         _msg_button("โอนสินค้า", "โอนสินค้า"),
         _msg_button("สั่งซื้อ", "สั่งซื้อ"),
+        _msg_button("รับสินค้าเข้า", "รับสินค้า"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
         _msg_button("ใบเต็มออนไลน์", "ใบเต็มออนไลน์"),
@@ -94,6 +96,7 @@ def services_menu_button_messages() -> list[str]:
         _msg_button("ค้นหา PARTS9", "ค้นหา"),
         _msg_button("โอนสินค้า", "โอนสินค้า"),
         _msg_button("สั่งซื้อ", "สั่งซื้อ"),
+        _msg_button("รับสินค้าเข้า", "รับสินค้า"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
         _msg_button("ใบเต็มออนไลน์", "ใบเต็มออนไลน์"),
@@ -109,7 +112,8 @@ def services_menu_handlers_match() -> dict[str, bool]:
         "explorer": is_explorer_command(checks[2]),
         "transfer": is_transfer_command(checks[3]),
         "hq_po": is_hq_po_command(checks[4]),
-        "image": is_image_command(checks[5]),
-        "pay_notes": is_pay_notes_command(checks[6]),
-        "to_bill": is_to_bill_command(checks[7]),
+        "hq_receive": is_hq_receive_command(checks[5]),
+        "image": is_image_command(checks[6]),
+        "pay_notes": is_pay_notes_command(checks[7]),
+        "to_bill": is_to_bill_command(checks[8]),
     }

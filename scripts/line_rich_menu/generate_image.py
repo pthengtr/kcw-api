@@ -45,7 +45,7 @@ CELLS = [
     {"title": "ไทเกอร์เพย์", "sub": "เก็บเงิน", "icon": "pay"},
     {"title": "ค้นหา", "sub": "", "icon": "search"},
     {"title": "โอนสินค้า", "sub": "", "icon": "po"},
-    {"title": "จัดการรูปสินค้า", "sub": "", "icon": "image"},
+    {"title": "รับสินค้าเข้า", "sub": "HQ", "icon": "receive"},
     {"title": "ชำระเจ้าหนี้", "sub": "", "icon": "help"},
 ]
 
@@ -247,6 +247,27 @@ def _draw_help_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color) -> None:
     _center_text(draw, (qx, qy - _px(2)), "?", qfont, color)
 
 
+def _draw_receive_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, color) -> None:
+    """Open crate with downward arrow — vendor goods in."""
+    sw = _stroke()
+    draw.rounded_rectangle(
+        [cx - _px(56), cy - _px(8), cx + _px(56), cy + _px(54)],
+        radius=_px(10),
+        outline=color,
+        width=sw,
+    )
+    draw.line([(cx - _px(56), cy + _px(14)), (cx + _px(56), cy + _px(14))], fill=color, width=_px(5))
+    draw.line([(cx, cy - _px(58)), (cx, cy + _px(4))], fill=color, width=_px(8))
+    draw.polygon(
+        [
+            (cx - _px(28), cy - _px(18)),
+            (cx + _px(28), cy - _px(18)),
+            (cx, cy + _px(10)),
+        ],
+        fill=color,
+    )
+
+
 def _draw_icon(draw: ImageDraw.ImageDraw, name: str, cx: int, cy: int) -> None:
     if name == "boxes":
         _draw_boxes_icon(draw, cx, cy, ROYAL)
@@ -258,6 +279,8 @@ def _draw_icon(draw: ImageDraw.ImageDraw, name: str, cx: int, cy: int) -> None:
         _draw_po_icon(draw, cx, cy, ROYAL)
     elif name == "image":
         _draw_image_icon(draw, cx, cy, ROYAL)
+    elif name == "receive":
+        _draw_receive_icon(draw, cx, cy, ROYAL)
     elif name == "sales":
         _draw_sales_icon(draw, cx, cy, ROYAL)
     else:
