@@ -610,6 +610,27 @@ def list_prepare_photos(client: Client, *, transfer_id: str) -> list[dict[str, A
     return _rows(resp)
 
 
+def get_prepare_photo(client: Client, *, photo_id: str) -> dict[str, Any] | None:
+    resp = (
+        _table(client, "shipment_photos")
+        .select("*")
+        .eq("photo_id", photo_id)
+        .limit(1)
+        .execute()
+    )
+    rows = _rows(resp)
+    return rows[0] if rows else None
+
+
+def delete_prepare_photo(client: Client, *, photo_id: str) -> None:
+    (
+        _table(client, "shipment_photos")
+        .delete()
+        .eq("photo_id", photo_id)
+        .execute()
+    )
+
+
 def link_prepare_photos(client: Client, *, photo_ids: list[str], shipment_id: str) -> None:
     if not photo_ids:
         return
