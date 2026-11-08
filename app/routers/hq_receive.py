@@ -13,8 +13,10 @@ from src.hq_receive.net import is_private_lan
 from src.hq_receive.service import (
     confirm_receipt,
     create_draft,
+    credit_notes_payload,
     discrepancies_payload,
     extract_invoice,
+    fill_vendor_credit_note,
     get_draft,
     history_payload,
     match_invoice,
@@ -71,6 +73,11 @@ class StickerBody(BaseModel):
     receipt_id: str | None = None
     pimas_billno: str | None = None
     all_previews: bool = False
+
+
+class VendorCnBody(BaseModel):
+    vendor_cn_no: str = ""
+    vendor_cn_date: str | None = None
 
 
 def _settings():
@@ -280,6 +287,37 @@ def api_discrepancies(request: Request, status: str = "open", limit: int = 80):
         return err
     try:
         return discrepancies_payload(status=status, limit=max(1, min(int(limit or 80), 200)))
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.get("/api/credit-notes")
+def api_credit_notes(request: Request, status: str = "", limit: int = 80):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return credit_notes_payload(
+            status=status, limit=max(1, min(int(limit or 80), 200))
+        )
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.post("/api/credit-notes/{credit_note_id}/vendor-doc")
+def api_credit_note_vendor_doc(
+    request: Request, credit_note_id: str, body: VendorCnBody
+):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return fill_vendor_credit_note(
+            credit_note_id,
+            vendor_cn_no=body.vendor_cn_no,
+            vendor_cn_date=body.vendor_cn_date,
+            actor=_actor(ident),
+        )
     except Exception as exc:
         return _err(exc)
 

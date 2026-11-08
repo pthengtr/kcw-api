@@ -17,6 +17,7 @@ _MEMORY: dict[str, dict[str, Any]] = {}
 _MEMORY_EXTRACTIONS: dict[str, dict[str, Any]] = {}
 _MEMORY_DISCREPANCIES: list[dict[str, Any]] = []
 _MEMORY_PRINT_JOBS: list[dict[str, Any]] = []
+_MEMORY_CREDIT_NOTES: dict[str, dict[str, Any]] = {}
 
 
 @lru_cache
@@ -97,28 +98,36 @@ def create_receipt(payload: dict[str, Any]) -> dict[str, Any]:
     inserted = _first(_table(client, "receipts").insert(row).execute())
     line_rows = []
     for i, line in enumerate(lines, start=1):
-        line_rows.append(
-            {
-                "receipt_id": inserted["receipt_id"],
-                "line_no": i * 10,
-                "iclow_id": line.get("iclow_id"),
-                "bcode": line.get("bcode") or "",
-                "descr": line.get("descr"),
-                "qty": float(line.get("qty") or 0),
-                "ui": line.get("ui"),
-                "cost": float(line.get("cost") or 0),
-                "discount": float(line.get("discount") or 0),
-                "amount": float(line.get("amount") or 0),
-                "po_docno": line.get("po_docno") or line.get("hq_po_docno"),
-                "status": line.get("status") or "ok",
-                "hold_reason": line.get("hold_reason"),
-            }
-        )
+        line_rows.append(_line_row(inserted["receipt_id"], i * 10, line))
     if line_rows:
         _table(client, "lines").insert(line_rows).execute()
     inserted["lines"] = line_rows
     inserted["_storage"] = "supabase"
     return inserted
+
+
+def _line_row(receipt_id: str, line_no: int, line: dict[str, Any]) -> dict[str, Any]:
+    bill_qty = line.get("bill_qty")
+    received_qty = line.get("received_qty")
+    qty = float(line.get("qty") or 0)
+    return {
+        "receipt_id": receipt_id,
+        "line_no": line_no,
+        "iclow_id": line.get("iclow_id"),
+        "bcode": line.get("bcode") or "",
+        "descr": line.get("descr"),
+        "qty": qty,
+        "bill_qty": float(bill_qty) if bill_qty is not None else qty,
+        "received_qty": float(received_qty) if received_qty is not None else qty,
+        "variance_action": line.get("variance_action"),
+        "ui": line.get("ui"),
+        "cost": float(line.get("cost") or 0),
+        "discount": float(line.get("discount") or 0),
+        "amount": float(line.get("amount") or 0),
+        "po_docno": line.get("po_docno") or line.get("hq_po_docno"),
+        "status": line.get("status") or "ok",
+        "hold_reason": line.get("hold_reason"),
+    }
 
 
 def update_receipt(receipt_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -192,23 +201,7 @@ def update_receipt(receipt_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         _table(client, "lines").delete().eq("receipt_id", rid).execute()
         line_rows = []
         for i, line in enumerate(payload.get("lines") or [], start=1):
-            line_rows.append(
-                {
-                    "receipt_id": rid,
-                    "line_no": i * 10,
-                    "iclow_id": line.get("iclow_id"),
-                    "bcode": line.get("bcode") or "",
-                    "descr": line.get("descr"),
-                    "qty": float(line.get("qty") or 0),
-                    "ui": line.get("ui"),
-                    "cost": float(line.get("cost") or 0),
-                    "discount": float(line.get("discount") or 0),
-                    "amount": float(line.get("amount") or 0),
-                    "po_docno": line.get("po_docno") or line.get("hq_po_docno"),
-                    "status": line.get("status") or "ok",
-                    "hold_reason": line.get("hold_reason"),
-                }
-            )
+            line_rows.append(_line_row(rid, i * 10, line))
         if line_rows:
             _table(client, "lines").insert(line_rows).execute()
         updated["lines"] = line_rows
@@ -504,3 +497,180 @@ def list_print_jobs(*, receipt_id: str | None = None, limit: int = 40) -> list[d
     except Exception:
         pass
     return rows[:limit]
+
+
+def find_active_credit_note_for_source(source_pimas_billno: str) -> dict[str, Any] | None:
+    source = str(source_pimas_billno or "").strip()
+    if not source:
+        return None
+    for row in _MEMORY_CREDIT_NOTES.values():
+        if (
+            str(row.get("source_pimas_billno") or "").strip() == source
+            and str(row.get("status") or "") != "canceled"
+        ):
+            return dict(row)
+    if _use_memory():
+        return None
+    try:
+        client = get_hq_receive_supabase_client()
+        row = _first(
+            _table(client, "credit_notes")
+            .select("*")
+            .eq("source_pimas_billno", source)
+            .neq("status", "canceled")
+            .limit(1)
+            .execute()
+        )
+        return row or None
+    except Exception:
+        return None
+
+
+def save_credit_note(row: dict[str, Any]) -> dict[str, Any]:
+    source = str(row.get("source_pimas_billno") or "").strip()
+    existing = find_active_credit_note_for_source(source)
+    if existing:
+        raise HqReceiveError(
+            "credit_note_duplicate",
+            f"มีใบลดหนี้ {existing.get('cn_billno')} สำหรับบิล {source} อยู่แล้ว",
+        )
+    cid = str(row.get("credit_note_id") or uuid.uuid4())
+    payload = {
+        "credit_note_id": cid,
+        "receipt_id": row.get("receipt_id"),
+        "source_pimas_billno": source,
+        "cn_billno": str(row.get("cn_billno") or "").strip(),
+        "vendor_acctno": row.get("vendor_acctno") or "",
+        "vendor_name": row.get("vendor_name"),
+        "is_vat": bool(row.get("is_vat")),
+        "status": row.get("status") or "awaiting_vendor_doc",
+        "vendor_cn_no": row.get("vendor_cn_no"),
+        "vendor_cn_date": row.get("vendor_cn_date"),
+        "beforetax": float(row.get("beforetax") or 0),
+        "tax": float(row.get("tax") or 0),
+        "aftertax": float(row.get("aftertax") or 0),
+        "lines": row.get("lines") or [],
+        "created_by": row.get("created_by"),
+        "updated_by": row.get("updated_by") or row.get("created_by"),
+        "created_at": row.get("created_at") or _now(),
+        "updated_at": row.get("updated_at") or _now(),
+        "completed_at": row.get("completed_at"),
+    }
+    if payload["status"] == "completed" and not payload.get("completed_at"):
+        payload["completed_at"] = _now()
+    _MEMORY_CREDIT_NOTES[cid] = payload
+    if _use_memory():
+        out = dict(payload)
+        out["_storage"] = "memory"
+        return out
+    try:
+        client = get_hq_receive_supabase_client()
+        inserted = _first(_table(client, "credit_notes").insert(payload).execute())
+        inserted["_storage"] = "supabase"
+        _MEMORY_CREDIT_NOTES[cid] = inserted
+        return inserted
+    except Exception as exc:
+        # Unique violation → treat as duplicate.
+        msg = str(exc).lower()
+        if "duplicate" in msg or "unique" in msg:
+            raise HqReceiveError(
+                "credit_note_duplicate",
+                f"มีใบลดหนี้สำหรับบิล {source} อยู่แล้ว",
+            ) from exc
+        payload["_storage"] = "memory"
+        return payload
+
+
+def list_credit_notes(*, status: str = "", limit: int = 80) -> list[dict[str, Any]]:
+    st = (status or "").strip().lower()
+    rows = sorted(
+        _MEMORY_CREDIT_NOTES.values(),
+        key=lambda r: r.get("updated_at") or "",
+        reverse=True,
+    )
+    if st:
+        rows = [r for r in rows if str(r.get("status") or "").lower() == st]
+    if _use_memory():
+        return [{**r, "_storage": "memory"} for r in rows[:limit]]
+    try:
+        client = get_hq_receive_supabase_client()
+        q = (
+            _table(client, "credit_notes")
+            .select("*")
+            .order("updated_at", desc=True)
+            .limit(limit)
+        )
+        if st:
+            q = q.eq("status", st)
+        db_rows = _rows(q.execute())
+        if db_rows:
+            return db_rows
+    except Exception:
+        pass
+    return [{**r, "_storage": "memory"} for r in rows[:limit]]
+
+
+def get_credit_note(credit_note_id: str) -> dict[str, Any]:
+    cid = str(credit_note_id or "").strip()
+    if cid in _MEMORY_CREDIT_NOTES:
+        out = dict(_MEMORY_CREDIT_NOTES[cid])
+        out["_storage"] = "memory"
+        return out
+    if _use_memory():
+        raise HqReceiveError("not_found", "ไม่พบใบลดหนี้")
+    client = get_hq_receive_supabase_client()
+    row = _first(
+        _table(client, "credit_notes")
+        .select("*")
+        .eq("credit_note_id", cid)
+        .limit(1)
+        .execute()
+    )
+    if not row:
+        raise HqReceiveError("not_found", "ไม่พบใบลดหนี้")
+    row["_storage"] = "supabase"
+    _MEMORY_CREDIT_NOTES[cid] = row
+    return row
+
+
+def complete_credit_note(
+    credit_note_id: str,
+    *,
+    vendor_cn_no: str,
+    vendor_cn_date: str | None,
+    actor: str,
+) -> dict[str, Any]:
+    row = get_credit_note(credit_note_id)
+    if str(row.get("status") or "") == "canceled":
+        raise HqReceiveError("cn_canceled", "ใบลดหนี้นี้ยกเลิกแล้ว")
+    if str(row.get("status") or "") == "completed" and row.get("vendor_cn_no"):
+        raise HqReceiveError("cn_already_completed", "กรอกเลขที่เจ้าหนี้แล้ว")
+    patch = {
+        "vendor_cn_no": str(vendor_cn_no or "").strip(),
+        "vendor_cn_date": vendor_cn_date,
+        "status": "completed",
+        "completed_at": _now(),
+        "updated_by": actor,
+        "updated_at": _now(),
+    }
+    row.update(patch)
+    _MEMORY_CREDIT_NOTES[str(row["credit_note_id"])] = row
+    if row.get("_storage") == "memory" or _use_memory():
+        out = dict(row)
+        out["_storage"] = "memory"
+        return out
+    try:
+        client = get_hq_receive_supabase_client()
+        updated = _first(
+            _table(client, "credit_notes")
+            .update(patch)
+            .eq("credit_note_id", row["credit_note_id"])
+            .execute()
+        )
+        updated["_storage"] = "supabase"
+        _MEMORY_CREDIT_NOTES[str(updated["credit_note_id"])] = updated
+        return updated
+    except Exception:
+        out = dict(row)
+        out["_storage"] = "memory"
+        return out
