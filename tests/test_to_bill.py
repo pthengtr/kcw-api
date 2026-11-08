@@ -16,8 +16,18 @@ from src.to_bill.numbering import buddhist_yymm, format_docno, month_bounds, rec
 from src.to_bill.errors import ToBillError
 from src.to_bill.service import changed_from_kss
 from src.to_bill.sheet import build_sheet
-from src.to_bill.signers import assert_can_issue, can_issue, display_name, match_signer
-from src.to_bill.signers import APPROVER, ISSUER
+from src.to_bill.signers import (
+    AON,
+    APPROVER,
+    CARTOON,
+    ISSUER,
+    MAY,
+    assert_can_issue,
+    can_issue,
+    display_name,
+    match_signer,
+    sheet_signers,
+)
 from src.handlers.to_bill_entry import is_to_bill_command
 from src.handlers.services_menu import services_menu_handlers_match
 
@@ -191,8 +201,10 @@ def test_sheet_names_the_tad_and_buyer():
     assert html.count("ผู้ออกเอกสาร (ผู้ขาย)") == 2
     assert html.count("ผู้อนุมัติเอกสาร (ผู้ขาย)") == 2
     assert html.count("ผู้รับเอกสาร (ลูกค้า)") == 2
-    assert html.count(display_name(ISSUER)) == 2
-    assert html.count(display_name(APPROVER)) == 2
+    assert html.count("มัญชุนันท์ คำลา") == 2
+    assert html.count("ปิยะนุช นันตาบุตร") == 2
+    assert "อ้อน" not in html
+    assert "เมย์" not in html
     assert "data:image/jpeg;base64," in html
     assert "ลายมือชื่อ" in html
     assert "TAD6910-014" in html
@@ -202,13 +214,21 @@ def test_sheet_names_the_tad_and_buyer():
     assert "class='void'" not in html
 
 
-def test_only_aon_and_may_may_issue():
+def test_only_named_sellers_may_issue():
     assert can_issue("อ้อน")
     assert can_issue("เมย์ KCW")
+    assert can_issue("การ์ตูน")
+    assert can_issue("จิดาภา กระจาย")
     assert can_issue("มัญชุนันท์ คำลา")
     assert can_issue("ปิยะนุช")
-    assert match_signer("อ้อน") is ISSUER
-    assert match_signer("May") is APPROVER
+    assert match_signer("อ้อน") is ISSUER is AON
+    assert match_signer("May") is APPROVER is MAY
+    assert match_signer("การ์ตูน") is CARTOON
+    assert sheet_signers("") == (AON, MAY)
+    assert sheet_signers("อ้อน") == (AON, MAY)
+    assert sheet_signers("การ์ตูน") == (CARTOON, CARTOON)
+    assert display_name(AON) == "มัญชุนันท์ คำลา"
+    assert display_name(CARTOON) == "จิดาภา กระจาย"
     assert not can_issue("LAN")
     assert not can_issue("Pannawit")
     try:
@@ -218,6 +238,32 @@ def test_only_aon_and_may_may_issue():
         assert exc.status == 403
     else:
         raise AssertionError("expected not_allowed")
+
+
+def test_cartoon_signs_both_roles_on_sheet():
+    html = build_sheet(
+        {
+            "status": "issued",
+            "docno": "TO6911-009",
+            "tad_billno": "TAD6911-009",
+            "issued_by": "การ์ตูน",
+            "issued_at": "2026-11-08",
+            "bill_date": "2026-11-08",
+            "customer_name": "ทดสอบ",
+            "address": "1",
+            "tax_id": "1234567890123",
+            "branch_label": "สำนักงานใหญ่",
+            "beforetax": 0,
+            "tax": 0,
+            "aftertax": 0,
+            "lines": [],
+        },
+        seller_tax_id="0105537000000",
+    )
+    assert html.count("จิดาภา กระจาย") == 4
+    assert "มัญชุนันท์ คำลา" not in html
+    assert "ปิยะนุช นันตาบุตร" not in html
+    assert "การ์ตูน" not in html
 
 
 def test_receipt_sheet_names_payment():

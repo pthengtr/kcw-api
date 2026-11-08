@@ -10,7 +10,13 @@ from src.hq_po.sheet import COMPANY_ADDRESS, COMPANY_BRANCH, COMPANY_NAME, COMPA
 from src.pay_notes.baht_text import baht_text
 from src.to_bill.buyers import shop_label
 from src.to_bill.kinds import pay_via_label
-from src.to_bill.signers import APPROVER, ISSUER, display_name, signature_data_uri
+from src.to_bill.signers import (
+    ROLE_APPROVER,
+    ROLE_ISSUER,
+    display_name,
+    sheet_signers,
+    signature_data_uri,
+)
 
 _MONTHS = (
     "มกราคม",
@@ -191,18 +197,19 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
         )
     heading = "ใบเสร็จรับเงิน" if receipt else "ใบกำกับภาษี"
     signed_on = _thai_date(invoice.get("issued_at") or invoice.get("bill_date"))
+    issuer, approver = sheet_signers(str(invoice.get("issued_by") or ""))
     signs = "".join(
         (
             _signature(
-                f"{ISSUER['role']} (ผู้ขาย)",
-                name=display_name(ISSUER),
-                image_file=ISSUER["image"],
+                f"{ROLE_ISSUER} (ผู้ขาย)",
+                name=display_name(issuer),
+                image_file=issuer["image"],
                 signed_on=signed_on,
             ),
             _signature(
-                f"{APPROVER['role']} (ผู้ขาย)",
-                name=display_name(APPROVER),
-                image_file=APPROVER["image"],
+                f"{ROLE_APPROVER} (ผู้ขาย)",
+                name=display_name(approver),
+                image_file=approver["image"],
                 signed_on=signed_on,
             ),
             _signature("ผู้รับเอกสาร (ลูกค้า)"),
