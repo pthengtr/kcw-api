@@ -1,0 +1,7 @@
+{
+  "name": "kcw-windows-remote",
+  "version": "1.0.0",
+  "released": "2026-11-08",
+  "min_windows": "10",
+  "notes": "Install Tailscale + OpenSSH Server and authorize KCW admin SSH keys."
+}
