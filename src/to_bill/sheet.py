@@ -10,6 +10,7 @@ from src.hq_po.sheet import COMPANY_ADDRESS, COMPANY_BRANCH, COMPANY_NAME, COMPA
 from src.pay_notes.baht_text import baht_text
 from src.to_bill.buyers import shop_label
 from src.to_bill.kinds import pay_via_label
+from src.to_bill.signers import APPROVER, ISSUER, display_name, signature_data_uri
 
 _MONTHS = (
     "มกราคม",
@@ -80,15 +81,28 @@ def _field(label: str, value: str, *, value_class: str = "", span: bool = False)
     return f"<div class='k'>{_esc(label)}</div><div{klass}>{value}</div>"
 
 
-def _signature(title: str) -> str:
+def _signature(
+    title: str,
+    *,
+    name: str = "",
+    image_file: str = "",
+    signed_on: str = "",
+) -> str:
+    if image_file:
+        src = _esc(signature_data_uri(image_file))
+        hand = f'<div class="hand"><img src="{src}" alt=""></div>'
+    else:
+        hand = '<div class="hand"></div>'
+    name_cell = _esc(name) if name else ""
+    date_cell = _esc(signed_on) if signed_on else ""
     return f"""
     <section>
       <h3>{_esc(title)}</h3>
-      <div class="hand"></div>
+      {hand}
       <div class="sig-fields">
         <span>ลายมือชื่อ</span><span class="line"></span>
-        <span>ชื่อ</span><span class="line"></span>
-        <span>วันที่</span><span class="line"></span>
+        <span>ชื่อ</span><span class="line">{name_cell}</span>
+        <span>วันที่</span><span class="line">{date_cell}</span>
       </div>
     </section>"""
 
@@ -176,12 +190,22 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
             f"<span class='keep'>วันที่ {_esc(_slash_date(invoice.get('bill_date')))} ซึ่งยกเลิกแล้ว</span>"
         )
     heading = "ใบเสร็จรับเงิน" if receipt else "ใบกำกับภาษี"
+    signed_on = _thai_date(invoice.get("issued_at") or invoice.get("bill_date"))
     signs = "".join(
-        _signature(title)
-        for title in (
-            "ผู้ออกเอกสาร (ผู้ขาย)",
-            "ผู้อนุมัติเอกสาร (ผู้ขาย)",
-            "ผู้รับเอกสาร (ลูกค้า)",
+        (
+            _signature(
+                f"{ISSUER['role']} (ผู้ขาย)",
+                name=display_name(ISSUER),
+                image_file=ISSUER["image"],
+                signed_on=signed_on,
+            ),
+            _signature(
+                f"{APPROVER['role']} (ผู้ขาย)",
+                name=display_name(APPROVER),
+                image_file=APPROVER["image"],
+                signed_on=signed_on,
+            ),
+            _signature("ผู้รับเอกสาร (ลูกค้า)"),
         )
     )
     return f"""

@@ -76,7 +76,8 @@ button:disabled { opacity:.55; cursor:default; }
 .tof .words { text-align:right; font-size:12px; margin-top:4px; }
 .tof .sign { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:28px; font-size:12px; break-inside:avoid; page-break-inside:avoid; }
 .tof .sign h3 { margin:0 0 4px; font-size:12px; font-weight:700; text-align:center; line-height:1.35; }
-.tof .hand { height:28px; }
+.tof .hand { min-height:36px; height:52px; display:flex; align-items:flex-end; justify-content:center; }
+.tof .hand img { max-height:50px; max-width:100%; object-fit:contain; display:block; }
 .tof .sig-fields { row-gap:7px; align-items:end; }
 .tof .sig-fields .line { border-bottom:1px solid #111; min-height:1.15rem; }
 .tof .void { position:absolute; inset:30% 8% auto; text-align:center; font-size:64px; color:rgba(180,35,24,.28); font-weight:800; transform:rotate(-12deg); pointer-events:none; }
@@ -241,6 +242,7 @@ function renderEditor(inv) {
         ${receipt && inv.source_docno ? `<p class="meta">อ้างอิงใบกำกับ ${esc(inv.source_docno)}</p>` : ""}
         ${inv.kss_canceled ? "<p class='banner'>บิลนี้ถูกยกเลิกใน KSS ออกเอกสารไม่ได้</p>" : ""}
         ${inv.kss_changed ? "<p class='banner'>ยอดใน KSS เปลี่ยนจากฉบับร่าง กดดึงจาก KSS อีกครั้งก่อนออกเอกสาร</p>" : ""}
+        ${inv.can_issue === false ? "<p class='banner'>ออกเอกสารได้เฉพาะ อ้อน (มัญชุนันท์ คำลา) หรือ เมย์ (ปิยะนุช นันตาบุตร)</p>" : ""}
         <p class="meta">ชื่อใน KSS ${esc(inv.acctname_kss || "—")}
           ${inv.online_po ? " · ออเดอร์ " + esc(inv.online_po) : ""}</p>
         ${inv.shop_label ? `<p class="meta">ร้านค้า ${esc(inv.shop_label)}</p>` : ""}
@@ -279,7 +281,7 @@ function renderEditor(inv) {
         <p class="err" id="formErr"></p>
         <div class="actions">
           <button type="button" class="ghost" id="saveBtn">บันทึกฉบับร่าง</button>
-          <button type="button" id="issueBtn" ${inv.kss_canceled ? "disabled" : ""}>ออกเอกสาร</button>
+          <button type="button" id="issueBtn" ${inv.kss_canceled || inv.can_issue === false ? "disabled" : ""}>ออกเอกสาร</button>
         </div>
       </form>
     </div>`;

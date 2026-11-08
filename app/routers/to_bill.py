@@ -254,11 +254,11 @@ def api_draft(request: Request, body: DraftBody):
 
 @router.get("/api/invoices/{invoice_id}")
 def api_get(request: Request, invoice_id: str):
-    _, err = _require_api(request)
+    ident, err = _require_api(request)
     if err:
         return err
     try:
-        return get_one(invoice_id)
+        return get_one(invoice_id, _actor(ident))
     except ToBillError as exc:
         return _error(exc)
 
@@ -276,11 +276,11 @@ def api_refresh(request: Request, invoice_id: str):
 
 @router.post("/api/invoices/{invoice_id}/buyer")
 def api_buyer(request: Request, invoice_id: str, body: BuyerBody):
-    _, err = _require_api(request)
+    ident, err = _require_api(request)
     if err:
         return err
     try:
-        return save(invoice_id, body.model_dump())
+        return save(invoice_id, body.model_dump(), _actor(ident))
     except ToBillError as exc:
         return _error(exc)
 
