@@ -242,7 +242,7 @@ function renderEditor(inv) {
         ${receipt && inv.source_docno ? `<p class="meta">อ้างอิงใบกำกับ ${esc(inv.source_docno)}</p>` : ""}
         ${inv.kss_canceled ? "<p class='banner'>บิลนี้ถูกยกเลิกใน KSS ออกเอกสารไม่ได้</p>" : ""}
         ${inv.kss_changed ? "<p class='banner'>ยอดใน KSS เปลี่ยนจากฉบับร่าง กดดึงจาก KSS อีกครั้งก่อนออกเอกสาร</p>" : ""}
-        ${inv.can_issue === false ? "<p class='banner'>ออกเอกสารได้เฉพาะ อ้อน (มัญชุนันท์ คำลา) หรือ เมย์ (ปิยะนุช นันตาบุตร)</p>" : ""}
+        ${inv.can_issue === false ? "<p class='banner'>ออกเอกสารได้เฉพาะ อ้อน (มัญชุนันท์ คำลา) เมย์ (ปิยะนุช นันตาบุตร) หรือ การ์ตูน (จิดาภา กระจาย)</p>" : ""}
         <p class="meta">ชื่อใน KSS ${esc(inv.acctname_kss || "—")}
           ${inv.online_po ? " · ออเดอร์ " + esc(inv.online_po) : ""}</p>
         ${inv.shop_label ? `<p class="meta">ร้านค้า ${esc(inv.shop_label)}</p>` : ""}

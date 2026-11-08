@@ -1,4 +1,4 @@
-"""Fixed seller signatories for full tax invoices / receipts."""
+"""Seller signatories for full tax invoices / receipts."""
 
 from __future__ import annotations
 
@@ -11,23 +11,37 @@ from src.to_bill.errors import ToBillError
 
 _SIG_DIR = Path(__file__).resolve().parent / "signatures"
 
-# Issuer (ผู้ออกเอกสาร) and approver (ผู้อนุมัติเอกสาร) are fixed people.
-ISSUER = {
+ROLE_ISSUER = "ผู้ออกเอกสาร"
+ROLE_APPROVER = "ผู้อนุมัติเอกสาร"
+
+AON = {
     "nick": "อ้อน",
     "full_name": "มัญชุนันท์ คำลา",
-    "role": "ผู้ออกเอกสาร",
+    "roles": (ROLE_ISSUER,),
     "image": "aon.jpg",
     "aliases": ("อ้อน", "มัญชุนันท์", "คำลา", "aon", "manchunan"),
 }
-APPROVER = {
+MAY = {
     "nick": "เมย์",
     "full_name": "ปิยะนุช นันตาบุตร",
-    "role": "ผู้อนุมัติเอกสาร",
+    "roles": (ROLE_APPROVER,),
     "image": "may.jpg",
     "aliases": ("เมย์", "เมย", "ปิยะนุช", "นันตาบุตร", "may", "piyanuch"),
 }
+CARTOON = {
+    "nick": "การ์ตูน",
+    "full_name": "จิดาภา กระจาย",
+    "roles": (ROLE_ISSUER, ROLE_APPROVER),
+    "image": "cartoon.jpg",
+    "aliases": ("การ์ตูน", "การตูน", "จิดาภา", "กระจาย", "cartoon", "jidapa"),
+}
 
-_ALLOWED = (ISSUER, APPROVER)
+# Kept for older imports / tests that still say ISSUER / APPROVER.
+ISSUER = AON
+APPROVER = MAY
+
+_ALLOWED = (AON, MAY, CARTOON)
+_ALLOWED_LABEL = "อ้อน (มัญชุนันท์ คำลา) เมย์ (ปิยะนุช นันตาบุตร) หรือ การ์ตูน (จิดาภา กระจาย)"
 
 
 def _tokens(value: str) -> set[str]:
@@ -61,13 +75,25 @@ def assert_can_issue(actor: str) -> None:
         return
     raise ToBillError(
         "not_allowed",
-        "ออกเอกสารได้เฉพาะ อ้อน (มัญชุนันท์ คำลา) หรือ เมย์ (ปิยะนุช นันตาบุตร)",
+        f"ออกเอกสารได้เฉพาะ {_ALLOWED_LABEL}",
         status=403,
     )
 
 
 def display_name(signer: dict) -> str:
-    return f"{signer['nick']} - {signer['full_name']} เป็น{signer['role']}"
+    """Printed name on the sheet — full name only, no nickname."""
+    return str(signer.get("full_name") or "").strip()
+
+
+def sheet_signers(issued_by: str = "") -> tuple[dict, dict]:
+    """Who fills the issuer / approver blocks.
+
+    Default company pair is อ้อน + เมย์. การ์ตูน may sign both roles when she issues.
+    """
+    actor = match_signer(issued_by)
+    if actor is CARTOON:
+        return CARTOON, CARTOON
+    return AON, MAY
 
 
 @lru_cache
