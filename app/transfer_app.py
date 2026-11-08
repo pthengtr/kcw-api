@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 
 from app.routers.prn_printer import router as prn_printer_router
 from app.routers.transfer import router as transfer_router
+from app.routers.windows_remote import router as windows_remote_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,6 +19,7 @@ logging.basicConfig(
 app = FastAPI(title="KCW Transfer", docs_url="/docs", redoc_url=None)
 app.include_router(transfer_router)
 app.include_router(prn_printer_router)
+app.include_router(windows_remote_router)
 
 
 @app.get("/")

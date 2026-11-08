@@ -18,6 +18,7 @@ logging.basicConfig(
 from app.routers.companion import router as companion_router
 from app.routers.health import router as health_router
 from app.routers.tiger_pay import router as tiger_pay_router
+from app.routers.windows_remote import router as windows_remote_router
 from src.tiger_pay.config import get_tiger_pay_settings
 from src.tiger_pay.poller import (
     payment_status_poller,
@@ -97,6 +98,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(tiger_pay_router)
 app.include_router(companion_router)
+app.include_router(windows_remote_router)
 
 
 @app.get("/")

@@ -164,6 +164,17 @@ Optional:
 - Healthcheck path: `/health`
 - `railway.toml` configures the healthcheck path for Railway deployments.
 
+### Windows remote onboarding (Tailscale + OpenSSH)
+
+Public one-click installer (also on HQ transfer `:8792`):
+
+- `GET /tools/windows-remote/` — install page
+- `GET /tools/windows-remote/install.cmd` — download, Run as administrator
+
+After deploy: `https://<railway-domain>/tools/windows-remote/install.cmd`
+
+Optional Railway env: `KCW_TAILSCALE_AUTHKEY` (skip browser login), `WINDOWS_REMOTE_PUBLIC_BASE_URL` (force origin baked into the `.cmd`).
+
 The webhook uses the Supabase service-role key server-side to call
 `tiger_pay.ingest_webhook`. Never expose the service-role key to a frontend or
 client application.
