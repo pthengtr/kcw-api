@@ -29,13 +29,18 @@ See also `src/hq_receive/rules.py` (`RULES_SUMMARY`).
 |------|----------|
 | Confirm required | No PARTS9 write without operator confirm |
 | Partial receive | Allowed; remaining qty stays on ICLOW |
+| Bill qty ≠ received | Operator must choose **ทำใบลดหนี้** / **รอของตามมา** / **เปลี่ยนสินค้า** |
+| Credit-note path | PI posts **bill qty**; CN posts shortfall (negative); stock nets to received qty |
+| Wait-rest path | PI posts **received qty** only |
+| Change-product path | Line is held before confirm |
+| CN numbering | Non-VAT `KCCN`+YYMM+`-`+seq; VAT temp `7KCCN…` (fill vendor CN no/date later) |
 | Hold lines | Skipped on confirm (not written to PIMAS) |
 | Mismatch lines | Block confirm unless held (or future `force_ok`) |
 | Cost tolerance | Default ±2% (`HQ_RECEIVE_COST_TOLERANCE_PCT`) |
 | Qty tolerance | Default ~0 (`HQ_RECEIVE_QTY_TOLERANCE`) |
 | Total tolerance | Default 1 baht (`HQ_RECEIVE_TOTAL_TOLERANCE`) |
 | Write flag | `HQ_RECEIVE_PIMAS_WRITE_ENABLED` (software default false; enable on HQ after grants) |
-| Stickers | Only from checked receive lines / history reprint |
+| Stickers | From **received qty** on confirmed lines / history reprint |
 | Site | HQ `KSS` only — never SYP |
 
 ## API (`/hq-receive`)
@@ -47,6 +52,8 @@ See also `src/hq_receive/rules.py` (`RULES_SUMMARY`).
 - `POST /api/invoices/extract` (multipart image)
 - `POST /api/invoices/{id}/match`
 - `GET /api/discrepancies`
+- `GET /api/credit-notes?status=awaiting_vendor_doc|completed|`
+- `POST /api/credit-notes/{id}/vendor-doc` — fill real vendor CN number + date onto `7KCCN` (`PIMAS.NOTENO` / `NOTEDATE`)
 - `POST|PUT|GET /api/receipts[/{id}]`
 - `POST /api/receipts/{id}/confirm`
 - `GET /api/history` (alias `/api/receipts/history`)
@@ -57,7 +64,8 @@ See also `src/hq_receive/rules.py` (`RULES_SUMMARY`).
 
 ## Data (`hq_receive` schema)
 
-- `receipts` / `lines` — drafts and confirmed GR
+- `receipts` / `lines` — drafts and confirmed GR (`bill_qty`, `received_qty`, `variance_action`)
+- `credit_notes` — overlay for KCCN / 7KCCN created from receive; tracks VAT docs awaiting vendor number
 - `invoice_extractions` / `invoice_extraction_lines` — AI bill parse
 - `discrepancies` — qty/cost/unknown-product follow-ups
 - `barcode_print_jobs` — sticker print/download history
@@ -67,6 +75,7 @@ Migrations:
 - `20261107120000_hq_receive_schema.sql`
 - `20261107120100_hq_receive_grants.sql`
 - `20261107123000_hq_receive_ai_stickers.sql`
+- `20261109010000_hq_receive_credit_notes.sql`
 
 Until migrations are applied, the service keeps drafts / extractions / jobs in process memory.
 
@@ -75,9 +84,10 @@ Until migrations are applied, the service keeps drafts / extractions / jobs in p
 When the flag is on, `writers/receive_pimas.py`:
 
 1. Allocates next `BN` + Buddhist YYMM billno on HQ `PIMAS`
-2. Inserts `PIMAS` + `PIDET` (vendor invoice → `NOTENO`, HQ PO → `PO`)
+2. Inserts `PIMAS` + `PIDET` (vendor invoice → `NOTENO`, HQ PO → `PO`) using **PI qty** (bill qty on credit-note path; received qty on wait-rest)
 3. Bumps `ICMAS.QTYOH2`
 4. Stamps matched `ICLOW` rows `RECEIVED='Y'`, `RCVDNO=billno`
+5. If shortfall lines chose **ทำใบลดหนี้**, same transaction inserts `KCCN` / `7KCCN` (`BILLTYPE=2`, `BOOKNO=5`) with negative qty linked via `PO` = BN billno, then records `hq_receive.credit_notes` (VAT stays `awaiting_vendor_doc` until vendor doc is filled)
 
 Enable:
 

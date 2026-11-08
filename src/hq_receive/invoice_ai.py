@@ -374,6 +374,9 @@ def match_extraction_to_open(
                 "bcode": best.get("bcode"),
                 "descr": best.get("descr") or inv.get("raw_name") or "",
                 "qty": qty,
+                "bill_qty": qty,
+                "received_qty": qty,
+                "variance_action": None,
                 "ui": inv.get("ui") or best.get("ui") or "",
                 "cost": cost,
                 "discount": _as_float(inv.get("discount")),
@@ -398,11 +401,15 @@ def match_extraction_to_open(
                     },
                 }
             )
+            qty_u = _as_float(inv.get("qty"))
             row = {
                 "iclow_id": None,
                 "bcode": str(inv.get("raw_code") or "").strip(),
                 "descr": inv.get("raw_name") or "",
-                "qty": _as_float(inv.get("qty")),
+                "qty": qty_u,
+                "bill_qty": qty_u,
+                "received_qty": qty_u,
+                "variance_action": None,
                 "ui": inv.get("ui") or "",
                 "cost": _as_float(inv.get("cost")),
                 "discount": _as_float(inv.get("discount")),

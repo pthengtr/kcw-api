@@ -73,6 +73,7 @@ th.num,td.num{text-align:right;white-space:nowrap}
   <p>ผู้ใช้: __USER__ · AI ช่วยเติม · น้องยืนยันก่อนตัดสต็อก</p>
   <div class="tabs">
     <button type="button" class="on" data-tab="receive">รับเข้า</button>
+    <button type="button" data-tab="creditnotes">ใบลดหนี้</button>
     <button type="button" data-tab="stickers">บาร์โค้ด</button>
     <button type="button" data-tab="issues">ผิดปกติ</button>
     <button type="button" data-tab="history">ประวัติ</button>
@@ -122,12 +123,17 @@ th.num,td.num{text-align:right;white-space:nowrap}
         <label class="field"><span>ผู้รับสินค้า</span><input id="receiver"/></label>
         <label class="field"><span>ส่วนลดท้ายบิล</span><input id="billDiscount" type="number" step="0.01" value="0"/></label>
       </div>
+      <div class="note" id="varianceHint" hidden style="margin-top:10px">
+        จำนวนตามบิล ≠ รับจริง — เลือกว่าจะทำใบลดหนี้ / รอของตามมา / เปลี่ยนสินค้า
+      </div>
       <div style="overflow:auto;margin-top:10px">
         <table>
           <thead>
             <tr>
-              <th>รหัส</th><th>ชื่อ</th><th class="num">จำนวน</th><th>หน่วย</th>
-              <th class="num">ต้นทุน</th><th class="num">ส่วนลด</th><th class="num">รวม</th><th>สถานะ</th><th></th>
+              <th>รหัส</th><th>ชื่อ</th>
+              <th class="num">ตามบิล</th><th class="num">รับจริง</th><th>หน่วย</th>
+              <th class="num">ต้นทุน</th><th class="num">ส่วนลด</th><th class="num">รวม</th>
+              <th>ส่วนต่าง</th><th>สถานะ</th><th></th>
             </tr>
           </thead>
           <tbody id="draftLines"></tbody>
@@ -146,6 +152,22 @@ th.num,td.num{text-align:right;white-space:nowrap}
       </div>
       <div id="draftErr" class="err" hidden></div>
       <div id="draftResult" class="meta" style="margin-top:8px"></div>
+    </div>
+  </section>
+
+  <section id="tab-creditnotes" hidden>
+    <div class="panel">
+      <div class="bar">
+        <strong style="flex:1">ใบลดหนี้รอเอกสารจากเจ้าหนี้ (7KCCN)</strong>
+        <select id="cnStatusFilter">
+          <option value="awaiting_vendor_doc">รอเอกสาร</option>
+          <option value="completed">ครบแล้ว</option>
+          <option value="">ทั้งหมด</option>
+        </select>
+        <button type="button" class="ghost" id="btnCreditNotes">รีเฟรช</button>
+      </div>
+      <p class="meta">ลิงก์กับบิลซื้อ BN… · กรอกเลขที่และวันที่จริงเมื่อได้เอกสาร VAT จากเจ้าหนี้</p>
+      <div id="creditNoteList" class="list"></div>
     </div>
   </section>
 
@@ -223,9 +245,10 @@ async function api(path, opts={}){
 
 function setTab(name){
   document.querySelectorAll('.tabs button').forEach(btn=> btn.classList.toggle('on', btn.dataset.tab === name));
-  ['receive','stickers','issues','history'].forEach(t=> el('tab-'+t).hidden = t !== name);
+  ['receive','creditnotes','stickers','issues','history'].forEach(t=> el('tab-'+t).hidden = t !== name);
   if(name==='history') loadHistory();
   if(name==='issues') loadIssues();
+  if(name==='creditnotes') loadCreditNotes();
   if(name==='stickers'){ renderStickerLines(); loadStickerJobs(); }
 }
 document.querySelectorAll('.tabs button').forEach(btn=> btn.addEventListener('click', ()=> setTab(btn.dataset.tab)));
@@ -292,11 +315,15 @@ async function loadOpenLines(){
 
 function useSelected(){
   const picked = state.openLines.filter(ln => state.selected.has(String(ln.iclow_id)));
-  state.draftLines = picked.map(ln => ({
-    iclow_id: ln.iclow_id, bcode: ln.bcode, descr: ln.descr || '', qty: Number(ln.qty||0),
-    ui: ln.ui || '', cost: 0, discount: 0, amount: 0,
-    po_docno: ln.hq_po_docno || ln.docno || '', status: 'ok', flags: []
-  }));
+  state.draftLines = picked.map(ln => {
+    const q = Number(ln.qty||0);
+    return {
+      iclow_id: ln.iclow_id, bcode: ln.bcode, descr: ln.descr || '',
+      qty: q, bill_qty: q, received_qty: q, variance_action: null,
+      ui: ln.ui || '', cost: 0, discount: 0, amount: 0,
+      po_docno: ln.hq_po_docno || ln.docno || '', status: 'ok', flags: []
+    };
+  });
   openDraft();
 }
 
@@ -314,19 +341,43 @@ function openDraft(){
   renderDraft();
 }
 
+function qtyDiff(ln){
+  const bill = Number(ln.bill_qty != null ? ln.bill_qty : ln.qty || 0);
+  const recv = Number(ln.received_qty != null ? ln.received_qty : bill);
+  return Math.round((bill - recv) * 10000) / 10000;
+}
+function hasVariance(ln){
+  return Math.abs(qtyDiff(ln)) > 0.0001;
+}
+function varianceSelect(ln, idx){
+  if(!hasVariance(ln) || ln.status === 'hold') return '<span class="meta">—</span>';
+  const v = ln.variance_action || '';
+  return `<select data-var="${idx}" style="min-width:8.5rem;font-size:12px">
+    <option value="">เลือก…</option>
+    <option value="credit_note" ${v==='credit_note'?'selected':''}>ทำใบลดหนี้</option>
+    <option value="wait_rest" ${v==='wait_rest'?'selected':''}>รอของตามมา</option>
+    <option value="change_product" ${v==='change_product'?'selected':''}>เปลี่ยนสินค้า</option>
+  </select>`;
+}
+
 function renderDraft(){
   const body = el('draftLines');
   body.innerHTML = '';
   state.draftLines.forEach((ln, idx)=>{
+    if(ln.bill_qty == null) ln.bill_qty = Number(ln.qty||0);
+    if(ln.received_qty == null) ln.received_qty = Number(ln.bill_qty||0);
     const tr = document.createElement('tr');
     const st = ln.status || 'ok';
+    const diff = qtyDiff(ln);
     tr.innerHTML = `<td>${ln.bcode}<div class="meta">${ln.po_docno||''}${ln.match_score!=null?' · match '+(ln.match_score*100).toFixed(0)+'%':''}</div></td>
       <td>${ln.descr||''}</td>
-      <td class="num"><input data-k="qty" data-i="${idx}" type="number" step="0.01" value="${ln.qty}" style="width:5.5rem;text-align:right"/></td>
+      <td class="num"><input data-k="bill_qty" data-i="${idx}" type="number" step="0.01" value="${ln.bill_qty}" style="width:4.8rem;text-align:right"/></td>
+      <td class="num"><input data-k="received_qty" data-i="${idx}" type="number" step="0.01" value="${ln.received_qty}" style="width:4.8rem;text-align:right"/></td>
       <td>${ln.ui||''}</td>
-      <td class="num"><input data-k="cost" data-i="${idx}" type="number" step="0.01" value="${ln.cost||0}" style="width:6rem;text-align:right"/></td>
-      <td class="num"><input data-k="discount" data-i="${idx}" type="number" step="0.01" value="${ln.discount||0}" style="width:5rem;text-align:right"/></td>
+      <td class="num"><input data-k="cost" data-i="${idx}" type="number" step="0.01" value="${ln.cost||0}" style="width:5.5rem;text-align:right"/></td>
+      <td class="num"><input data-k="discount" data-i="${idx}" type="number" step="0.01" value="${ln.discount||0}" style="width:4.5rem;text-align:right"/></td>
       <td class="num" data-amt="${idx}">0.00</td>
+      <td data-vardiff="${idx}">${hasVariance(ln)?('<span class="chip mismatch">'+(diff>0?'ขาด ':'เกิน ')+Math.abs(diff)+'</span>'):'—'}<div style="margin-top:4px">${varianceSelect(ln, idx)}</div></td>
       <td><span class="chip ${st}">${st}</span></td>
       <td><button type="button" class="ghost" data-hold="${idx}">${st==='hold'?'ปลดพัก':'พัก'}</button></td>`;
     body.appendChild(tr);
@@ -335,8 +386,25 @@ function renderDraft(){
     inp.addEventListener('input', ()=>{
       const i = Number(inp.dataset.i); const k = inp.dataset.k;
       state.draftLines[i][k] = Number(inp.value||0);
+      state.draftLines[i].qty = Number(state.draftLines[i].bill_qty||0);
+      if(!hasVariance(state.draftLines[i])) state.draftLines[i].variance_action = null;
       if(state.draftLines[i].status==='mismatch') state.draftLines[i].status='ok';
-      recompute();
+      renderDraft();
+    });
+  });
+  body.querySelectorAll('select[data-var]').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const i = Number(sel.dataset.var);
+      const v = sel.value || null;
+      state.draftLines[i].variance_action = v;
+      if(v === 'change_product'){
+        state.draftLines[i].status = 'hold';
+        state.draftLines[i].hold_reason = 'เปลี่ยนสินค้า';
+      } else if(state.draftLines[i].status === 'hold' && state.draftLines[i].hold_reason === 'เปลี่ยนสินค้า'){
+        state.draftLines[i].status = 'ok';
+        state.draftLines[i].hold_reason = null;
+      }
+      renderDraft();
     });
   });
   body.querySelectorAll('button[data-hold]').forEach(btn=>{
@@ -351,12 +419,16 @@ function renderDraft(){
 
 function recompute(){
   let sub = 0;
+  let needVariance = false;
   state.draftLines.forEach((ln, idx)=>{
-    const amt = Math.max(0, Number(ln.qty||0)*Number(ln.cost||0) - Number(ln.discount||0));
+    const bill = Number(ln.bill_qty != null ? ln.bill_qty : ln.qty || 0);
+    ln.qty = bill;
+    const amt = Math.max(0, bill*Number(ln.cost||0) - Number(ln.discount||0));
     ln.amount = amt;
     const cell = document.querySelector(`[data-amt="${idx}"]`);
     if(cell){ cell.textContent = money(amt); cell.parentElement.style.opacity = ln.status==='hold' ? .45 : 1; }
     if(ln.status !== 'hold') sub += amt;
+    if(ln.status !== 'hold' && hasVariance(ln) && !ln.variance_action) needVariance = true;
   });
   const disc = Number(el('billDiscount').value||0);
   const before = Math.max(0, sub - disc);
@@ -366,6 +438,8 @@ function recompute(){
   el('sumDisc').textContent = money(disc);
   el('sumVat').textContent = money(vat);
   el('sumNet').textContent = money(net);
+  const hint = el('varianceHint');
+  if(hint){ hint.hidden = !needVariance && !state.draftLines.some(ln => ln.status!=='hold' && hasVariance(ln)); }
   return {subtotal:sub, discount:disc, tax:vat, net};
 }
 
@@ -401,20 +475,84 @@ async function saveDraft(){
 
 async function confirmDraft(){
   el('draftErr').hidden = true;
+  const unresolved = state.draftLines.filter(ln =>
+    ln.status !== 'hold' && hasVariance(ln) && !ln.variance_action
+  );
+  if(unresolved.length){
+    el('draftErr').hidden=false;
+    el('draftErr').textContent='มีรายการที่จำนวนบิล≠รับจริง — เลือกทำใบลดหนี้ / รอของตามมา / เปลี่ยนสินค้าก่อนยืนยัน';
+    return;
+  }
   try{
     await saveDraft();
     const data = await api('/receipts/' + state.receiptId + '/confirm', {method:'POST', body:'{}'});
     const w = data.write || {};
-    const msg = w.dry_run
+    const cn = data.credit_note || w.credit_note || {};
+    let msg = w.dry_run
       ? 'Dry-run ผ่าน (ยังไม่เขียน PARTS9) — เปิด HQ_RECEIVE_PIMAS_WRITE_ENABLED เมื่อพร้อม'
       : ('รับเข้าแล้ว · บิล ' + (w.pimas_billno || w.kcw_billno));
+    if(w.cn_billno || cn.cn_billno) msg += ' · ใบลดหนี้ ' + (w.cn_billno || cn.cn_billno);
+    if((data.warnings||[]).length) msg += ' · ' + data.warnings.join(' · ');
     el('draftResult').textContent = msg;
     showBanner(msg, !!w.dry_run);
     state.pimasBillno = w.pimas_billno || null;
-    state.stickerSource = state.draftLines.filter(ln => ln.status !== 'hold' && Number(ln.qty)>0)
-      .map(ln => ({bcode: ln.bcode, qty: Math.max(1, Math.round(Number(ln.qty)||1)), descr: ln.descr||'', selected:true}));
+    const stickers = data.sticker_lines || state.draftLines
+      .filter(ln => ln.status !== 'hold')
+      .map(ln => ({
+        bcode: ln.bcode,
+        qty: Math.max(1, Math.round(Number(ln.received_qty != null ? ln.received_qty : ln.qty)||1)),
+        descr: ln.descr||'', selected:true
+      }));
+    state.stickerSource = (stickers||[]).filter(ln => Number(ln.qty)>0)
+      .map(ln => ({...ln, selected: true, qty: Math.max(1, Math.round(Number(ln.qty)||1))}));
     el('btnToStickers').disabled = state.stickerSource.length === 0;
+    if(cn && (cn.status === 'awaiting_vendor_doc' || (w.credit_note||{}).is_vat)){
+      /* keep receive panel; operator can open credit-notes tab */
+    }
   }catch(e){ el('draftErr').hidden=false; el('draftErr').textContent=e.message||String(e); }
+}
+
+async function loadCreditNotes(){
+  const st = el('cnStatusFilter').value;
+  const q = st ? ('?status=' + encodeURIComponent(st)) : '';
+  const data = await api('/credit-notes' + q);
+  const box = el('creditNoteList');
+  box.innerHTML = '';
+  (data.credit_notes||[]).forEach(cn=>{
+    const row = document.createElement('div');
+    row.className = 'row';
+    const awaiting = cn.status === 'awaiting_vendor_doc';
+    row.innerHTML = `<div style="flex:1">
+        <div><strong>${cn.cn_billno||'-'}</strong>
+          <span class="chip ${awaiting?'mismatch':'ok'}">${awaiting?'รอเอกสาร':'ครบแล้ว'}</span>
+          ${cn.is_vat?'<span class="chip">VAT</span>':''}
+        </div>
+        <div class="meta">บิลซื้อ ${cn.source_pimas_billno||'-'} · ${cn.vendor_name||cn.vendor_acctno||''}
+          · สุทธิ ${money(cn.aftertax)} · รายการ ${(cn.lines||[]).length}</div>
+        ${cn.vendor_cn_no?('<div class="meta">เลขเจ้าหนี้ '+cn.vendor_cn_no+(cn.vendor_cn_date?' · '+cn.vendor_cn_date:'')+'</div>'):''}
+        ${awaiting?`<div class="bar" style="margin-top:8px">
+          <input data-cnno placeholder="เลขที่ใบลดหนี้เจ้าหนี้" style="flex:1"/>
+          <input data-cndate type="date"/>
+          <button type="button" data-save>บันทึก</button>
+        </div>`:''}
+      </div>`;
+    const saveBtn = row.querySelector('button[data-save]');
+    if(saveBtn){
+      saveBtn.onclick = async ()=>{
+        const no = row.querySelector('[data-cnno]').value.trim();
+        const dt = row.querySelector('[data-cndate]').value || null;
+        try{
+          await api('/credit-notes/' + cn.credit_note_id + '/vendor-doc', {
+            method:'POST', body: JSON.stringify({vendor_cn_no: no, vendor_cn_date: dt})
+          });
+          showBanner('บันทึกเลขใบลดหนี้เจ้าหนี้แล้ว · ' + no);
+          loadCreditNotes();
+        }catch(e){ showBanner(e.message||String(e), true); }
+      };
+    }
+    box.appendChild(row);
+  });
+  if(!(data.credit_notes||[]).length) box.innerHTML = '<div class="meta">ไม่มีใบลดหนี้ตามตัวกรองนี้</div>';
 }
 
 async function runExtract(){
@@ -544,8 +682,12 @@ async function loadHistory(){
         const full = await api('/receipts/' + r.receipt_id);
         state.receiptId = r.receipt_id;
         state.pimasBillno = r.pimas_billno;
-        state.stickerSource = (full.lines||[]).filter(ln => ln.status !== 'hold' && Number(ln.qty)>0)
-          .map(ln => ({bcode: ln.bcode, qty: Math.max(1, Math.round(Number(ln.qty)||1)), descr: ln.descr||'', selected:true}));
+        state.stickerSource = (full.lines||[]).filter(ln => ln.status !== 'hold')
+          .map(ln => {
+            const q = Number(ln.received_qty != null ? ln.received_qty : ln.qty || 0);
+            return {bcode: ln.bcode, qty: Math.max(1, Math.round(q||1)), descr: ln.descr||'', selected:true};
+          })
+          .filter(ln => Number(ln.qty)>0);
         setTab('stickers');
       }catch(err){ showBanner(err.message||String(err), true); }
     };
@@ -580,6 +722,8 @@ el('btnConfirm').onclick = ()=> confirmDraft();
 el('btnToStickers').onclick = ()=> setTab('stickers');
 el('btnHistory').onclick = ()=> loadHistory().catch(e=> showBanner(e.message, true));
 el('btnIssues').onclick = ()=> loadIssues().catch(e=> showBanner(e.message, true));
+el('btnCreditNotes').onclick = ()=> loadCreditNotes().catch(e=> showBanner(e.message, true));
+el('cnStatusFilter').onchange = ()=> loadCreditNotes().catch(e=> showBanner(e.message, true));
 el('btnPreview').onclick = ()=> previewStickers().catch(e=> showBanner(e.message, true));
 el('btnPrintDl').onclick = ()=> printStickers('download').catch(e=> showBanner(e.message, true));
 el('btnPrintLan').onclick = ()=> printStickers('print').catch(e=> showBanner(e.message, true));

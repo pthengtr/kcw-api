@@ -15,6 +15,7 @@ from src.hq_receive.config import get_hq_receive_settings
 from src.hq_receive.docno import bn_prefix, format_bn
 from src.hq_receive.guards import HqReceiveError
 from src.hq_receive.rules import assert_confirmable
+from src.hq_receive.writers.credit_note_pimas import insert_credit_note, plan_credit_note
 from src.transfer.writers._engine import (
     _fetch_icmas_row,
     transfer_write_permission_hint,
@@ -77,6 +78,7 @@ def plan_receive(receipt: dict[str, Any]) -> dict[str, Any]:
         tax = round(before * 0.07, 2)
     net = float(receipt.get("net") or 0) or round(before + tax, 2)
 
+    cn_plan = plan_credit_note(receipt, source_billno="(preview)")
     return {
         "dry_run": True,
         "vendor_acctno": acctno,
@@ -87,6 +89,7 @@ def plan_receive(receipt: dict[str, Any]) -> dict[str, Any]:
         "tax": tax,
         "aftertax": net,
         "lines": lines,
+        "credit_note": cn_plan,
         "write_enabled": get_hq_receive_settings().write_enabled,
     }
 
@@ -105,6 +108,7 @@ def post_vendor_receive(
             "status": "dry_run",
             "kcw_billno": None,
             "pimas_billno": None,
+            "cn_billno": (plan.get("credit_note") or {}).get("prefix"),
             "message": "HQ_RECEIVE_PIMAS_WRITE_ENABLED ยังปิด — ยังไม่เขียน PARTS9",
         }
 
@@ -132,6 +136,12 @@ def post_vendor_receive(
     cashed = "Y" if pay_method in {"cash", "ชำระสด", "สด"} else "N"
     remarks = (str(receipt.get("receive_date") or now.strftime("%d/%m/%y"))[:30])
 
+    cn_billno = None
+    cn_plan = None
+    billno = None
+    before = float(plan["beforetax"])
+    tax = float(plan["tax"])
+    after = float(plan["aftertax"])
     try:
         with engine.begin() as conn:
             # Resolve vendor name from APMAS when missing.
@@ -154,9 +164,6 @@ def post_vendor_receive(
                     raise HqReceiveError("missing_icmas", f"ไม่พบรหัส {bcode} ใน ICMAS")
 
             billno = _next_bn(conn, now)
-            before = float(plan["beforetax"])
-            tax = float(plan["tax"])
-            after = float(plan["aftertax"])
             vat_flag = 1 if tax > 0 else 0
 
             conn.execute(
@@ -281,6 +288,18 @@ def post_vendor_receive(
                             "iclow_id": int(iclow_id),
                         },
                     )
+
+            cn_plan = plan_credit_note(receipt, source_billno=billno)
+            cn_billno = None
+            if cn_plan:
+                cn_billno = insert_credit_note(
+                    conn,
+                    cn_plan,
+                    operator=operator,
+                    billdate=billdate,
+                    billtime=billtime,
+                )
+                cn_plan = {**cn_plan, "cn_billno": cn_billno}
     except HqReceiveError:
         raise
     except (ProgrammingError, DBAPIError) as exc:
@@ -294,6 +313,8 @@ def post_vendor_receive(
         "dry_run": False,
         "kcw_billno": billno,
         "pimas_billno": billno,
+        "cn_billno": cn_billno,
+        "credit_note": cn_plan,
         "vendor_acctno": acctno,
         "line_count": len(plan["lines"]),
         "beforetax": before,

@@ -20,3 +20,15 @@ def format_bn(seq: int, when: date | datetime | None = None) -> str:
     """BN691100001 style — 5-digit sequence, max 15 chars for PIMAS.BILLNO."""
     n = max(1, int(seq))
     return f"{bn_prefix(when)}{n:05d}"
+
+
+def cn_prefix(*, is_vat: bool, when: date | datetime | None = None) -> str:
+    """Purchase credit-note prefix: KCCN (non-VAT) or 7KCCN (VAT temp)."""
+    head = "7KCCN" if is_vat else "KCCN"
+    return f"{head}{buddhist_yymm(when)}-"
+
+
+def format_cn(seq: int, *, is_vat: bool, when: date | datetime | None = None) -> str:
+    """KCCN6911-003 / 7KCCN6911-001 — 3-digit monthly sequence."""
+    n = max(1, int(seq))
+    return f"{cn_prefix(is_vat=is_vat, when=when)}{n:03d}"

@@ -9,15 +9,25 @@ from src.hq_receive import stickers as sticker_svc
 from src.hq_receive.config import get_hq_receive_settings
 from src.hq_receive.guards import HqReceiveError
 from src.hq_receive.iclow_open import list_open_lines, list_open_vendors, search_vendors
-from src.hq_receive.rules import RULES_SUMMARY, totals_mismatch
+from src.hq_receive.rules import (
+    RULES_SUMMARY,
+    VARIANCE_CHANGE_PRODUCT,
+    VARIANCE_ACTIONS,
+    line_bill_qty,
+    line_sticker_qty,
+    totals_mismatch,
+)
+from src.hq_receive.writers.credit_note_pimas import stamp_vendor_cn_doc
 from src.hq_receive.writers.receive_pimas import post_vendor_receive
+from src.transfer.writers._engine import writer_engine_for_branch
 
 
 def _line_amount(line: dict[str, Any]) -> float:
     amount = float(line.get("amount") or 0)
     if amount > 0:
         return amount
-    qty = float(line.get("qty") or 0)
+    # Draft totals follow bill qty (money on the vendor invoice).
+    qty = line_bill_qty(line) if line.get("bill_qty") is not None else float(line.get("qty") or 0)
     cost = float(line.get("cost") or 0)
     discount = float(line.get("discount") or 0)
     return max(0.0, qty * cost - discount)
@@ -26,28 +36,42 @@ def _line_amount(line: dict[str, Any]) -> float:
 def _normalize_lines(lines: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for raw in lines or []:
-        qty = float(raw.get("qty") or 0)
-        if qty <= 0:
+        bill_qty = float(raw["bill_qty"]) if raw.get("bill_qty") is not None else float(raw.get("qty") or 0)
+        if raw.get("received_qty") is not None:
+            received_qty = float(raw.get("received_qty") or 0)
+        else:
+            received_qty = bill_qty
+        if bill_qty <= 0 and received_qty <= 0:
             continue
         status = str(raw.get("status") or "ok").lower()
         if status not in {"ok", "hold", "mismatch"}:
             status = "ok"
+        action = str(raw.get("variance_action") or "").strip().lower() or None
+        if action and action not in VARIANCE_ACTIONS:
+            action = None
+        if action == VARIANCE_CHANGE_PRODUCT:
+            status = "hold"
+            raw = {**raw, "hold_reason": raw.get("hold_reason") or "เปลี่ยนสินค้า"}
         row = {
             "iclow_id": raw.get("iclow_id"),
             "bcode": str(raw.get("bcode") or "").strip(),
             "descr": raw.get("descr") or "",
-            "qty": qty,
+            "bill_qty": bill_qty,
+            "received_qty": received_qty,
+            "qty": bill_qty if bill_qty > 0 else received_qty,
+            "variance_action": action,
             "ui": raw.get("ui") or "",
             "cost": float(raw.get("cost") or 0),
             "discount": float(raw.get("discount") or 0),
-            "amount": _line_amount(raw),
+            "amount": 0.0,
             "po_docno": raw.get("po_docno") or raw.get("hq_po_docno") or "",
             "status": status,
             "hold_reason": raw.get("hold_reason"),
             "force_ok": bool(raw.get("force_ok")),
             "match_score": raw.get("match_score"),
-            "flags": raw.get("flags") or [],
+            "flags": list(raw.get("flags") or []),
         }
+        row["amount"] = _line_amount(row)
         if not row["bcode"] and status != "hold":
             raise HqReceiveError("missing_bcode", "มีรายการที่ไม่มีรหัสสินค้า")
         if not row["bcode"]:
@@ -157,9 +181,6 @@ def confirm_receipt(receipt_id: str, *, actor: str) -> dict[str, Any]:
     if receipt.get("status") not in {"draft", "dry_run"}:
         raise HqReceiveError("already_confirmed", "ใบรับนี้ยืนยันแล้ว")
 
-    invoice_net = receipt.get("invoice_net")
-    if invoice_net is None and receipt.get("notes"):
-        invoice_net = None
     warnings: list[str] = []
     if totals_mismatch(receipt.get("expected_net"), receipt.get("net")):
         warnings.append("ยอดสุทธิในฟอร์มไม่ตรงกับยอดบิลที่ AI อ่านได้")
@@ -171,6 +192,49 @@ def confirm_receipt(receipt_id: str, *, actor: str) -> dict[str, Any]:
     if dry_run and not kcw_billno:
         kcw_billno = "(preview)"
         pimas_billno = "(preview)"
+
+    credit_note_row = None
+    cn_meta = result.get("credit_note")
+    cn_billno = result.get("cn_billno") or (cn_meta or {}).get("cn_billno")
+    if cn_meta and cn_billno and not dry_run:
+        try:
+            credit_note_row = db.save_credit_note(
+                {
+                    "receipt_id": receipt_id,
+                    "source_pimas_billno": str(pimas_billno),
+                    "cn_billno": str(cn_billno),
+                    "vendor_acctno": receipt.get("vendor_acctno"),
+                    "vendor_name": receipt.get("vendor_name"),
+                    "is_vat": bool(cn_meta.get("is_vat")),
+                    "status": cn_meta.get("status") or (
+                        "awaiting_vendor_doc" if cn_meta.get("is_vat") else "completed"
+                    ),
+                    "beforetax": cn_meta.get("beforetax"),
+                    "tax": cn_meta.get("tax"),
+                    "aftertax": cn_meta.get("aftertax"),
+                    "lines": cn_meta.get("lines") or [],
+                    "created_by": actor,
+                }
+            )
+            if credit_note_row.get("status") == "awaiting_vendor_doc":
+                warnings.append(
+                    f"สร้างใบลดหนี้ชั่วคราว {cn_billno} — กรอกเลขที่/วันที่จากเจ้าหนี้ที่แท็บใบลดหนี้"
+                )
+            else:
+                warnings.append(f"สร้างใบลดหนี้ {cn_billno}")
+        except HqReceiveError as exc:
+            if exc.code == "credit_note_duplicate":
+                credit_note_row = db.find_active_credit_note_for_source(str(pimas_billno))
+                warnings.append(exc.message)
+            else:
+                raise
+    elif cn_meta and dry_run:
+        warnings.append(
+            "Dry-run: จะสร้างใบลดหนี้ "
+            + str((cn_meta.get("prefix") or "") + "…")
+            + (" (รอเอกสาร VAT)" if cn_meta.get("is_vat") else "")
+        )
+
     saved = db.mark_confirmed(
         receipt_id,
         kcw_billno=str(kcw_billno),
@@ -178,11 +242,60 @@ def confirm_receipt(receipt_id: str, *, actor: str) -> dict[str, Any]:
         actor=actor,
         dry_run=dry_run,
     )
+    sticker_lines = [
+        {
+            "bcode": ln.get("bcode"),
+            "qty": line_sticker_qty(ln),
+            "descr": ln.get("descr") or "",
+        }
+        for ln in (saved.get("lines") or receipt.get("lines") or [])
+        if str(ln.get("status") or "ok").lower() != "hold" and line_sticker_qty(ln) > 0
+    ]
     return {
         "receipt": saved,
         "write": result,
+        "credit_note": credit_note_row,
+        "sticker_lines": sticker_lines,
         "write_enabled": get_hq_receive_settings().write_enabled,
         "warnings": warnings,
+    }
+
+
+def credit_notes_payload(*, status: str = "", limit: int = 80) -> dict[str, Any]:
+    return {"credit_notes": db.list_credit_notes(status=status, limit=limit)}
+
+
+def fill_vendor_credit_note(
+    credit_note_id: str,
+    *,
+    vendor_cn_no: str,
+    vendor_cn_date: str | None,
+    actor: str,
+) -> dict[str, Any]:
+    row = db.get_credit_note(credit_note_id)
+    note = str(vendor_cn_no or "").strip()
+    if not note:
+        raise HqReceiveError("missing_vendor_cn", "กรอกเลขที่ใบลดหนี้จากเจ้าหนี้")
+    settings = get_hq_receive_settings()
+    if settings.write_enabled:
+        engine = writer_engine_for_branch("hq")
+        with engine.begin() as conn:
+            stamp_vendor_cn_doc(
+                conn,
+                cn_billno=str(row.get("cn_billno") or ""),
+                vendor_cn_no=note,
+                vendor_cn_date=vendor_cn_date,
+            )
+    saved = db.complete_credit_note(
+        credit_note_id,
+        vendor_cn_no=note,
+        vendor_cn_date=vendor_cn_date,
+        actor=actor,
+    )
+    return {
+        "credit_note": saved,
+        "write_enabled": settings.write_enabled,
+        "parts9_updated": bool(settings.write_enabled),
     }
 
 
