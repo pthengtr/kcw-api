@@ -13,8 +13,11 @@ from src.to_bill.kss import LiveBill, LiveLine, like_prefix
 from src.to_bill.net import is_private_lan
 from src.to_bill.kinds import list_kind, parse_pay_via, pay_via_label
 from src.to_bill.numbering import buddhist_yymm, format_docno, month_bounds, recent_months
+from src.to_bill.errors import ToBillError
 from src.to_bill.service import changed_from_kss
 from src.to_bill.sheet import build_sheet
+from src.to_bill.signers import assert_can_issue, can_issue, display_name, match_signer
+from src.to_bill.signers import APPROVER, ISSUER
 from src.handlers.to_bill_entry import is_to_bill_command
 from src.handlers.services_menu import services_menu_handlers_match
 
@@ -188,12 +191,33 @@ def test_sheet_names_the_tad_and_buyer():
     assert html.count("ผู้ออกเอกสาร (ผู้ขาย)") == 2
     assert html.count("ผู้อนุมัติเอกสาร (ผู้ขาย)") == 2
     assert html.count("ผู้รับเอกสาร (ลูกค้า)") == 2
+    assert html.count(display_name(ISSUER)) == 2
+    assert html.count(display_name(APPROVER)) == 2
+    assert "data:image/jpeg;base64," in html
     assert "ลายมือชื่อ" in html
     assert "TAD6910-014" in html
     assert "บริษัท ทดสอบ จำกัด" in html
     assert "1234567890123" in html
     assert "0105537000000" in html
     assert "class='void'" not in html
+
+
+def test_only_aon_and_may_may_issue():
+    assert can_issue("อ้อน")
+    assert can_issue("เมย์ KCW")
+    assert can_issue("มัญชุนันท์ คำลา")
+    assert can_issue("ปิยะนุช")
+    assert match_signer("อ้อน") is ISSUER
+    assert match_signer("May") is APPROVER
+    assert not can_issue("LAN")
+    assert not can_issue("Pannawit")
+    try:
+        assert_can_issue("someone else")
+    except ToBillError as exc:
+        assert exc.code == "not_allowed"
+        assert exc.status == 403
+    else:
+        raise AssertionError("expected not_allowed")
 
 
 def test_receipt_sheet_names_payment():

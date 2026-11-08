@@ -15,6 +15,7 @@ from src.to_bill.config import get_to_bill_settings
 from src.to_bill.errors import ToBillError
 from src.to_bill.kinds import list_kind, normalize_kind, parse_pay_via, series_for
 from src.to_bill.kss import LiveBill, load_tad, search_tad
+from src.to_bill.signers import assert_can_issue, can_issue
 from src.to_bill import db
 
 
@@ -59,13 +60,14 @@ def _seller_ready() -> bool:
     return len(usable_tax_id(get_to_bill_settings().seller_tax_id)) == 13
 
 
-def _decorate(row: dict, live: LiveBill | None) -> dict:
+def _decorate(row: dict, live: LiveBill | None, *, actor: str = "") -> dict:
     from src.to_bill.sheet import build_sheet
 
     out = dict(row)
     out["generic_name"] = is_generic_party(str(row.get("acctname_kss") or ""))
     out["shop_label"] = shop_label(row.get("acctname_kss"), row.get("acctno"))
     out["seller_ready"] = _seller_ready()
+    out["can_issue"] = can_issue(actor)
     status = row.get("status")
     if status == "draft":
         receipt = row.get("doc_kind") == "rvo"
@@ -125,27 +127,27 @@ def open_draft(billno: str, actor: str, kind: str = "to") -> dict:
     existing = db.find_open(exact, doc_kind)
     if existing:
         live = _load_live(exact)
-        decorated = _decorate(existing, live)
+        decorated = _decorate(existing, live, actor=actor)
         decorated["generic_name"] = is_generic_party(str(existing.get("acctname_kss") or ""))
         return decorated
     if doc_kind == "rvo":
         created = db.create_receipt_draft(exact, actor)
-        return _decorate(created, _load_live(exact))
+        return _decorate(created, _load_live(exact), actor=actor)
     live = load_tad(exact)
     if not live:
         raise ToBillError("missing", "ไม่พบบิล TAD ใน KSS", status=404)
     if live.canceled:
         raise ToBillError("canceled", "บิลนี้ถูกยกเลิกใน KSS จึงออกใบกำกับไม่ได้")
     created = db.create_draft(live, actor)
-    return _decorate(created, live)
+    return _decorate(created, live, actor=actor)
 
 
-def get_one(invoice_id: str) -> dict:
+def get_one(invoice_id: str, actor: str = "") -> dict:
     row = db.get_invoice(invoice_id)
     if not row:
         raise ToBillError("missing", "ไม่พบใบเต็ม", status=404)
     live = _load_live(str(row.get("tad_billno") or ""))
-    return _decorate(row, live)
+    return _decorate(row, live, actor=actor)
 
 
 def refresh(invoice_id: str, actor: str) -> dict:
@@ -156,12 +158,12 @@ def refresh(invoice_id: str, actor: str) -> dict:
         raise ToBillError("not_draft", "ดึงใหม่ได้เฉพาะฉบับร่าง")
     if current.get("doc_kind") == "rvo":
         saved = db.refresh_receipt(invoice_id, actor)
-        return _decorate(saved, _load_live(str(saved.get("tad_billno") or "")))
+        return _decorate(saved, _load_live(str(saved.get("tad_billno") or "")), actor=actor)
     live = load_tad(str(current.get("tad_billno") or ""))
     if not live:
         raise ToBillError("missing", "ไม่พบบิล TAD ใน KSS", status=404)
     saved = db.refresh_draft(invoice_id, live, actor)
-    return _decorate(saved, live)
+    return _decorate(saved, live, actor=actor)
 
 
 def _pay_via(payload: dict) -> str | None:
@@ -171,17 +173,18 @@ def _pay_via(payload: dict) -> str | None:
         raise ToBillError("pay_via", str(exc), status=400) from exc
 
 
-def save(invoice_id: str, payload: dict) -> dict:
+def save(invoice_id: str, payload: dict, actor: str = "") -> dict:
     try:
         buyer = parse_buyer(payload)
     except ValueError as exc:
         raise ToBillError("buyer", str(exc), status=400) from exc
     saved = db.save_buyer(invoice_id, buyer, _pay_via(payload))
     live = _load_live(str(saved.get("tad_billno") or ""))
-    return _decorate(saved, live)
+    return _decorate(saved, live, actor=actor)
 
 
 def issue(invoice_id: str, payload: dict, actor: str) -> dict:
+    assert_can_issue(actor)
     try:
         buyer = parse_buyer(payload)
     except ValueError as exc:
@@ -215,7 +218,7 @@ def issue(invoice_id: str, payload: dict, actor: str) -> dict:
             pay_via=pay_via,
             bill=None,
         )
-        return _decorate(issued, _load_live(str(issued.get("tad_billno") or "")))
+        return _decorate(issued, _load_live(str(issued.get("tad_billno") or "")), actor=actor)
     live = load_tad(str(current.get("tad_billno") or ""))
     if not live:
         raise ToBillError("missing", "ไม่พบบิล TAD ใน KSS", status=404)
@@ -234,7 +237,7 @@ def issue(invoice_id: str, payload: dict, actor: str) -> dict:
         pay_via=None,
         bill=live,
     )
-    return _decorate(issued, live)
+    return _decorate(issued, live, actor=actor)
 
 
 def void(invoice_id: str, reason: str, actor: str) -> dict:
@@ -244,7 +247,7 @@ def void(invoice_id: str, reason: str, actor: str) -> dict:
     if len(text) > 300:
         raise ToBillError("reason", "เหตุผลยาวเกินไป", status=400)
     saved = db.void_invoice(invoice_id, text, actor)
-    return _decorate(saved, _load_live(str(saved.get("tad_billno") or "")))
+    return _decorate(saved, _load_live(str(saved.get("tad_billno") or "")), actor=actor)
 
 
 def printed(invoice_id: str, actor: str) -> None:
