@@ -424,6 +424,75 @@ def dismiss_waiting(iclow_id: int) -> dict[str, Any]:
     }
 
 
+def cancel_waiting(iclow_id: int) -> dict[str, Any]:
+    """Cancel one รอสั่ง ICLOW row without touching QTYMIN.
+
+    Use when HQ on-hand has recovered above the low-stock point: the waiting
+    row is stale, but the reorder point should stay so a later low-stock pass
+    can open a new row. Unlike dismiss_waiting, this does not set QTYMIN = -1.
+    """
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    if iclow_n <= 0:
+        raise HqPoError("missing", "ไม่พบแถว ICLOW")
+    bcode = ""
+    try:
+        engine = _engine()
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1
+                      CONVERT(bigint, ID) AS ID,
+                      LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
+                      LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) AS ORDERED,
+                      LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(RECEIVED,'')))) AS RECEIVED,
+                      LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) AS CANCELED
+                    FROM dbo.ICLOW
+                    WHERE CONVERT(bigint, ID) = :iclow_id
+                    """
+                ),
+                {"iclow_id": iclow_n},
+            ).mappings().first()
+            if not row:
+                raise HqPoError("missing", "ไม่พบแถว ICLOW")
+            ordered = str(row.get("ORDERED") or "").strip().upper()
+            received = str(row.get("RECEIVED") or "").strip().upper()
+            canceled_flag = str(row.get("CANCELED") or "").strip().upper()
+            bcode = str(row.get("BCODE") or "").strip()
+            if canceled_flag == "Y":
+                raise HqPoError("missing", "รายการนี้ถูกยกเลิกแล้ว")
+            if received == "Y":
+                raise HqPoError("already_received", "รับของแล้ว ยกเลิกรายการรอสั่งไม่ได้")
+            if ordered == "Y":
+                raise HqPoError("already_ordered", "รายการนี้อยู่ในค้างรับ ไม่ใช่รายการรอสั่ง")
+            result = conn.execute(
+                text(
+                    f"""
+                    UPDATE dbo.ICLOW
+                    SET CANCELED = 'Y'
+                    WHERE CONVERT(bigint, ID) = :iclow_id
+                      AND {_ORDERED_N}
+                      AND {_RECEIVED_N}
+                      AND {_NOT_CANCELED}
+                    """
+                ),
+                {"iclow_id": iclow_n},
+            )
+            if result.rowcount != 1:
+                raise HqPoError("stamp_conflict", "ยกเลิกไม่ได้ เพราะแถว ICLOW เปลี่ยนไปแล้ว")
+    except HqPoError:
+        raise
+    except Exception as exc:
+        denied = _permission(exc)
+        if denied:
+            raise denied from exc
+        raise HqPoError("iclow_update_failed", str(exc)) from exc
+    return {"iclow_id": iclow_n, "bcode": bcode, "canceled": True}
+
+
 def rewrite_waiting_vendor(iclow_id: int, vendor: str) -> None:
     """Put the original APMAS account back on a waiting row. Ordered rows stay put."""
     try:

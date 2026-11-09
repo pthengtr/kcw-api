@@ -59,6 +59,7 @@ from src.hq_po.insight import (
 from src.hq_po.stamp import (
     cancel_created,
     cancel_incoming,
+    cancel_waiting as cancel_waiting_iclow,
     dismiss_waiting as dismiss_waiting_iclow,
     insert_ordered_lines,
     release_to_waiting,
@@ -236,6 +237,17 @@ def dismiss_waiting_line(iclow_id: int) -> dict[str, Any]:
             "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่นำออกจากรอสั่ง",
         )
     return dismiss_waiting_iclow(iclow_id)
+
+
+def cancel_waiting_line(iclow_id: int) -> dict[str, Any]:
+    """Cancel one รอสั่ง ICLOW row. Leaves QTYMIN alone for later low-stock passes."""
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่ยกเลิกรายการรอสั่ง",
+        )
+    return cancel_waiting_iclow(iclow_id)
 
 
 def update_product_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:

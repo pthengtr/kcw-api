@@ -11,6 +11,7 @@ from src.hq_po.guards import HqPoError
 from src.hq_po.service import (
     cancel_order,
     cancel_order_line,
+    cancel_waiting_line,
     clear_named_block,
     clear_product_unavailable,
     confirm_order,
@@ -404,6 +405,17 @@ def api_dismiss_waiting(iclow_id: int, request: Request):
         return err
     try:
         return dismiss_waiting_line(iclow_id)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.post("/api/waiting/{iclow_id}/cancel")
+def api_cancel_waiting(iclow_id: int, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return cancel_waiting_line(iclow_id)
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "missing" else 409)
 

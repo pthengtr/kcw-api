@@ -1123,6 +1123,54 @@ def test_dismiss_waiting_sets_low_stock_and_cancels_open_iclow(monkeypatch):
     assert all(params["bcode"] == "A1" for query, params in conn.sql if "UPDATE" in query)
 
 
+def test_cancel_waiting_marks_only_that_iclow_row(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _DismissConn(
+        {"ID": 7, "BCODE": "A1", "ORDERED": "N", "RECEIVED": "N", "CANCELED": "N"}
+    )
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    result = stamp.cancel_waiting(7)
+    assert result == {"iclow_id": 7, "bcode": "A1", "canceled": True}
+    updates = [query for query, params in conn.sql if "UPDATE" in query]
+    assert len(updates) == 1
+    assert "CANCELED = 'Y'" in updates[0]
+    assert "ICMAS" not in updates[0]
+    assert "QTYMIN" not in updates[0]
+    assert conn.sql[-1][1] == {"iclow_id": 7}
+
+
+def test_cancel_waiting_refuses_a_line_already_ordered(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _DismissConn(
+        {"ID": 7, "BCODE": "A1", "ORDERED": "Y", "RECEIVED": "N", "CANCELED": "N"}
+    )
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    try:
+        stamp.cancel_waiting(7)
+    except HqPoError as exc:
+        assert exc.code == "already_ordered"
+    else:
+        raise AssertionError("expected already_ordered")
+    assert not any("UPDATE" in query for query, _params in conn.sql)
+
+
+def test_cancel_waiting_line_requires_the_stamp_flag(monkeypatch):
+    from src.hq_po import service
+
+    class _Settings:
+        stamp_enabled = False
+
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: _Settings())
+    try:
+        service.cancel_waiting_line(7)
+    except HqPoError as exc:
+        assert exc.code == "stamp_disabled"
+    else:
+        raise AssertionError("expected stamp_disabled")
+
+
 class _QtyminConn:
     def __init__(self, *, icmas_count=1, after=None):
         self.icmas_count = icmas_count
@@ -1221,6 +1269,11 @@ def test_page_confirms_before_removing_a_waiting_line():
     assert "นำออก" in html
     assert "ตั้งสต็อกต่ำเป็น -1" in html
     assert "ไม่ขึ้นในรายการรอสั่งอีก" in html
+    assert "data-cancel-waiting" in html
+    assert "cancelWaiting" in html
+    assert '+ "/cancel"' in html
+    assert "HQ ถึง L แล้ว" in html
+    assert "stockRecovered" in html
     assert "/hq-po/api/waiting/" in html
     assert 'row.source === "iclow"' in html
     assert "ต้องเลือกเจ้าหนี้" in html
