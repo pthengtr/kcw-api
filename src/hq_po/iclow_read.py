@@ -479,6 +479,8 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
                   LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) AS MCODE,
                   LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI1,'')))) AS UI1,
                   LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI2,'')))) AS UI2,
+                  LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) AS LOCATION1,
+                  LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CODE1,'')))) AS CODE1,
                   MTP2,
                   PRICE1, COSTLAST, COSTNET
                 FROM dbo.ICMAS
@@ -497,6 +499,8 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
                     "mcode": str(row.get("MCODE") or "").strip(),
                     "ui": str(row.get("UI1") or "").strip(),
                     "ui2": str(row.get("UI2") or "").strip(),
+                    "location1": str(row.get("LOCATION1") or "").strip(),
+                    "code1": str(row.get("CODE1") or "").strip(),
                     "mtp2": row.get("MTP2"),
                     "price1": row.get("PRICE1"),
                     "costlast": row.get("COSTLAST"),

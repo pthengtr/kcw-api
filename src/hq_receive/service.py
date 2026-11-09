@@ -8,7 +8,7 @@ from src.hq_receive import invoice_ai
 from src.hq_receive import stickers as sticker_svc
 from src.hq_receive.config import get_hq_receive_settings
 from src.hq_receive.guards import HqReceiveError
-from src.hq_receive.icmas_create import create_product
+from src.hq_receive.icmas_create import create_product, update_product
 from src.hq_receive.iclow_open import (
     list_open_lines,
     list_open_pos,
@@ -134,6 +134,13 @@ def open_pos_payload(*, acctno: str = "") -> dict[str, Any]:
 
 def create_product_payload(payload: dict[str, Any], *, actor: str) -> dict[str, Any]:
     product = create_product(payload, actor=actor)
+    return {"product": product}
+
+
+def update_product_payload(
+    bcode: str, payload: dict[str, Any], *, actor: str
+) -> dict[str, Any]:
+    product = update_product(bcode, payload, actor=actor)
     return {"product": product}
 
 

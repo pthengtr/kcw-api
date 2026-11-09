@@ -68,6 +68,16 @@ dialog{border:1px solid var(--line);border-radius:14px;padding:16px;max-width:28
 dialog::backdrop{background:rgba(15,23,42,.35)}
 dialog h3{margin:0 0 10px;font-size:16px}
 .num input[type=text]{width:5.5rem;text-align:right;font:inherit;border:1px solid #d0d5dd;border-radius:8px;padding:6px 8px}
+.thumb{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block;flex:none}
+.thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
+.po-lines{margin:8px 0 0 28px;display:grid;gap:6px}
+.po-line{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid #eef2f7;border-radius:10px;background:#f8fafc;font-size:12px}
+.po-line .grow{flex:1;min-width:0}
+.po-line .bits{color:var(--muted);margin-top:2px;line-height:1.35}
+.linkish{background:transparent;border:0;color:#166534;padding:0;font:inherit;font-weight:600;cursor:pointer;text-decoration:underline}
+#photoOverlay{position:fixed;inset:0;z-index:40;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+#photoOverlay[hidden]{display:none}
+#photoOverlay img{max-width:min(92vw,28rem);max-height:80vh;border-radius:12px;background:#fff}
 @media (max-width:720px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -100,7 +110,7 @@ dialog h3{margin:0 0 10px;font-size:16px}
         <strong id="vendorTitle" style="flex:1"></strong>
         <button type="button" class="ghost" id="btnReloadPos">รีเฟรช PO</button>
       </div>
-      <p class="meta">เลือก PO ที่ตรงกับบิล (เลือกได้หลายใบ) แล้วดึงรายการค้างรับมาตรวจ</p>
+      <p class="meta">เลือก PO ที่ตรงกับบิล (เลือกได้หลายใบ) — ดูรายการสินค้าในแต่ละใบด้านล่าง แล้วดึงรายการค้างรับมาตรวจ</p>
       <div id="openPos" class="list"></div>
       <div class="bar" style="margin-top:10px">
         <button type="button" id="btnUsePos" disabled>ดึงรายการจาก PO ที่เลือก</button>
@@ -126,7 +136,10 @@ dialog h3{margin:0 0 10px;font-size:16px}
         <label class="field"><span>รุ่น</span><input id="npModel"/></label>
         <label class="field"><span>เบอร์แท้</span><input id="npPcode"/></label>
         <label class="field"><span>เบอร์โรงงาน</span><input id="npMcode"/></label>
-        <label class="field"><span>ต้นทุน</span><input id="npCost" inputmode="decimal" value="0"/></label>
+        <label class="field"><span>ที่เก็บ</span><input id="npLoc1" placeholder="LOCATION1" autocomplete="off"/></label>
+        <label class="field"><span>รหัสคุม</span><input id="npCode1" maxlength="1" placeholder="เช่น I / C / O" autocomplete="off"/></label>
+        <label class="field"><span>ราคา</span><input id="npPrice" inputmode="decimal" value="0"/></label>
+        <label class="field"><span>ค่า</span><input id="npCost" inputmode="decimal" value="0"/></label>
         <label class="field"><span>จุดสั่ง (L)</span><input id="npQtymin" inputmode="decimal" value="0"/></label>
       </div>
       <div id="npErr" class="err" hidden></div>
@@ -135,6 +148,29 @@ dialog h3{margin:0 0 10px;font-size:16px}
         <button type="button" class="ghost" id="btnCancelProduct">ยกเลิก</button>
       </div>
     </dialog>
+
+    <dialog id="editProductDlg">
+      <h3>แก้ไขข้อมูลสินค้า</h3>
+      <p class="meta" id="epBcodeLabel" style="margin:0 0 8px"></p>
+      <div class="grid">
+        <label class="field" style="grid-column:1/-1"><span>ชื่อสินค้า *</span><input id="epDescr"/></label>
+        <label class="field"><span>ยี่ห้อ</span><input id="epBrand"/></label>
+        <label class="field"><span>รุ่น</span><input id="epModel"/></label>
+        <label class="field"><span>เบอร์แท้</span><input id="epPcode"/></label>
+        <label class="field"><span>เบอร์โรงงาน</span><input id="epMcode"/></label>
+        <label class="field"><span>ที่เก็บ</span><input id="epLoc1"/></label>
+        <label class="field"><span>รหัสคุม</span><input id="epCode1" maxlength="1"/></label>
+        <label class="field"><span>ราคา</span><input id="epPrice" inputmode="decimal"/></label>
+        <label class="field"><span>ค่า</span><input id="epCost" inputmode="decimal"/></label>
+      </div>
+      <div id="epErr" class="err" hidden></div>
+      <div class="bar" style="margin-top:12px">
+        <button type="button" id="btnSaveProduct">บันทึก</button>
+        <button type="button" class="ghost" id="btnCancelEditProduct">ยกเลิก</button>
+      </div>
+    </dialog>
+
+    <div id="photoOverlay" hidden><img id="photoImg" alt="รูปสินค้า"/></div>
 
     <div class="panel" id="draftPanel" hidden>
       <div class="grid">
@@ -242,7 +278,35 @@ const state = {
   extractionId: null,
   pimasBillno: null,
   stickerSource: [],
+  editIdx: null,
 };
+
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function thumbHtml(row){
+  if(!row || !row.photo) return '';
+  const label = String(row.bcode || '').trim();
+  return `<button type="button" class="thumb-btn" data-photo="${esc(row.photo)}" aria-label="ดูรูป${label ? ' ' + esc(label) : ''}"><img class="thumb" alt="" loading="lazy" src="${esc(row.photo)}" onerror="this.closest('button').remove()"/></button>`;
+}
+function openPhoto(src){
+  const url = String(src || '').trim();
+  if(!url) return;
+  el('photoImg').src = url;
+  el('photoOverlay').hidden = false;
+}
+function closePhoto(){
+  el('photoOverlay').hidden = true;
+  el('photoImg').removeAttribute('src');
+}
+function productBits(row){
+  const bits = [];
+  if(row.model) bits.push('รุ่น ' + row.model);
+  if(row.brand) bits.push('ยี่ห้อ ' + row.brand);
+  if(row.pcode) bits.push('เบอร์แท้ ' + row.pcode);
+  if(row.mcode) bits.push('เบอร์โรงงาน ' + row.mcode);
+  return bits.join(' · ');
+}
 
 function money(n){ return Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function el(id){ return document.getElementById(id); }
@@ -315,6 +379,22 @@ async function selectVendor(v){
   await loadVendors();
 }
 
+function renderPoLines(po){
+  const lines = po.lines || [];
+  if(!lines.length) return '<div class="meta" style="margin:6px 0 0 28px">ไม่มีรายการใน PO นี้</div>';
+  return `<div class="po-lines">${lines.map(ln => {
+    const bits = productBits(ln);
+    const qty = Number(ln.qty||0);
+    return `<div class="po-line">${thumbHtml(ln)}
+      <div class="grow">
+        <div><strong>${esc(ln.bcode||'')}</strong> ${esc(ln.descr||'')}</div>
+        ${bits ? `<div class="bits">${esc(bits)}</div>` : ''}
+        <div class="bits">ค้าง ${qty.toLocaleString('th-TH')}${ln.ui ? ' ' + esc(ln.ui) : ''}</div>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 async function loadOpenPos(){
   if(!state.vendor) return;
   const data = await api('/open-pos?acctno=' + encodeURIComponent(state.vendor.acctno));
@@ -323,17 +403,23 @@ async function loadOpenPos(){
   box.innerHTML = '';
   state.openPos.forEach(po=>{
     const id = String(po.po_docno || '');
-    const row = document.createElement('label');
+    const row = document.createElement('div');
     row.className = 'row' + (state.selectedPos.has(id) ? ' on' : '');
-    row.innerHTML = `<input type="checkbox" ${state.selectedPos.has(id)?'checked':''}/>
-      <div style="flex:1"><div><strong>${id}</strong></div>
-      <div class="meta">ค้างรับ ${po.line_count||0} รายการ · ${(po.qty_total||0).toLocaleString('th-TH')} ชิ้น${po.docdate ? ' · ' + po.docdate : ''}</div></div>`;
-    const cb = row.querySelector('input');
+    row.innerHTML = `<label style="display:flex;gap:10px;align-items:flex-start;flex:1;cursor:pointer">
+        <input type="checkbox" ${state.selectedPos.has(id)?'checked':''}/>
+        <div style="flex:1"><div><strong>${esc(id)}</strong></div>
+        <div class="meta">ค้างรับ ${po.line_count||0} รายการ · ${(po.qty_total||0).toLocaleString('th-TH')} ชิ้น${po.docdate ? ' · ' + esc(po.docdate) : ''}</div></div>
+      </label>
+      ${renderPoLines(po)}`;
+    const cb = row.querySelector('input[type=checkbox]');
     cb.onchange = ()=>{
       if(cb.checked) state.selectedPos.add(id); else state.selectedPos.delete(id);
       row.classList.toggle('on', cb.checked);
       el('btnUsePos').disabled = state.selectedPos.size === 0;
     };
+    row.querySelectorAll('button[data-photo]').forEach(btn=>{
+      btn.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); openPhoto(btn.dataset.photo); };
+    });
     box.appendChild(row);
   });
   el('btnUsePos').disabled = state.selectedPos.size === 0;
@@ -345,6 +431,10 @@ function lineFromOpen(ln){
   const cost = Number(ln.cost || ln.costlast || 0);
   return {
     iclow_id: ln.iclow_id, bcode: ln.bcode, descr: ln.descr || '',
+    brand: ln.brand || '', model: ln.model || '',
+    pcode: ln.pcode || '', mcode: ln.mcode || '',
+    photo: ln.photo || '', location1: ln.location1 || '', code1: ln.code1 || '',
+    price1: ln.price1 != null ? Number(ln.price1) : null,
     qty: q, bill_qty: q, received_qty: q, open_qty: q, variance_action: null,
     ui: ln.ui || '', cost: cost, discount: 0, amount: 0,
     po_docno: ln.hq_po_docno || ln.docno || '', status: 'ok', flags: []
@@ -377,6 +467,9 @@ function openNewProductDlg(){
   el('npModel').value = '';
   el('npPcode').value = '';
   el('npMcode').value = '';
+  el('npLoc1').value = '';
+  el('npCode1').value = '';
+  el('npPrice').value = '0';
   el('npCost').value = '0';
   el('npQtymin').value = '0';
   el('newProductDlg').showModal();
@@ -393,6 +486,9 @@ async function createNewProduct(){
     model: el('npModel').value.trim(),
     pcode: el('npPcode').value.trim(),
     mcode: el('npMcode').value.trim(),
+    location1: el('npLoc1').value.trim(),
+    code1: el('npCode1').value.trim().toUpperCase(),
+    price1: Number(String(el('npPrice').value||'0').replace(/,/g,'')) || 0,
     cost: Number(String(el('npCost').value||'0').replace(/,/g,'')) || 0,
     qtymin: Number(String(el('npQtymin').value||'0').replace(/,/g,'')) || 0,
   };
@@ -402,6 +498,10 @@ async function createNewProduct(){
     const cost = Number(p.cost || body.cost || 0);
     state.draftLines.push({
       iclow_id: null, bcode: p.bcode, descr: p.descr || body.descr,
+      brand: p.brand || body.brand, model: p.model || body.model,
+      pcode: p.pcode || body.pcode, mcode: p.mcode || body.mcode,
+      location1: p.location1 || body.location1, code1: p.code1 || body.code1,
+      photo: '', price1: Number(p.price1 || body.price1 || 0) || null,
       qty: 1, bill_qty: 1, received_qty: 1, open_qty: null, variance_action: null,
       ui: p.ui || body.ui, cost: cost, discount: 0, amount: cost,
       po_docno: '', status: 'ok', flags: ['new_product']
@@ -412,6 +512,66 @@ async function createNewProduct(){
   }catch(e){
     el('npErr').hidden = false;
     el('npErr').textContent = e.message || String(e);
+  }
+}
+
+function openEditProduct(idx){
+  const ln = state.draftLines[idx];
+  if(!ln || !ln.bcode){ showBanner('ไม่มีรหัสสินค้า', true); return; }
+  state.editIdx = idx;
+  el('epErr').hidden = true;
+  el('epBcodeLabel').textContent = 'รหัส ' + ln.bcode;
+  el('epDescr').value = ln.descr || '';
+  el('epBrand').value = ln.brand || '';
+  el('epModel').value = ln.model || '';
+  el('epPcode').value = ln.pcode || '';
+  el('epMcode').value = ln.mcode || '';
+  el('epLoc1').value = ln.location1 || '';
+  el('epCode1').value = ln.code1 || '';
+  el('epPrice').value = ln.price1 != null && ln.price1 !== '' ? String(ln.price1) : '';
+  el('epCost').value = ln.cost != null && ln.cost !== '' ? String(ln.cost) : '';
+  el('editProductDlg').showModal();
+}
+
+async function saveEditProduct(){
+  el('epErr').hidden = true;
+  const idx = state.editIdx;
+  const ln = state.draftLines[idx];
+  if(ln == null){ el('editProductDlg').close(); return; }
+  const body = {
+    descr: el('epDescr').value.trim(),
+    brand: el('epBrand').value.trim(),
+    model: el('epModel').value.trim(),
+    pcode: el('epPcode').value.trim(),
+    mcode: el('epMcode').value.trim(),
+    location1: el('epLoc1').value.trim(),
+    code1: el('epCode1').value.trim().toUpperCase(),
+    price1: Number(String(el('epPrice').value||'0').replace(/,/g,'')) || 0,
+    cost: Number(String(el('epCost').value||'0').replace(/,/g,'')) || 0,
+  };
+  try{
+    const data = await api('/products/' + encodeURIComponent(ln.bcode), {
+      method:'PUT', body: JSON.stringify(body)
+    });
+    const p = data.product || {};
+    ln.descr = p.descr || body.descr;
+    ln.brand = p.brand != null ? p.brand : body.brand;
+    ln.model = p.model != null ? p.model : body.model;
+    ln.pcode = p.pcode != null ? p.pcode : body.pcode;
+    ln.mcode = p.mcode != null ? p.mcode : body.mcode;
+    ln.location1 = p.location1 != null ? p.location1 : body.location1;
+    ln.code1 = p.code1 != null ? p.code1 : body.code1;
+    if(p.price1 != null) ln.price1 = Number(p.price1);
+    else ln.price1 = body.price1;
+    if(p.cost != null) ln.cost = Number(p.cost);
+    else ln.cost = body.cost;
+    el('editProductDlg').close();
+    state.editIdx = null;
+    renderDraft();
+    showBanner('อัปเดต ' + ln.bcode + ' ในระบบแล้ว');
+  }catch(e){
+    el('epErr').hidden = false;
+    el('epErr').textContent = e.message || String(e);
   }
 }
 
@@ -480,11 +640,21 @@ function renderDraft(){
     const tr = document.createElement('tr');
     const st = ln.status || 'ok';
     const costText = (ln.cost == null || ln.cost === '') ? '' : String(ln.cost);
-    tr.innerHTML = `<td>${ln.bcode}<div class="meta">${ln.po_docno||''}${ln.flags&&ln.flags.includes('new_product')?' · สินค้าใหม่':''}${ln.open_qty!=null?' · ค้าง '+ln.open_qty:''}</div></td>
-      <td>${ln.descr||''}</td>
+    const bits = productBits(ln);
+    tr.innerHTML = `<td>
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          ${thumbHtml(ln)}
+          <div><strong>${esc(ln.bcode||'')}</strong>
+            <div class="meta">${esc(ln.po_docno||'')}${ln.flags&&ln.flags.includes('new_product')?' · สินค้าใหม่':''}${ln.open_qty!=null?' · ค้าง '+ln.open_qty:''}</div>
+          </div>
+        </div>
+      </td>
+      <td>${esc(ln.descr||'')}${bits?`<div class="meta">${esc(bits)}</div>`:''}
+        <div style="margin-top:4px"><button type="button" class="linkish" data-edit="${idx}">แก้ไข</button></div>
+      </td>
       <td class="num"><input data-k="bill_qty" data-i="${idx}" type="text" inputmode="decimal" value="${ln.bill_qty}"/></td>
       <td class="num"><input data-k="received_qty" data-i="${idx}" type="text" inputmode="decimal" value="${ln.received_qty}"/></td>
-      <td>${ln.ui||''}</td>
+      <td>${esc(ln.ui||'')}</td>
       <td class="num"><input data-k="cost" data-i="${idx}" type="text" inputmode="decimal" value="${costText}"/></td>
       <td class="num"><input data-k="discount" data-i="${idx}" type="text" inputmode="decimal" value="${ln.discount||0}"/></td>
       <td class="num" data-amt="${idx}">0.00</td>
@@ -522,6 +692,12 @@ function renderDraft(){
       state.draftLines.splice(i, 1);
       renderDraft();
     });
+  });
+  body.querySelectorAll('button[data-edit]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openEditProduct(Number(btn.dataset.edit)));
+  });
+  body.querySelectorAll('button[data-photo]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{ e.preventDefault(); openPhoto(btn.dataset.photo); });
   });
   recompute();
 }
@@ -811,6 +987,9 @@ el('btnNewProduct').onclick = ()=> openNewProductDlg();
 el('btnDraftNewProduct').onclick = ()=> openNewProductDlg();
 el('btnCreateProduct').onclick = ()=> createNewProduct();
 el('btnCancelProduct').onclick = ()=> el('newProductDlg').close();
+el('btnSaveProduct').onclick = ()=> saveEditProduct();
+el('btnCancelEditProduct').onclick = ()=> { state.editIdx = null; el('editProductDlg').close(); };
+el('photoOverlay').onclick = ()=> closePhoto();
 el('btnExtract').onclick = ()=> runExtract();
 el('btnSaveDraft').onclick = ()=> saveDraft();
 el('btnConfirm').onclick = ()=> confirmDraft();
