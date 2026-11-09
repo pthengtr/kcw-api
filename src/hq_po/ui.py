@@ -242,7 +242,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
       </div>
       <div class="toggle">
         <button type="button" id="srcAll" class="on">ทั้งหมด</button>
-        <button type="button" id="srcIclow">ICLOW</button>
+        <button type="button" id="srcIclow">รอสั่ง</button>
         <button type="button" id="srcAi">AI</button>
       </div>
       <div class="toggle" id="vendorSort" hidden>
