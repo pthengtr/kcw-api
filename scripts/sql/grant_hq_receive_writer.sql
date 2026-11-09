@@ -5,6 +5,7 @@
 
 GRANT SELECT, INSERT, UPDATE ON dbo.PIMAS TO [python_writer];
 GRANT SELECT, INSERT, UPDATE ON dbo.PIDET TO [python_writer];
-GRANT SELECT, UPDATE ON dbo.ICMAS TO [python_writer];
+-- INSERT needed to create new product codes from the receive screen.
+GRANT SELECT, INSERT, UPDATE ON dbo.ICMAS TO [python_writer];
 GRANT SELECT, UPDATE ON dbo.ICLOW TO [python_writer];
 GRANT SELECT ON dbo.APMAS TO [python_writer];

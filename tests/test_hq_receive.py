@@ -15,10 +15,15 @@ from src.hq_receive.rules import (
     line_pi_qty,
     line_sticker_qty,
 )
+from src.hq_receive.icmas_create import _main_from_bcode
+from src.hq_receive.iclow_open import _po_key
 from src.hq_receive.service import _normalize_lines, _totals
 from src.hq_receive.guards import HqReceiveError
+from src.hq_receive.ui import page
 from src.hq_receive.writers.credit_note_pimas import plan_credit_note, receipt_is_vat
+from src.hq_receive.writers.receive_pimas import _apply_iclow_receive
 import pytest
+from unittest.mock import MagicMock
 
 
 def test_docno_bn_sequence():
@@ -183,6 +188,67 @@ def test_variance_requires_action_and_credit_note_plan():
     ready_wait = assert_confirmable(wait_receipt)
     assert ready_wait[0]["qty"] == 9
     assert credit_note_lines(wait_receipt) == []
+
+
+def test_ui_po_first_and_typed_cost():
+    html = page(user_name="tester", write_enabled=False)
+    assert "ดึงรายการจาก PO ที่เลือก" in html
+    assert "สร้างสินค้าใหม่" in html
+    assert "AI Match ค้างรับ" not in html
+    assert 'inputmode="decimal"' in html
+    assert "/open-pos" in html
+    assert "/products" in html
+
+
+def test_main_from_bcode_and_po_key():
+    assert _main_from_bcode("07051647") == 7
+    assert _main_from_bcode("AB") is None
+    assert _po_key({"hq_po_docno": "HP6911-AAAA", "docno": "X"}) == "HP6911-AAAA"
+    assert _po_key({"docno": "DOC1"}) == "DOC1"
+
+
+def _iclow_select_then(update_rowcount: int = 1):
+    select_result = MagicMock()
+    select_result.mappings.return_value.first.return_value = {"ID": 9, "QTY": 10.0}
+    update_result = MagicMock(rowcount=update_rowcount)
+    conn = MagicMock()
+    conn.execute.side_effect = [select_result, update_result]
+    return conn
+
+
+def test_apply_iclow_receive_reduces_on_wait_rest():
+    conn = _iclow_select_then()
+    result = _apply_iclow_receive(
+        conn,
+        iclow_id=9,
+        line={
+            "bcode": "A",
+            "bill_qty": 10,
+            "received_qty": 4,
+            "variance_action": "wait_rest",
+        },
+        rcvdno="BN691100001",
+        rcvddate=date(2026, 11, 9),
+    )
+    assert result == "reduced"
+    assert conn.execute.call_count == 2
+    reduce_sql = str(conn.execute.call_args_list[1].args[0])
+    assert "SET QTY" in reduce_sql
+    assert conn.execute.call_args_list[1].args[1]["qty"] == 6.0
+
+
+def test_apply_iclow_receive_stamps_on_full():
+    conn = _iclow_select_then()
+    result = _apply_iclow_receive(
+        conn,
+        iclow_id=9,
+        line={"bcode": "A", "bill_qty": 10, "received_qty": 10},
+        rcvdno="BN691100001",
+        rcvddate=date(2026, 11, 9),
+    )
+    assert result == "received"
+    stamp_sql = str(conn.execute.call_args_list[1].args[0])
+    assert "RECEIVED" in stamp_sql
 
 
 def test_invoice_normalize_and_score():

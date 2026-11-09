@@ -13,13 +13,15 @@ Closes the loop that HQ PO leaves open: ordered ICLOW rows → vendor receive �
 ## Operator flow
 
 1. Choose a vendor that still has ค้างรับ (`ICLOW` `ORDERED='Y'`, not received).
-2. Optional: upload vendor bill photo → **AI อ่านบิล** → **AI Match ค้างรับ**.
-3. Or pick open ICLOW lines manually (partial receive supported).
-4. Check qty / brand / cost / bill totals; hold mismatch lines.
-5. **บันทึกร่าง** then **ยืนยันรับเข้า**.
-6. Print / reprint barcode stickers (TSPL `.prn`) from confirmed lines or history.
+2. Select one or more open **PO** for that vendor (1 bill ↔ 1 PO is common; multi-PO and partial PO are supported).
+3. **ดึงรายการจาก PO ที่เลือก** — draft lines come from open ICLOW for those POs, with unit cost defaulted from `ICMAS.COSTLAST` (else `COSTNET`).
+4. Check / type qty and cost; **ไม่รับ** drops a line so it stays ค้างรับ; shortfall uses **รอของตามมา** / **ทำใบลดหนี้**.
+5. Optional: **สร้างสินค้าใหม่** inserts a HQ `ICMAS` row (manual BCODE) and adds it to the draft.
+6. Optional: AI bill photo fills header fields only (bill no / date / discount) — it does not match product lines.
+7. **บันทึกร่าง** then **ยืนยันรับเข้า**.
+8. Print / reprint barcode stickers (TSPL `.prn`) from confirmed lines or history.
 
-AI prefills only. The operator must confirm before PARTS9 writes.
+The operator must confirm before PARTS9 writes.
 
 ## Business rules
 
@@ -28,10 +30,13 @@ See also `src/hq_receive/rules.py` (`RULES_SUMMARY`).
 | Rule | Behavior |
 |------|----------|
 | Confirm required | No PARTS9 write without operator confirm |
-| Partial receive | Allowed; remaining qty stays on ICLOW |
+| Partial receive | Allowed; **รอของตามมา** reduces `ICLOW.QTY` and leaves the remainder as ค้างรับ |
+| Full / credit-note close | Stamps `ICLOW.RECEIVED='Y'` |
 | Bill qty ≠ received | Operator must choose **ทำใบลดหนี้** / **รอของตามมา** / **เปลี่ยนสินค้า** |
 | Credit-note path | PI posts **bill qty**; CN posts shortfall (negative); stock nets to received qty |
-| Wait-rest path | PI posts **received qty** only |
+| Wait-rest path | PI posts **received qty** only; ICLOW qty reduced by received |
+| Default cost | `COSTLAST` else `COSTNET`; typed override on the draft |
+| New product | `POST /api/products` inserts HQ ICMAS (needs `INSERT` grant + write flag) |
 | Change-product path | Line is held before confirm |
 | CN numbering | Non-VAT `KCCN`+YYMM+`-`+seq; VAT temp `7KCCN…` (fill vendor CN no/date later) |
 | Hold lines | Skipped on confirm (not written to PIMAS) |
@@ -48,9 +53,11 @@ See also `src/hq_receive/rules.py` (`RULES_SUMMARY`).
 - `GET /` UI
 - `GET /api/meta`
 - `GET /api/vendors?q=`
-- `GET /api/open-lines?acctno=`
-- `POST /api/invoices/extract` (multipart image)
-- `POST /api/invoices/{id}/match`
+- `GET /api/open-pos?acctno=` — open POs with ค้างรับ counts
+- `GET /api/open-lines?acctno=&po=PO1,PO2` — ค้างรับ lines (optional PO filter); includes `cost` / `costlast`
+- `POST /api/products` — create HQ ICMAS product (manual BCODE)
+- `POST /api/invoices/extract` (multipart image; header assist)
+- `POST /api/invoices/{id}/match` (legacy; UI no longer drives the main flow)
 - `GET /api/discrepancies`
 - `GET /api/credit-notes?status=awaiting_vendor_doc|completed|`
 - `POST /api/credit-notes/{id}/vendor-doc` — fill real vendor CN number + date onto `7KCCN` (`PIMAS.NOTENO` / `NOTEDATE`)
