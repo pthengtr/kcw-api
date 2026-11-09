@@ -19,6 +19,8 @@ Supabase `hq_po` is the purchase order. PARTS9 `POMAS` / `PODET` are not written
 
 Cancel of the whole order is allowed only while every line is still unreceived and `DOCNO` is still ours. A row that was already on ICLOW returns to the waiting list. A row this app inserted is marked `CANCELED='Y'` and does not return.
 
+**ยกเลิก** on a รอสั่ง line sets `CANCELED='Y'` on that one ICLOW id only and leaves `QTYMIN` alone. Use it when HQ on-hand has recovered to or above **L** — the waiting row is stale, but a later low-stock pass can open a new row. The UI marks those lines **HQ ถึง L แล้ว**.
+
 **นำออก** on a รอสั่ง line asks for confirmation, then sets HQ `ICMAS.QTYMIN` to `-1` (the legacy qtylo do-not-order mark) and sets `CANCELED='Y'` on that product's unordered, unreceived ICLOW rows. ค้างรับ rows stay. The product leaves this list and the legacy รอสั่งซื้อ list, and a later low-stock insert does not recreate it.
 
 ## Enable the stamp

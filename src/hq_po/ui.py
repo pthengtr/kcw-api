@@ -152,6 +152,10 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .catalog-head{margin:0;font-size:18px}
 .catalog-sub{margin:4px 0 12px;color:var(--muted);font-size:13px}
 .line.picked{background:var(--blue-wash)}
+.line.recovered{background:#f0fdf4;border-color:#86efac}
+.line .waiting-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.line .waiting-acts button.ghost{margin-top:0}
+.stock-ok{color:var(--ok);font-weight:700}
 .vendor-card{display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;margin-bottom:10px;padding:14px 12px;font:650 15px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .vendor-card .title{min-width:0;overflow-wrap:anywhere}
 .back{display:block;width:100%;min-height:42px;margin-bottom:10px;border:1px solid var(--line);background:#fff;border-radius:12px;font-weight:650;color:var(--blue-deep)}
@@ -610,6 +614,11 @@ function lowStockControl(row){
   }
   return `<span>L ${esc(qtyText(L))}</span>`;
 }
+function stockRecovered(row){
+  const hq = Number(row.hq_qtyoh2);
+  const L = Number(row.hq_qtymin);
+  return Number.isFinite(hq) && Number.isFinite(L) && L > 0 && hq >= L;
+}
 function stockLineHtml(row){
   const bits = [];
   if(row.company_qtyoh2 != null){
@@ -623,6 +632,7 @@ function stockLineHtml(row){
   }
   const low = lowStockControl(row);
   if(low) bits.push(low);
+  if(stockRecovered(row)) bits.push(`<span class="stock-ok">HQ ถึง L แล้ว</span>`);
   if(!bits.length) return "";
   return `<div class="meta stock-row">${bits.join("")}</div>`;
 }
@@ -634,10 +644,16 @@ function lineHtml(row, mode){
   const fresh = !pick && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
   const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}${fresh}</div>`;
   const tools = pick && orderableVendor(row) ? "" : productTools(row);
-  const dismiss = (STAMP && row.source === "iclow" && row.iclow_id)
+  const canStamp = STAMP && row.source === "iclow" && row.iclow_id;
+  const cancel = canStamp
+    ? `<button type="button" class="ghost" data-cancel-waiting="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">ยกเลิก</button>`
+    : "";
+  const dismiss = canStamp
     ? `<button type="button" class="ghost" data-dismiss="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">นำออก</button>`
     : "";
-  return `<div class="line${pick ? "" : " plain"}${pick && row.picked ? " picked" : ""}" id="line-${esc(rowKey(row))}">
+  const waitingActs = (cancel || dismiss) ? `<div class="waiting-acts">${cancel}${dismiss}</div>` : "";
+  const recovered = stockRecovered(row) ? " recovered" : "";
+  return `<div class="line${pick ? "" : " plain"}${pick && row.picked ? " picked" : ""}${recovered}" id="line-${esc(rowKey(row))}">
     ${check}
     <div class="line-main">
       ${thumbHtml(row)}
@@ -652,7 +668,7 @@ function lineHtml(row, mode){
       ${row.last_date ? `<div class="meta">เคยสั่ง ${esc(row.last_date)}${Number(row.bills) > 0 ? " · " + esc(String(row.bills)) + " บิล" : ""}</div>` : ""}
       ${recHtml(row)}
       ${tools}
-      ${dismiss}
+      ${waitingActs}
       </div>
     </div>
     ${qtyCell(row)}
@@ -1301,6 +1317,25 @@ async function saveLowStock(input){
     if(saved && saved.parts9_qty) item.parts9_qty = saved.parts9_qty;
     else if(saved) delete item.parts9_qty;
   });
+  renderList();
+}
+async function cancelWaiting(iclowId, bcode){
+  if(state.busy || !iclowId) return;
+  const name = bcode ? ` ${bcode}` : "";
+  if(!confirm(`ยกเลิก${name}?\nจะตั้ง CANCELED บนแถว ICLOW นี้เท่านั้น สต็อกต่ำ (L) ไม่เปลี่ยน — ถ้าสต็อกลดลงต่ำกว่า L อีก จะขึ้นรอสั่งใหม่ได้`)) return;
+  setBusy(true, "กำลังยกเลิก…");
+  let failed = null;
+  try {
+    const res = await fetch("/hq-po/api/waiting/" + encodeURIComponent(iclowId) + "/cancel", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "ยกเลิกไม่สำเร็จ");
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "ยกเลิกไม่สำเร็จ"); return; }
+  state.items = state.items.filter(row => !(row.source === "iclow" && String(row.iclow_id) === String(iclowId)));
   renderList();
 }
 async function dismissWaiting(iclowId, bcode){
@@ -2392,6 +2427,11 @@ document.getElementById("list").onclick = (e) => {
   const po = e.target.closest("[data-po]");
   if(po){
     openPoDialog([{docno: po.getAttribute("data-docno") || "", order_id: po.getAttribute("data-po") || ""}]);
+    return;
+  }
+  const cancelWait = e.target.closest("[data-cancel-waiting]");
+  if(cancelWait){
+    cancelWaiting(cancelWait.getAttribute("data-cancel-waiting") || "", cancelWait.getAttribute("data-bcode") || "");
     return;
   }
   const dismiss = e.target.closest("[data-dismiss]");
