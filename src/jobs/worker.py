@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import traceback
 
@@ -39,6 +40,59 @@ def process_job(job: dict) -> str:
     return run_configured_command(job)
 
 
+def _resolve_service_urls() -> dict:
+    return {
+        "public_base_url": resolve_stock_check_public_base_url(),
+        "companion_public_base_url": resolve_companion_public_base_url(),
+        "explorer_public_base_url": resolve_explorer_public_base_url(),
+        "tailscale_public_base_url": resolve_stock_check_tailscale_base_url(),
+        "companion_tailscale_base_url": resolve_companion_tailscale_base_url(),
+        "explorer_tailscale_base_url": resolve_explorer_tailscale_base_url(),
+        "pay_notes_public_base_url": resolve_pay_notes_public_base_url(),
+        "pay_notes_tailscale_base_url": resolve_pay_notes_tailscale_base_url(),
+        "transfer_public_base_url": resolve_transfer_public_base_url(),
+        "transfer_tailscale_base_url": resolve_transfer_tailscale_base_url(),
+    }
+
+
+def _send_heartbeat(engine, worker_name: str, status: str) -> None:
+    upsert_worker_heartbeat(
+        engine=engine,
+        worker_name=worker_name,
+        status=status,
+        update_urls=True,
+        **_resolve_service_urls(),
+    )
+
+
+def _start_heartbeat_thread(
+    engine,
+    worker_name: str,
+    interval_seconds: int,
+    status_holder: dict,
+) -> threading.Event:
+    """Keep last_seen fresh even while process_job() blocks on long commands."""
+    stop_event = threading.Event()
+
+    def _loop() -> None:
+        while not stop_event.is_set():
+            try:
+                with status_holder["lock"]:
+                    status = status_holder["status"]
+                _send_heartbeat(engine, worker_name, status)
+            except Exception as heartbeat_error:
+                print(f"[HEARTBEAT ERROR] {heartbeat_error}")
+            stop_event.wait(interval_seconds)
+
+    thread = threading.Thread(
+        target=_loop,
+        name="kcw-worker-heartbeat",
+        daemon=True,
+    )
+    thread.start()
+    return stop_event
+
+
 def run_worker_forever():
     engine = get_engine()
 
@@ -61,41 +115,24 @@ def run_worker_forever():
     )
     print("[START] command source=.env WORKER_JOB_<JOB_TYPE>_COMMAND")
 
-    last_heartbeat_at = 0.0
+    status_holder = {"status": "idle", "lock": threading.Lock()}
+    _start_heartbeat_thread(
+        engine=engine,
+        worker_name=worker_name,
+        interval_seconds=heartbeat_interval_seconds,
+        status_holder=status_holder,
+    )
+
+    def set_status(status: str) -> None:
+        with status_holder["lock"]:
+            status_holder["status"] = status
+        try:
+            _send_heartbeat(engine, worker_name, status)
+        except Exception as heartbeat_error:
+            print(f"[HEARTBEAT ERROR] {heartbeat_error}")
 
     while True:
         try:
-            now_ts = time.time()
-
-            if now_ts - last_heartbeat_at >= heartbeat_interval_seconds:
-                public_base_url = resolve_stock_check_public_base_url()
-                companion_public_base_url = resolve_companion_public_base_url()
-                explorer_public_base_url = resolve_explorer_public_base_url()
-                tailscale_public_base_url = resolve_stock_check_tailscale_base_url()
-                companion_tailscale_base_url = resolve_companion_tailscale_base_url()
-                explorer_tailscale_base_url = resolve_explorer_tailscale_base_url()
-                pay_notes_public_base_url = resolve_pay_notes_public_base_url()
-                pay_notes_tailscale_base_url = resolve_pay_notes_tailscale_base_url()
-                transfer_public_base_url = resolve_transfer_public_base_url()
-                transfer_tailscale_base_url = resolve_transfer_tailscale_base_url()
-                upsert_worker_heartbeat(
-                    engine=engine,
-                    worker_name=worker_name,
-                    status="idle",
-                    public_base_url=public_base_url,
-                    companion_public_base_url=companion_public_base_url,
-                    explorer_public_base_url=explorer_public_base_url,
-                    tailscale_public_base_url=tailscale_public_base_url,
-                    companion_tailscale_base_url=companion_tailscale_base_url,
-                    explorer_tailscale_base_url=explorer_tailscale_base_url,
-                    pay_notes_public_base_url=pay_notes_public_base_url,
-                    pay_notes_tailscale_base_url=pay_notes_tailscale_base_url,
-                    transfer_public_base_url=transfer_public_base_url,
-                    transfer_tailscale_base_url=transfer_tailscale_base_url,
-                    update_urls=True,
-                )
-                last_heartbeat_at = now_ts
-
             job = claim_next_job(engine, worker_name=worker_name)
 
             if not job:
@@ -106,12 +143,7 @@ def run_worker_forever():
             job_type = job["job_type"]
 
             print(f"[JOB START] id={job_id} type={job_type}")
-
-            upsert_worker_heartbeat(
-                engine=engine,
-                worker_name=worker_name,
-                status="running",
-            )
+            set_status("running")
 
             try:
                 result_message = process_job(job)
@@ -122,12 +154,7 @@ def run_worker_forever():
                     result_message=result_message,
                 )
 
-                upsert_worker_heartbeat(
-                    engine=engine,
-                    worker_name=worker_name,
-                    status="idle",
-                )
-
+                set_status("idle")
                 print(f"[JOB DONE] id={job_id} result={result_message}")
 
             except Exception as job_error:
@@ -141,12 +168,7 @@ def run_worker_forever():
                     error_message=err_text,
                 )
 
-                upsert_worker_heartbeat(
-                    engine=engine,
-                    worker_name=worker_name,
-                    status="idle",
-                )
-
+                set_status("idle")
                 print(f"[JOB FAILED] id={job_id} error={err_text}")
 
         except Exception as loop_error:
