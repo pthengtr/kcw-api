@@ -14,7 +14,7 @@ from sqlalchemy.exc import DBAPIError, ProgrammingError
 from src.hq_receive.config import get_hq_receive_settings
 from src.hq_receive.docno import bn_prefix, format_bn
 from src.hq_receive.guards import HqReceiveError
-from src.hq_receive.rules import assert_confirmable
+from src.hq_receive.rules import VARIANCE_WAIT_REST, assert_confirmable, line_received_qty, qty_tolerance
 from src.hq_receive.writers.credit_note_pimas import insert_credit_note, plan_credit_note
 from src.transfer.writers._engine import (
     _fetch_icmas_row,
@@ -56,6 +56,97 @@ def _money(line: dict[str, Any]) -> tuple[float, float, float]:
     if amount <= 0:
         amount = max(0.0, qty * cost - discount)
     return qty, cost, amount
+
+
+def _apply_iclow_receive(
+    conn,
+    *,
+    iclow_id: int,
+    line: dict[str, Any],
+    rcvdno: str,
+    rcvddate: datetime,
+) -> str:
+    """Stamp RECEIVED when the open qty is fully covered; otherwise reduce ICLOW.QTY.
+
+    Wait-rest / partial physical receive leaves the remainder as ค้างรับ.
+    Credit-note and full receive close the ICLOW row.
+    """
+    row = conn.execute(
+        text(
+            """
+            SELECT
+              CONVERT(bigint, ID) AS ID,
+              CONVERT(float, COALESCE(QTY, 0)) AS QTY
+            FROM dbo.ICLOW WITH (UPDLOCK, HOLDLOCK)
+            WHERE CONVERT(bigint, ID) = :iclow_id
+              AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) = 'Y'
+              AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(RECEIVED,'')))) <> 'Y'
+              AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) <> 'Y'
+            """
+        ),
+        {"iclow_id": int(iclow_id)},
+    ).mappings().first()
+    if not row:
+        raise HqReceiveError(
+            "iclow_missing",
+            f"ไม่พบค้างรับ ICLOW {iclow_id} หรือรับไปแล้ว",
+        )
+
+    open_qty = float(row.get("QTY") or 0)
+    received = line_received_qty(line)
+    action = str(line.get("variance_action") or "").strip().lower()
+    # Only wait_rest keeps a remainder on the same ICLOW row.
+    keep_remainder = action == VARIANCE_WAIT_REST and received + qty_tolerance() < open_qty
+    if keep_remainder:
+        remaining = round(max(0.0, open_qty - received), 4)
+        if remaining <= qty_tolerance():
+            keep_remainder = False
+        else:
+            updated = conn.execute(
+                text(
+                    """
+                    UPDATE dbo.ICLOW
+                    SET QTY = :qty
+                    WHERE CONVERT(bigint, ID) = :iclow_id
+                      AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) = 'Y'
+                      AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(RECEIVED,'')))) <> 'Y'
+                      AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) <> 'Y'
+                    """
+                ),
+                {"qty": remaining, "iclow_id": int(iclow_id)},
+            )
+            if updated.rowcount != 1:
+                raise HqReceiveError(
+                    "iclow_conflict",
+                    f"ลดจำนวนค้างรับ ICLOW {iclow_id} ไม่สำเร็จ",
+                )
+            return "reduced"
+
+    stamped = conn.execute(
+        text(
+            """
+            UPDATE dbo.ICLOW
+            SET RECEIVED = 'Y',
+                RCVDNO = :rcvdno,
+                RCVDDATE = :rcvddate
+            WHERE CONVERT(bigint, ID) = :iclow_id
+              AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) = 'Y'
+              AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(RECEIVED,'')))) <> 'Y'
+              AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) <> 'Y'
+            """
+        ),
+        {
+            "rcvdno": rcvdno[:40],
+            "rcvddate": rcvddate,
+            "iclow_id": int(iclow_id),
+        },
+    )
+    if stamped.rowcount != 1:
+        raise HqReceiveError(
+            "iclow_conflict",
+            f"ปิดค้างรับ ICLOW {iclow_id} ไม่สำเร็จ",
+        )
+    return "received"
 
 
 def plan_receive(receipt: dict[str, Any]) -> dict[str, Any]:
@@ -235,19 +326,6 @@ def post_vendor_receive(
                 WHERE LTRIM(RTRIM(BCODE)) = :bcode
                 """
             )
-            iclow_stamp = text(
-                """
-                UPDATE dbo.ICLOW
-                SET RECEIVED = 'Y',
-                    RCVDNO = :rcvdno,
-                    RCVDDATE = :rcvddate
-                WHERE CONVERT(bigint, ID) = :iclow_id
-                  AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(ORDERED,'')))) = 'Y'
-                  AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(RECEIVED,'')))) <> 'Y'
-                  AND LTRIM(RTRIM(CONVERT(nvarchar(10), COALESCE(CANCELED,'')))) <> 'Y'
-                """
-            )
-
             for i, line in enumerate(plan["lines"], start=1):
                 bcode = str(line.get("bcode") or "").strip()
                 qty, cost, amount = _money(line)
@@ -280,13 +358,12 @@ def post_vendor_receive(
                 conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
                 iclow_id = line.get("iclow_id")
                 if iclow_id:
-                    conn.execute(
-                        iclow_stamp,
-                        {
-                            "rcvdno": billno[:40],
-                            "rcvddate": billdate,
-                            "iclow_id": int(iclow_id),
-                        },
+                    _apply_iclow_receive(
+                        conn,
+                        iclow_id=int(iclow_id),
+                        line=line,
+                        rcvdno=billno[:40],
+                        rcvddate=billdate,
                     )
 
             cn_plan = plan_credit_note(receipt, source_billno=billno)

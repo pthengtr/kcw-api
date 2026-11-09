@@ -238,16 +238,20 @@ def credit_note_lines(receipt: dict[str, Any]) -> list[dict[str, Any]]:
 RULES_SUMMARY = """
 HQ-only vendor receive rules
 - Operator confirmation is required before PARTS9 writes.
-- Partial receive is allowed; remaining qty stays on ICLOW until a later receive.
+- Primary flow: choose vendor → select one or more open POs → review ค้างรับ lines.
+- Partial receive is allowed; wait_rest reduces ICLOW.QTY and leaves the remainder as ค้างรับ.
+- Full receive / credit-note path stamps ICLOW RECEIVED='Y'.
 - Lines marked hold are not written to PIMAS in that confirm.
 - When bill qty ≠ received qty, operator must choose: credit note / wait for rest / change product.
 - Credit-note path: PI posts bill qty, CN posts the shortfall (negative), stock nets to received qty.
 - Wait-rest path: PI posts received qty only.
 - Change-product path: hold the line before confirm.
 - Non-VAT CN billno KCCN…; VAT temp CN billno 7KCCN… (fill vendor CN no/date later).
+- Draft cost defaults to ICMAS COSTLAST (else COSTNET); operator may type over it.
+- New products can be created inline into HQ ICMAS from the receive page (manual BCODE).
 - Cost mismatch over tolerance (default 2%) and qty over open ICLOW are flagged.
 - Over-PO qty blocks confirm unless the line is held or force_ok is set by a future privilege path.
-- HQ_RECEIVE_PIMAS_WRITE_ENABLED=false → dry-run only (default).
+- HQ_RECEIVE_PIMAS_WRITE_ENABLED=false → dry-run only (default); product create also gated.
 - Stickers print only from confirmed (or dry-run preview) receipt lines with received qty > 0.
-- AI extract/match is assistive; unmatched or low-confidence lines stay editable.
+- AI bill OCR may prefill header fields only; product lines come from selected POs.
 """.strip()

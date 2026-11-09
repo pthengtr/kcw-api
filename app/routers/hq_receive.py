@@ -13,6 +13,7 @@ from src.hq_receive.net import is_private_lan
 from src.hq_receive.service import (
     confirm_receipt,
     create_draft,
+    create_product_payload,
     credit_notes_payload,
     discrepancies_payload,
     extract_invoice,
@@ -22,6 +23,7 @@ from src.hq_receive.service import (
     match_invoice,
     meta_payload,
     open_lines_payload,
+    open_pos_payload,
     open_vendors_payload,
     save_draft,
     sticker_config,
@@ -78,6 +80,21 @@ class StickerBody(BaseModel):
 class VendorCnBody(BaseModel):
     vendor_cn_no: str = ""
     vendor_cn_date: str | None = None
+
+
+class ProductBody(BaseModel):
+    bcode: str = ""
+    descr: str = ""
+    ui: str = "ชิ้น"
+    vendor: str = ""
+    vendor_acctno: str = ""
+    brand: str = ""
+    model: str = ""
+    pcode: str = ""
+    mcode: str = ""
+    cost: float = 0
+    qtymin: float = 0
+    main: int | None = None
 
 
 def _settings():
@@ -235,13 +252,36 @@ def api_vendors(request: Request, q: str = ""):
         return _err(exc)
 
 
-@router.get("/api/open-lines")
-def api_open_lines(request: Request, acctno: str = "", q: str = ""):
+@router.get("/api/open-pos")
+def api_open_pos(request: Request, acctno: str = ""):
     ident, err = _require_api(request)
     if err is not None:
         return err
     try:
-        return open_lines_payload(acctno=acctno, q=q)
+        return open_pos_payload(acctno=acctno)
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.get("/api/open-lines")
+def api_open_lines(request: Request, acctno: str = "", q: str = "", po: str = ""):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        po_docnos = [p.strip() for p in (po or "").split(",") if p.strip()]
+        return open_lines_payload(acctno=acctno, q=q, po_docnos=po_docnos or None)
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.post("/api/products")
+def api_create_product(request: Request, body: ProductBody):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return create_product_payload(body.model_dump(), actor=_actor(ident))
     except Exception as exc:
         return _err(exc)
 

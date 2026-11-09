@@ -6,15 +6,51 @@ from typing import Any
 
 from src.hq_po.iclow_read import (
     fetch_incoming_lines,
+    fetch_sheet_products,
     fetch_vendor_cards,
     search_vendors as search_apmas_vendors,
 )
 
 
-def list_open_lines(*, acctno: str = "", q: str = "") -> list[dict[str, Any]]:
-    """Ordered-not-received HQ ICLOW lines, optionally filtered by vendor / search."""
+def _po_key(row: dict[str, Any]) -> str:
+    return str(row.get("hq_po_docno") or row.get("docno") or "").strip()
+
+
+def _enrich_costs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    bcodes = [str(r.get("bcode") or "").strip() for r in rows if r.get("bcode")]
+    products = fetch_sheet_products(bcodes) if bcodes else {}
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        bcode = str(row.get("bcode") or "").strip()
+        product = products.get(bcode) or {}
+        costlast = float(product.get("costlast") or 0) or 0.0
+        costnet = float(product.get("costnet") or 0) or 0.0
+        cost = costlast if costlast > 0 else costnet
+        out.append(
+            {
+                **row,
+                "costlast": costlast if costlast > 0 else None,
+                "costnet": costnet if costnet > 0 else None,
+                "cost": cost,
+            }
+        )
+    return out
+
+
+def list_open_lines(
+    *,
+    acctno: str = "",
+    q: str = "",
+    po_docnos: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Ordered-not-received HQ ICLOW lines, optionally filtered by vendor / PO / search."""
     acct = (acctno or "").strip().upper()
     needle = (q or "").strip().lower()
+    wanted_pos = {
+        str(p or "").strip().upper()
+        for p in (po_docnos or [])
+        if str(p or "").strip()
+    }
     rows = fetch_incoming_lines()
     if acct:
         rows = [r for r in rows if (r.get("vendor") or "").strip().upper() == acct]
@@ -45,17 +81,50 @@ def list_open_lines(*, acctno: str = "", q: str = "") -> list[dict[str, Any]]:
         vendor = (row.get("vendor") or "").strip()
         card = vendors.get(vendor) or {}
         po = po_by_iclow.get(int(row["iclow_id"])) or {}
-        out.append(
+        enriched = {
+            **row,
+            "vendor_name": card.get("name") or "",
+            "vendor_term": card.get("term") or "",
+            "hq_po_docno": (po.get("docno") or row.get("docno") or "").strip(),
+            "hq_po_line_id": po.get("line_id"),
+            "hq_po_order_id": po.get("order_id"),
+        }
+        if wanted_pos:
+            key = _po_key(enriched).upper()
+            if key not in wanted_pos:
+                continue
+        out.append(enriched)
+    return _enrich_costs(out)
+
+
+def list_open_pos(*, acctno: str = "") -> list[dict[str, Any]]:
+    """Open POs for a vendor (or all), rolled up from ค้างรับ lines."""
+    lines = list_open_lines(acctno=acctno)
+    by: dict[str, dict[str, Any]] = {}
+    for line in lines:
+        po = _po_key(line) or "(ไม่มีเลข PO)"
+        bucket = by.setdefault(
+            po,
             {
-                **row,
-                "vendor_name": card.get("name") or "",
-                "vendor_term": card.get("term") or "",
-                "hq_po_docno": (po.get("docno") or row.get("docno") or "").strip(),
-                "hq_po_line_id": po.get("line_id"),
-                "hq_po_order_id": po.get("order_id"),
-            }
+                "po_docno": po,
+                "vendor": (line.get("vendor") or "").strip(),
+                "vendor_name": line.get("vendor_name") or "",
+                "line_count": 0,
+                "qty_total": 0.0,
+                "docdate": line.get("docdate"),
+            },
         )
-    return out
+        bucket["line_count"] += 1
+        bucket["qty_total"] += float(line.get("qty") or 0)
+        if line.get("vendor_name"):
+            bucket["vendor_name"] = line["vendor_name"]
+        if line.get("docdate") and (
+            not bucket.get("docdate") or str(line["docdate"]) < str(bucket["docdate"])
+        ):
+            bucket["docdate"] = line["docdate"]
+    rows = list(by.values())
+    rows.sort(key=lambda r: (str(r.get("docdate") or ""), r.get("po_docno") or ""), reverse=True)
+    return rows
 
 
 def list_open_vendors(*, q: str = "") -> list[dict[str, Any]]:

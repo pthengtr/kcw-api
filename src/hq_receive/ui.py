@@ -64,13 +64,17 @@ th.num,td.num{text-align:right;white-space:nowrap}
 .totals .net{font-weight:700;font-size:16px;margin-top:4px}
 .err{color:var(--bad);font-size:13px;margin-top:8px}
 .preview{max-width:12rem;border:1px solid var(--line);border-radius:8px;background:#fff}
+dialog{border:1px solid var(--line);border-radius:14px;padding:16px;max-width:28rem;width:calc(100% - 24px)}
+dialog::backdrop{background:rgba(15,23,42,.35)}
+dialog h3{margin:0 0 10px;font-size:16px}
+.num input[type=text]{width:5.5rem;text-align:right;font:inherit;border:1px solid #d0d5dd;border-radius:8px;padding:6px 8px}
 @media (max-width:720px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
   <h1>รับสินค้าเข้า HQ</h1>
-  <p>ผู้ใช้: __USER__ · AI ช่วยเติม · น้องยืนยันก่อนตัดสต็อก</p>
+  <p>ผู้ใช้: __USER__ · เลือก PO → ตรวจจำนวน/ต้นทุน · ยืนยันก่อนตัดสต็อก</p>
   <div class="tabs">
     <button type="button" class="on" data-tab="receive">รับเข้า</button>
     <button type="button" data-tab="creditnotes">ใบลดหนี้</button>
@@ -94,20 +98,43 @@ th.num,td.num{text-align:right;white-space:nowrap}
     <div class="panel" id="openPanel" hidden>
       <div class="bar">
         <strong id="vendorTitle" style="flex:1"></strong>
-        <button type="button" class="ghost" id="btnReloadLines">รีเฟรชค้างรับ</button>
+        <button type="button" class="ghost" id="btnReloadPos">รีเฟรช PO</button>
       </div>
-      <div class="bar">
-        <input type="file" id="invoiceFile" accept="image/jpeg,image/png,image/webp"/>
-        <button type="button" class="ghost" id="btnExtract">AI อ่านบิล</button>
-        <button type="button" class="ghost" id="btnMatch" disabled>AI Match ค้างรับ</button>
-      </div>
-      <div id="aiMeta" class="meta"></div>
-      <div id="openLines" class="list"></div>
+      <p class="meta">เลือก PO ที่ตรงกับบิล (เลือกได้หลายใบ) แล้วดึงรายการค้างรับมาตรวจ</p>
+      <div id="openPos" class="list"></div>
       <div class="bar" style="margin-top:10px">
-        <button type="button" id="btnUseSelected" disabled>ใส่รายการที่เลือก</button>
-        <button type="button" class="ghost" id="btnUseMatched" disabled>ใช้ผล Match</button>
+        <button type="button" id="btnUsePos" disabled>ดึงรายการจาก PO ที่เลือก</button>
+        <button type="button" class="ghost" id="btnNewProduct">สร้างสินค้าใหม่</button>
       </div>
+      <details style="margin-top:12px">
+        <summary class="meta" style="cursor:pointer">ตัวเลือก: อ่านหัวบิลจากรูป (ไม่ match สินค้า)</summary>
+        <div class="bar" style="margin-top:8px">
+          <input type="file" id="invoiceFile" accept="image/jpeg,image/png,image/webp"/>
+          <button type="button" class="ghost" id="btnExtract">AI อ่านหัวบิล</button>
+        </div>
+        <div id="aiMeta" class="meta"></div>
+      </details>
     </div>
+
+    <dialog id="newProductDlg">
+      <h3>สร้างรหัสสินค้าใหม่</h3>
+      <div class="grid">
+        <label class="field"><span>รหัสสินค้า *</span><input id="npBcode" autocomplete="off"/></label>
+        <label class="field"><span>หน่วย</span><input id="npUi" value="ชิ้น"/></label>
+        <label class="field" style="grid-column:1/-1"><span>ชื่อสินค้า *</span><input id="npDescr"/></label>
+        <label class="field"><span>ยี่ห้อ</span><input id="npBrand"/></label>
+        <label class="field"><span>รุ่น</span><input id="npModel"/></label>
+        <label class="field"><span>เบอร์แท้</span><input id="npPcode"/></label>
+        <label class="field"><span>เบอร์โรงงาน</span><input id="npMcode"/></label>
+        <label class="field"><span>ต้นทุน</span><input id="npCost" inputmode="decimal" value="0"/></label>
+        <label class="field"><span>จุดสั่ง (L)</span><input id="npQtymin" inputmode="decimal" value="0"/></label>
+      </div>
+      <div id="npErr" class="err" hidden></div>
+      <div class="bar" style="margin-top:12px">
+        <button type="button" id="btnCreateProduct">สร้างแล้วใส่รายการ</button>
+        <button type="button" class="ghost" id="btnCancelProduct">ยกเลิก</button>
+      </div>
+    </dialog>
 
     <div class="panel" id="draftPanel" hidden>
       <div class="grid">
@@ -148,6 +175,7 @@ th.num,td.num{text-align:right;white-space:nowrap}
       <div class="bar" style="margin-top:12px">
         <button type="button" class="ghost" id="btnSaveDraft">บันทึกร่าง</button>
         <button type="button" id="btnConfirm">ยืนยันรับเข้า</button>
+        <button type="button" class="ghost" id="btnDraftNewProduct">+ สินค้าใหม่</button>
         <button type="button" class="ghost" id="btnToStickers" disabled>ไปพิมพ์บาร์โค้ด</button>
       </div>
       <div id="draftErr" class="err" hidden></div>
@@ -206,12 +234,12 @@ const USER = __USER_JSON__;
 const WRITE_ENABLED = __WRITE__;
 const state = {
   vendor: null,
+  openPos: [],
   openLines: [],
-  selected: new Set(),
+  selectedPos: new Set(),
   draftLines: [],
   receiptId: null,
   extractionId: null,
-  matchedLines: null,
   pimasBillno: null,
   stickerSource: [],
 };
@@ -271,66 +299,120 @@ async function loadVendors(){
 
 async function selectVendor(v){
   state.vendor = v;
-  state.selected = new Set();
+  state.selectedPos = new Set();
+  state.openPos = [];
+  state.openLines = [];
   state.draftLines = [];
   state.receiptId = null;
   state.extractionId = null;
-  state.matchedLines = null;
   state.pimasBillno = null;
   el('vendorTitle').textContent = (v.name||v.acctno) + ' (' + v.acctno + ')';
   el('openPanel').hidden = false;
   el('draftPanel').hidden = true;
-  el('btnMatch').disabled = true;
-  el('btnUseMatched').disabled = true;
   el('aiMeta').textContent = '';
   el('receiver').value = USER;
-  await loadOpenLines();
+  await loadOpenPos();
   await loadVendors();
 }
 
-async function loadOpenLines(){
+async function loadOpenPos(){
   if(!state.vendor) return;
-  const data = await api('/open-lines?acctno=' + encodeURIComponent(state.vendor.acctno));
-  state.openLines = data.lines || [];
-  const box = el('openLines');
+  const data = await api('/open-pos?acctno=' + encodeURIComponent(state.vendor.acctno));
+  state.openPos = data.pos || [];
+  const box = el('openPos');
   box.innerHTML = '';
-  state.openLines.forEach(ln=>{
-    const id = String(ln.iclow_id);
+  state.openPos.forEach(po=>{
+    const id = String(po.po_docno || '');
     const row = document.createElement('label');
-    row.className = 'row' + (state.selected.has(id) ? ' on' : '');
-    row.innerHTML = `<input type="checkbox" ${state.selected.has(id)?'checked':''}/>
-      <div style="flex:1"><div><strong>${ln.bcode}</strong> ${ln.descr||''}</div>
-      <div class="meta">ค้าง ${ln.qty} ${ln.ui||''} · PO ${ln.hq_po_docno||ln.docno||'-'} · ICLOW ${ln.iclow_id}</div></div>`;
+    row.className = 'row' + (state.selectedPos.has(id) ? ' on' : '');
+    row.innerHTML = `<input type="checkbox" ${state.selectedPos.has(id)?'checked':''}/>
+      <div style="flex:1"><div><strong>${id}</strong></div>
+      <div class="meta">ค้างรับ ${po.line_count||0} รายการ · ${(po.qty_total||0).toLocaleString('th-TH')} ชิ้น${po.docdate ? ' · ' + po.docdate : ''}</div></div>`;
     const cb = row.querySelector('input');
     cb.onchange = ()=>{
-      if(cb.checked) state.selected.add(id); else state.selected.delete(id);
+      if(cb.checked) state.selectedPos.add(id); else state.selectedPos.delete(id);
       row.classList.toggle('on', cb.checked);
-      el('btnUseSelected').disabled = state.selected.size === 0;
+      el('btnUsePos').disabled = state.selectedPos.size === 0;
     };
     box.appendChild(row);
   });
-  el('btnUseSelected').disabled = state.selected.size === 0;
-  if(!state.openLines.length) box.innerHTML = '<div class="meta">ไม่มีรายการค้างรับของเจ้าหนี้นี้</div>';
+  el('btnUsePos').disabled = state.selectedPos.size === 0;
+  if(!state.openPos.length) box.innerHTML = '<div class="meta">ไม่มี PO ค้างรับของเจ้าหนี้นี้</div>';
 }
 
-function useSelected(){
-  const picked = state.openLines.filter(ln => state.selected.has(String(ln.iclow_id)));
-  state.draftLines = picked.map(ln => {
-    const q = Number(ln.qty||0);
-    return {
-      iclow_id: ln.iclow_id, bcode: ln.bcode, descr: ln.descr || '',
-      qty: q, bill_qty: q, received_qty: q, variance_action: null,
-      ui: ln.ui || '', cost: 0, discount: 0, amount: 0,
-      po_docno: ln.hq_po_docno || ln.docno || '', status: 'ok', flags: []
-    };
-  });
-  openDraft();
+function lineFromOpen(ln){
+  const q = Number(ln.qty||0);
+  const cost = Number(ln.cost || ln.costlast || 0);
+  return {
+    iclow_id: ln.iclow_id, bcode: ln.bcode, descr: ln.descr || '',
+    qty: q, bill_qty: q, received_qty: q, open_qty: q, variance_action: null,
+    ui: ln.ui || '', cost: cost, discount: 0, amount: 0,
+    po_docno: ln.hq_po_docno || ln.docno || '', status: 'ok', flags: []
+  };
 }
 
-function useMatched(){
-  if(!state.matchedLines) return;
-  state.draftLines = state.matchedLines.map(ln => ({...ln}));
-  openDraft();
+async function useSelectedPos(){
+  if(!state.vendor || !state.selectedPos.size) return;
+  const po = [...state.selectedPos].map(encodeURIComponent).join(',');
+  try{
+    const data = await api('/open-lines?acctno=' + encodeURIComponent(state.vendor.acctno) + '&po=' + po);
+    state.openLines = data.lines || [];
+    state.draftLines = state.openLines.map(lineFromOpen);
+    if(!state.draftLines.length){
+      showBanner('PO ที่เลือกไม่มีรายการค้างรับ', true);
+      return;
+    }
+    openDraft();
+    showBanner('ดึง ' + state.draftLines.length + ' รายการจาก ' + state.selectedPos.size + ' PO — ตรวจจำนวน/ต้นทุนแล้วยืนยัน');
+  }catch(e){ showBanner(e.message||String(e), true); }
+}
+
+function openNewProductDlg(){
+  if(!state.vendor){ showBanner('เลือกเจ้าหนี้ก่อน', true); return; }
+  el('npErr').hidden = true;
+  el('npBcode').value = '';
+  el('npDescr').value = '';
+  el('npUi').value = 'ชิ้น';
+  el('npBrand').value = '';
+  el('npModel').value = '';
+  el('npPcode').value = '';
+  el('npMcode').value = '';
+  el('npCost').value = '0';
+  el('npQtymin').value = '0';
+  el('newProductDlg').showModal();
+}
+
+async function createNewProduct(){
+  el('npErr').hidden = true;
+  const body = {
+    bcode: el('npBcode').value.trim(),
+    descr: el('npDescr').value.trim(),
+    ui: el('npUi').value.trim() || 'ชิ้น',
+    vendor: state.vendor ? state.vendor.acctno : '',
+    brand: el('npBrand').value.trim(),
+    model: el('npModel').value.trim(),
+    pcode: el('npPcode').value.trim(),
+    mcode: el('npMcode').value.trim(),
+    cost: Number(String(el('npCost').value||'0').replace(/,/g,'')) || 0,
+    qtymin: Number(String(el('npQtymin').value||'0').replace(/,/g,'')) || 0,
+  };
+  try{
+    const data = await api('/products', {method:'POST', body: JSON.stringify(body)});
+    const p = data.product || {};
+    const cost = Number(p.cost || body.cost || 0);
+    state.draftLines.push({
+      iclow_id: null, bcode: p.bcode, descr: p.descr || body.descr,
+      qty: 1, bill_qty: 1, received_qty: 1, open_qty: null, variance_action: null,
+      ui: p.ui || body.ui, cost: cost, discount: 0, amount: cost,
+      po_docno: '', status: 'ok', flags: ['new_product']
+    });
+    el('newProductDlg').close();
+    openDraft();
+    showBanner('สร้างรหัส ' + p.bcode + ' แล้ว — ใส่ในรายการรับเข้า');
+  }catch(e){
+    el('npErr').hidden = false;
+    el('npErr').textContent = e.message || String(e);
+  }
 }
 
 function openDraft(){
@@ -360,6 +442,35 @@ function varianceSelect(ln, idx){
   </select>`;
 }
 
+function numVal(raw){
+  const n = Number(String(raw||'').replace(/,/g,'').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+function refreshVarianceCell(idx){
+  const ln = state.draftLines[idx];
+  if(!ln) return;
+  const cell = document.querySelector(`[data-vardiff="${idx}"]`);
+  if(!cell) return;
+  const diff = qtyDiff(ln);
+  cell.innerHTML = `${hasVariance(ln)?('<span class="chip mismatch">'+(diff>0?'ขาด ':'เกิน ')+Math.abs(diff)+'</span>'):'—'}<div style="margin-top:4px">${varianceSelect(ln, idx)}</div>`;
+  const sel = cell.querySelector('select[data-var]');
+  if(sel){
+    sel.addEventListener('change', ()=>{
+      const v = sel.value || null;
+      ln.variance_action = v;
+      if(v === 'change_product'){
+        ln.status = 'hold';
+        ln.hold_reason = 'เปลี่ยนสินค้า';
+      } else if(ln.status === 'hold' && ln.hold_reason === 'เปลี่ยนสินค้า'){
+        ln.status = 'ok';
+        ln.hold_reason = null;
+      }
+      renderDraft();
+    });
+  }
+}
+
 function renderDraft(){
   const body = el('draftLines');
   body.innerHTML = '';
@@ -368,49 +479,47 @@ function renderDraft(){
     if(ln.received_qty == null) ln.received_qty = Number(ln.bill_qty||0);
     const tr = document.createElement('tr');
     const st = ln.status || 'ok';
-    const diff = qtyDiff(ln);
-    tr.innerHTML = `<td>${ln.bcode}<div class="meta">${ln.po_docno||''}${ln.match_score!=null?' · match '+(ln.match_score*100).toFixed(0)+'%':''}</div></td>
+    const costText = (ln.cost == null || ln.cost === '') ? '' : String(ln.cost);
+    tr.innerHTML = `<td>${ln.bcode}<div class="meta">${ln.po_docno||''}${ln.flags&&ln.flags.includes('new_product')?' · สินค้าใหม่':''}${ln.open_qty!=null?' · ค้าง '+ln.open_qty:''}</div></td>
       <td>${ln.descr||''}</td>
-      <td class="num"><input data-k="bill_qty" data-i="${idx}" type="number" step="0.01" value="${ln.bill_qty}" style="width:4.8rem;text-align:right"/></td>
-      <td class="num"><input data-k="received_qty" data-i="${idx}" type="number" step="0.01" value="${ln.received_qty}" style="width:4.8rem;text-align:right"/></td>
+      <td class="num"><input data-k="bill_qty" data-i="${idx}" type="text" inputmode="decimal" value="${ln.bill_qty}"/></td>
+      <td class="num"><input data-k="received_qty" data-i="${idx}" type="text" inputmode="decimal" value="${ln.received_qty}"/></td>
       <td>${ln.ui||''}</td>
-      <td class="num"><input data-k="cost" data-i="${idx}" type="number" step="0.01" value="${ln.cost||0}" style="width:5.5rem;text-align:right"/></td>
-      <td class="num"><input data-k="discount" data-i="${idx}" type="number" step="0.01" value="${ln.discount||0}" style="width:4.5rem;text-align:right"/></td>
+      <td class="num"><input data-k="cost" data-i="${idx}" type="text" inputmode="decimal" value="${costText}"/></td>
+      <td class="num"><input data-k="discount" data-i="${idx}" type="text" inputmode="decimal" value="${ln.discount||0}"/></td>
       <td class="num" data-amt="${idx}">0.00</td>
-      <td data-vardiff="${idx}">${hasVariance(ln)?('<span class="chip mismatch">'+(diff>0?'ขาด ':'เกิน ')+Math.abs(diff)+'</span>'):'—'}<div style="margin-top:4px">${varianceSelect(ln, idx)}</div></td>
+      <td data-vardiff="${idx}"></td>
       <td><span class="chip ${st}">${st}</span></td>
-      <td><button type="button" class="ghost" data-hold="${idx}">${st==='hold'?'ปลดพัก':'พัก'}</button></td>`;
+      <td>
+        <button type="button" class="ghost" data-hold="${idx}">${st==='hold'?'ปลดพัก':'พัก'}</button>
+        <button type="button" class="ghost" data-skip="${idx}" title="ไม่รับรอบนี้ คงค้างรับ">ไม่รับ</button>
+      </td>`;
     body.appendChild(tr);
+    refreshVarianceCell(idx);
   });
   body.querySelectorAll('input[data-k]').forEach(inp=>{
     inp.addEventListener('input', ()=>{
       const i = Number(inp.dataset.i); const k = inp.dataset.k;
-      state.draftLines[i][k] = Number(inp.value||0);
-      state.draftLines[i].qty = Number(state.draftLines[i].bill_qty||0);
-      if(!hasVariance(state.draftLines[i])) state.draftLines[i].variance_action = null;
-      if(state.draftLines[i].status==='mismatch') state.draftLines[i].status='ok';
-      renderDraft();
-    });
-  });
-  body.querySelectorAll('select[data-var]').forEach(sel=>{
-    sel.addEventListener('change', ()=>{
-      const i = Number(sel.dataset.var);
-      const v = sel.value || null;
-      state.draftLines[i].variance_action = v;
-      if(v === 'change_product'){
-        state.draftLines[i].status = 'hold';
-        state.draftLines[i].hold_reason = 'เปลี่ยนสินค้า';
-      } else if(state.draftLines[i].status === 'hold' && state.draftLines[i].hold_reason === 'เปลี่ยนสินค้า'){
-        state.draftLines[i].status = 'ok';
-        state.draftLines[i].hold_reason = null;
-      }
-      renderDraft();
+      const ln = state.draftLines[i];
+      ln[k] = numVal(inp.value);
+      ln.qty = Number(ln.bill_qty||0);
+      if(!hasVariance(ln)) ln.variance_action = null;
+      if(ln.status==='mismatch') ln.status='ok';
+      refreshVarianceCell(i);
+      recompute();
     });
   });
   body.querySelectorAll('button[data-hold]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const i = Number(btn.dataset.hold);
       state.draftLines[i].status = state.draftLines[i].status === 'hold' ? 'ok' : 'hold';
+      renderDraft();
+    });
+  });
+  body.querySelectorAll('button[data-skip]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = Number(btn.dataset.skip);
+      state.draftLines.splice(i, 1);
       renderDraft();
     });
   });
@@ -565,32 +674,16 @@ async function runExtract(){
   try{
     const data = await api('/invoices/extract', {method:'POST', body: fd});
     state.extractionId = data.extraction_id;
-    el('btnMatch').disabled = !state.extractionId;
     const s = data.structured || {};
     if(s.vendor_billno) el('vendorBillno').value = s.vendor_billno;
     if(s.bill_date) el('vendorBillDate').value = s.bill_date;
     if(Number(s.discount||0)) el('billDiscount').value = s.discount;
     if(Number(s.vat||0) > 0) el('vatOn').checked = true;
-    el('aiMeta').textContent = 'อ่านบิลแล้ว · lines ' + ((s.lines||data.lines||[]).length) +
+    el('aiMeta').textContent = 'อ่านหัวบิลแล้ว · เลขบิล ' + (s.vendor_billno||'-') +
       ' · conf ' + ((data.confidence||0)*100).toFixed(0) + '%' +
       ((s.warnings||[]).length ? ' · ' + s.warnings.join('; ') : '');
-    showBanner('AI อ่านบิลเสร็จ — กด Match ค้างรับ');
-  }catch(e){ showBanner(e.message||String(e), true); }
-}
-
-async function runMatch(){
-  if(!state.extractionId || !state.vendor) return;
-  try{
-    const data = await api('/invoices/' + state.extractionId + '/match', {
-      method:'POST', body: JSON.stringify({vendor_acctno: state.vendor.acctno})
-    });
-    state.matchedLines = data.lines || [];
-    el('btnUseMatched').disabled = state.matchedLines.length === 0;
-    const h = data.header || {};
-    if(h.vendor_billno) el('vendorBillno').value = h.vendor_billno;
-    if(h.bill_date) el('vendorBillDate').value = h.bill_date;
-    el('aiMeta').textContent = 'Match แล้ว ' + state.matchedLines.length + ' รายการ · ผิดปกติ ' + ((data.discrepancies||[]).length);
-    showBanner('Match เสร็จ — กดใช้ผล Match หรือแก้เอง');
+    showBanner('เติมหัวบิลจาก AI แล้ว — รายการสินค้าให้เลือกจาก PO');
+    if(state.draftLines.length) openDraft();
   }catch(e){ showBanner(e.message||String(e), true); }
 }
 
@@ -712,11 +805,13 @@ async function loadIssues(){
 
 el('btnVendors').onclick = ()=> loadVendors().catch(e=> showBanner(e.message, true));
 el('vendorQ').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); el('btnVendors').click(); }});
-el('btnReloadLines').onclick = ()=> loadOpenLines().catch(e=> showBanner(e.message, true));
-el('btnUseSelected').onclick = useSelected;
-el('btnUseMatched').onclick = useMatched;
+el('btnReloadPos').onclick = ()=> loadOpenPos().catch(e=> showBanner(e.message, true));
+el('btnUsePos').onclick = ()=> useSelectedPos();
+el('btnNewProduct').onclick = ()=> openNewProductDlg();
+el('btnDraftNewProduct').onclick = ()=> openNewProductDlg();
+el('btnCreateProduct').onclick = ()=> createNewProduct();
+el('btnCancelProduct').onclick = ()=> el('newProductDlg').close();
 el('btnExtract').onclick = ()=> runExtract();
-el('btnMatch').onclick = ()=> runMatch();
 el('btnSaveDraft').onclick = ()=> saveDraft();
 el('btnConfirm').onclick = ()=> confirmDraft();
 el('btnToStickers').onclick = ()=> setTab('stickers');
