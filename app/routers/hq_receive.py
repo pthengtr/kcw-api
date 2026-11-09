@@ -30,6 +30,7 @@ from src.hq_receive.service import (
     sticker_jobs,
     sticker_preview,
     sticker_print,
+    update_product_payload,
     vendors_payload,
 )
 from src.hq_receive.ui import APP, SESSION_COOKIE, page
@@ -92,9 +93,24 @@ class ProductBody(BaseModel):
     model: str = ""
     pcode: str = ""
     mcode: str = ""
+    location1: str = ""
+    code1: str = ""
     cost: float = 0
+    price1: float = 0
     qtymin: float = 0
     main: int | None = None
+
+
+class ProductUpdateBody(BaseModel):
+    descr: str | None = None
+    brand: str | None = None
+    model: str | None = None
+    pcode: str | None = None
+    mcode: str | None = None
+    location1: str | None = None
+    code1: str | None = None
+    cost: float | None = None
+    price1: float | None = None
 
 
 def _settings():
@@ -282,6 +298,19 @@ def api_create_product(request: Request, body: ProductBody):
         return err
     try:
         return create_product_payload(body.model_dump(), actor=_actor(ident))
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.put("/api/products/{bcode}")
+def api_update_product(request: Request, bcode: str, body: ProductUpdateBody):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return update_product_payload(
+            bcode, body.model_dump(exclude_unset=True), actor=_actor(ident)
+        )
     except Exception as exc:
         return _err(exc)
 

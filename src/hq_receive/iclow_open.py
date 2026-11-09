@@ -9,6 +9,7 @@ from src.hq_po.iclow_read import (
     fetch_sheet_products,
     fetch_vendor_cards,
     search_vendors as search_apmas_vendors,
+    thumb_url,
 )
 
 
@@ -16,9 +17,26 @@ def _po_key(row: dict[str, Any]) -> str:
     return str(row.get("hq_po_docno") or row.get("docno") or "").strip()
 
 
+def _line_preview(row: dict[str, Any]) -> dict[str, Any]:
+    """Compact product row shown under an open PO checkbox."""
+    return {
+        "bcode": str(row.get("bcode") or "").strip(),
+        "descr": str(row.get("descr") or "").strip(),
+        "model": str(row.get("model") or "").strip(),
+        "brand": str(row.get("brand") or "").strip(),
+        "pcode": str(row.get("pcode") or "").strip(),
+        "mcode": str(row.get("mcode") or "").strip(),
+        "photo": str(row.get("photo") or "").strip(),
+        "qty": float(row.get("qty") or 0),
+        "ui": str(row.get("ui") or "").strip(),
+    }
+
+
 def _enrich_costs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach ICMAS cost + identity fields and a product photo URL."""
     bcodes = [str(r.get("bcode") or "").strip() for r in rows if r.get("bcode")]
     products = fetch_sheet_products(bcodes) if bcodes else {}
+    photo_cache: dict[str, str] = {}
     out: list[dict[str, Any]] = []
     for row in rows:
         bcode = str(row.get("bcode") or "").strip()
@@ -26,12 +44,24 @@ def _enrich_costs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         costlast = float(product.get("costlast") or 0) or 0.0
         costnet = float(product.get("costnet") or 0) or 0.0
         cost = costlast if costlast > 0 else costnet
+        if bcode and bcode not in photo_cache:
+            photo_cache[bcode] = thumb_url(bcode)
         out.append(
             {
                 **row,
+                "descr": str(product.get("descr") or row.get("descr") or "").strip(),
+                "model": str(product.get("model") or row.get("model") or "").strip(),
+                "brand": str(product.get("brand") or row.get("brand") or "").strip(),
+                "pcode": str(product.get("pcode") or row.get("pcode") or "").strip(),
+                "mcode": str(product.get("mcode") or row.get("mcode") or "").strip(),
+                "location1": str(product.get("location1") or row.get("location1") or "").strip(),
+                "code1": str(product.get("code1") or row.get("code1") or "").strip(),
+                "ui": str(product.get("ui") or row.get("ui") or "").strip(),
+                "photo": photo_cache.get(bcode) or "",
                 "costlast": costlast if costlast > 0 else None,
                 "costnet": costnet if costnet > 0 else None,
                 "cost": cost,
+                "price1": product.get("price1"),
             }
         )
     return out
@@ -98,7 +128,11 @@ def list_open_lines(
 
 
 def list_open_pos(*, acctno: str = "") -> list[dict[str, Any]]:
-    """Open POs for a vendor (or all), rolled up from ค้างรับ lines."""
+    """Open POs for a vendor (or all), rolled up from ค้างรับ lines.
+
+    Each PO includes a ``lines`` preview so the operator can verify the bill
+    without opening it first.
+    """
     lines = list_open_lines(acctno=acctno)
     by: dict[str, dict[str, Any]] = {}
     for line in lines:
@@ -112,10 +146,12 @@ def list_open_pos(*, acctno: str = "") -> list[dict[str, Any]]:
                 "line_count": 0,
                 "qty_total": 0.0,
                 "docdate": line.get("docdate"),
+                "lines": [],
             },
         )
         bucket["line_count"] += 1
         bucket["qty_total"] += float(line.get("qty") or 0)
+        bucket["lines"].append(_line_preview(line))
         if line.get("vendor_name"):
             bucket["vendor_name"] = line["vendor_name"]
         if line.get("docdate") and (

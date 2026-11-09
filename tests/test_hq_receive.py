@@ -198,6 +198,13 @@ def test_ui_po_first_and_typed_cost():
     assert 'inputmode="decimal"' in html
     assert "/open-pos" in html
     assert "/products" in html
+    assert "renderPoLines" in html
+    assert "แก้ไขข้อมูลสินค้า" in html
+    assert 'id="npLoc1"' in html
+    assert 'id="npCode1"' in html
+    assert 'id="npPrice"' in html
+    assert ">ค่า<" in html
+    assert "PUT" in html and "/products/" in html
 
 
 def test_main_from_bcode_and_po_key():
@@ -205,6 +212,28 @@ def test_main_from_bcode_and_po_key():
     assert _main_from_bcode("AB") is None
     assert _po_key({"hq_po_docno": "HP6911-AAAA", "docno": "X"}) == "HP6911-AAAA"
     assert _po_key({"docno": "DOC1"}) == "DOC1"
+
+
+def test_line_preview_and_open_pos_shape():
+    from src.hq_receive.iclow_open import _line_preview
+
+    preview = _line_preview(
+        {
+            "bcode": "07051647",
+            "descr": "ไส้กรอง",
+            "model": "M1",
+            "brand": "B1",
+            "pcode": "P1",
+            "mcode": "F1",
+            "photo": "https://example/x.jpg",
+            "qty": 3,
+            "ui": "ชิ้น",
+        }
+    )
+    assert preview["bcode"] == "07051647"
+    assert preview["pcode"] == "P1"
+    assert preview["photo"].endswith(".jpg")
+    assert preview["qty"] == 3.0
 
 
 def _iclow_select_then(update_rowcount: int = 1):

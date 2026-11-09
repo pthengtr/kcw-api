@@ -13,10 +13,10 @@ Closes the loop that HQ PO leaves open: ordered ICLOW rows → vendor receive �
 ## Operator flow
 
 1. Choose a vendor that still has ค้างรับ (`ICLOW` `ORDERED='Y'`, not received).
-2. Select one or more open **PO** for that vendor (1 bill ↔ 1 PO is common; multi-PO and partial PO are supported).
+2. Select one or more open **PO** for that vendor (1 bill ↔ 1 PO is common; multi-PO and partial PO are supported). Each PO lists its products (code, name, model, brand, เบอร์แท้ / เบอร์โรงงาน, photo) so the operator can confirm the right bill before opening it.
 3. **ดึงรายการจาก PO ที่เลือก** — draft lines come from open ICLOW for those POs, with unit cost defaulted from `ICMAS.COSTLAST` (else `COSTNET`).
-4. Check / type qty and cost; **ไม่รับ** drops a line so it stays ค้างรับ; shortfall uses **รอของตามมา** / **ทำใบลดหนี้**.
-5. Optional: **สร้างสินค้าใหม่** inserts a HQ `ICMAS` row (manual BCODE) and adds it to the draft.
+4. Check / type qty and cost; **แก้ไข** on a draft line updates HQ `ICMAS` identity fields in place; **ไม่รับ** drops a line so it stays ค้างรับ; shortfall uses **รอของตามมา** / **ทำใบลดหนี้**.
+5. Optional: **สร้างสินค้าใหม่** inserts a HQ `ICMAS` row (manual BCODE, including ที่เก็บ / รหัสคุม / ราคา / ค่า) and adds it to the draft.
 6. Optional: AI bill photo fills header fields only (bill no / date / discount) — it does not match product lines.
 7. **บันทึกร่าง** then **ยืนยันรับเข้า**.
 8. Print / reprint barcode stickers (TSPL `.prn`) from confirmed lines or history.
@@ -36,7 +36,8 @@ See also `src/hq_receive/rules.py` (`RULES_SUMMARY`).
 | Credit-note path | PI posts **bill qty**; CN posts shortfall (negative); stock nets to received qty |
 | Wait-rest path | PI posts **received qty** only; ICLOW qty reduced by received |
 | Default cost | `COSTLAST` else `COSTNET`; typed override on the draft |
-| New product | `POST /api/products` inserts HQ ICMAS (needs `INSERT` grant + write flag) |
+| New product | `POST /api/products` inserts HQ ICMAS incl. LOCATION1 / CODE1 / PRICE1 / cost (needs write flag) |
+| Edit product | `PUT /api/products/{bcode}` updates name / brand / model / numbers / location / code1 / price / cost |
 | Change-product path | Line is held before confirm |
 | CN numbering | Non-VAT `KCCN`+YYMM+`-`+seq; VAT temp `7KCCN…` (fill vendor CN no/date later) |
 | Hold lines | Skipped on confirm (not written to PIMAS) |
@@ -53,9 +54,10 @@ See also `src/hq_receive/rules.py` (`RULES_SUMMARY`).
 - `GET /` UI
 - `GET /api/meta`
 - `GET /api/vendors?q=`
-- `GET /api/open-pos?acctno=` — open POs with ค้างรับ counts
-- `GET /api/open-lines?acctno=&po=PO1,PO2` — ค้างรับ lines (optional PO filter); includes `cost` / `costlast`
-- `POST /api/products` — create HQ ICMAS product (manual BCODE)
+- `GET /api/open-pos?acctno=` — open POs with ค้างรับ counts + product-line preview
+- `GET /api/open-lines?acctno=&po=PO1,PO2` — ค้างรับ lines (optional PO filter); includes identity fields, photo, `cost` / `costlast`
+- `POST /api/products` — create HQ ICMAS product (manual BCODE; ที่เก็บ / รหัสคุม / ราคา / ค่า)
+- `PUT /api/products/{bcode}` — update HQ ICMAS identity fields from the receive draft
 - `POST /api/invoices/extract` (multipart image; header assist)
 - `POST /api/invoices/{id}/match` (legacy; UI no longer drives the main flow)
 - `GET /api/discrepancies`
