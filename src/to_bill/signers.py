@@ -19,7 +19,15 @@ AON = {
     "full_name": "มัญชุนันท์ คำลา",
     "roles": (ROLE_ISSUER,),
     "image": "aon.jpg",
-    "aliases": ("อ้อน", "มัญชุนันท์", "คำลา", "aon", "manchunan"),
+    # Real LINE display names include Manchunannnnn / Aon.
+    "aliases": (
+        "อ้อน",
+        "มัญชุนันท์",
+        "คำลา",
+        "aon",
+        "manchunan",
+        "manchunannnnn",
+    ),
 }
 MAY = {
     "nick": "เมย์",
@@ -33,7 +41,16 @@ CARTOON = {
     "full_name": "จิดาภา กระจาย",
     "roles": (ROLE_ISSUER, ROLE_APPROVER),
     "image": "cartoon.jpg",
-    "aliases": ("การ์ตูน", "การตูน", "จิดาภา", "กระจาย", "cartoon", "jidapa"),
+    # Real LINE display name is like Cartoonnnn!🦭 KCW.
+    "aliases": (
+        "การ์ตูน",
+        "การตูน",
+        "จิดาภา",
+        "กระจาย",
+        "cartoon",
+        "cartoonnnn",
+        "jidapa",
+    ),
 }
 
 # Kept for older imports / tests that still say ISSUER / APPROVER.
@@ -55,6 +72,15 @@ def _tokens(value: str) -> set[str]:
     return tokens
 
 
+def _ascii_fuzzy(token: str, alias: str) -> bool:
+    """LINE nicks often stretch letters (Manchunannnnn / Cartoonnnn)."""
+    if not token.isascii() or not alias.isascii():
+        return False
+    if len(alias) < 4 or len(token) < 4:
+        return False
+    return token.startswith(alias) or alias.startswith(token)
+
+
 def match_signer(actor: str) -> dict | None:
     tokens = _tokens(actor)
     if not tokens:
@@ -63,6 +89,9 @@ def match_signer(actor: str) -> dict | None:
         aliases = {"".join(a.split()).casefold() for a in signer["aliases"]}
         if tokens & aliases:
             return signer
+        for token in tokens:
+            if any(_ascii_fuzzy(token, alias) for alias in aliases):
+                return signer
     return None
 
 

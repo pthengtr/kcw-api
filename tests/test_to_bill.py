@@ -221,16 +221,25 @@ def test_only_named_sellers_may_issue():
     assert can_issue("จิดาภา กระจาย")
     assert can_issue("มัญชุนันท์ คำลา")
     assert can_issue("ปิยะนุช")
+    # Real LINE display names (stretched latin nicks).
+    assert can_issue("Manchunannnnn")
+    assert can_issue("Aon")
+    assert can_issue("Cartoonnnn!🦭 KCW")
     assert match_signer("อ้อน") is ISSUER is AON
     assert match_signer("May") is APPROVER is MAY
     assert match_signer("การ์ตูน") is CARTOON
+    assert match_signer("Manchunannnnn") is AON
+    assert match_signer("Cartoonnnn!🦭 KCW") is CARTOON
     assert sheet_signers("") == (AON, MAY)
     assert sheet_signers("อ้อน") == (AON, MAY)
+    assert sheet_signers("Manchunannnnn") == (AON, MAY)
     assert sheet_signers("การ์ตูน") == (CARTOON, CARTOON)
     assert display_name(AON) == "มัญชุนันท์ คำลา"
     assert display_name(CARTOON) == "จิดาภา กระจาย"
     assert not can_issue("LAN")
     assert not can_issue("Pannawit")
+    assert not can_issue("peung")
+    assert not can_issue("น้อง")
     try:
         assert_can_issue("someone else")
     except ToBillError as exc:
