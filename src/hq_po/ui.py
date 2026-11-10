@@ -142,8 +142,9 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .manage-menu .peer-btn,.manage-item{margin:0;width:100%;text-align:left;border-radius:8px}
 .manage-menu .peer-btn.warn{color:var(--warn);border-color:#fdba74;background:#fff}
 .view-hint{margin:0;padding:0 2px;color:var(--muted);font-size:12px;line-height:1.4}
-.hist-tabs,.hist-range{margin:8px 0 4px}
+.hist-tabs{margin:8px 0 4px}
 .hist-more{margin-top:8px}
+.hist-more-btn{display:block;width:100%;min-height:40px;margin-top:10px;border:1px solid var(--blue);border-radius:10px;background:#fff;color:var(--blue-deep);font-weight:700;font-size:13px}
 .bill-link{border:0;background:transparent;color:var(--blue);font-weight:700;padding:0;text-decoration:underline;font-size:inherit;cursor:pointer}
 .hist-table{width:100%;border-collapse:collapse;font-size:12px}
 .hist-table th,.hist-table td{padding:8px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
@@ -331,13 +332,6 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <div class="toggle hist-site" id="histSite">
       <button type="button" id="histHq" class="on">HQ</button>
       <button type="button" id="histSyp">SYP</button>
-    </div>
-    <div class="toggle hist-range" id="histRange">
-      <button type="button" data-months="3">3 ด.</button>
-      <button type="button" data-months="6">6 ด.</button>
-      <button type="button" data-months="12" class="on">12 ด.</button>
-      <button type="button" data-months="24">24 ด.</button>
-      <button type="button" data-months="0">ทั้งหมด</button>
     </div>
     <div class="toggle hist-tabs" id="histTabs">
       <button type="button" id="histTabInsight" class="on" data-hist-tab="insight">Insight</button>
@@ -1611,7 +1605,9 @@ let histGen = 0;
 let histCode = "";
 let histSite = "hq";
 let histTab = "insight";
-let histMonths = 12;
+const HIST_MONTHS = 12;
+const HIST_PAGE = 10;
+let histListLimit = HIST_PAGE;
 let histCache = {insight:null, purchase:null, sales:null, bill:null};
 function liveInsight(bcode){
   const code = String(bcode || "").trim();
@@ -1643,9 +1639,6 @@ function showInsightIdentity(live){
 function syncHistChrome(){
   document.getElementById("histHq").classList.toggle("on", histSite !== "syp");
   document.getElementById("histSyp").classList.toggle("on", histSite === "syp");
-  document.querySelectorAll("#histRange [data-months]").forEach(btn => {
-    btn.classList.toggle("on", Number(btn.getAttribute("data-months")) === histMonths);
-  });
   document.querySelectorAll("#histTabs [data-hist-tab]").forEach(btn => {
     btn.classList.toggle("on", btn.getAttribute("data-hist-tab") === histTab);
   });
@@ -1729,7 +1722,7 @@ function insightHtml(ins, live){
     ? `ควรสั่งเพิ่ม ${suggest != null ? qtyText(suggest) : "—"}${unit ? " " + unit : ""}`
     : stInfo[1];
   const kpi = (label, value) => `<div class="ikpi"><div class="l">${esc(label)}</div><div class="v">${value}</div></div>`;
-  const series = sliceMonthly(ins.monthly_sales || [], histMonths || 12);
+  const series = sliceMonthly(ins.monthly_sales || [], HIST_MONTHS);
   const maxBar = Math.max(1, ...series.map(s => Number(s.qty) || 0));
   const bars = series.length ? `<div class="ibars">${series.map(s => {
     const n = Number(s.qty) || 0;
@@ -1744,7 +1737,7 @@ function insightHtml(ins, live){
     <div class="ikpis">${kpi("เฉลี่ย 3 เดือน", histQty(avg3, unit))}${kpi("เฉลี่ย 12 เดือน", histQty(avg12, unit))}</div>
     <h3>จุดสั่ง / Safety Stock</h3>
     <div class="ikpis">${kpi("จุดสั่งซื้อ", histQty(reorder, unit))}${kpi("Safety Stock", histQty(target, unit))}${kpi("แนะนำสั่ง", histQty(suggest, unit))}</div>
-    <h3>กราฟยอดขายย้อนหลัง</h3>
+    <h3>กราฟยอดขายย้อนหลัง ${HIST_MONTHS} เดือน</h3>
     ${bars}
     <h3>ราคา / Margin</h3>
     <div class="ikpis">${kpi("ราคาซื้อเฉลี่ย", esc(histMoney(avgBuy)))}${kpi("ราคาขายเฉลี่ย", esc(histMoney(avgSell)))}${kpi("Margin", marginPct == null ? "—" : esc(qtyText(marginPct)) + "%")}</div>
@@ -1756,24 +1749,32 @@ function partyLabel(row){
   if(name && acct && name !== acct) return `${name} · ${acct}`;
   return name || acct || "—";
 }
-function purchaseRowsHtml(data){
+function histMoreBtn(total, shown){
+  if(total <= shown) return "";
+  return `<button type="button" class="hist-more-btn" data-hist-more>ดูเพิ่มเติม</button>`;
+}
+function purchaseRowsHtml(data, limit){
   const rows = (data && data.rows) || [];
-  if(!rows.length) return '<div class="empty">ไม่พบประวัติซื้อในช่วงนี้</div>';
+  if(!rows.length) return '<div class="empty">ไม่พบประวัติซื้อ</div>';
+  const shown = Math.max(HIST_PAGE, Number(limit) || HIST_PAGE);
+  const view = rows.slice(0, shown);
   return `<table class="hist-table"><thead><tr><th>วันที่</th><th>เลขบิล</th><th>เจ้าหนี้</th><th class="num">จำนวน</th><th class="num">ราคาซื้อ</th></tr></thead><tbody>
-    ${rows.map(row => `<tr>
+    ${view.map(row => `<tr>
       <td>${esc(row.billdate || "—")}</td>
       <td><button type="button" class="bill-link" data-bill-kind="purchase" data-billno="${esc(row.billno || "")}">${esc(row.billno || "—")}</button></td>
       <td>${esc(partyLabel(row))}</td>
       <td class="num">${esc(qtyText(row.qty))}</td>
       <td class="num">${esc(histMoney(row.price))}</td>
     </tr>`).join("")}
-  </tbody></table>`;
+  </tbody></table>${histMoreBtn(rows.length, view.length)}`;
 }
-function salesRowsHtml(data){
+function salesRowsHtml(data, limit){
   const rows = (data && data.rows) || [];
-  if(!rows.length) return '<div class="empty">ไม่พบประวัติขายในช่วงนี้</div>';
+  if(!rows.length) return '<div class="empty">ไม่พบประวัติขาย</div>';
+  const shown = Math.max(HIST_PAGE, Number(limit) || HIST_PAGE);
+  const view = rows.slice(0, shown);
   return `<table class="hist-table"><thead><tr><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">จำนวน</th><th class="num">ราคาขาย</th><th class="num">ต้นทุน</th><th class="num">กำไร</th></tr></thead><tbody>
-    ${rows.map(row => `<tr>
+    ${view.map(row => `<tr>
       <td>${esc(row.billdate || "—")}</td>
       <td><button type="button" class="bill-link" data-bill-kind="sales" data-billno="${esc(row.billno || "")}">${esc(row.billno || "—")}</button></td>
       <td>${esc(partyLabel(row))}</td>
@@ -1782,7 +1783,7 @@ function salesRowsHtml(data){
       <td class="num">${esc(histMoney(row.cost))}</td>
       <td class="num">${esc(histMoney(row.profit))}</td>
     </tr>`).join("")}
-  </tbody></table>`;
+  </tbody></table>${histMoreBtn(rows.length, view.length)}`;
 }
 function billDetailHtml(data){
   if(!data) return '<div class="empty">ไม่พบรายละเอียดบิล</div>';
@@ -1815,18 +1816,18 @@ function renderHistBody(){
   }
   if(histTab === "purchase"){
     if(!histCache.purchase){ host.innerHTML = spinner("กำลังโหลดประวัติซื้อ…"); return; }
-    host.innerHTML = purchaseRowsHtml(histCache.purchase);
+    host.innerHTML = purchaseRowsHtml(histCache.purchase, histListLimit);
     return;
   }
   if(!histCache.sales){ host.innerHTML = spinner("กำลังโหลดประวัติขาย…"); return; }
-  host.innerHTML = salesRowsHtml(histCache.sales);
+  host.innerHTML = salesRowsHtml(histCache.sales, histListLimit);
 }
 async function loadHistTab(){
   if(!histCode) return;
   const gen = ++histGen;
   const code = histCode;
   const site = histSite;
-  const months = histMonths;
+  const months = HIST_MONTHS;
   const tab = histTab;
   histCache.bill = null;
   syncHistChrome();
@@ -1865,6 +1866,7 @@ async function openTrade(bcode, site){
   histCode = code;
   histSite = site === "syp" ? "syp" : "hq";
   histTab = "insight";
+  histListLimit = HIST_PAGE;
   histCache = {insight:null, purchase:null, sales:null, bill:null};
   showInsightIdentity(liveInsight(code));
   document.getElementById("hist").hidden = false;
@@ -1964,29 +1966,15 @@ document.getElementById("holdList").onclick = (e) => {
 document.getElementById("histHq").onclick = () => {
   if(!histCode || histSite === "hq") return;
   histSite = "hq";
+  histListLimit = HIST_PAGE;
   histCache = {insight:null, purchase:null, sales:null, bill:null};
   loadHistTab();
 };
 document.getElementById("histSyp").onclick = () => {
   if(!histCode || histSite === "syp") return;
   histSite = "syp";
+  histListLimit = HIST_PAGE;
   histCache = {insight:null, purchase:null, sales:null, bill:null};
-  loadHistTab();
-};
-document.getElementById("histRange").onclick = (e) => {
-  const btn = e.target.closest("[data-months]");
-  if(!btn || !histCode) return;
-  const months = Number(btn.getAttribute("data-months"));
-  if(!Number.isFinite(months) || months === histMonths) return;
-  histMonths = months;
-  histCache.purchase = null;
-  histCache.sales = null;
-  histCache.bill = null;
-  if(histTab === "insight" && histCache.insight){
-    syncHistChrome();
-    renderHistBody();
-    return;
-  }
   loadHistTab();
 };
 document.getElementById("histTabs").onclick = (e) => {
@@ -1995,10 +1983,17 @@ document.getElementById("histTabs").onclick = (e) => {
   const tab = btn.getAttribute("data-hist-tab") || "insight";
   if(tab === histTab && !histCache.bill) return;
   histTab = tab;
+  histListLimit = HIST_PAGE;
   histCache.bill = null;
   loadHistTab();
 };
 document.getElementById("histBody").onclick = (e) => {
+  const more = e.target.closest("[data-hist-more]");
+  if(more){
+    histListLimit += HIST_PAGE;
+    renderHistBody();
+    return;
+  }
   const back = e.target.closest("[data-bill-back]");
   if(back){
     histCache.bill = null;
