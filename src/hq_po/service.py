@@ -140,6 +140,34 @@ def product_insight_payload(bcode: str, site: str = "hq") -> dict[str, Any]:
     return insight
 
 
+def product_purchase_history_payload(
+    bcode: str, *, site: str = "hq", months: int = 12
+) -> dict[str, Any]:
+    from src.hq_po.trade_history import purchase_history
+
+    return purchase_history(bcode, site=site, months=months)
+
+
+def product_sales_history_payload(
+    bcode: str, *, site: str = "hq", months: int = 12
+) -> dict[str, Any]:
+    from src.hq_po.trade_history import sales_history
+
+    return sales_history(bcode, site=site, months=months)
+
+
+def product_bill_detail_payload(
+    *,
+    kind: str,
+    billno: str,
+    site: str = "hq",
+    bcode: str = "",
+) -> dict[str, Any]:
+    from src.hq_po.trade_history import bill_detail
+
+    return bill_detail(kind=kind, billno=billno, site=site, bcode=bcode)
+
+
 def release_incoming(iclow_id: int, kind: str) -> dict[str, Any]:
     """Cancel one ค้างรับ line and send it back to รอสั่ง with a status."""
     settings = get_hq_po_settings()
