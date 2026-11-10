@@ -23,7 +23,10 @@ from src.hq_po.service import (
     list_open_orders,
     mark_product_unavailable,
     release_incoming,
+    product_bill_detail_payload,
     product_insight_payload,
+    product_purchase_history_payload,
+    product_sales_history_payload,
     peers_payload,
     product_search_payload,
     suggest_payload,
@@ -357,6 +360,57 @@ def api_history(bcode: str, request: Request, site: str = "hq"):
         return _error(exc, 400 if exc.code == "missing" else 502)
     except Exception as exc:
         return JSONResponse({"error": "history_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/history/{bcode}/purchases")
+def api_purchase_history(
+    bcode: str, request: Request, site: str = "hq", months: int = 12
+):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return product_purchase_history_payload(bcode, site=site, months=months)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 502)
+    except Exception as exc:
+        return JSONResponse({"error": "purchase_history_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/history/{bcode}/sales")
+def api_sales_history(
+    bcode: str, request: Request, site: str = "hq", months: int = 12
+):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return product_sales_history_payload(bcode, site=site, months=months)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 502)
+    except Exception as exc:
+        return JSONResponse({"error": "sales_history_failed", "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/history/bills/{kind}/{billno}")
+def api_bill_detail(
+    kind: str,
+    billno: str,
+    request: Request,
+    site: str = "hq",
+    bcode: str = "",
+):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return product_bill_detail_payload(
+            kind=kind, billno=billno, site=site, bcode=bcode
+        )
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 502)
+    except Exception as exc:
+        return JSONResponse({"error": "bill_detail_failed", "message": str(exc)}, status_code=502)
 
 
 def _actor(ident) -> str | None:

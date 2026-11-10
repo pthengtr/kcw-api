@@ -39,6 +39,42 @@ def test_product_insight_payload_uses_the_selected_site(monkeypatch):
     assert payload["status"] == "ready"
 
 
+def test_trade_history_payloads_pass_site_and_months(monkeypatch):
+    from src.hq_po import service
+
+    seen = {}
+
+    monkeypatch.setattr(
+        "src.hq_po.trade_history.purchase_history",
+        lambda bcode, site="hq", months=12: seen.update(
+            kind="purchase", bcode=bcode, site=site, months=months
+        ) or {"rows": []},
+    )
+    monkeypatch.setattr(
+        "src.hq_po.trade_history.sales_history",
+        lambda bcode, site="hq", months=12: seen.update(
+            kind="sales", bcode=bcode, site=site, months=months
+        ) or {"rows": []},
+    )
+    def fake_bill(**kw):
+        seen.clear()
+        seen.update(kw)
+        seen["called"] = "bill_detail"
+        return {"lines": []}
+
+    monkeypatch.setattr("src.hq_po.trade_history.bill_detail", fake_bill)
+    service.product_purchase_history_payload("A1", site="syp", months=6)
+    assert seen == {"kind": "purchase", "bcode": "A1", "site": "syp", "months": 6}
+    service.product_sales_history_payload("A1", site="hq", months=3)
+    assert seen == {"kind": "sales", "bcode": "A1", "site": "hq", "months": 3}
+    service.product_bill_detail_payload(
+        kind="purchase", billno="B1", site="hq", bcode="A1"
+    )
+    assert seen["called"] == "bill_detail"
+    assert seen["billno"] == "B1"
+    assert seen["kind"] == "purchase"
+
+
 def test_release_badge_names_the_old_vendor():
     switch = release_badge("switch", "7SKKS")
     reorder = release_badge("reorder", "7SKKS")
@@ -364,7 +400,22 @@ def test_page_defaults_vendor_view():
     assert 'id="viewHint"' in html
     assert "จัดการ" in html
     assert "Insight / ประวัติ" in html
-    assert "ประวัติซื้อ · ล็อตที่มักสั่ง" in html
+    assert 'id="histTabs"' in html
+    assert 'data-hist-tab="insight"' in html
+    assert 'data-hist-tab="purchase"' in html
+    assert 'data-hist-tab="sales"' in html
+    assert 'id="histRange"' in html
+    assert "/hq-po/api/history/" in html
+    assert "/purchases" in html
+    assert "/sales" in html
+    assert "ควรสั่งเพิ่ม" in html
+    assert "manage-menu" in html
+    assert "data-cancel-waiting=" in html
+    assert "data-dismiss=" in html
+    tools_fn = html.split("function productTools", 1)[1].split("function qtyCell", 1)[0]
+    assert "data-cancel-waiting=" in tools_fn
+    assert "data-dismiss=" in tools_fn
+    assert "waitingActs" not in tools_fn
     assert 'id="vendorSort"' in html
     assert 'id="sortCount" class="on"' in html
     assert "จำนวนสินค้า" in html
@@ -396,8 +447,9 @@ def test_page_defaults_vendor_view():
     assert "เปลี่ยนเจ้าหนี้" in html
     assert "สั่งกับบริษัทนี้" not in html
     assert "เลือกบริษัทก่อนสั่ง" not in html
-    assert "คงเหลือ HQ" in html
-    assert "คงเหลือ SYP" in html
+    assert "สต็อกคงเหลือ" in html
+    assert "คงเหลือรวม" in html
+    assert "Safety Stock" in html
     assert "แล้วใช้บริษัทนี้" in html
     assert "/hq-po/api/blocks/clear" in html
     assert "ดูสินค้าที่เคยสั่งจากเจ้าหนี้นี้" in html

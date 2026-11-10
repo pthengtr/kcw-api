@@ -140,7 +140,19 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .manage[open] > summary::after{content:"▴"}
 .manage-menu{display:flex;flex-direction:column;gap:4px;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fff;min-width:min(240px,70vw)}
 .manage-menu .peer-btn,.manage-item{margin:0;width:100%;text-align:left;border-radius:8px}
+.manage-menu .peer-btn.warn{color:var(--warn);border-color:#fdba74;background:#fff}
 .view-hint{margin:0;padding:0 2px;color:var(--muted);font-size:12px;line-height:1.4}
+.hist-tabs,.hist-range{margin:8px 0 4px}
+.hist-more{margin-top:8px}
+.bill-link{border:0;background:transparent;color:var(--blue);font-weight:700;padding:0;text-decoration:underline;font-size:inherit;cursor:pointer}
+.hist-table{width:100%;border-collapse:collapse;font-size:12px}
+.hist-table th,.hist-table td{padding:8px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.hist-table th{color:var(--muted);font-weight:650}
+.hist-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hist-rec{margin:8px 0;padding:10px 12px;border-radius:12px;background:var(--blue-wash);color:var(--blue-deep);font-weight:700;line-height:1.4}
+.hist-rec.warn{background:var(--warn-bg);color:var(--warn)}
+.hist-rec.ok{background:var(--ok-bg);color:var(--ok)}
+.hist-rec.bad{background:#fee2e2;color:#991b1b}
 .order-btn,.history-btn{display:block;width:100%;min-height:42px;margin-top:8px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;font-size:14px}
 .history-btn{background:#fff;color:var(--blue-deep);border:1px solid var(--blue)}
 .add-quiet{display:block;width:100%;margin:4px 0 12px;background:transparent;border:0;color:var(--blue);font-weight:650;font-size:13px;min-height:40px}
@@ -319,6 +331,18 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <div class="toggle hist-site" id="histSite">
       <button type="button" id="histHq" class="on">HQ</button>
       <button type="button" id="histSyp">SYP</button>
+    </div>
+    <div class="toggle hist-range" id="histRange">
+      <button type="button" data-months="3">3 ด.</button>
+      <button type="button" data-months="6">6 ด.</button>
+      <button type="button" data-months="12" class="on">12 ด.</button>
+      <button type="button" data-months="24">24 ด.</button>
+      <button type="button" data-months="0">ทั้งหมด</button>
+    </div>
+    <div class="toggle hist-tabs" id="histTabs">
+      <button type="button" id="histTabInsight" class="on" data-hist-tab="insight">Insight</button>
+      <button type="button" id="histTabBuy" data-hist-tab="purchase">ประวัติซื้อ</button>
+      <button type="button" id="histTabSell" data-hist-tab="sales">ประวัติขาย</button>
     </div>
     <div id="histBody"></div>
   </div>
@@ -609,7 +633,14 @@ function productTools(row){
         ? `<button type="button" class="peer-btn" data-unblock="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">มีสินค้าแล้ว</button>`
         : `<button type="button" class="peer-btn" data-clear-block="${esc(row.bcode||"")}" data-acct="${esc(row.vendor||"")}">มีสินค้าแล้ว</button>`)
     : "";
-  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button></div></details>`;
+  const canStamp = STAMP && row.source === "iclow" && row.iclow_id;
+  const cancel = canStamp
+    ? `<button type="button" class="peer-btn warn" data-cancel-waiting="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">ยกเลิก</button>`
+    : "";
+  const dismiss = canStamp
+    ? `<button type="button" class="peer-btn warn" data-dismiss="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">นำออก</button>`
+    : "";
+  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${cancel}${dismiss}</div></details>`;
   return `<div class="line-actions">${manage}${tradeButton(row.bcode)}</div><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div>`;
 }
 function qtyCell(row){
@@ -658,14 +689,6 @@ function lineHtml(row, mode){
   const fresh = !pick && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
   const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}${fresh}</div>`;
   const tools = productTools(row);
-  const canStamp = STAMP && row.source === "iclow" && row.iclow_id;
-  const cancel = canStamp
-    ? `<button type="button" class="ghost" data-cancel-waiting="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">ยกเลิก</button>`
-    : "";
-  const dismiss = canStamp
-    ? `<button type="button" class="ghost" data-dismiss="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">นำออก</button>`
-    : "";
-  const waitingActs = (cancel || dismiss) ? `<div class="waiting-acts">${cancel}${dismiss}</div>` : "";
   const recovered = stockRecovered(row) ? " recovered" : "";
   return `<div class="line${pick ? "" : " plain"}${pick && row.picked ? " picked" : ""}${recovered}" id="line-${esc(rowKey(row))}">
     ${check}
@@ -682,7 +705,6 @@ function lineHtml(row, mode){
       ${row.last_date ? `<div class="meta">เคยสั่ง ${esc(row.last_date)}${Number(row.bills) > 0 ? " · " + esc(String(row.bills)) + " บิล" : ""}</div>` : ""}
       ${recHtml(row)}
       ${tools}
-      ${waitingActs}
       </div>
     </div>
     ${qtyCell(row)}
@@ -1588,12 +1610,25 @@ async function loadHold(){
 let histGen = 0;
 let histCode = "";
 let histSite = "hq";
+let histTab = "insight";
+let histMonths = 12;
+let histCache = {insight:null, purchase:null, sales:null, bill:null};
 function liveInsight(bcode){
   const code = String(bcode || "").trim();
   const row = (state.items || []).find(item => String(item.bcode || "").trim() === code)
     || (state.hold || []).find(item => String(item.bcode || "").trim() === code)
     || {};
-  return {qtyHq: row.hq_qtyoh2, qtySyp: row.syp_qtyoh2, ui1: row.ui || row.ui1 || "", descr: row.descr || "", model: row.model || ""};
+  const ai = Number(row.ai_qty);
+  return {
+    qtyHq: row.hq_qtyoh2,
+    qtySyp: row.syp_qtyoh2,
+    company: row.company_qtyoh2,
+    incoming: row.incoming_qty,
+    ui1: row.ui || row.ui1 || "",
+    descr: row.descr || "",
+    model: row.model || "",
+    aiQty: Number.isFinite(ai) && ai > 0 ? ai : null,
+  };
 }
 function showInsightIdentity(live){
   const name = String((live && live.descr) || "").trim();
@@ -1605,6 +1640,41 @@ function showInsightIdentity(live){
   modelEl.textContent = model ? "ชื่อรุ่น " + model : "";
   modelEl.hidden = !model;
 }
+function syncHistChrome(){
+  document.getElementById("histHq").classList.toggle("on", histSite !== "syp");
+  document.getElementById("histSyp").classList.toggle("on", histSite === "syp");
+  document.querySelectorAll("#histRange [data-months]").forEach(btn => {
+    btn.classList.toggle("on", Number(btn.getAttribute("data-months")) === histMonths);
+  });
+  document.querySelectorAll("#histTabs [data-hist-tab]").forEach(btn => {
+    btn.classList.toggle("on", btn.getAttribute("data-hist-tab") === histTab);
+  });
+  document.getElementById("histTitle").textContent = histCode
+    ? `${histCode} · Insight / ประวัติ · ${histSite.toUpperCase()}`
+    : "Insight / ประวัติ";
+}
+function histNum(v){
+  if(v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function histPick(...vals){
+  for(const v of vals){ if(v != null && v !== "") return v; }
+  return null;
+}
+function histMoney(n){
+  const text = moneyText(n);
+  return text || "—";
+}
+function histQty(n, unit){
+  if(n == null) return "—";
+  return esc(qtyText(n)) + (unit ? " " + esc(unit) : "");
+}
+function sliceMonthly(series, months){
+  const rows = Array.isArray(series) ? series.slice() : [];
+  if(!months || months <= 0 || rows.length <= months) return rows;
+  return rows.slice(-months);
+}
 function insightHtml(ins, live){
   const st = (ins && ins.status) || "no_movement";
   if(st === "working") return '<div class="empty">กำลังสร้าง insight…</div>';
@@ -1613,165 +1683,209 @@ function insightHtml(ins, live){
   const pol = ins.policy || {};
   const der = i.derived || {};
   const dash = i.dashboard || der.dashboard || {};
-  const num = (v) => {
-    if(v == null || v === "") return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  };
-  const pick = (...vals) => {
-    for(const v of vals){ if(v != null && v !== "") return v; }
-    return null;
-  };
   const sales = dash.sales || {};
-  const ch = dash.channels_12m || {};
   const pm = dash.price_margin || {};
   const stk = dash.stock || {};
   const purch = i.purchase || {};
   const ic = i.icmas || {};
-  const tr = i.trends || {};
   const mg = i.margin || {};
   const fl = der.flags || {};
   const dem = der.demand || {};
   const holdBlk = der.holding || {};
   const od = der.order || {};
   const mgDer = der.margin || {};
-  const td = der.trend || {};
-  const xfer = der.transfer || {};
-  const unit = String(pick(stk.unit, purch.order_unit, pol.order_unit, live.ui1, od.ui1, "") || "");
-  const qtyU = (n) => {
-    if(n == null) return "—";
-    return esc(qtyText(n)) + (unit ? " " + esc(unit) : "");
-  };
-  const moneyU = (n) => {
-    if(n == null) return "—";
-    const text = moneyText(n);
-    if(!text) return "—";
-    return esc(text) + (unit ? " บาท/" + esc(unit) : "");
-  };
-  const latestMo = num(pick(sales.latest_month, dem.qty_30d, pol.sales_qty_30d));
-  const avg3 = num(pick(sales.avg_3m, dem.monthly_from_90d));
-  const avg12 = num(pick(sales.avg_12m, dem.monthly_from_12m, i.typical_monthly_qty, pol.typical_monthly_qty));
-  const tot12 = num(pick(sales.total_12m, dem.qty_12m, pol.sales_qty_12m));
-  const trendMap = {hot:"ร้อน", growing:"เติบโต", flat:"คงที่", declining:"ลดลง", dead:"ตาย", lumpy:"กระจุก", seasonal:"ตามฤดูกาล", unknown:"ไม่ชัด"};
-  const trend = String(pick(sales.trend, tr.m12, i.trend_label, pol.trend_12m, td["12m"]) || "");
-  const trendTh = trendMap[trend.toLowerCase()] || trend || "—";
-  const chHq = num(pick(ch.hq, (dem.by_channel_12m || {}).hq_store));
-  const chSyp = num(pick(ch.syp, (dem.by_channel_12m || {}).syp_store));
-  const chOn = num(pick(ch.online, (dem.by_channel_12m || {}).online));
-  const chSum = (chHq || 0) + (chSyp || 0) + (chOn || 0);
-  const pct = (part, given) => {
-    const n = num(given);
-    if(n != null) return n;
-    return chSum ? (part || 0) / chSum * 100 : null;
-  };
   const stBlk = der.stock || {};
-  const qtyHq = num(pick(live.qtyHq, stk.hq, stBlk.qtyoh_hq, pol.qtyoh_hq));
-  const qtySyp = num(pick(live.qtySyp, stk.syp, stBlk.qtyoh_syp, pol.qtyoh_syp));
+  const unit = String(histPick(stk.unit, purch.order_unit, pol.order_unit, live.ui1, od.ui1, "") || "");
+  const qtyHq = histNum(histPick(live.qtyHq, stk.hq, stBlk.qtyoh_hq, pol.qtyoh_hq));
+  const qtySyp = histNum(histPick(live.qtySyp, stk.syp, stBlk.qtyoh_syp, pol.qtyoh_syp));
   const qtyTotal = (qtyHq != null || qtySyp != null)
     ? (qtyHq || 0) + (qtySyp || 0)
-    : num(pick(stk.total, stBlk.company_qtyoh));
-  const target = num(pick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
-  const reorder = num(pick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
-  const lot = num(pick(stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
-  const coverWeeks = num(pick(pol.suggested_cover_weeks, holdBlk.cover_weeks, i.suggested_cover_weeks));
-  const coverDays = coverWeeks != null ? Math.round(coverWeeks * 7) : null;
-  const dead = pick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
-  const orderOk = pick(purch.order_ok, pol.order_ok, fl.order_ok);
+    : histNum(histPick(live.company, stk.total, stBlk.company_qtyoh));
+  const target = histNum(histPick(stk.target, i.safe_holding_qty, pol.safe_holding_qty, holdBlk.safe_holding_qty));
+  const reorder = histNum(histPick(stk.reorder_point, ic.rec_qtymin, pol.rec_qtymin, fl.rec_qtymin));
+  const lot = histNum(histPick(live.aiQty, stk.suggested_lot, purch.suggested_order_qty, pol.suggested_order_qty, od.order_qty));
+  const gap = (qtyTotal != null && target != null && target > qtyTotal) ? (target - qtyTotal) : null;
+  const suggest = histNum(histPick(live.aiQty, lot, gap));
+  const avg3 = histNum(histPick(sales.avg_3m, dem.monthly_from_90d));
+  const avg12 = histNum(histPick(sales.avg_12m, dem.monthly_from_12m, i.typical_monthly_qty, pol.typical_monthly_qty));
+  const avgBuy = histNum(histPick(pm.avg_buy, mgDer.avg_buy_12m));
+  const avgSell = histNum(histPick(pm.avg_sell, mgDer.avg_sell_12m));
+  const marginPct = histNum(histPick(pm.margin_pct, mgDer.realized_pct_12m, pol.margin_pct_12m, mg.list_pct, pol.margin_pct_list));
+  const dead = histPick(dash.dead_stock, i.dead_stock, pol.dead_stock, fl.dead_stock);
   let orderStatus = "caution";
   if(dead === "yes") orderStatus = "dead_stock";
   else if(qtyTotal != null && target != null && qtyTotal >= target) orderStatus = "no_order_needed";
   else if(qtyTotal != null && reorder != null && qtyTotal <= reorder) orderStatus = "should_order";
-  else if(orderOk === "caution" || dead === "maybe" || orderOk === "no") orderStatus = "caution";
   else if(qtyTotal != null && target != null && qtyTotal < target) orderStatus = "should_order";
-  else if(orderOk === "yes") orderStatus = "no_order_needed";
   const statusMap = {
-    no_order_needed: ["ok", "🟢 ยังไม่ต้องสั่ง"],
-    should_order: ["order", "🔵 ควรสั่ง"],
-    caution: ["warn", "🟠 ระวัง"],
-    dead_stock: ["bad", "🔴 Dead Stock"]
+    no_order_needed: ["ok", "ยังไม่ต้องสั่ง"],
+    should_order: ["order", "ควรสั่งเพิ่ม"],
+    caution: ["warn", "ระวัง"],
+    dead_stock: ["bad", "Dead Stock"]
   };
   const stInfo = statusMap[orderStatus] || ["warn", orderStatus];
-  const avgBuy = num(pick(pm.avg_buy, mgDer.avg_buy_12m));
-  const avgSell = num(pick(pm.avg_sell, mgDer.avg_sell_12m));
-  const marginPct = num(pick(pm.margin_pct, mgDer.realized_pct_12m, pol.margin_pct_12m, mg.list_pct, pol.margin_pct_list));
-  const sypTarget = num(pick(xfer.syp_safe_holding, pol.rec_transfer_qty_to_syp));
-  const suppliers = (dash.suppliers || der.suppliers_12m || []).slice(0, 3);
-  const customers = (dash.customers || der.customers_12m || []).slice(0, 3);
+  const recClass = orderStatus === "should_order" ? "" : (orderStatus === "no_order_needed" ? " ok" : (orderStatus === "dead_stock" ? " bad" : " warn"));
+  const recText = orderStatus === "should_order"
+    ? `ควรสั่งเพิ่ม ${suggest != null ? qtyText(suggest) : "—"}${unit ? " " + unit : ""}`
+    : stInfo[1];
   const kpi = (label, value) => `<div class="ikpi"><div class="l">${esc(label)}</div><div class="v">${value}</div></div>`;
-  const series = ins.monthly_sales || [];
+  const series = sliceMonthly(ins.monthly_sales || [], histMonths || 12);
   const maxBar = Math.max(1, ...series.map(s => Number(s.qty) || 0));
   const bars = series.length ? `<div class="ibars">${series.map(s => {
     const n = Number(s.qty) || 0;
     const h = Math.max(2, Math.round(n / maxBar * 64));
-    const label = qtyText(n);
-    return `<div class="ibar" title="${esc(label)}"><b class="ibar-qty">${esc(label)}</b><span style="height:${h}px"></span><em>${esc(String(s.ym || "").slice(5))}</em></div>`;
-  }).join("")}</div>` : "";
-  const share = (n) => n == null ? "—" : esc(qtyText(n)) + "%";
-  const people = (rows, price) => {
-    if(!rows.length) return `<tr><td class="meta" colspan="3">—</td></tr>`;
-    return rows.map(row => {
-      const name = row.name || row.acctno || "—";
-      const extra = price
-        ? `<td class="num">${moneyU(num(row.avg_price))}</td>`
-        : `<td class="num">${share(num(row.pct_of_sales))}</td>`;
-      return `<tr><td>${esc(name)}</td><td class="num">${qtyU(num(row.qty))}</td>${extra}</tr>`;
-    }).join("");
-  };
-  const photo = thumbHtml({photo: ins.photo, bcode: ins.bcode});
-  const summary = ins.summary ? `<div class="meta">${esc(ins.summary)}</div>` : "";
-  const when = [ins.facts_as_of ? "ข้อมูลถึง " + ins.facts_as_of : "", ins.generated_at ? "สร้าง " + ins.generated_at : ""].filter(Boolean).join(" · ");
-  return `${photo}<div style="margin-top:8px"><span class="istatus ${stInfo[0]}">${esc(stInfo[1])}</span></div>
-    ${summary}
-    <h3>ประวัติซื้อ · ล็อตที่มักสั่ง</h3>
-    <div class="ikpis">${kpi("ล็อตแนะนำ / ที่มักสั่ง", qtyU(lot))}${kpi("ราคาซื้อเฉลี่ย", moneyU(avgBuy))}${kpi("จุดสั่งซื้อ", qtyU(reorder))}${kpi("Safety Stock", qtyU(target) + (coverDays != null ? `<div class="l">ประมาณ ${esc(String(coverDays))} วัน</div>` : ""))}</div>
-    <h3>เจ้าหลักที่เคยซื้อ</h3>
-    <table class="itable"><thead><tr><th>เจ้าหนี้</th><th class="num">ยอดซื้อ</th><th class="num">ราคาเฉลี่ย</th></tr></thead><tbody>${people(suppliers, true)}</tbody></table>
-    <h3>ยอดขาย · ${esc(trendTh)}</h3>
-    <div class="ikpis">${kpi("เดือนล่าสุด", qtyU(latestMo))}${kpi("เฉลี่ย 3 เดือน", qtyU(avg3))}${kpi("เฉลี่ยช่วงข้อมูล", qtyU(avg12))}${kpi("รวม 12 เดือน", qtyU(tot12))}</div>
+    return `<div class="ibar" title="${esc(qtyText(n))}"><b class="ibar-qty">${esc(qtyText(n))}</b><span style="height:${h}px"></span><em>${esc(String(s.ym || "").slice(5))}</em></div>`;
+  }).join("")}</div>` : '<div class="meta">ยังไม่มีกราฟยอดขาย</div>';
+  return `${thumbHtml({photo: ins.photo, bcode: ins.bcode})}
+    <div class="hist-rec${recClass}">${esc(recText)}</div>
+    <h3>สต็อกคงเหลือ</h3>
+    <div class="istock">${kpi("รวม", histQty(qtyTotal, unit))}${kpi("HQ", histQty(qtyHq, unit))}${kpi("SYP", histQty(qtySyp, unit))}</div>
+    <h3>ยอดขายเฉลี่ย</h3>
+    <div class="ikpis">${kpi("เฉลี่ย 3 เดือน", histQty(avg3, unit))}${kpi("เฉลี่ย 12 เดือน", histQty(avg12, unit))}</div>
+    <h3>จุดสั่ง / Safety Stock</h3>
+    <div class="ikpis">${kpi("จุดสั่งซื้อ", histQty(reorder, unit))}${kpi("Safety Stock", histQty(target, unit))}${kpi("แนะนำสั่ง", histQty(suggest, unit))}</div>
+    <h3>กราฟยอดขายย้อนหลัง</h3>
     ${bars}
-    <h3>Stock</h3>
-    <div class="istock">${kpi("คงเหลือรวม", qtyU(qtyTotal))}${kpi("คงเหลือ HQ", qtyU(qtyHq))}${kpi("คงเหลือ SYP", qtyU(qtySyp))}${kpi("เป้าโอน SYP", qtyU(sypTarget))}</div>
-    <h3>ช่องทางขาย 12 เดือน</h3>
-    <table class="itable"><thead><tr><th>ช่องทาง</th><th class="num">ยอดขาย</th><th class="num">สัดส่วน</th></tr></thead><tbody>
-      <tr><td>HQ</td><td class="num">${qtyU(chHq)}</td><td class="num">${share(pct(chHq, ch.hq_pct))}</td></tr>
-      <tr><td>SYP</td><td class="num">${qtyU(chSyp)}</td><td class="num">${share(pct(chSyp, ch.syp_pct))}</td></tr>
-      <tr><td>Online</td><td class="num">${qtyU(chOn)}</td><td class="num">${share(pct(chOn, ch.online_pct))}</td></tr>
-    </tbody></table>
-    <h3>ราคาและมาร์จิ้น</h3>
-    <table class="itable"><tbody>
-      <tr><td>ราคาซื้อเฉลี่ย</td><td class="num">${moneyU(avgBuy)}</td></tr>
-      <tr><td>ราคาขายเฉลี่ย</td><td class="num">${moneyU(avgSell)}</td></tr>
-      <tr><td>Margin</td><td class="num">${marginPct == null ? "—" : esc(qtyText(marginPct)) + "%"}</td></tr>
-    </tbody></table>
-    <h3>ลูกค้าหลัก</h3>
-    <table class="itable"><thead><tr><th>ลูกค้า</th><th class="num">ยอดซื้อ</th><th class="num">สัดส่วน</th></tr></thead><tbody>${people(customers, false)}</tbody></table>
-    ${when ? `<div class="meta">${esc(when)}</div>` : ""}`;
+    <h3>ราคา / Margin</h3>
+    <div class="ikpis">${kpi("ราคาซื้อเฉลี่ย", esc(histMoney(avgBuy)))}${kpi("ราคาขายเฉลี่ย", esc(histMoney(avgSell)))}${kpi("Margin", marginPct == null ? "—" : esc(qtyText(marginPct)) + "%")}</div>
+    ${ins.summary ? `<details class="hist-more"><summary>ดูสรุปเพิ่มเติม</summary><div class="meta" style="margin-top:8px">${esc(ins.summary)}</div></details>` : ""}`;
+}
+function partyLabel(row){
+  const name = String((row && row.acctname) || "").trim();
+  const acct = String((row && row.acctno) || "").trim();
+  if(name && acct && name !== acct) return `${name} · ${acct}`;
+  return name || acct || "—";
+}
+function purchaseRowsHtml(data){
+  const rows = (data && data.rows) || [];
+  if(!rows.length) return '<div class="empty">ไม่พบประวัติซื้อในช่วงนี้</div>';
+  return `<table class="hist-table"><thead><tr><th>วันที่</th><th>เลขบิล</th><th>เจ้าหนี้</th><th class="num">จำนวน</th><th class="num">ราคาซื้อ</th></tr></thead><tbody>
+    ${rows.map(row => `<tr>
+      <td>${esc(row.billdate || "—")}</td>
+      <td><button type="button" class="bill-link" data-bill-kind="purchase" data-billno="${esc(row.billno || "")}">${esc(row.billno || "—")}</button></td>
+      <td>${esc(partyLabel(row))}</td>
+      <td class="num">${esc(qtyText(row.qty))}</td>
+      <td class="num">${esc(histMoney(row.price))}</td>
+    </tr>`).join("")}
+  </tbody></table>`;
+}
+function salesRowsHtml(data){
+  const rows = (data && data.rows) || [];
+  if(!rows.length) return '<div class="empty">ไม่พบประวัติขายในช่วงนี้</div>';
+  return `<table class="hist-table"><thead><tr><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">จำนวน</th><th class="num">ราคาขาย</th><th class="num">ต้นทุน</th><th class="num">กำไร</th></tr></thead><tbody>
+    ${rows.map(row => `<tr>
+      <td>${esc(row.billdate || "—")}</td>
+      <td><button type="button" class="bill-link" data-bill-kind="sales" data-billno="${esc(row.billno || "")}">${esc(row.billno || "—")}</button></td>
+      <td>${esc(partyLabel(row))}</td>
+      <td class="num">${esc(qtyText(row.qty))}</td>
+      <td class="num">${esc(histMoney(row.price))}</td>
+      <td class="num">${esc(histMoney(row.cost))}</td>
+      <td class="num">${esc(histMoney(row.profit))}</td>
+    </tr>`).join("")}
+  </tbody></table>`;
+}
+function billDetailHtml(data){
+  if(!data) return '<div class="empty">ไม่พบรายละเอียดบิล</div>';
+  const lines = data.lines || [];
+  const focus = String(data.focus_bcode || "").trim();
+  const head = `${esc(data.billdate || "—")} · ${esc(data.billno || "—")}<div class="meta">${esc(partyLabel(data))}</div>`;
+  const body = lines.length
+    ? `<table class="hist-table"><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">รวม</th>${data.kind === "sales" ? '<th class="num">ต้นทุน</th><th class="num">กำไร</th>' : ""}</tr></thead><tbody>
+      ${lines.map(line => {
+        const on = focus && String(line.bcode || "") === focus ? ' style="background:var(--blue-wash)"' : "";
+        const extra = data.kind === "sales"
+          ? `<td class="num">${esc(histMoney(line.cost))}</td><td class="num">${esc(histMoney(line.profit))}</td>`
+          : "";
+        return `<tr${on}><td><span class="sku">${esc(line.bcode || "—")}</span></td><td>${esc(line.detail || "")}</td><td class="num">${esc(qtyText(line.qty))}${line.ui ? " " + esc(line.ui) : ""}</td><td class="num">${esc(histMoney(line.price))}</td><td class="num">${esc(histMoney(line.amount))}</td>${extra}</tr>`;
+      }).join("")}
+    </tbody></table>`
+    : '<div class="empty">ไม่มีรายการในบิลนี้</div>';
+  return `<button type="button" class="back" data-bill-back>กลับรายการ</button><div class="card" style="padding:12px"><strong>รายละเอียดบิล</strong><div style="margin-top:6px">${head}</div></div>${body}`;
+}
+function renderHistBody(){
+  const host = document.getElementById("histBody");
+  if(histCache.bill){
+    host.innerHTML = billDetailHtml(histCache.bill);
+    return;
+  }
+  if(histTab === "insight"){
+    if(!histCache.insight){ host.innerHTML = spinner("กำลังโหลด Insight…"); return; }
+    host.innerHTML = insightHtml(histCache.insight, liveInsight(histCode));
+    return;
+  }
+  if(histTab === "purchase"){
+    if(!histCache.purchase){ host.innerHTML = spinner("กำลังโหลดประวัติซื้อ…"); return; }
+    host.innerHTML = purchaseRowsHtml(histCache.purchase);
+    return;
+  }
+  if(!histCache.sales){ host.innerHTML = spinner("กำลังโหลดประวัติขาย…"); return; }
+  host.innerHTML = salesRowsHtml(histCache.sales);
+}
+async function loadHistTab(){
+  if(!histCode) return;
+  const gen = ++histGen;
+  const code = histCode;
+  const site = histSite;
+  const months = histMonths;
+  const tab = histTab;
+  histCache.bill = null;
+  syncHistChrome();
+  renderHistBody();
+  try {
+    if(tab === "insight"){
+      const res = await fetch("/hq-po/api/history/" + encodeURIComponent(code) + "?site=" + site);
+      const data = await res.json().catch(() => ({}));
+      if(gen !== histGen) return;
+      if(!res.ok) throw new Error(data.message || "โหลด Insight ไม่ได้");
+      histCache.insight = data;
+      showInsightIdentity(liveInsight(code));
+    } else if(tab === "purchase"){
+      const res = await fetch("/hq-po/api/history/" + encodeURIComponent(code) + "/purchases?site=" + site + "&months=" + months);
+      const data = await res.json().catch(() => ({}));
+      if(gen !== histGen) return;
+      if(!res.ok) throw new Error(data.message || "โหลดประวัติซื้อไม่ได้");
+      histCache.purchase = data;
+    } else {
+      const res = await fetch("/hq-po/api/history/" + encodeURIComponent(code) + "/sales?site=" + site + "&months=" + months);
+      const data = await res.json().catch(() => ({}));
+      if(gen !== histGen) return;
+      if(!res.ok) throw new Error(data.message || "โหลดประวัติขายไม่ได้");
+      histCache.sales = data;
+    }
+    if(gen !== histGen) return;
+    renderHistBody();
+  } catch (err) {
+    if(gen !== histGen) return;
+    document.getElementById("histBody").innerHTML = `<div class="empty">${esc(err.message || "โหลดไม่ได้")}</div>`;
+  }
 }
 async function openTrade(bcode, site){
   const code = String(bcode || "").trim();
   if(!code) return;
   histCode = code;
   histSite = site === "syp" ? "syp" : "hq";
+  histTab = "insight";
+  histCache = {insight:null, purchase:null, sales:null, bill:null};
+  showInsightIdentity(liveInsight(code));
+  document.getElementById("hist").hidden = false;
+  await loadHistTab();
+}
+async function openBillDetail(kind, billno){
+  const no = String(billno || "").trim();
+  if(!no || !histCode) return;
   const gen = ++histGen;
-  const box = document.getElementById("hist");
-  const live = liveInsight(code);
-  document.getElementById("histTitle").textContent = code + " · Insight / ประวัติ · " + histSite.toUpperCase();
-  showInsightIdentity(live);
-  document.getElementById("histHq").classList.toggle("on", histSite !== "syp");
-  document.getElementById("histSyp").classList.toggle("on", histSite === "syp");
-  document.getElementById("histBody").innerHTML = spinner("กำลังโหลด Insight / ประวัติ…");
-  box.hidden = false;
+  document.getElementById("histBody").innerHTML = spinner("กำลังโหลดรายละเอียดบิล…");
   try {
-    const res = await fetch("/hq-po/api/history/" + encodeURIComponent(code) + "?site=" + histSite);
+    const res = await fetch("/hq-po/api/history/bills/" + encodeURIComponent(kind) + "/" + encodeURIComponent(no)
+      + "?site=" + histSite + "&bcode=" + encodeURIComponent(histCode));
     const data = await res.json().catch(() => ({}));
     if(gen !== histGen) return;
-    if(!res.ok) throw new Error(data.message || "โหลด Insight / ประวัติไม่ได้");
-    const shown = liveInsight(code);
-    showInsightIdentity(shown);
-    document.getElementById("histBody").innerHTML = insightHtml(data, shown);
+    if(!res.ok) throw new Error(data.message || "โหลดรายละเอียดบิลไม่ได้");
+    histCache.bill = data;
+    renderHistBody();
   } catch (err) {
     if(gen !== histGen) return;
-    document.getElementById("histBody").innerHTML = '<div class="empty">โหลด Insight / ประวัติไม่ได้</div>';
+    document.getElementById("histBody").innerHTML = `<div class="empty">${esc(err.message || "โหลดรายละเอียดบิลไม่ได้")}</div>`;
   }
 }
 async function releaseHold(id, kind){
@@ -1847,8 +1961,55 @@ document.getElementById("holdList").onclick = (e) => {
   const blocked = e.target.closest("[data-block-ordered]");
   if(blocked) markUnavailable(blocked.getAttribute("data-block-ordered") || "", blocked.getAttribute("data-bcode") || "", true);
 };
-document.getElementById("histHq").onclick = () => { if(histCode) openTrade(histCode, "hq"); };
-document.getElementById("histSyp").onclick = () => { if(histCode) openTrade(histCode, "syp"); };
+document.getElementById("histHq").onclick = () => {
+  if(!histCode || histSite === "hq") return;
+  histSite = "hq";
+  histCache = {insight:null, purchase:null, sales:null, bill:null};
+  loadHistTab();
+};
+document.getElementById("histSyp").onclick = () => {
+  if(!histCode || histSite === "syp") return;
+  histSite = "syp";
+  histCache = {insight:null, purchase:null, sales:null, bill:null};
+  loadHistTab();
+};
+document.getElementById("histRange").onclick = (e) => {
+  const btn = e.target.closest("[data-months]");
+  if(!btn || !histCode) return;
+  const months = Number(btn.getAttribute("data-months"));
+  if(!Number.isFinite(months) || months === histMonths) return;
+  histMonths = months;
+  histCache.purchase = null;
+  histCache.sales = null;
+  histCache.bill = null;
+  if(histTab === "insight" && histCache.insight){
+    syncHistChrome();
+    renderHistBody();
+    return;
+  }
+  loadHistTab();
+};
+document.getElementById("histTabs").onclick = (e) => {
+  const btn = e.target.closest("[data-hist-tab]");
+  if(!btn || !histCode) return;
+  const tab = btn.getAttribute("data-hist-tab") || "insight";
+  if(tab === histTab && !histCache.bill) return;
+  histTab = tab;
+  histCache.bill = null;
+  loadHistTab();
+};
+document.getElementById("histBody").onclick = (e) => {
+  const back = e.target.closest("[data-bill-back]");
+  if(back){
+    histCache.bill = null;
+    renderHistBody();
+    return;
+  }
+  const bill = e.target.closest("[data-billno]");
+  if(bill){
+    openBillDetail(bill.getAttribute("data-bill-kind") || "sales", bill.getAttribute("data-billno") || "");
+  }
+};
 document.getElementById("histClose").onclick = () => { document.getElementById("hist").hidden = true; };
 document.getElementById("hist").onclick = (e) => { if(e.target.id === "hist") document.getElementById("hist").hidden = true; };
 function peerLineHtml(owner, line){
