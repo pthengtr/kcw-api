@@ -131,8 +131,16 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .unit-pick button,.peer-btn{min-height:36px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:650;color:var(--blue-deep)}
 .unit-pick button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .peer-btn{border-radius:10px;margin-top:8px}
-.line-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.line-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:flex-start}
 .line-actions .peer-btn{margin-top:0}
+.manage{margin:0;min-width:0}
+.manage > summary{list-style:none;min-height:36px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:4px 10px;font-size:13px;font-weight:650;color:var(--blue-deep);cursor:pointer;display:inline-flex;align-items:center;gap:4px;user-select:none}
+.manage > summary::-webkit-details-marker{display:none}
+.manage > summary::after{content:"▾";font-size:11px;color:var(--muted)}
+.manage[open] > summary::after{content:"▴"}
+.manage-menu{display:flex;flex-direction:column;gap:4px;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fff;min-width:min(240px,70vw)}
+.manage-menu .peer-btn,.manage-item{margin:0;width:100%;text-align:left;border-radius:8px}
+.view-hint{margin:0;padding:0 2px;color:var(--muted);font-size:12px;line-height:1.4}
 .order-btn,.history-btn{display:block;width:100%;min-height:42px;margin-top:8px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;font-size:14px}
 .history-btn{background:#fff;color:var(--blue-deep);border:1px solid var(--blue)}
 .add-quiet{display:block;width:100%;margin:4px 0 12px;background:transparent;border:0;color:var(--blue);font-weight:650;font-size:13px;min-height:40px}
@@ -218,7 +226,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   .tabs{max-width:420px}
   main{padding-left:20px;padding-right:20px}
   .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .bar,#vendorSort,#doneMode,#doneSort,#doneQ{grid-column:1 / -1}
+  .bar,#vendorSort,#viewHint,#doneMode,#doneSort,#doneQ{grid-column:1 / -1}
   .line{padding:12px 14px}
 }
 </style>
@@ -237,9 +245,10 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   <section id="orderView">
     <div class="toolbar">
       <div class="toggle">
-        <button type="button" id="viewProduct" class="on">ตามสินค้า</button>
-        <button type="button" id="viewVendor">ตามบริษัท</button>
+        <button type="button" id="viewProduct">ตามสินค้า</button>
+        <button type="button" id="viewVendor" class="on">ตามบริษัท</button>
       </div>
+      <p id="viewHint" class="view-hint">สั่งตามเจ้าหนี้ — เลือกสินค้า ปรับจำนวน แล้วสร้าง PO · ตามสินค้าใช้เมื่อต้องเปลี่ยนเจ้าหนี้ สินค้าหมด หรือสินค้าแทน</p>
       <div class="toggle">
         <button type="button" id="srcAll" class="on">ทั้งหมด</button>
         <button type="button" id="srcIclow">รอสั่ง</button>
@@ -306,7 +315,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 </div>
 <div id="hist" hidden>
   <div class="hist-card">
-    <div class="hist-top"><div class="hist-id"><strong id="histTitle">Insight</strong><div id="histName" hidden></div><div id="histModel" class="meta" hidden></div></div><button type="button" id="histClose">ปิด</button></div>
+    <div class="hist-top"><div class="hist-id"><strong id="histTitle">Insight / ประวัติ</strong><div id="histName" hidden></div><div id="histModel" class="meta" hidden></div></div><button type="button" id="histClose">ปิด</button></div>
     <div class="toggle hist-site" id="histSite">
       <button type="button" id="histHq" class="on">HQ</button>
       <button type="button" id="histSyp">SYP</button>
@@ -324,7 +333,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"product", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, doneQ:"", hold:[], holdLoaded:false, busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
+const state = {items:[], view:"vendor", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, doneQ:"", hold:[], holdLoaded:false, busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -496,7 +505,16 @@ function flagHtml(row){
 function tradeButton(bcode){
   const code = String(bcode || "").trim();
   if(!code) return "";
-  return `<button type="button" class="peer-btn" data-trade="${esc(code)}">Insight</button>`;
+  return `<button type="button" class="peer-btn" data-trade="${esc(code)}">Insight / ประวัติ</button>`;
+}
+function viewHintText(view){
+  return view === "product"
+    ? "กรณีพิเศษ — เปลี่ยนเจ้าหนี้ สินค้าหมด หรือเลือกสินค้าแทน · สั่งปกติใช้ตามบริษัท"
+    : "สั่งตามเจ้าหนี้ — เลือกสินค้า ปรับจำนวน แล้วสร้าง PO · ตามสินค้าใช้เมื่อต้องเปลี่ยนเจ้าหนี้ สินค้าหมด หรือสินค้าแทน";
+}
+function syncViewHint(){
+  const el = document.getElementById("viewHint");
+  if(el) el.textContent = viewHintText(state.view);
 }
 function productMeta(row){
   const id = [];
@@ -580,13 +598,9 @@ function orderableVendor(row){
   return !!(row && row.confirmable && STAMP && row.vendor && !row.vendor_blocked);
 }
 function productTools(row){
+  if(!row || !row.bcode) return "";
   const key = esc(rowKey(row));
-  const order = (row.confirmable && STAMP)
-    ? (orderableVendor(row)
-        ? `<button type="button" class="order-btn" data-order="${key}">สั่งกับบริษัทนี้</button>`
-        : `<button type="button" class="order-btn" data-vendors="${key}">เลือกบริษัทก่อนสั่ง</button>`)
-    : "";
-  const trade = tradeButton(row.bcode);
+  const vendorLabel = row.vendor ? "เปลี่ยนเจ้าหนี้" : "เลือกเจ้าหนี้";
   const stock = (STAMP && row.source === "iclow" && row.iclow_id && row.vendor && !row.vendor_blocked)
     ? `<button type="button" class="peer-btn" data-block="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">บริษัทนี้สินค้าหมด</button>`
     : "";
@@ -595,8 +609,8 @@ function productTools(row){
         ? `<button type="button" class="peer-btn" data-unblock="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">มีสินค้าแล้ว</button>`
         : `<button type="button" class="peer-btn" data-clear-block="${esc(row.bcode||"")}" data-acct="${esc(row.vendor||"")}">มีสินค้าแล้ว</button>`)
     : "";
-  if(!row.bcode) return order;
-  return `${order}<div class="line-actions"><button type="button" class="peer-btn" data-vendors="${key}">เปลี่ยนเจ้าหนี้</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${trade}</div><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div>`;
+  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button></div></details>`;
+  return `<div class="line-actions">${manage}${tradeButton(row.bcode)}</div><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div>`;
 }
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
@@ -643,7 +657,7 @@ function lineHtml(row, mode){
     : `<input type="checkbox" disabled/>`);
   const fresh = !pick && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
   const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}${fresh}</div>`;
-  const tools = pick && orderableVendor(row) ? "" : productTools(row);
+  const tools = productTools(row);
   const canStamp = STAMP && row.source === "iclow" && row.iclow_id;
   const cancel = canStamp
     ? `<button type="button" class="ghost" data-cancel-waiting="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">ยกเลิก</button>`
@@ -912,6 +926,7 @@ function setView(view){
   state.historyOnly = false;
   document.getElementById("viewVendor").classList.toggle("on", view==="vendor");
   document.getElementById("viewProduct").classList.toggle("on", view==="product");
+  syncViewHint();
   syncVendorSort();
   scheduleRender("กำลังจัดรายการ…", 0);
 }
@@ -1707,11 +1722,15 @@ function insightHtml(ins, live){
   const when = [ins.facts_as_of ? "ข้อมูลถึง " + ins.facts_as_of : "", ins.generated_at ? "สร้าง " + ins.generated_at : ""].filter(Boolean).join(" · ");
   return `${photo}<div style="margin-top:8px"><span class="istatus ${stInfo[0]}">${esc(stInfo[1])}</span></div>
     ${summary}
+    <h3>ประวัติซื้อ · ล็อตที่มักสั่ง</h3>
+    <div class="ikpis">${kpi("ล็อตแนะนำ / ที่มักสั่ง", qtyU(lot))}${kpi("ราคาซื้อเฉลี่ย", moneyU(avgBuy))}${kpi("จุดสั่งซื้อ", qtyU(reorder))}${kpi("Safety Stock", qtyU(target) + (coverDays != null ? `<div class="l">ประมาณ ${esc(String(coverDays))} วัน</div>` : ""))}</div>
+    <h3>เจ้าหลักที่เคยซื้อ</h3>
+    <table class="itable"><thead><tr><th>เจ้าหนี้</th><th class="num">ยอดซื้อ</th><th class="num">ราคาเฉลี่ย</th></tr></thead><tbody>${people(suppliers, true)}</tbody></table>
     <h3>ยอดขาย · ${esc(trendTh)}</h3>
     <div class="ikpis">${kpi("เดือนล่าสุด", qtyU(latestMo))}${kpi("เฉลี่ย 3 เดือน", qtyU(avg3))}${kpi("เฉลี่ยช่วงข้อมูล", qtyU(avg12))}${kpi("รวม 12 เดือน", qtyU(tot12))}</div>
     ${bars}
     <h3>Stock</h3>
-    <div class="istock">${kpi("คงเหลือรวม", qtyU(qtyTotal))}${kpi("คงเหลือ HQ", qtyU(qtyHq))}${kpi("คงเหลือ SYP", qtyU(qtySyp))}${kpi("Safety Stock", qtyU(target) + (coverDays != null ? `<div class="l">ประมาณ ${esc(String(coverDays))} วัน</div>` : ""))}${kpi("จุดสั่งซื้อ", qtyU(reorder))}${kpi("ล็อตแนะนำ", qtyU(lot))}</div>
+    <div class="istock">${kpi("คงเหลือรวม", qtyU(qtyTotal))}${kpi("คงเหลือ HQ", qtyU(qtyHq))}${kpi("คงเหลือ SYP", qtyU(qtySyp))}${kpi("เป้าโอน SYP", qtyU(sypTarget))}</div>
     <h3>ช่องทางขาย 12 เดือน</h3>
     <table class="itable"><thead><tr><th>ช่องทาง</th><th class="num">ยอดขาย</th><th class="num">สัดส่วน</th></tr></thead><tbody>
       <tr><td>HQ</td><td class="num">${qtyU(chHq)}</td><td class="num">${share(pct(chHq, ch.hq_pct))}</td></tr>
@@ -1724,10 +1743,6 @@ function insightHtml(ins, live){
       <tr><td>ราคาขายเฉลี่ย</td><td class="num">${moneyU(avgSell)}</td></tr>
       <tr><td>Margin</td><td class="num">${marginPct == null ? "—" : esc(qtyText(marginPct)) + "%"}</td></tr>
     </tbody></table>
-    <h3>SYP</h3>
-    <div class="ikpis">${kpi("คงเหลือ SYP", qtyU(qtySyp))}${kpi("เป้าโอน", qtyU(sypTarget))}</div>
-    <h3>เจ้าหลัก</h3>
-    <table class="itable"><thead><tr><th>เจ้าหนี้</th><th class="num">ยอดซื้อ</th><th class="num">ราคาเฉลี่ย</th></tr></thead><tbody>${people(suppliers, true)}</tbody></table>
     <h3>ลูกค้าหลัก</h3>
     <table class="itable"><thead><tr><th>ลูกค้า</th><th class="num">ยอดซื้อ</th><th class="num">สัดส่วน</th></tr></thead><tbody>${people(customers, false)}</tbody></table>
     ${when ? `<div class="meta">${esc(when)}</div>` : ""}`;
@@ -1740,23 +1755,23 @@ async function openTrade(bcode, site){
   const gen = ++histGen;
   const box = document.getElementById("hist");
   const live = liveInsight(code);
-  document.getElementById("histTitle").textContent = code + " · " + histSite.toUpperCase();
+  document.getElementById("histTitle").textContent = code + " · Insight / ประวัติ · " + histSite.toUpperCase();
   showInsightIdentity(live);
   document.getElementById("histHq").classList.toggle("on", histSite !== "syp");
   document.getElementById("histSyp").classList.toggle("on", histSite === "syp");
-  document.getElementById("histBody").innerHTML = spinner("กำลังโหลด insight…");
+  document.getElementById("histBody").innerHTML = spinner("กำลังโหลด Insight / ประวัติ…");
   box.hidden = false;
   try {
     const res = await fetch("/hq-po/api/history/" + encodeURIComponent(code) + "?site=" + histSite);
     const data = await res.json().catch(() => ({}));
     if(gen !== histGen) return;
-    if(!res.ok) throw new Error(data.message || "โหลด insight ไม่ได้");
+    if(!res.ok) throw new Error(data.message || "โหลด Insight / ประวัติไม่ได้");
     const shown = liveInsight(code);
     showInsightIdentity(shown);
     document.getElementById("histBody").innerHTML = insightHtml(data, shown);
   } catch (err) {
     if(gen !== histGen) return;
-    document.getElementById("histBody").innerHTML = '<div class="empty">โหลด insight ไม่ได้</div>';
+    document.getElementById("histBody").innerHTML = '<div class="empty">โหลด Insight / ประวัติไม่ได้</div>';
   }
 }
 async function releaseHold(id, kind){
@@ -2005,6 +2020,10 @@ function applyNewVendor(row, acct, name){
     renderCatalog();
     return;
   }
+  if(row.vendor && !row.vendor_blocked){
+    openVendorOrder(row);
+    return;
+  }
   const key = rowKey(row);
   const box = document.querySelector(`[data-vendorbox="${CSS.escape(key)}"]`);
   if(box){
@@ -2012,28 +2031,16 @@ function applyNewVendor(row, acct, name){
     box.dataset.open = "1";
     box.innerHTML = supplierSelect(row);
   }
-  syncOrderButton(row);
+  syncVendorLabel(row);
 }
-function syncOrderButton(row){
+function syncVendorLabel(row){
   if(!row) return;
-  const key = rowKey(row);
-  const line = document.getElementById("line-" + key);
+  const line = document.getElementById("line-" + rowKey(row));
   if(!line) return;
   const shown = line.querySelector("[data-vendor-label]");
   if(shown){
     const extra = row.vendor_blocked ? " · ไม่มีสินค้า" : (vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "");
     shown.textContent = vendorTitle(row) + extra;
-  }
-  const orderBtn = line.querySelector(".order-btn");
-  if(!orderBtn) return;
-  if(row.vendor && !row.vendor_blocked){
-    orderBtn.textContent = "สั่งกับบริษัทนี้";
-    orderBtn.removeAttribute("data-vendors");
-    orderBtn.setAttribute("data-order", key);
-  } else {
-    orderBtn.textContent = "เลือกบริษัทก่อนสั่ง";
-    orderBtn.removeAttribute("data-order");
-    orderBtn.setAttribute("data-vendors", key);
   }
 }
 function toggleNewAp(key){
@@ -2471,8 +2478,6 @@ document.getElementById("list").onclick = (e) => {
     }
     return;
   }
-  const order = e.target.closest("[data-order]");
-  if(order){ openVendorOrder(findRow(order.dataset.order || "")); return; }
   const add = e.target.closest("[data-add-product]");
   if(add){ openCatalog(); return; }
   const neu = e.target.closest("[data-new-ap]");
@@ -2548,7 +2553,7 @@ async function chooseSupplier(row, pick){
   if(!hit || !row) return;
   if(hit.unavailable){
     const name = row.bcode ? ` ${row.bcode}` : "";
-    if(!confirm(`เอาเครื่องหมายไม่มีสินค้าออกจาก${name} แล้วสั่งกับบริษัทนี้?`)){
+    if(!confirm(`เอาเครื่องหมายไม่มีสินค้าออกจาก${name} แล้วใช้บริษัทนี้?`)){
       pick.value = "";
       return;
     }
@@ -2579,7 +2584,7 @@ async function chooseSupplier(row, pick){
   row.vendor_blocked = false;
   row._hay = "";
   haystack(row);
-  renderList();
+  openVendorOrder(row);
 }
 document.getElementById("list").onchange = (e) => {
   const all = e.target.closest("input[data-select-all]");
@@ -2662,6 +2667,7 @@ document.getElementById("orders").onclick = (e) => {
 };
 document.getElementById("viewVendor").classList.toggle("on", state.view==="vendor");
 document.getElementById("viewProduct").classList.toggle("on", state.view==="product");
+syncViewHint();
 loadSuggest();
 </script>
 </body>

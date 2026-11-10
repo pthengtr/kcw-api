@@ -355,11 +355,16 @@ def test_parts9_order_qty_prefers_lot_then_min_gap():
     assert parts9_order_qty(qtyget=8, qtymin=-1, qtyoh=0) is None
 
 
-def test_page_defaults_product_view():
+def test_page_defaults_vendor_view():
     html = page(user_name="Pannawit", stamp_enabled=False)
-    assert 'id="viewProduct" class="on"' in html
+    assert 'id="viewVendor" class="on"' in html
+    assert 'view:"vendor"' in html
     assert "ตามบริษัท" in html
     assert "ตามสินค้า" in html
+    assert 'id="viewHint"' in html
+    assert "จัดการ" in html
+    assert "Insight / ประวัติ" in html
+    assert "ประวัติซื้อ · ล็อตที่มักสั่ง" in html
     assert 'id="vendorSort"' in html
     assert 'id="sortCount" class="on"' in html
     assert "จำนวนสินค้า" in html
@@ -389,11 +394,11 @@ def test_page_defaults_product_view():
     assert "ราคา " in html
     assert "ค่า " in html
     assert "เปลี่ยนเจ้าหนี้" in html
-    assert "สั่งกับบริษัทนี้" in html
-    assert "เลือกบริษัทก่อนสั่ง" in html
+    assert "สั่งกับบริษัทนี้" not in html
+    assert "เลือกบริษัทก่อนสั่ง" not in html
     assert "คงเหลือ HQ" in html
     assert "คงเหลือ SYP" in html
-    assert "แล้วสั่งกับบริษัทนี้" in html
+    assert "แล้วใช้บริษัทนี้" in html
     assert "/hq-po/api/blocks/clear" in html
     assert "ดูสินค้าที่เคยสั่งจากเจ้าหนี้นี้" in html
     assert "เลือกเจ้าหนี้ใหม่" in html
@@ -402,7 +407,7 @@ def test_page_defaults_product_view():
     assert "เพิ่มสินค้าที่ไม่อยู่ในรายการ" in html
     assert "/hq-po/api/products" in html
     assert "/hq-po/api/vendors" in html
-    assert "data-order" in html
+    assert "openVendorOrder" in html
     assert "สินค้าแทน" in html
     assert "data-peers" in html
     assert "data-open-vendor" in html
