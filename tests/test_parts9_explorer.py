@@ -779,3 +779,269 @@ def test_explorer_page_has_fifo_card():
     assert "const CAN_SEE_COST = true" in page(
         user_name="t", site="hq", probes={"hq": {"ok": True}, "syp": {}}, can_see_cost=True
     )
+
+
+def test_serialize_product_includes_qtyget_and_waiting_placeholder():
+    from src.parts9_explorer.search import _serialize_product
+
+    out = _serialize_product(
+        {
+            "BCODE": "03010575",
+            "DESCR": "bolt",
+            "PCODE": "",
+            "MCODE": "",
+            "BRAND": "",
+            "MODEL": "",
+            "ACODE": "",
+            "VENDOR": "7POP",
+            "CODE1": "",
+            "SIZE1": "",
+            "SIZE2": "",
+            "SIZE3": "",
+            "UI1": "ชิ้น",
+            "UI2": "",
+            "MTP2": None,
+            "QTYOH2": 12,
+            "QTYMIN": 4,
+            "QTYGET": 10,
+            "COSTLAST": 5,
+            "LOCATION1": "",
+            "LOCATION2": "",
+            "CANCELED": "N",
+        },
+        site="hq",
+    )
+    assert out["qtyget"] == 10.0
+    assert out["qtymin"] == 4.0
+    assert out["vendor"] == "7POP"
+    assert out["waiting"] is None
+
+
+def test_default_waiting_qty_prefers_lot_then_gap():
+    from src.parts9_explorer.writes import _default_waiting_qty
+
+    assert _default_waiting_qty(qtyget=12, qtymin=4, qtyoh=1) == 12
+    assert _default_waiting_qty(qtyget=0, qtymin=10, qtyoh=3) == 7
+    assert _default_waiting_qty(qtyget=0, qtymin=2, qtyoh=5) == 1
+    assert _default_waiting_qty(qtyget=None, qtymin=None, qtyoh=0) == 1
+
+
+def test_put_in_waiting_force_insert_above_l(monkeypatch):
+    from src.parts9_explorer import writes as writes_mod
+
+    class _Result:
+        def __init__(self, row=None, scalar=None, rowcount=1):
+            self._row = row
+            self._scalar = scalar
+            self.rowcount = rowcount
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self._row
+
+        def scalar(self):
+            return self._scalar
+
+    class _Conn:
+        def __init__(self):
+            self.inserted = None
+
+        def execute(self, sql, params=None):
+            statement = str(sql)
+            if "FROM dbo.ICLOW" in statement and "WHERE LTRIM" in statement:
+                return _Result(scalar=None)
+            if "FROM dbo.ICMAS" in statement and "QTYGET" in statement:
+                return _Result(row={"QTYGET": 0, "QTYMIN": 2, "QTYOH2": 99})
+            if "INSERT INTO dbo.ICLOW" in statement:
+                self.inserted = params
+                return _Result(scalar=777)
+            if "FROM dbo.ICMAS" in statement:
+                return _Result(
+                    row={
+                        "BCODE": "03010575",
+                        "QTYMIN": 2,
+                        "QTYGET": 0,
+                        "QTYOH2": 99,
+                        "COSTLAST": 3,
+                        "DESCR": "bolt",
+                        "UI1": "ชิ้น",
+                    }
+                )
+            raise AssertionError(statement)
+
+    class _Engine:
+        def begin(self):
+            from contextlib import contextmanager
+
+            @contextmanager
+            def _cm():
+                yield conn
+
+            return _cm()
+
+    conn = _Conn()
+    monkeypatch.setattr(writes_mod, "_require_stamp", lambda **kwargs: None)
+    monkeypatch.setattr(writes_mod, "_engine", lambda: _Engine())
+    monkeypatch.setattr(
+        writes_mod,
+        "force_insert_waiting_iclow",
+        lambda c, **kw: (setattr(conn, "force_kw", kw) or 777),
+    )
+    monkeypatch.setattr(writes_mod, "open_iclow_id", lambda c, b: None)
+
+    out = writes_mod.put_in_waiting("03010575")
+    assert out["iclow_id"] == 777
+    assert out["qty"] == 1.0  # above L, no lot → 1
+    assert conn.force_kw["qtyoh"] == 99.0
+
+
+def test_put_in_waiting_rejects_open_row(monkeypatch):
+    from src.parts9_explorer import writes as writes_mod
+    from src.parts9_explorer.writes import ExplorerWriteError
+
+    class _Result:
+        def __init__(self, row=None, scalar=None):
+            self._row = row
+            self._scalar = scalar
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self._row
+
+        def scalar(self):
+            return self._scalar
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            statement = str(sql)
+            if "WHERE ID = :id" in statement:
+                return _Result(row={"ID": 42, "QTY": 5, "ORDERED": "N"})
+            raise AssertionError(statement)
+
+    class _Engine:
+        def begin(self):
+            from contextlib import contextmanager
+
+            @contextmanager
+            def _cm():
+                yield _Conn()
+
+            return _cm()
+
+    monkeypatch.setattr(writes_mod, "_require_stamp", lambda **kwargs: None)
+    monkeypatch.setattr(writes_mod, "_engine", lambda: _Engine())
+    monkeypatch.setattr(writes_mod, "open_iclow_id", lambda c, b: 42)
+
+    try:
+        writes_mod.put_in_waiting("03010575", qty=3)
+        assert False, "expected ExplorerWriteError"
+    except ExplorerWriteError as exc:
+        assert exc.code == "already_open"
+        assert exc.extra.get("iclow_id") == 42
+
+
+def test_update_waiting_qty_only_to_order(monkeypatch):
+    from src.parts9_explorer import writes as writes_mod
+
+    updates = {}
+
+    class _Result:
+        def __init__(self, row=None, rowcount=1):
+            self._row = row
+            self.rowcount = rowcount
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self._row
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            statement = str(sql)
+            if statement.strip().upper().startswith("SELECT"):
+                return _Result(
+                    row={
+                        "ID": 9,
+                        "BCODE": "03010575",
+                        "QTY": 2,
+                        "PRICE": 10,
+                        "ORDERED": "N",
+                        "RECEIVED": "N",
+                        "CANCELED": "N",
+                    }
+                )
+            if "UPDATE dbo.ICLOW" in statement:
+                updates.update(params or {})
+                return _Result(rowcount=1)
+            raise AssertionError(statement)
+
+    class _Engine:
+        def begin(self):
+            from contextlib import contextmanager
+
+            @contextmanager
+            def _cm():
+                yield _Conn()
+
+            return _cm()
+
+    monkeypatch.setattr(writes_mod, "_require_stamp", lambda **kwargs: None)
+    monkeypatch.setattr(writes_mod, "_engine", lambda: _Engine())
+    out = writes_mod.update_waiting_qty(9, 8)
+    assert out == {"iclow_id": 9, "bcode": "03010575", "qty": 8.0}
+    assert updates["qty"] == 8.0
+    assert updates["amount"] == 80.0
+
+
+def test_update_qtyget_sets_value(monkeypatch):
+    from src.parts9_explorer import writes as writes_mod
+
+    class _Result:
+        def __init__(self, row=None, rowcount=1):
+            self._row = row
+            self.rowcount = rowcount
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self._row
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            statement = str(sql)
+            if "UPDATE dbo.ICMAS" in statement:
+                return _Result(rowcount=1)
+            if "SELECT TOP 1 QTYGET" in statement:
+                return _Result(row={"QTYGET": 12, "QTYMIN": 4, "QTYOH2": 1})
+            raise AssertionError(statement)
+
+    class _Engine:
+        def begin(self):
+            from contextlib import contextmanager
+
+            @contextmanager
+            def _cm():
+                yield _Conn()
+
+            return _cm()
+
+    monkeypatch.setattr(writes_mod, "_require_stamp", lambda **kwargs: None)
+    monkeypatch.setattr(writes_mod, "_engine", lambda: _Engine())
+    out = writes_mod.update_qtyget("03010575", 12)
+    assert out["bcode"] == "03010575"
+    assert out["qtyget"] == 12.0
+
+
+def test_explorer_page_has_product_edit_controls():
+    html = _explorer_html()
+    assert "ใส่รอสั่งซื้อ" in html
+    assert "newProductBtn" in html
+    assert "/parts9/api/products/" in html
+    assert "function openNewProductDlg" in html
+    assert "saveLQ" in html

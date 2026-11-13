@@ -4,7 +4,11 @@ from contextlib import contextmanager
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-from src.transfer.writers.iclow_low import ensure_hq_low_stock_iclow, low_stock_reorder_qty
+from src.transfer.writers.iclow_low import (
+    ensure_hq_low_stock_iclow,
+    force_insert_waiting_iclow,
+    low_stock_reorder_qty,
+)
 from src.transfer.writers.ship_simas import post_transfer_ship
 
 
@@ -98,6 +102,28 @@ def test_ensure_skips_when_still_above_qtylo():
     assert conn.inserted is None
     assert ensure_hq_low_stock_iclow(_Conn({"QTYMIN": 0, "QTYGET": 4}), bcode="03010575", qtyoh=0) is None
     assert ensure_hq_low_stock_iclow(_Conn({"QTYMIN": -1, "QTYGET": 4}), bcode="03010575", qtyoh=0) is None
+
+
+def test_force_insert_waiting_ignores_on_hand_vs_qtylo():
+    conn = _Conn(
+        {
+            "QTYMIN": 2,
+            "QTYGET": 4,
+            "QTYOH2": 99,
+            "COSTLAST": 10,
+            "DESCR": "bolt",
+            "BCODE": "03010575",
+        }
+    )
+    # ensure would skip (on-hand above L); force insert still writes.
+    assert ensure_hq_low_stock_iclow(conn, bcode="03010575", qtyoh=99) is None
+    iclow_id = force_insert_waiting_iclow(
+        conn, bcode="03010575", qty=7, qtyoh=99, on=date(2026, 11, 13)
+    )
+    assert iclow_id == 501
+    assert conn.inserted["qty"] == 7
+    assert conn.inserted["qtyoh"] == 99
+    assert conn.inserted["billdate"] == date(2026, 11, 13)
 
 
 @patch("src.transfer.writers.ship_simas.ensure_hq_low_stock_iclow")
