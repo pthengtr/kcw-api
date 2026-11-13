@@ -1413,7 +1413,6 @@ async function markUnavailable(iclowId, bcode, ordered){
   if(ordered){
     if(state.ordersLoaded) await loadOrders();
     if(state.holdLoaded) await loadHold();
-    setTab("order");
   }
 }
 async function clearUnavailable(iclowId, bcode){
@@ -1553,13 +1552,25 @@ function holdLineHtml(row){
   const id = row.iclow_id;
   const when = [row.docdate, row.docno].filter(Boolean).join(" · ");
   const age = ageText(ageDays(row.docdate));
-  const noStock = STAMP && row.can_mark_unavailable
+  if(!STAMP){
+    return `<div class="line plain">
+    <div class="line-main">
+      ${thumbHtml(row)}
+      <div>
+        <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
+        <div class="meta">${esc(row.vendor_name ? row.vendor_name + " · " + row.vendor : (row.vendor || "ไม่ระบุเจ้าหนี้"))}</div>
+        ${when || age ? `<div class="meta">${esc(when)}${when && age ? " · " : ""}${age ? `<span class="badge wait">${esc(age)}</span>` : ""}</div>` : ""}
+        ${tradeButton(row.bcode)}
+      </div>
+    </div>
+    <div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>
+  </div>`;
+  }
+  const noStock = row.can_mark_unavailable
     ? `<button type="button" class="peer-btn" data-block-ordered="${esc(id)}" data-bcode="${esc(row.bcode||"")}">ไม่มีสินค้า</button>`
     : "";
-  const drop = STAMP
-    ? `<button type="button" class="ghost" data-drop="${esc(id)}" data-bcode="${esc(row.bcode||"")}">ไม่เอาแล้ว</button>`
-    : "";
-  const actions = STAMP ? `<div class="line-actions"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${drop}${noStock}${tradeButton(row.bcode)}</div>` : tradeButton(row.bcode);
+  const drop = `<button type="button" class="peer-btn warn" data-drop="${esc(id)}" data-bcode="${esc(row.bcode||"")}">ไม่เอาแล้ว</button>`;
+  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${drop}${noStock}</div></details>`;
   return `<div class="line plain">
     <div class="line-main">
       ${thumbHtml(row)}
@@ -1567,7 +1578,7 @@ function holdLineHtml(row){
         <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
         <div class="meta">${esc(row.vendor_name ? row.vendor_name + " · " + row.vendor : (row.vendor || "ไม่ระบุเจ้าหนี้"))}</div>
         ${when || age ? `<div class="meta">${esc(when)}${when && age ? " · " : ""}${age ? `<span class="badge wait">${esc(age)}</span>` : ""}</div>` : ""}
-        ${actions}
+        <div class="line-actions">${manage}${tradeButton(row.bcode)}</div>
       </div>
     </div>
     <div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>
@@ -1913,7 +1924,7 @@ async function releaseHold(id, kind){
   if(failed){ alert(failed.message || "ยกเลิกค้างรับไม่สำเร็จ"); return; }
   await loadHold();
   await loadSuggest();
-  setTab("order");
+  if(state.ordersLoaded) await loadOrders();
 }
 async function dropHold(id, bcode){
   if(state.busy || !id) return;

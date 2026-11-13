@@ -404,7 +404,7 @@ def test_page_defaults_vendor_view():
     assert 'data-hist-tab="insight"' in html
     assert 'data-hist-tab="purchase"' in html
     assert 'data-hist-tab="sales"' in html
-    assert 'id="histRange"' in html
+    assert "HIST_MONTHS = 12" in html
     assert "/hq-po/api/history/" in html
     assert "/purchases" in html
     assert "/sales" in html
@@ -476,6 +476,14 @@ def test_page_defaults_vendor_view():
     assert "ไม่เอาแล้ว" in html
     assert "data-drop" in html
     assert "/hq-po/api/incoming/" in html
+    hold_fn = html.split("function holdLineHtml", 1)[1].split("function renderHold", 1)[0]
+    assert "manage-menu" in hold_fn
+    assert 'data-kind="switch"' in hold_fn
+    assert 'data-kind="reorder"' in hold_fn
+    assert "data-block-ordered=" in hold_fn
+    assert "tradeButton(row.bcode)" in hold_fn
+    release_fn = html.split("async function releaseHold", 1)[1].split("async function dropHold", 1)[0]
+    assert 'setTab("order")' not in release_fn
     assert "data-cancel-line" in html
     assert 'id="todayBox"' in html
     assert "ยอดรวมก่อนภาษี" in html
