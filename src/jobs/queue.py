@@ -143,6 +143,36 @@ def finish_job_failed(engine, job_id: int, error_message: str):
         )
 
 
+def reclaim_stale_running_jobs(
+    engine,
+    worker_name: str,
+    *,
+    error_message: str = "interrupted by worker restart",
+) -> list[int]:
+    """Mark this worker's leftover ``running`` rows failed after a crash/restart."""
+    sql = text("""
+        update ops.job_queue
+        set
+            status = 'failed',
+            finished_at = now(),
+            error_message = :error_message
+        where worker_name = :worker_name
+          and status = 'running'
+        returning id
+    """)
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "worker_name": worker_name,
+                "error_message": error_message[:4000],
+            },
+        ).mappings().all()
+
+    return [int(r["id"]) for r in rows]
+
+
 def get_job_by_id(engine, job_id: int) -> dict | None:
     sql = text("""
         select

@@ -11,6 +11,7 @@ from src.jobs.queue import (
     claim_next_job,
     finish_job_failed,
     finish_job_success,
+    reclaim_stale_running_jobs,
 )
 from src.jobs.heartbeat import upsert_worker_heartbeat
 from src.stock_check.net import (
@@ -65,31 +66,88 @@ def _send_heartbeat(engine, worker_name: str, status: str) -> None:
     )
 
 
+def _heartbeat_stale_after_seconds(interval_seconds: int) -> float:
+    """How long without a successful beat before the watchdog respawns the thread."""
+    return max(float(interval_seconds) * 3.0, 30.0)
+
+
 def _start_heartbeat_thread(
     engine,
     worker_name: str,
     interval_seconds: int,
     status_holder: dict,
 ) -> threading.Event:
-    """Keep last_seen fresh even while process_job() blocks on long commands."""
-    stop_event = threading.Event()
+    """Keep last_seen fresh even while process_job() blocks on long commands.
 
-    def _loop() -> None:
+    A supervisor respawns the beat loop if the thread dies or stops succeeding
+    (so a hung DB call cannot permanently silence LINE/ops online status).
+    """
+    stop_event = threading.Event()
+    stale_after = _heartbeat_stale_after_seconds(interval_seconds)
+
+    def _beat_once() -> None:
+        with status_holder["lock"]:
+            status = status_holder["status"]
+        _send_heartbeat(engine, worker_name, status)
+        with status_holder["lock"]:
+            status_holder["last_ok_monotonic"] = time.monotonic()
+
+    def _beat_loop(generation: int) -> None:
         while not stop_event.is_set():
+            with status_holder["lock"]:
+                if status_holder.get("generation") != generation:
+                    return
             try:
-                with status_holder["lock"]:
-                    status = status_holder["status"]
-                _send_heartbeat(engine, worker_name, status)
+                _beat_once()
             except Exception as heartbeat_error:
-                print(f"[HEARTBEAT ERROR] {heartbeat_error}")
+                print(f"[HEARTBEAT ERROR] {heartbeat_error}", flush=True)
             stop_event.wait(interval_seconds)
 
-    thread = threading.Thread(
-        target=_loop,
-        name="kcw-worker-heartbeat",
+    def _spawn_beat_thread() -> threading.Thread:
+        with status_holder["lock"]:
+            status_holder["generation"] = int(status_holder.get("generation") or 0) + 1
+            generation = status_holder["generation"]
+            # Grace so the supervisor does not immediately treat a fresh spawn as stale.
+            status_holder["last_ok_monotonic"] = time.monotonic()
+        thread = threading.Thread(
+            target=_beat_loop,
+            kwargs={"generation": generation},
+            name="kcw-worker-heartbeat",
+            daemon=True,
+        )
+        thread.start()
+        with status_holder["lock"]:
+            status_holder["thread"] = thread
+        print(f"[HEARTBEAT] thread started generation={generation}", flush=True)
+        return thread
+
+    def _supervisor() -> None:
+        _spawn_beat_thread()
+        while not stop_event.is_set():
+            stop_event.wait(max(interval_seconds, 5))
+            if stop_event.is_set():
+                break
+            with status_holder["lock"]:
+                thread = status_holder.get("thread")
+                last_ok = float(status_holder.get("last_ok_monotonic") or 0.0)
+            alive = thread is not None and thread.is_alive()
+            stale = (time.monotonic() - last_ok) > stale_after
+            if alive and not stale:
+                continue
+            reason = "dead" if not alive else f"stale>{stale_after:.0f}s"
+            print(f"[HEARTBEAT] respawning ({reason})", flush=True)
+            _spawn_beat_thread()
+
+    supervisor = threading.Thread(
+        target=_supervisor,
+        name="kcw-worker-heartbeat-supervisor",
         daemon=True,
     )
-    thread.start()
+    with status_holder["lock"]:
+        status_holder["generation"] = 0
+        status_holder["last_ok_monotonic"] = time.monotonic()
+        status_holder["thread"] = None
+    supervisor.start()
     return stop_event
 
 
@@ -115,6 +173,10 @@ def run_worker_forever():
     )
     print("[START] command source=.env WORKER_JOB_<JOB_TYPE>_COMMAND")
 
+    reclaimed = reclaim_stale_running_jobs(engine, worker_name)
+    if reclaimed:
+        print(f"[START] reclaimed stale running jobs={reclaimed}", flush=True)
+
     status_holder = {"status": "idle", "lock": threading.Lock()}
     _start_heartbeat_thread(
         engine=engine,
@@ -128,8 +190,10 @@ def run_worker_forever():
             status_holder["status"] = status
         try:
             _send_heartbeat(engine, worker_name, status)
+            with status_holder["lock"]:
+                status_holder["last_ok_monotonic"] = time.monotonic()
         except Exception as heartbeat_error:
-            print(f"[HEARTBEAT ERROR] {heartbeat_error}")
+            print(f"[HEARTBEAT ERROR] {heartbeat_error}", flush=True)
 
     while True:
         try:

@@ -116,12 +116,17 @@ fi
 for u in "${_units[@]}"; do
   systemctl --user restart "${u}.service"
 done
-if systemctl --user is-active --quiet kcw-worker.service; then
-  if [[ "${FORCE_WORKER_RESTART:-}" == "1" ]]; then
-    systemctl --user restart kcw-worker.service
+# Always bounce the worker on deploy so heartbeat/code fixes take effect.
+# Long jobs are interrupted and reclaimed as failed on startup; set
+# SKIP_WORKER_RESTART=1 only when you intentionally need to finish a run first.
+if [[ "${SKIP_WORKER_RESTART:-}" == "1" ]]; then
+  if systemctl --user is-active --quiet kcw-worker.service; then
+    echo "kcw-worker left running (SKIP_WORKER_RESTART=1)"
   else
-    echo "kcw-worker left running (set FORCE_WORKER_RESTART=1 to bounce)"
+    systemctl --user start kcw-worker.service
   fi
+elif systemctl --user is-active --quiet kcw-worker.service; then
+  systemctl --user restart kcw-worker.service
 else
   systemctl --user start kcw-worker.service
 fi
