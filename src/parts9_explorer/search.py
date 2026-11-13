@@ -43,9 +43,11 @@ PRODUCT_COLS = """
   LTRIM(RTRIM(COALESCE(CONVERT(varchar(40), SIZE3), ''))) AS SIZE3,
   LTRIM(RTRIM(COALESCE(UI1,''))) AS UI1,
   LTRIM(RTRIM(COALESCE(UI2,''))) AS UI2,
-  MTP2, QTYOH2, QTYMIN,
+  MTP2, QTYOH2, QTYMIN, QTYGET,
   PRICE1, PRICE2, PRICE3, PRICE4, PRICE5,
   PRICEM1, PRICEM2, PRICEM3, PRICEM4, PRICEM5,
+  COSTLAST, COSTNET,
+  LTRIM(RTRIM(COALESCE(VENDOR,''))) AS VENDOR,
   LTRIM(RTRIM(COALESCE(LOCATION1,''))) AS LOCATION1,
   LTRIM(RTRIM(COALESCE(LOCATION2,''))) AS LOCATION2,
   LTRIM(RTRIM(COALESCE(CANCELED,''))) AS CANCELED
@@ -172,15 +174,32 @@ def _peer_site(site: str) -> str:
     return "syp" if (site or "").strip().lower() == "hq" else "hq"
 
 
+def _qty_keep_zero(value: Any) -> float:
+    """Parse numeric including zero (unlike _num which treats 0 as missing)."""
+    if value is None:
+        return 0.0
+    s = str(value).strip().replace(",", "")
+    if not s:
+        return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
 def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
     bcode = str(row.get("BCODE") or "").strip()
     code1 = str(row.get("CODE1") or "").strip().upper() or None
     s1, s2, s3 = size_labels(code1)
-    qtymin = _num(row.get("QTYMIN")) or 0.0
+    qtymin = _qty_keep_zero(row.get("QTYMIN"))
+    qtyget = _qty_keep_zero(row.get("QTYGET"))
     qty = _num(row.get("QTYOH2"))
     loc1 = str(row.get("LOCATION1") or "").strip()
     loc2 = str(row.get("LOCATION2") or "").strip()
     site_key = (site or "hq").strip().lower()
+    cost = _num(row.get("COSTLAST"))
+    if cost is None:
+        cost = _num(row.get("COSTNET"))
     return {
         "site": site_key.upper(),
         "bcode": bcode,
@@ -190,6 +209,7 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
         "brand": str(row.get("BRAND") or "").strip(),
         "model": str(row.get("MODEL") or "").strip(),
         "acode": str(row.get("ACODE") or "").strip(),
+        "vendor": str(row.get("VENDOR") or "").strip(),
         "code1": code1,
         "code1_label": code1_label(code1),
         "category": category_label(bcode),
@@ -205,7 +225,9 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
         "mtp2": _num(row.get("MTP2")),
         "qtyoh2": qty if qty is not None else 0.0,
         "qtymin": qtymin,
+        "qtyget": qtyget,
         "do_not_restock": qtymin < 0,
+        "costlast": cost,
         "location1": loc1,
         "location2": loc2,
         "location": _format_location(loc1, loc2),
@@ -213,6 +235,7 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
         "location_syp": _format_location(loc1, loc2) if site_key == "syp" else "",
         "prices": _price_map(row),
         "photos": product_image_urls(bcode),
+        "waiting": None,
     }
 
 
@@ -421,7 +444,14 @@ def get_product(bcode: str, *, site: str):
     products = _enrich_with_peer_location(
         [_serialize_product(dict(row), site=site_key)], site=site_key
     )
-    return products[0], None
+    product = products[0]
+    try:
+        from src.parts9_explorer.writes import lookup_open_waiting
+
+        product["waiting"] = lookup_open_waiting(code)
+    except Exception:
+        product["waiting"] = None
+    return product, None
 
 
 def _row(mapping) -> dict[str, str]:

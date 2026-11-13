@@ -314,6 +314,46 @@ label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align
 .linkish { color:var(--acc); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; }
 h2 { font-size:1.15rem; margin:.15rem 0 .4rem; }
 h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
+.edit-bar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin:.55rem 0 .15rem; }
+.edit-bar button { font-size:.8rem; padding:.4rem .65rem; }
+.edit-panel {
+  background:var(--inset); border:1px solid var(--line); border-radius:.65rem;
+  padding:.7rem .75rem; margin:.55rem 0 .2rem;
+}
+.edit-grid { display:grid; gap:.45rem; grid-template-columns:1fr; }
+@media (min-width:560px) { .edit-grid { grid-template-columns:1fr 1fr; } }
+.edit-grid .span2 { grid-column:1 / -1; }
+.edit-grid input, .edit-grid select { width:100%; font:inherit; font-size:.9rem;
+  min-height:2.4rem; padding:.45rem .6rem; border-radius:.5rem; border:1px solid var(--line);
+  background:var(--card); color:var(--text); }
+.edit-actions { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.55rem; }
+.edit-msg { font-size:.8rem; margin:.35rem 0 0; min-height:1.1em; }
+.edit-msg.ok { color:var(--ok); } .edit-msg.err { color:var(--down); }
+.order-row { display:flex; flex-wrap:wrap; gap:.45rem; align-items:end; margin:.5rem 0 .15rem; }
+.order-row .field { flex:1; min-width:5.5rem; }
+.order-row input { width:100%; font:inherit; font-size:.9rem; min-height:2.4rem;
+  padding:.45rem .6rem; border-radius:.5rem; border:1px solid var(--line);
+  background:var(--inset); color:var(--text); }
+.photo-manage { display:flex; flex-wrap:wrap; gap:.5rem; margin:.55rem 0 .2rem; }
+.photo-slot {
+  width:7.5rem; background:var(--inset); border:1px solid var(--line); border-radius:.55rem;
+  padding:.4rem; text-align:center;
+}
+.photo-slot img { width:100%; height:5.5rem; object-fit:cover; border-radius:.4rem; background:var(--card); }
+.photo-slot .slot-lbl { font-size:.7rem; color:var(--muted); margin:.25rem 0; }
+.photo-slot button { font-size:.72rem; padding:.28rem .4rem; width:100%; margin-top:.2rem; }
+.photo-slot input[type=file] { font-size:.68rem; width:100%; }
+.dlg-backdrop {
+  position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:40;
+  display:flex; align-items:flex-start; justify-content:center; padding:1.25rem .75rem;
+  overflow:auto;
+}
+.dlg {
+  width:min(32rem,100%); background:var(--card); border:1px solid var(--line);
+  border-radius:.85rem; padding:1rem; margin-top:1rem;
+}
+.dlg h2 { margin:0 0 .75rem; font-size:1.05rem; }
+.dlg .edit-grid { margin-bottom:.5rem; }
 </style>
 </head>
 <body>
@@ -376,6 +416,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
         <option value="syp" __SYPSEL__>__SYP_LABEL__</option>
       </select>
       <button class="primary" type="submit" id="searchBtn">ค้นหา</button>
+      <button type="button" id="newProductBtn" title="สร้างสินค้าใหม่ใน ICMAS (HQ)">+ สินค้าใหม่</button>
       <label class="chk"><input type="checkbox" id="skip"/> รวมไม่สั่งซ้ำ</label>
     </div>
   </form>
@@ -1141,13 +1182,244 @@ function renderFifo(fifo) {
     +yearRows+"</tbody></table>"
     +shared+"</section>";
 }
-function showP(i) {
+function bustPhoto(url) {
+  if (!url) return "";
+  const sep = url.indexOf("?") >= 0 ? "&" : "?";
+  return url + sep + "v=" + Date.now();
+}
+function setEditMsg(id, text, ok) {
+  const el = $(id);
+  if (!el) return;
+  el.className = "edit-msg" + (text ? (ok ? " ok" : " err") : "");
+  el.textContent = text || "";
+}
+async function apiJson(url, opts) {
+  const r = await fetch(url, opts);
+  let d = {};
+  try { d = await r.json(); } catch (e) {}
+  if (!r.ok) {
+    const err = new Error(d.detail || d.message || ("HTTP " + r.status));
+    err.status = r.status;
+    err.body = d;
+    throw err;
+  }
+  return d;
+}
+function renderPhotoManage(p) {
+  const photos = p.photos || [];
+  const slots = [];
+  for (let i = 1; i <= 5; i++) {
+    const url = photos[i - 1] || "";
+    slots.push(
+      "<div class='photo-slot' data-slot='"+i+"'>"
+      +(url ? "<img src='"+esc(bustPhoto(url))+"' onerror='imgErr(this)'/>" : "<div class='meta' style='height:5.5rem;display:flex;align-items:center;justify-content:center'>ว่าง</div>")
+      +"<div class='slot-lbl'>รูป "+i+"</div>"
+      +"<input type='file' accept='image/*' data-upload-slot='"+i+"'/>"
+      +(url ? "<button type='button' data-del-slot='"+i+"'>ลบ</button>" : "")
+      +"</div>"
+    );
+  }
+  return "<div class='photo-manage'>"+slots.join("")+"</div><div class='edit-msg' id='photoMsg'></div>";
+}
+function renderOrderPanel(p) {
+  const waiting = p.waiting || null;
+  const L = p.qtymin != null ? p.qtymin : "";
+  const G = p.qtyget != null ? p.qtyget : "";
+  let waitHtml = "";
+  if (waiting && waiting.iclow_id) {
+    waitHtml = "<div class='order-row'>"
+      +"<div class='field'><span class='field-lbl'>รอสั่ง #"+esc(waiting.iclow_id)+"</span>"
+      +"<input id='waitQty' type='number' min='0.01' step='any' value='"+esc(waiting.qty != null ? waiting.qty : "")+"'/></div>"
+      +"<button type='button' class='primary' id='saveWaitQty'>บันทึกจำนวน</button>"
+      +"</div>";
+  } else {
+    waitHtml = "<div class='order-row'>"
+      +"<div class='field'><span class='field-lbl'>จำนวนใส่รอสั่ง</span>"
+      +"<input id='newWaitQty' type='number' min='0.01' step='any' placeholder='ว่าง = ใช้ล็อต/L'/></div>"
+      +"<button type='button' class='primary' id='putWaiting'>ใส่รอสั่งซื้อ</button>"
+      +"</div>";
+  }
+  return "<div class='edit-panel' id='orderPanel'>"
+    +"<div class='order-row'>"
+    +"<div class='field'><span class='field-lbl'>จุดสั่ง L (QTYMIN)</span>"
+    +"<input id='editL' type='number' min='0.01' step='any' value='"+esc(L > 0 ? L : "")+"'/></div>"
+    +"<div class='field'><span class='field-lbl'>ล็อตสั่ง QTYGET</span>"
+    +"<input id='editGet' type='number' min='0' step='any' value='"+esc(G)+"'/></div>"
+    +"<button type='button' id='saveLQ'>บันทึก L / ล็อต</button>"
+    +"</div>"
+    +waitHtml
+    +"<div class='edit-msg' id='orderMsg'></div>"
+    +"</div>";
+}
+function renderEditForm(p) {
+  const price1 = (p.prices && p.prices.PRICE1 != null) ? p.prices.PRICE1 : "";
+  const cost = (CAN_SEE_COST && p.costlast != null) ? p.costlast : "";
+  return "<div class='edit-panel' id='editPanel' hidden>"
+    +"<div class='edit-grid'>"
+    +"<div class='span2'><label class='field'><span class='field-lbl'>ชื่อสินค้า</span>"
+    +"<input id='eDescr' value='"+esc(p.descr||"")+"'/></label></div>"
+    +"<label class='field'><span class='field-lbl'>เบอร์แท้</span><input id='ePcode' value='"+esc(p.pcode||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>เบอร์โรงงาน</span><input id='eMcode' value='"+esc(p.mcode||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>ยี่ห้อ</span><input id='eBrand' value='"+esc(p.brand||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>รุ่น</span><input id='eModel' value='"+esc(p.model||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>ที่เก็บ</span><input id='eLoc' value='"+esc(p.location1||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>CODE1</span><input id='eCode1' maxlength='1' value='"+esc(p.code1||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>ราคา PRICE1</span><input id='ePrice' type='number' step='any' value='"+esc(price1)+"'/></label>"
+    +(CAN_SEE_COST
+      ? "<label class='field'><span class='field-lbl'>ต้นทุน</span><input id='eCost' type='number' step='any' value='"+esc(cost)+"'/></label>"
+      : "")
+    +"</div>"
+    +"<div class='edit-actions'><button type='button' class='primary' id='saveEdit'>บันทึกข้อมูล</button>"
+    +"<button type='button' id='cancelEdit'>ยกเลิก</button></div>"
+    +"<div class='edit-msg' id='editMsg'></div></div>";
+}
+function wireProductEdit(p, idx) {
+  const bcode = p.bcode;
+  const toggle = $("toggleEdit");
+  if (toggle) toggle.onclick = () => {
+    const panel = $("editPanel");
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+  };
+  const cancel = $("cancelEdit");
+  if (cancel) cancel.onclick = () => { const panel = $("editPanel"); if (panel) panel.hidden = true; };
+  const saveEdit = $("saveEdit");
+  if (saveEdit) saveEdit.onclick = async () => {
+    setEditMsg("editMsg", "กำลังบันทึก…", true);
+    const body = {
+      descr: ($("eDescr")||{}).value,
+      pcode: ($("ePcode")||{}).value,
+      mcode: ($("eMcode")||{}).value,
+      brand: ($("eBrand")||{}).value,
+      model: ($("eModel")||{}).value,
+      location1: ($("eLoc")||{}).value,
+      code1: ($("eCode1")||{}).value,
+    };
+    const price = ($("ePrice")||{}).value;
+    if (price !== "" && price != null) body.price1 = Number(price);
+    const costEl = $("eCost");
+    if (costEl && costEl.value !== "") body.cost = Number(costEl.value);
+    try {
+      await apiJson("/parts9/api/products/"+encodeURIComponent(bcode), {
+        method: "PUT", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+      });
+      setEditMsg("editMsg", "บันทึกแล้ว", true);
+      refreshProductDetail(bcode, idx);
+    } catch (e) {
+      setEditMsg("editMsg", e.message || "บันทึกไม่สำเร็จ", false);
+    }
+  };
+  const saveLQ = $("saveLQ");
+  if (saveLQ) saveLQ.onclick = async () => {
+    setEditMsg("orderMsg", "กำลังบันทึก…", true);
+    try {
+      const L = ($("editL")||{}).value;
+      const G = ($("editGet")||{}).value;
+      if (L !== "" && L != null) {
+        await apiJson("/parts9/api/products/"+encodeURIComponent(bcode)+"/qtymin", {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({qtymin: Number(L)})
+        });
+      }
+      if (G !== "" && G != null) {
+        await apiJson("/parts9/api/products/"+encodeURIComponent(bcode)+"/qtyget", {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({qtyget: Number(G)})
+        });
+      }
+      setEditMsg("orderMsg", "บันทึก L / ล็อตแล้ว", true);
+      refreshProductDetail(bcode, idx);
+    } catch (e) {
+      setEditMsg("orderMsg", e.message || "บันทึกไม่สำเร็จ", false);
+    }
+  };
+  const putWaiting = $("putWaiting");
+  if (putWaiting) putWaiting.onclick = async () => {
+    setEditMsg("orderMsg", "กำลังใส่รอสั่ง…", true);
+    const raw = ($("newWaitQty")||{}).value;
+    const body = {};
+    if (raw !== "" && raw != null) body.qty = Number(raw);
+    try {
+      const d = await apiJson("/parts9/api/products/"+encodeURIComponent(bcode)+"/waiting", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+      });
+      setEditMsg("orderMsg", "ใส่รอสั่งแล้ว #"+d.iclow_id, true);
+      refreshProductDetail(bcode, idx);
+    } catch (e) {
+      setEditMsg("orderMsg", e.message || "ใส่รอสั่งไม่สำเร็จ", false);
+      if (e.body && e.body.iclow_id) refreshProductDetail(bcode, idx);
+    }
+  };
+  const saveWaitQty = $("saveWaitQty");
+  if (saveWaitQty) saveWaitQty.onclick = async () => {
+    const waiting = p.waiting || {};
+    if (!waiting.iclow_id) return;
+    setEditMsg("orderMsg", "กำลังบันทึกจำนวน…", true);
+    try {
+      await apiJson("/parts9/api/waiting/"+encodeURIComponent(waiting.iclow_id), {
+        method: "PATCH", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({qty: Number(($("waitQty")||{}).value)})
+      });
+      setEditMsg("orderMsg", "บันทึกจำนวนแล้ว", true);
+      refreshProductDetail(bcode, idx);
+    } catch (e) {
+      setEditMsg("orderMsg", e.message || "บันทึกไม่สำเร็จ", false);
+    }
+  };
+  document.querySelectorAll("[data-upload-slot]").forEach(inp => {
+    inp.onchange = async () => {
+      const file = inp.files && inp.files[0];
+      if (!file) return;
+      setEditMsg("photoMsg", "กำลังอัปโหลด…", true);
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const r = await fetch("/parts9/api/products/"+encodeURIComponent(bcode)+"/images", {method:"POST", body: fd});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || d.message || "อัปโหลดไม่สำเร็จ");
+        setEditMsg("photoMsg", "อัปโหลดแล้ว", true);
+        refreshProductDetail(bcode, idx);
+      } catch (e) {
+        setEditMsg("photoMsg", e.message || "อัปโหลดไม่สำเร็จ", false);
+      }
+    };
+  });
+  document.querySelectorAll("[data-del-slot]").forEach(btn => {
+    btn.onclick = async () => {
+      const slot = Number(btn.getAttribute("data-del-slot"));
+      if (!confirm("ลบรูปช่อง "+slot+" ?")) return;
+      setEditMsg("photoMsg", "กำลังลบ…", true);
+      try {
+        await apiJson("/parts9/api/products/"+encodeURIComponent(bcode)+"/images", {
+          method: "DELETE", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({slot: slot})
+        });
+        setEditMsg("photoMsg", "ลบแล้ว", true);
+        refreshProductDetail(bcode, idx);
+      } catch (e) {
+        setEditMsg("photoMsg", e.message || "ลบไม่สำเร็จ", false);
+      }
+    };
+  });
+}
+function refreshProductDetail(bcode, idx) {
+  fetch("/parts9/api/product/"+encodeURIComponent(bcode)+"?site="+encodeURIComponent($("site").value))
+    .then(r => r.json()).then(d => {
+      if (d.product && idx != null && ITEMS[idx]) {
+        ITEMS[idx] = Object.assign({}, ITEMS[idx], d.product);
+        showP(idx, {skipFetch: true, movement: d.movement, insight: d.insight, fifo: d.fifo});
+      }
+    }).catch(() => {});
+}
+function showP(i, opts) {
+  opts = opts || {};
   const p = ITEMS[i];
   if (!p) return;
   document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
   const el = document.getElementById("c"+i); if (el) el.classList.add("active");
   const sizes = p.size_display || "";
-  const photos = (p.photos||[]).map(u => "<img src='"+u+"' onerror='imgErr(this)'/>").join("");
   const locHq = (p.location_hq || "").trim();
   const locSyp = (p.location_syp || "").trim();
   const locCur = (p.location || [p.location1, p.location2].filter(Boolean).join(" / ") || "").trim();
@@ -1190,40 +1462,61 @@ function showP(i) {
     +" · "+esc(p.brand)+" "+esc(p.model)+"</div>"
     +"<div class='meta'>"+esc(p.category)+" · "+esc(p.code1 ? (p.code1+" "+(p.code1_label||"")) : (p.code1_label||""))+(sizes ? " · "+esc(sizes) : "")+"</div>"
     +locHtml
-    +"<div class='meta'>หน่วย "+esc(p.ui1)+" / "+esc(p.ui2)+"</div>"
+    +"<div class='meta'>หน่วย "+esc(p.ui1)+" / "+esc(p.ui2)
+    +" · L "+esc(p.qtymin != null ? p.qtymin : "—")
+    +" · ล็อต "+esc(p.qtyget != null ? p.qtyget : "—")
+    +(p.waiting && p.waiting.iclow_id ? " · <span class='badge to_order'>รอสั่ง #"+esc(p.waiting.iclow_id)+"</span>" : "")
+    +"</div>"
     +"<div class='prices'>"+fmtPrices(p.prices)+"</div>"
-    +(photos ? "<div class='photos'>"+photos+"</div>" : "")
+    +"<div class='edit-bar'><button type='button' id='toggleEdit'>แก้ข้อมูล</button></div>"
+    +renderEditForm(p)
+    +renderOrderPanel(p)
+    +"<h3 style='margin:.75rem 0 .35rem;font-size:.9rem'>รูปสินค้า</h3>"
+    +renderPhotoManage(p)
     +stockHtml
     +"</div>"
     +"<div id='insightPanel'></div>"
     +"<div id='subPanel'></div>"
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
+  wireProductEdit(p, i);
   loadInsightPanel(p.bcode, {
     qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
     descr: p.descr || "", bcode: p.bcode
   });
   loadSubPanels(p.bcode);
+  function fillMovement(d) {
+    const m = (d && d.movement) || {};
+    function tbl(title, rows, cols) {
+      if (!rows || !rows.length) return "<p class='meta'>"+title+": —</p>";
+      return "<h3>"+title+"</h3>"+lineTable(rows, cols);
+    }
+    const saleCols = ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"];
+    if (CAN_SEE_COST && d.fifo && d.fifo.found) saleCols.push("FIFO_UNIT","FIFO_EXT","FIFO_STATUS","MARGIN","VS_LAST","VS_AVG");
+    const piCols = CAN_SEE_COST
+      ? ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]
+      : ["BILLNO","BILLDATE","QTY","UI"];
+    if ($("more")) $("more").innerHTML = (CAN_SEE_COST ? renderFifo(d.fifo) : "") +
+      tbl("ประวัติการขาย", m.sales, saleCols) +
+      tbl("ประวัติการซื้อ", m.pi, piCols) +
+      tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
+    if (d.insight) renderInsight(d.insight, {
+      qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
+      descr: p.descr || "", bcode: p.bcode
+    });
+  }
+  if (opts.skipFetch) {
+    fillMovement(opts);
+    return;
+  }
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
     .then(r => r.json()).then(d => {
-      const m = d.movement || {};
-      function tbl(title, rows, cols) {
-        if (!rows || !rows.length) return "<p class='meta'>"+title+": —</p>";
-        return "<h3>"+title+"</h3>"+lineTable(rows, cols);
+      if (d.product) {
+        ITEMS[i] = Object.assign({}, p, d.product);
+        showP(i, {skipFetch: true, movement: d.movement, insight: d.insight, fifo: d.fifo});
+        return;
       }
-      const saleCols = ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"];
-      if (CAN_SEE_COST && d.fifo && d.fifo.found) saleCols.push("FIFO_UNIT","FIFO_EXT","FIFO_STATUS","MARGIN","VS_LAST","VS_AVG");
-      const piCols = CAN_SEE_COST
-        ? ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]
-        : ["BILLNO","BILLDATE","QTY","UI"];
-      $("more").innerHTML = (CAN_SEE_COST ? renderFifo(d.fifo) : "") +
-        tbl("ประวัติการขาย", m.sales, saleCols) +
-        tbl("ประวัติการซื้อ", m.pi, piCols) +
-        tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
-      if (d.insight) renderInsight(d.insight, {
-        qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
-        descr: p.descr || "", bcode: p.bcode
-      });
-    }).catch(() => { $("more").innerHTML = ""; });
+      fillMovement(d);
+    }).catch(() => { if ($("more")) $("more").innerHTML = ""; });
 }
 function thMonthLabel(ym) {
   const TH_MO = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
@@ -1692,6 +1985,76 @@ updateSearchSummary();
 try {
   if (isMobileLayout() && localStorage.getItem(SEARCH_PANEL_KEY) === "0") setSearchPanelOpen(false);
 } catch (e) {}
+
+function closeNewProductDlg() {
+  const el = $("newProductDlg");
+  if (el) el.remove();
+}
+function openNewProductDlg() {
+  closeNewProductDlg();
+  const dlg = document.createElement("div");
+  dlg.id = "newProductDlg";
+  dlg.className = "dlg-backdrop";
+  dlg.innerHTML = "<div class='dlg' role='dialog' aria-label='สร้างสินค้าใหม่'>"
+    +"<h2>สร้างสินค้าใหม่ (HQ)</h2>"
+    +"<div class='edit-grid'>"
+    +"<label class='field'><span class='field-lbl'>รหัสสินค้า *</span><input id='npBcode' autocomplete='off'/></label>"
+    +"<label class='field'><span class='field-lbl'>หน่วย</span><input id='npUi' value='ชิ้น'/></label>"
+    +"<div class='span2'><label class='field'><span class='field-lbl'>ชื่อสินค้า *</span><input id='npDescr'/></label></div>"
+    +"<label class='field'><span class='field-lbl'>เจ้าหนี้</span><input id='npVendor'/></label>"
+    +"<label class='field'><span class='field-lbl'>จุดสั่ง L</span><input id='npL' type='number' min='0' step='any' value='0'/></label>"
+    +"<label class='field'><span class='field-lbl'>เบอร์แท้</span><input id='npPcode'/></label>"
+    +"<label class='field'><span class='field-lbl'>เบอร์โรงงาน</span><input id='npMcode'/></label>"
+    +"<label class='field'><span class='field-lbl'>ยี่ห้อ</span><input id='npBrand'/></label>"
+    +"<label class='field'><span class='field-lbl'>รุ่น</span><input id='npModel'/></label>"
+    +"<label class='field'><span class='field-lbl'>ที่เก็บ</span><input id='npLoc'/></label>"
+    +"<label class='field'><span class='field-lbl'>CODE1</span><input id='npCode1' maxlength='1'/></label>"
+    +"<label class='field'><span class='field-lbl'>ราคา</span><input id='npPrice' type='number' step='any'/></label>"
+    +(CAN_SEE_COST ? "<label class='field'><span class='field-lbl'>ต้นทุน</span><input id='npCost' type='number' step='any'/></label>" : "")
+    +"</div>"
+    +"<div class='edit-actions'>"
+    +"<button type='button' class='primary' id='npSave'>สร้าง</button>"
+    +"<button type='button' id='npCancel'>ยกเลิก</button></div>"
+    +"<div class='edit-msg' id='npMsg'></div></div>";
+  document.body.appendChild(dlg);
+  dlg.addEventListener("click", (ev) => { if (ev.target === dlg) closeNewProductDlg(); });
+  $("npCancel").onclick = closeNewProductDlg;
+  $("npSave").onclick = async () => {
+    setEditMsg("npMsg", "กำลังสร้าง…", true);
+    const body = {
+      bcode: ($("npBcode").value || "").trim(),
+      descr: ($("npDescr").value || "").trim(),
+      ui: ($("npUi").value || "ชิ้น").trim() || "ชิ้น",
+      vendor: ($("npVendor").value || "").trim(),
+      pcode: ($("npPcode").value || "").trim(),
+      mcode: ($("npMcode").value || "").trim(),
+      brand: ($("npBrand").value || "").trim(),
+      model: ($("npModel").value || "").trim(),
+      location1: ($("npLoc").value || "").trim(),
+      code1: ($("npCode1").value || "").trim(),
+      qtymin: Number($("npL").value || 0) || 0,
+      price1: Number($("npPrice").value || 0) || 0,
+    };
+    if (CAN_SEE_COST && $("npCost") && $("npCost").value !== "") body.cost = Number($("npCost").value);
+    try {
+      const d = await apiJson("/parts9/api/products", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+      });
+      closeNewProductDlg();
+      KIND = "product";
+      drawModes();
+      toggleSearchChrome();
+      $("q").value = d.bcode || body.bcode;
+      go();
+    } catch (e) {
+      setEditMsg("npMsg", e.message || "สร้างไม่สำเร็จ", false);
+    }
+  };
+  $("npBcode").focus();
+}
+const newProductBtn = $("newProductBtn");
+if (newProductBtn) newProductBtn.addEventListener("click", openNewProductDlg);
 </script>
 </body>
 </html>

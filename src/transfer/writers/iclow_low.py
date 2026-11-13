@@ -125,6 +125,37 @@ def backfill_hq_low_stock_iclow(conn, *, on: date | None = None) -> dict[str, in
     return {"candidates": len(rows), "inserted": inserted, "skipped": skipped}
 
 
+def force_insert_waiting_iclow(
+    conn,
+    *,
+    bcode: str,
+    qty: float,
+    qtyoh: float | None = None,
+    on: date | None = None,
+) -> int | None:
+    """Insert one ORDERED='N' ICLOW row without the on-hand ≤ qtylo gate.
+
+    Returns the new ICLOW.ID, or None when the product is missing.
+    Caller should refuse when an unreceived ICLOW row already exists.
+    """
+    code = (bcode or "").strip()
+    if not code:
+        return None
+    product = _product(conn, code)
+    if not product:
+        return None
+    on_hand = qtyoh if qtyoh is not None else (_num(product.get("QTYOH2")) or 0.0)
+    product["BCODE"] = code
+    return _insert_waiting_row(
+        conn, product, qtyoh=float(on_hand), qty=float(qty), on=on or date.today()
+    )
+
+
+def open_iclow_id(conn, bcode: str) -> int | None:
+    """Public: unreceived, not-canceled ICLOW id for a BCODE (รอสั่ง or ค้างรับ)."""
+    return _open_iclow_id(conn, bcode)
+
+
 def _insert_waiting_row(
     conn, product: dict[str, Any], *, qtyoh: float, qty: float, on: date
 ) -> int | None:
@@ -189,7 +220,7 @@ def _product(conn, bcode: str) -> dict[str, Any] | None:
               LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
               MCODE, PCODE, DESCR, MODEL, BRAND, OEM, VENDOR,
               MAIN, SUB, PART, STATUS, SERIAL, EXMPT, LOCATION1, LOCATION2,
-              QTYMIN, QTYGET, UI1, COSTLAST, COSTNET
+              QTYMIN, QTYGET, QTYOH2, UI1, COSTLAST, COSTNET
             FROM dbo.ICMAS
             WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
             """

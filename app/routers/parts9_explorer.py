@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from typing import Any
+
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel
 
 from src.parts9_explorer.config import get_explorer_settings
 from src.parts9_explorer.net import is_tailscale_cg_nat
@@ -26,9 +29,71 @@ from src.parts9_explorer.cost_access import (
 from src.parts9_explorer.fifo import fifo_for_product, insight_avg_buy
 from src.parts9_explorer.insights import lookup_insight
 from src.parts9_explorer.ui import APP, SESSION_COOKIE, page
+from src.parts9_explorer.writes import (
+    ExplorerWriteError,
+    create_product_from_explorer,
+    delete_product_image,
+    put_in_waiting,
+    update_product_from_explorer,
+    update_qtyget,
+    update_qtymin_from_explorer,
+    update_waiting_qty,
+    upload_product_image_bytes,
+)
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
 router = APIRouter(prefix="/parts9", tags=["parts9-explorer"])
+
+
+class ProductCreateBody(BaseModel):
+    bcode: str = ""
+    descr: str = ""
+    ui: str = "ชิ้น"
+    vendor: str = ""
+    vendor_acctno: str = ""
+    brand: str = ""
+    model: str = ""
+    pcode: str = ""
+    mcode: str = ""
+    location1: str = ""
+    code1: str = ""
+    cost: float = 0
+    price1: float = 0
+    qtymin: float = 0
+    main: int | None = None
+
+
+class ProductUpdateBody(BaseModel):
+    descr: str | None = None
+    brand: str | None = None
+    model: str | None = None
+    pcode: str | None = None
+    mcode: str | None = None
+    location1: str | None = None
+    code1: str | None = None
+    cost: float | None = None
+    price1: float | None = None
+
+
+class QtyminBody(BaseModel):
+    qtymin: float | None = None
+
+
+class QtygetBody(BaseModel):
+    qtyget: float | None = None
+
+
+class WaitingBody(BaseModel):
+    qty: float | None = None
+
+
+class WaitingQtyBody(BaseModel):
+    qty: float | None = None
+
+
+class ImageDeleteBody(BaseModel):
+    path: str | None = None
+    slot: int | None = None
 
 
 def _settings():
@@ -85,6 +150,39 @@ def _set_session(resp, identity) -> None:
 
 def _see_cost(ident) -> bool:
     return can_see_explorer_cost(getattr(ident, "line_user_id", None))
+
+
+def _actor(ident) -> str:
+    return str(getattr(ident, "display_name", None) or getattr(ident, "line_user_id", "") or "")[:80]
+
+
+def _write_err(exc: Exception) -> JSONResponse:
+    if isinstance(exc, ExplorerWriteError):
+        status = 409 if exc.code in (
+            "already_open",
+            "already_ordered",
+            "already_received",
+            "bcode_exists",
+        ) else 400
+        body: dict[str, Any] = {
+            "error": exc.code,
+            "detail": exc.message,
+            "message": exc.message,
+        }
+        body.update(exc.extra)
+        return JSONResponse(body, status_code=status)
+    return JSONResponse(
+        {"error": "server_error", "detail": str(exc), "message": str(exc)},
+        status_code=500,
+    )
+
+
+def _redact_product_cost(product: dict | None) -> dict | None:
+    if not product:
+        return product
+    out = dict(product)
+    out.pop("costlast", None)
+    return out
 
 
 def _require(request: Request):
@@ -186,6 +284,7 @@ def api_search(
     if not see_cost:
         documents = redact_documents(documents)
         summary = redact_iclow_summary(summary)
+        products = [_redact_product_cost(p) or p for p in products]
     document = documents[0] if documents else None
     return {
         "q": q,
@@ -243,6 +342,8 @@ def api_product(request: Request, bcode: str, site: str = "hq"):
     else:
         movement = redact_movement(movement)
         insight = redact_insight(insight)
+        product = _redact_product_cost(product)
+        other_p = _redact_product_cost(other_p)
     return {
         "product": product,
         "other_site": other_p,
@@ -252,6 +353,109 @@ def api_product(request: Request, bcode: str, site: str = "hq"):
         "can_see_cost": see_cost,
         "error": errp,
     }
+
+
+@router.post("/api/products")
+def api_create_product(request: Request, body: ProductCreateBody):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    try:
+        return create_product_from_explorer(body.model_dump(), actor=_actor(ident))
+    except Exception as exc:
+        return _write_err(exc)
+
+
+@router.put("/api/products/{bcode}")
+def api_update_product(request: Request, bcode: str, body: ProductUpdateBody):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    try:
+        return update_product_from_explorer(
+            bcode, body.model_dump(exclude_unset=True), actor=_actor(ident)
+        )
+    except Exception as exc:
+        return _write_err(exc)
+
+
+@router.post("/api/products/{bcode}/qtymin")
+def api_update_qtymin(request: Request, bcode: str, body: QtyminBody):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    try:
+        return update_qtymin_from_explorer(bcode, body.qtymin)
+    except Exception as exc:
+        return _write_err(exc)
+
+
+@router.post("/api/products/{bcode}/qtyget")
+def api_update_qtyget(request: Request, bcode: str, body: QtygetBody):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    try:
+        return update_qtyget(bcode, body.qtyget)
+    except Exception as exc:
+        return _write_err(exc)
+
+
+@router.post("/api/products/{bcode}/waiting")
+def api_put_waiting(request: Request, bcode: str, body: WaitingBody):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    try:
+        return put_in_waiting(bcode, qty=body.qty)
+    except Exception as exc:
+        return _write_err(exc)
+
+
+@router.patch("/api/waiting/{iclow_id}")
+def api_patch_waiting(request: Request, iclow_id: int, body: WaitingQtyBody):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    try:
+        return update_waiting_qty(iclow_id, body.qty)
+    except Exception as exc:
+        return _write_err(exc)
+
+
+@router.post("/api/products/{bcode}/images")
+async def api_upload_image(
+    request: Request,
+    bcode: str,
+    file: UploadFile = File(...),
+):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    try:
+        raw = await file.read()
+        return upload_product_image_bytes(
+            bcode, raw, content_type=file.content_type
+        )
+    except Exception as exc:
+        return _write_err(exc)
+
+
+@router.delete("/api/products/{bcode}/images")
+def api_delete_image(request: Request, bcode: str, body: ImageDeleteBody):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    _ = ident
+    try:
+        return delete_product_image(bcode, path=body.path, slot=body.slot)
+    except Exception as exc:
+        return _write_err(exc)
 
 
 @router.get("/api/insight/{bcode}")
