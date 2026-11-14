@@ -712,6 +712,15 @@ def attach_suggest_hints(
     )
 
 
+def missing_icmas_bcodes(bcodes: list[str]) -> list[str]:
+    """BCODEs that exist on neither HQ nor SYP ICMAS (wrong / incomplete codes)."""
+    codes = sorted({(c or "").strip() for c in bcodes if (c or "").strip()})
+    if not codes:
+        return []
+    hq_icmas, syp_icmas = _fetch_dual_icmas(codes, include_blocked=True)
+    return [c for c in codes if c not in hq_icmas and c not in syp_icmas]
+
+
 def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
     """Resolve BCODE to ICMAS display fields (HQ + SYP stock)."""
     code = (bcode or "").strip()

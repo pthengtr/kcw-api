@@ -2105,16 +2105,26 @@ async function renderRequest(el, opts){
       await withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
     };
 
-    el.querySelector("#btnManualAdd").onclick = async()=>{
-      const b = el.querySelector("#manualBcode").value.trim();
+    let manualKnown = false;
+    const manualBcodeEl = el.querySelector("#manualBcode");
+    const manualPreviewEl = el.querySelector("#manualPreview");
+    const btnManualAdd = el.querySelector("#btnManualAdd");
+    function setManualAddEnabled(ok){
+      manualKnown = !!ok;
+      if(btnManualAdd) btnManualAdd.disabled = !manualKnown;
+    }
+    setManualAddEnabled(false);
+    if(btnManualAdd) btnManualAdd.onclick = async()=>{
+      const b = (manualBcodeEl?.value||"").trim();
       const qv = Number(el.querySelector("#manualQty").value||0);
       if(!b||qv<=0){alert("ระบุรหัสและจำนวน");return;}
+      if(!manualKnown){alert("ไม่พบรหัสใน ICMAS — ใส่รหัสให้ครบก่อน");return;}
       try{
         await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:qv, descr:""})});
         showToast("เพิ่มแล้ว");
-        el.querySelector("#manualBcode").value = "";
-        const prev = el.querySelector("#manualPreview");
-        if(prev){ prev.style.display="none"; prev.textContent=""; }
+        if(manualBcodeEl) manualBcodeEl.value = "";
+        if(manualPreviewEl){ manualPreviewEl.style.display="none"; manualPreviewEl.textContent=""; }
+        setManualAddEnabled(false);
         await withScrollPreserved(()=>renderRequest(el,{reuseSuggest:true}));
       }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
     };
@@ -2124,6 +2134,12 @@ async function renderRequest(el, opts){
         const b = (suggestFilter||"").trim();
         if(!b) return;
         try{
+          await api("/transfer/api/product?bcode="+encodeURIComponent(b),{quiet:true});
+        }catch(e){
+          alert(e.message||"ไม่พบรหัสใน ICMAS");
+          return;
+        }
+        try{
           await api("/transfer/api/need-list",{method:"POST",body:JSON.stringify({bcode:b, qty:1, descr:""})});
           showToast("เพิ่มแล้ว");
           suggestFilter = "";
@@ -2131,24 +2147,30 @@ async function renderRequest(el, opts){
         }catch(e){ alert(e.message||"เพิ่มไม่สำเร็จ"); }
       };
     }
-    const manualBcodeEl = el.querySelector("#manualBcode");
-    const manualPreviewEl = el.querySelector("#manualPreview");
     let manualLookupTimer = null;
     async function refreshManualPreview(){
       const b = (manualBcodeEl?.value||"").trim();
       if(!manualPreviewEl) return;
-      if(!b){ manualPreviewEl.style.display="none"; manualPreviewEl.textContent=""; return; }
+      if(!b){
+        manualPreviewEl.style.display="none";
+        manualPreviewEl.textContent="";
+        setManualAddEnabled(false);
+        return;
+      }
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b),{quiet:true});
         manualPreviewEl.style.display = "block";
         manualPreviewEl.innerHTML = `<strong>${escText(p.descr||"—")}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
+        setManualAddEnabled(true);
       }catch(e){
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS";
+        manualPreviewEl.textContent = e.message||"ไม่พบรหัสใน ICMAS — เพิ่มไม่ได้จนกว่าจะใส่รหัสที่ถูกต้อง";
+        setManualAddEnabled(false);
       }
     }
     if(manualBcodeEl){
       manualBcodeEl.oninput = ()=>{
+        setManualAddEnabled(false);
         if(manualLookupTimer) clearTimeout(manualLookupTimer);
         manualLookupTimer = setTimeout(refreshManualPreview, 350);
       };

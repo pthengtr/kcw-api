@@ -137,6 +137,11 @@ def post_transfer_ship(
                     raise TransferShipError("qty_ship must be > 0", code="invalid_qty")
                 descr = (line.get("descr") or "")[:60]
                 product = _fetch_icmas_row(conn, bcode)
+                if not product:
+                    raise TransferShipError(
+                        f"BCODE {bcode} not in ICMAS",
+                        code="missing_icmas",
+                    )
                 conn.execute(
                     sidet_insert,
                     {
@@ -146,28 +151,27 @@ def post_transfer_ship(
                         "billno": billno,
                         "line": i * 10,
                         "bcode": bcode,
-                        "pcode": (product or {}).get("PCODE") or None,
-                        "mcode": (product or {}).get("MCODE") or None,
+                        "pcode": product.get("PCODE") or None,
+                        "mcode": product.get("MCODE") or None,
                         "detail": descr,
-                        "location1": (str((product or {}).get("LOCATION1") or "")[:10] or None),
+                        "location1": (str(product.get("LOCATION1") or "")[:10] or None),
                         # TF ship leg: SIMAS BILLTYPE 1, always positive line QTY (not SA +/- sign).
                         "qty": qty_ship,
-                        "ui": str((product or {}).get("UI1") or "unit")[:10],
+                        "ui": str(product.get("UI1") or "unit")[:10],
                         "mtp": 1.0,
                     },
                 )
-                if product:
-                    new_qty = float(product.get("QTYOH2") or 0) - qty_ship
-                    conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
-                    # PARTS9 has no trigger that opens ICLOW when QTYOH2
-                    # reaches qtylo (ICMAS.QTYMIN). The ship-from branch
-                    # gets the waiting row: HQ→SYP on KSS, SYP→HQ on kss-pc.
-                    ensure_hq_low_stock_iclow(
-                        conn,
-                        bcode=bcode,
-                        qtyoh=new_qty,
-                        on=billdate.date(),
-                    )
+                new_qty = float(product.get("QTYOH2") or 0) - qty_ship
+                conn.execute(qtyoh2_update, {"qty": new_qty, "bcode": bcode})
+                # PARTS9 has no trigger that opens ICLOW when QTYOH2
+                # reaches qtylo (ICMAS.QTYMIN). The ship-from branch
+                # gets the waiting row: HQ→SYP on KSS, SYP→HQ on kss-pc.
+                ensure_hq_low_stock_iclow(
+                    conn,
+                    bcode=bcode,
+                    qtyoh=new_qty,
+                    on=billdate.date(),
+                )
     except (ProgrammingError, DBAPIError) as exc:
         tables = "SIMAS/SIDET/ICMAS/ICLOW"
         hint = transfer_write_permission_hint(exc, branch=from_branch, tables=tables)
