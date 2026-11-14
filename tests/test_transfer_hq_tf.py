@@ -41,13 +41,30 @@ def test_post_transfer_ship_idempotent(mock_get_shipment, mock_engine):
     mock_engine.assert_not_called()
 
 
+@patch("src.transfer.writers.ship_simas.ensure_hq_low_stock_iclow")
 @patch("src.transfer.writers.ship_simas.get_transfer_supabase_client")
 @patch("src.transfer.writers.ship_simas.writer_engine_for_branch")
 @patch("src.transfer.writers.ship_simas.get_shipment_by_token")
-def test_post_transfer_ship_basic_creation(mock_get_shipment, mock_engine, mock_client):
+def test_post_transfer_ship_basic_creation(
+    mock_get_shipment, mock_engine, mock_client, _mock_low
+):
     mock_get_shipment.return_value = None
     mock_conn = MagicMock()
-    mock_conn.execute.return_value.mappings.return_value.first.return_value = None
+
+    def fake_first():
+        # AP lookup then ICMAS row (same mock path for both SELECT .first()).
+        return {
+            "ACCTNAME": "สาขาสี่แยกพัฒนา",
+            "MCODE": "M",
+            "PCODE": "P",
+            "UI1": "หน่วย",
+            "LOCATION1": "A1",
+            "QTYOH2": 20,
+        }
+
+    mock_conn.execute.return_value.mappings.return_value.first.side_effect = (
+        lambda: fake_first()
+    )
 
     @contextmanager
     def fake_begin():
@@ -86,11 +103,42 @@ def test_post_transfer_ship_basic_creation(mock_get_shipment, mock_engine, mock_
 @patch("src.transfer.writers.ship_simas.get_transfer_supabase_client")
 @patch("src.transfer.writers.ship_simas.writer_engine_for_branch")
 @patch("src.transfer.writers.ship_simas.get_shipment_by_token")
-def test_post_transfer_ship_syp_uses_kcw_ap(mock_get_shipment, mock_engine, mock_client):
+def test_post_transfer_ship_missing_icmas(mock_get_shipment, mock_engine, mock_client):
+    mock_get_shipment.return_value = None
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.mappings.return_value.first.return_value = None
+
+    @contextmanager
+    def fake_begin():
+        yield mock_conn
+
+    mock_engine.return_value.begin = fake_begin
+    with patch("src.transfer.writers.ship_simas.next_simas_billno", return_value="TF2308-00001"):
+        with pytest.raises(TransferShipError) as exc_info:
+            post_transfer_ship(
+                from_branch="HQ",
+                transfer_id="test-id",
+                short_id="test-short",
+                lines=[{"line_id": "line1", "bcode": "1205252", "qty_ship": 1, "descr": ""}],
+                operator="op",
+                client_token="tok",
+            )
+    assert exc_info.value.code == "missing_icmas"
+
+
+@patch("src.transfer.writers.ship_simas.ensure_hq_low_stock_iclow")
+@patch("src.transfer.writers.ship_simas.get_transfer_supabase_client")
+@patch("src.transfer.writers.ship_simas.writer_engine_for_branch")
+@patch("src.transfer.writers.ship_simas.get_shipment_by_token")
+def test_post_transfer_ship_syp_uses_kcw_ap(
+    mock_get_shipment, mock_engine, mock_client, _mock_low
+):
     mock_get_shipment.return_value = None
     mock_conn = MagicMock()
     mock_conn.execute.return_value.mappings.return_value.first.return_value = {
-        "ACCTNAME": "บจก.เกียรติชัยอะไหล่ยนต์ (สำนักงานใหญ่)"
+        "ACCTNAME": "บจก.เกียรติชัยอะไหล่ยนต์ (สำนักงานใหญ่)",
+        "QTYOH2": 5,
+        "UI1": "หน่วย",
     }
 
     @contextmanager

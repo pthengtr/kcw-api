@@ -81,6 +81,7 @@ from src.transfer.parts9 import (
     fetch_local_icmas_meta,
     fetch_sticker_catalog,
     lookup_transfer_product,
+    missing_icmas_bcodes,
     suggest_transfer_skus,
     transfer_insight_overlay,
 )
@@ -484,21 +485,51 @@ def api_need_list(request: Request, enrich: str = "none"):
     return {"items": enrich_transfer_lines(rows, include_suggestions=False)}
 
 
+def _missing_icmas_response(bcodes: list[str]) -> JSONResponse | None:
+    """Reject wrong / incomplete BCODEs that are on neither HQ nor SYP ICMAS."""
+    try:
+        missing = missing_icmas_bcodes(bcodes)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    if not missing:
+        return None
+    joined = ", ".join(missing)
+    return JSONResponse(
+        {
+            "error": f"ไม่พบรหัสใน ICMAS: {joined}",
+            "code": "missing_icmas",
+            "bcodes": missing,
+        },
+        status_code=400,
+    )
+
+
 @router.post("/api/need-list")
 def api_need_create(body: NeedCreate, request: Request):
     ident, err = _require_api(request)
     if err:
         return err
     payload = _need_row(body, actor=ident.display_name)
+    bad = _missing_icmas_response([payload["bcode"]])
+    if bad:
+        return bad
+    try:
+        product = lookup_transfer_product(bcode=payload["bcode"])
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    if not product:
+        return JSONResponse(
+            {
+                "error": f"ไม่พบรหัส {payload['bcode']} ใน ICMAS",
+                "code": "missing_icmas",
+                "bcodes": [payload["bcode"]],
+            },
+            status_code=400,
+        )
     if not payload["descr"]:
-        try:
-            product = lookup_transfer_product(bcode=payload["bcode"])
-        except Exception:
-            product = None
-        if product:
-            payload["descr"] = product.get("descr") or None
-            if payload["hq_qtyoh2"] is None:
-                payload["hq_qtyoh2"] = product.get("hq_qtyoh2")
+        payload["descr"] = product.get("descr") or None
+    if payload["hq_qtyoh2"] is None:
+        payload["hq_qtyoh2"] = product.get("hq_qtyoh2")
     row = upsert_need(get_transfer_supabase_client(), payload)
     return row
 
@@ -514,6 +545,9 @@ def api_need_bulk(body: NeedBulk, request: Request):
         for ln in (body.lines or [])
         if (ln.bcode or "").strip()
     ]
+    bad = _missing_icmas_response([r["bcode"] for r in rows_in])
+    if bad:
+        return bad
     rows = upsert_need_many(
         get_transfer_supabase_client(), rows_in, actor=ident.display_name
     )
@@ -534,9 +568,15 @@ def api_need_replace(body: NeedReplace, request: Request):
     ident, err = _require_api(request)
     if err:
         return err
+    lines = body.lines or []
+    bad = _missing_icmas_response(
+        [str((ln or {}).get("bcode") or "") for ln in lines if isinstance(ln, dict)]
+    )
+    if bad:
+        return bad
     rows = replace_need_list(
         get_transfer_supabase_client(),
-        body.lines or [],
+        lines,
         actor=ident.display_name,
     )
     return {"items": rows}
@@ -725,6 +765,11 @@ def api_set_lines(transfer_id: str, body: DraftLines, request: Request):
     check = can_action("submit_transfer", {"lines": body.lines})
     if not check.allowed and body.lines:
         return JSONResponse({"error": check.reason}, status_code=400)
+    bad = _missing_icmas_response(
+        [str((ln or {}).get("bcode") or "") for ln in (body.lines or []) if isinstance(ln, dict)]
+    )
+    if bad:
+        return bad
     lines = set_request_lines(client, transfer_id, body.lines)
     return {"items": enrich_lines(lines)}
 
@@ -763,6 +808,9 @@ def api_submit(transfer_id: str, request: Request):
     check = can_action("submit_transfer", {"lines": lines})
     if not check.allowed:
         return JSONResponse({"error": check.reason}, status_code=400)
+    bad = _missing_icmas_response([str(ln.get("bcode") or "") for ln in lines])
+    if bad:
+        return bad
     short_id = (header.get("short_id") or transfer_id).replace("TRF-", "")
     from_branch = (header.get("from_branch") or "HQ").upper()
     req = submit_request(client, transfer_id, actor=ident.display_name)
@@ -1207,8 +1255,20 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             )
         if resolved.error:
             return JSONResponse({"error": resolved.error}, status_code=400)
+        ship_bcode = resolved.ship_bcode
+        if not _ship_meta(ship_bcode):
+            return JSONResponse(
+                {
+                    "error": (
+                        f"จัดส่งไม่ได้ — ไม่พบ {ship_bcode} ใน ICMAS สาขาต้นทาง"
+                    ),
+                    "code": "missing_icmas",
+                    "bcodes": [ship_bcode],
+                },
+                status_code=400,
+            )
         out_line = dict(line)
-        out_line["bcode"] = resolved.ship_bcode
+        out_line["bcode"] = ship_bcode
         out_line["descr"] = resolved.descr or line_info.get("descr") or line.get("descr")
         out_line["line_id"] = line_id
         out_line["qty_ship"] = qty_ship
@@ -1260,8 +1320,16 @@ def api_prepare(transfer_id: str, body: PrepareRequest, request: Request):
             client_token=client_token,
         )
     except TransferShipError as exc:
-        code = 403 if exc.code == "permission_denied" else 500
-        return JSONResponse({"error": str(exc)}, status_code=code)
+        if exc.code == "permission_denied":
+            code = 403
+        elif exc.code in ("missing_icmas", "invalid_qty", "empty_lines"):
+            code = 400
+        else:
+            code = 500
+        return JSONResponse(
+            {"error": str(exc), "code": exc.code},
+            status_code=code,
+        )
     billno = result.get("ship_billno") or result.get("tf_billno")
     shipment_id = result.get("shipment_id")
     try:

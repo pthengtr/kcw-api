@@ -19,9 +19,9 @@ Requester is always **`to_branch`** (branch that needs stock). Shipper is **`fro
 | **HQ → SYP** | SYP | HQ (TF SIMAS on KSS) | SYP (TF PIMAS on kss-pc) |
 | **SYP → HQ** | HQ | SYP (3TF SIMAS on kss-pc) | HQ (3TF PIMAS on KSS) |
 
-1. **Requester** — draft with direction picker → submit
-2. **Shipper** (`from_branch`) — prepare queue → photograph the packed goods → one click = one ship bill (partial qty on that bill is allowed; no second TF on the same request). The photos are evidence on that TF and show on the request and on **พิมพ์ใบคำขอ**.
-3. **Receiver** (`to_branch`) — receive against shipment → PIMAS bill (stock in)
+1. **Requester** — draft with direction picker → submit. Manual / cart BCODEs must exist in HQ or SYP ICMAS; incomplete or unknown codes are rejected.
+2. **Shipper** (`from_branch`) — prepare queue → photograph the packed goods → one click = one ship bill (partial qty on that bill is allowed; no second TF on the same request). The photos are evidence on that TF and show on the request and on **พิมพ์ใบคำขอ**. Prepare and the SIMAS writer refuse BCODEs missing from the ship-from branch ICMAS.
+3. **Receiver** (`to_branch`) — receive against shipment → PIMAS bill (stock in). Receive already refuses missing ICMAS.
 
 Supabase `transfer.*` owns workflow; PARTS9 owns inventory at ship (SIMAS) + receive (PIMAS).
 

@@ -103,6 +103,8 @@ def test_transfer_page_renders():
     assert "/transfer/api/counts" in html
     assert "receive-lines" in html
     assert "need-list/bulk" in html
+    assert "setManualAddEnabled" in html
+    assert "ไม่พบรหัสใน ICMAS — ใส่รหัสให้ครบก่อน" in html
     assert "suggest/hints" in html
     assert "scope=" in html
     assert 'data-count="receive"' in html

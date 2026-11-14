@@ -4,7 +4,31 @@ from src.transfer.parts9 import (
     _fetch_site_icmas,
     enrich_transfer_lines,
     lookup_transfer_product,
+    missing_icmas_bcodes,
 )
+
+
+def test_missing_icmas_bcodes_reports_unknown_only():
+    hq_engine = object()
+    syp_engine = object()
+
+    def fake_meta(engine, bcodes, include_blocked=False):
+        known = {"12052520"}
+        return {
+            c: {"qtyoh2": 1.0, "descr": "ok", "blocked": False}
+            for c in bcodes
+            if c in known
+        }
+
+    def fake_engine(site):
+        return hq_engine if site == "hq" else syp_engine
+
+    with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_meta):
+                missing = missing_icmas_bcodes(["12052520", "1205252", "1205252", ""])
+
+    assert missing == ["1205252"]
 
 
 def test_lookup_transfer_product_merges_hq_and_syp():
