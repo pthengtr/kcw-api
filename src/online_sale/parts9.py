@@ -158,16 +158,24 @@ def lookup_product(code: str) -> dict[str, Any]:
     }
 
 
-def find_duplicate_po(acctno: str, online_po: str) -> list[dict[str, Any]]:
+def find_duplicate_po(
+    acctno: str, online_po: str, *, exclude_billno: str = ""
+) -> list[dict[str, Any]]:
     rows = _run(_PO_DUP, {"acct": acctno.strip(), "po": online_po.strip()})
-    return [
-        {
-            "billno": str(r.get("billno") or "").strip(),
-            "bill_date": _day(r.get("bill_date")),
-            "online_po": str(r.get("online_po") or "").strip(),
-        }
-        for r in rows
-    ]
+    skip = (exclude_billno or "").strip().upper()
+    out = []
+    for r in rows:
+        billno = str(r.get("billno") or "").strip()
+        if skip and billno.upper() == skip:
+            continue
+        out.append(
+            {
+                "billno": billno,
+                "bill_date": _day(r.get("bill_date")),
+                "online_po": str(r.get("online_po") or "").strip(),
+            }
+        )
+    return out
 
 
 def search_bills(

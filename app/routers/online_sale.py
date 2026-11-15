@@ -21,6 +21,7 @@ from src.online_sale.service import (
     save_sale_payload,
     search_payload,
     shops_payload,
+    update_sale_payload,
 )
 from src.online_sale.ui import APP, SESSION_COOKIE, page
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
@@ -41,6 +42,7 @@ class SaleBody(BaseModel):
 class CheckPoBody(BaseModel):
     acctno: str = ""
     online_po: str = ""
+    exclude_billno: str = ""
 
 
 class ReturnBody(BaseModel):
@@ -237,7 +239,9 @@ def api_check_po(request: Request, body: CheckPoBody):
     if err is not None:
         return err
     try:
-        return check_po_payload(body.acctno, body.online_po)
+        return check_po_payload(
+            body.acctno, body.online_po, exclude_billno=body.exclude_billno
+        )
     except Exception as exc:
         return _err(exc)
 
@@ -249,6 +253,17 @@ def api_sales(request: Request, body: SaleBody):
         return err
     try:
         return save_sale_payload(body.model_dump(), _actor(ident))
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.patch("/api/sales/{billno}")
+def api_update_sale(request: Request, billno: str, body: SaleBody):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return update_sale_payload(billno, body.model_dump(), _actor(ident))
     except Exception as exc:
         return _err(exc)
 

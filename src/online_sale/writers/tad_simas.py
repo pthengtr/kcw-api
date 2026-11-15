@@ -244,3 +244,258 @@ def post_tad(
         "acctno": acctno,
         "lines": len(prepared),
     }
+
+
+def _prepare_lines(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Decimal]]:
+    if not lines:
+        raise OnlineSaleError("lines", "เพิ่มอย่างน้อย 1 รายการสินค้า")
+    amounts: list[Decimal] = []
+    prepared: list[dict[str, Any]] = []
+    for raw in lines:
+        bcode = str(raw.get("bcode") or "").strip()
+        qty = float(raw.get("qty") or 0)
+        price = money(raw.get("price"))
+        if not bcode:
+            raise OnlineSaleError("lines", "มีรายการที่ไม่มีรหัสสินค้า")
+        if qty <= 0:
+            raise OnlineSaleError("lines", f"จำนวนของ {bcode} ต้องมากกว่า 0")
+        if price <= 0:
+            raise OnlineSaleError("lines", f"ราคาของ {bcode} ต้องมากกว่า 0")
+        amount = money(Decimal(str(qty)) * price)
+        amounts.append(amount)
+        prepared.append(
+            {
+                "bcode": bcode,
+                "qty": qty,
+                "price": price,
+                "amount": amount,
+                "detail": str(raw.get("detail") or raw.get("descr") or "")[:60],
+                "ui": str(raw.get("ui") or "หน่วย")[:10],
+            }
+        )
+    return prepared, totals_from_amounts(amounts)
+
+
+def update_tad(
+    *,
+    billno: str,
+    acctno: str,
+    acctname: str,
+    online_po: str,
+    remarks: str,
+    operator: str,
+    lines: list[dict[str, Any]],
+    allow_oversell: bool = False,
+) -> dict[str, Any]:
+    exact = (billno or "").strip().upper()
+    if not exact.startswith("TAD"):
+        raise OnlineSaleError("bill", "แก้ไขได้เฉพาะบิล TAD")
+    po = (online_po or "").strip()
+    if not po:
+        raise OnlineSaleError("po", "ใส่เลขคำสั่งซื้อ")
+    if len(po) > 15:
+        raise OnlineSaleError("po", "เลขคำสั่งซื้อยาวเกิน 15 ตัวอักษร (จำกัดของ PARTS9)")
+
+    prepared, totals = _prepare_lines(lines)
+    aftertax = totals["aftertax"]
+    engine = writer_engine_for_branch("HQ")
+    now = datetime.now()
+    billtime = f"{now.hour:02d}{now.minute:02d}"
+
+    try:
+        with engine.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1
+                      LTRIM(RTRIM(BILLNO)) AS billno,
+                      BILLDATE AS bill_date,
+                      COALESCE(CANCELED, 'N') AS canceled
+                    FROM dbo.SIMAS WITH (UPDLOCK, HOLDLOCK)
+                    WHERE UPPER(LTRIM(RTRIM(BILLNO))) = :exact
+                    """
+                ),
+                {"exact": exact},
+            ).mappings().first()
+            if not header:
+                raise OnlineSaleError("bill", f"ไม่พบบิล {exact}", status=404)
+            if str(header.get("canceled") or "N").strip().upper() == "Y":
+                raise OnlineSaleError("bill", "บิลนี้ถูกยกเลิกแล้ว แก้ไขไม่ได้")
+            billdate = header.get("bill_date") or now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            jourmode = "1"
+            billtype = "1"
+
+            dup = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 LTRIM(RTRIM(BILLNO)) AS billno
+                    FROM dbo.SIMAS WITH (UPDLOCK, HOLDLOCK)
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acct
+                      AND LTRIM(RTRIM(COALESCE(PO, ''))) = :po
+                      AND UPPER(LTRIM(RTRIM(BILLNO))) LIKE 'TAD%'
+                      AND UPPER(LTRIM(RTRIM(BILLNO))) <> :exact
+                      AND COALESCE(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"acct": acctno.strip(), "po": po, "exact": exact},
+            ).mappings().first()
+            if dup:
+                raise OnlineSaleError(
+                    "duplicate_po",
+                    f"เลขคำสั่งซื้อนี้มีบิล {dup['billno']} แล้วในร้านนี้",
+                )
+
+            old_lines = conn.execute(
+                text(
+                    """
+                    SELECT
+                      LINE AS line_no,
+                      LTRIM(RTRIM(BCODE)) AS bcode,
+                      QTY AS qty
+                    FROM dbo.SIDET WITH (UPDLOCK, HOLDLOCK)
+                    WHERE UPPER(LTRIM(RTRIM(BILLNO))) = :exact
+                      AND COALESCE(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"exact": exact},
+            ).mappings().all()
+
+            qtyoh2_update = text(
+                """
+                UPDATE dbo.ICMAS SET QTYOH2 = :qty
+                WHERE LTRIM(RTRIM(BCODE)) = :bcode
+                """
+            )
+            # Restore stock from previous lines, then soft-cancel them.
+            for old in old_lines:
+                bcode = str(old.get("bcode") or "").strip()
+                qty = abs(float(old.get("qty") or 0))
+                if not bcode or qty <= 0:
+                    continue
+                product = _fetch_icmas_row(conn, bcode)
+                if not product:
+                    raise OnlineSaleError("product", f"ไม่พบ BCODE {bcode} ใน ICMAS")
+                on_hand = float(product.get("QTYOH2") or 0)
+                conn.execute(qtyoh2_update, {"qty": on_hand + qty, "bcode": bcode})
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.SIDET
+                    SET CANCELED = 'Y'
+                    WHERE UPPER(LTRIM(RTRIM(BILLNO))) = :exact
+                      AND COALESCE(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"exact": exact},
+            )
+
+            sidet_insert = text(
+                """
+                INSERT INTO dbo.SIDET (
+                  JOURMODE, JOURTYPE, JOURDATE, BILLTYPE, BILLDATE, BILLNO,
+                  LINE, ITEMNO, BCODE, PCODE, MCODE, DETAIL, WHNUMBER, LOCATION1,
+                  STATUS, SERIAL, TAXIC, EXMPT, ISVAT,
+                  QTY, UI, MTP, PRICE, XPRICE, VAT, AMOUNT,
+                  PAID, DONE, CANCELED
+                ) VALUES (
+                  :jourmode, 'SJ', :billdate, :billtype, :billdate, :billno,
+                  :line, 1, :bcode, :pcode, :mcode, :detail, 'Y', :location1,
+                  1, 'N', 'Y', 'N', 'Y',
+                  :qty, :ui, 1, :price, 0, 0, :amount,
+                  'N', 'N', 'N'
+                )
+                """
+            )
+
+            for i, line in enumerate(prepared, start=1):
+                product = _fetch_icmas_row(conn, line["bcode"])
+                if not product:
+                    raise OnlineSaleError("product", f"ไม่พบ BCODE {line['bcode']} ใน ICMAS")
+                on_hand = float(product.get("QTYOH2") or 0)
+                if not allow_oversell and on_hand < line["qty"]:
+                    raise OnlineSaleError(
+                        "stock",
+                        f"{line['bcode']} สต็อกคงเหลือ {on_hand:g} ไม่พอขาย {line['qty']:g}",
+                    )
+                detail = line["detail"] or str(product.get("DESCR") or "")[:60]
+                conn.execute(
+                    sidet_insert,
+                    {
+                        "jourmode": jourmode,
+                        "billdate": billdate,
+                        "billtype": billtype,
+                        "billno": exact,
+                        "line": i * 10,
+                        "bcode": line["bcode"],
+                        "pcode": product.get("PCODE") or None,
+                        "mcode": product.get("MCODE") or None,
+                        "detail": detail,
+                        "location1": (str(product.get("LOCATION1") or "")[:10] or None),
+                        "qty": line["qty"],
+                        "ui": line["ui"] or str(product.get("UI1") or "หน่วย")[:10],
+                        "price": float(line["price"]),
+                        "amount": float(line["amount"]),
+                    },
+                )
+                conn.execute(
+                    qtyoh2_update,
+                    {"qty": on_hand - line["qty"], "bcode": line["bcode"]},
+                )
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.SIMAS
+                    SET ACCTNO = :acctno,
+                        ACCTNAME = :acctname,
+                        PO = :po,
+                        REMARKS = :remarks,
+                        SALE = :sale,
+                        LINES = :lines,
+                        BEFORETAX = :beforetax,
+                        TAX = :tax,
+                        AFTERTAX = :aftertax,
+                        DUEAMT = :dueamt,
+                        BILLTIME = :billtime
+                    WHERE UPPER(LTRIM(RTRIM(BILLNO))) = :exact
+                    """
+                ),
+                {
+                    "exact": exact,
+                    "acctno": acctno[:15],
+                    "acctname": (acctname or "")[:60],
+                    "po": po[:15],
+                    "remarks": (remarks or "")[:30],
+                    "sale": (operator or "")[:15],
+                    "lines": len(prepared),
+                    "beforetax": float(totals["beforetax"]),
+                    "tax": float(totals["tax"]),
+                    "aftertax": float(aftertax),
+                    "dueamt": float(aftertax),
+                    "billtime": billtime,
+                },
+            )
+    except OnlineSaleError:
+        raise
+    except (ProgrammingError, DBAPIError) as exc:
+        hint = transfer_write_permission_hint(
+            exc, branch="HQ", tables="SIMAS/SIDET/ICMAS"
+        )
+        if hint:
+            raise OnlineSaleError("permission_denied", hint, status=502) from exc
+        raise OnlineSaleError("sql_error", str(exc), status=502) from exc
+
+    return {
+        "billno": exact,
+        "bill_time": billtime,
+        "beforetax": float(totals["beforetax"]),
+        "tax": float(totals["tax"]),
+        "aftertax": float(aftertax),
+        "online_po": po,
+        "acctno": acctno,
+        "lines": len(prepared),
+        "updated": True,
+    }

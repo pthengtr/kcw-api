@@ -35,6 +35,12 @@ CSS = """
 .rcp .foot { margin-top:18px; font-size:14px; }
 .rcp .cn-box { margin-top:12px; border:1px solid #333; padding:8px 10px; font-size:14px; }
 .rcp .cn-box .row { display:flex; justify-content:space-between; gap:12px; padding:2px 0; }
+.rcp .sign { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:28px; font-size:13px; break-inside:avoid; page-break-inside:avoid; }
+.rcp .sign section { text-align:center; }
+.rcp .sign h3 { margin:0 0 6px; font-size:13px; font-weight:700; line-height:1.35; }
+.rcp .sign .hand { min-height:40px; height:48px; }
+.rcp .sign .sig-fields { display:grid; grid-template-columns:auto 1fr; gap:6px 8px; align-items:end; text-align:left; margin-top:4px; font-size:12px; }
+.rcp .sign .sig-fields .line { border-bottom:1px solid #111; min-height:1.15rem; }
 @media print {
   /* margin:0 hides Chrome/Edge/Firefox default headers & footers (date, URL, page). */
   @page { size:A4; margin:0; }

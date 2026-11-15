@@ -10,7 +10,23 @@ from src.online_sale.sheets.common import (
     thai_date,
     totals_block,
 )
+from src.online_sale.staff import issuer_full_name
 from src.online_sale.vat import money
+
+
+def _signature(title: str, *, name: str = "", signed_on: str = "") -> str:
+    name_cell = esc(name) if name else ""
+    date_cell = esc(signed_on) if signed_on else ""
+    return f"""
+    <section>
+      <h3>{esc(title)}</h3>
+      <div class="hand"></div>
+      <div class="sig-fields">
+        <span>ลายมือชื่อ</span><span class="line"></span>
+        <span>ชื่อ</span><span class="line">{name_cell}</span>
+        <span>วันที่</span><span class="line">{date_cell}</span>
+      </div>
+    </section>"""
 
 
 def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str = "") -> str:
@@ -26,6 +42,8 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
         credit_tax = totals_from_amounts(amounts)["tax"]
 
     reason_text = reason or bill.get("reason") or ""
+    issuer_name = issuer_full_name(str(bill.get("sale") or ""))
+    signed_on = thai_date(bill.get("bill_date"))
     meta = (
         f"<div><b>เลขที่</b> {esc(bill.get('billno'))}</div>"
         f"<div><b>วันที่</b> {thai_date(bill.get('bill_date'))}</div>"
@@ -43,6 +61,13 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
         f"<div class='row'><span>VAT ของยอดลดหนี้</span><span>{fmt_money(credit_tax)}</span></div>"
         f"<div class='row'><b>รวมยอดลดหนี้ (รวม VAT)</b><b>{fmt_money(credit_after)}</b></div>"
         "</div>"
+    )
+    signs = "".join(
+        (
+            _signature("ผู้ออกเอกสาร", name=issuer_name, signed_on=signed_on),
+            _signature("ผู้อนุมัติเอกสาร", signed_on=signed_on),
+            _signature("ผู้รับเอกสาร"),
+        )
     )
     return f"""<!doctype html>
 <html lang="th"><head><meta charset="utf-8">
@@ -63,7 +88,7 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
   </table>
   {totals_block(amounts)}
   {cn_box}
-  <div class="foot">พนักงานขาย: <b>{esc(bill.get('sale') or '')}</b></div>
+  <div class="sign">{signs}</div>
 </div>
 <script>
 window.onload=function(){{
