@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.handlers.online_sale_entry import is_online_sale_command
 from src.handlers.services_menu import services_menu_handlers_match
-from src.handlers.to_bill_entry import is_to_bill_command
+from src.handlers.to_bill_entry import handle_to_bill_command, is_to_bill_command
 from src.online_sale.docno import buddhist_yymm, format_cntad, format_tad
+from src.online_sale.errors import OnlineSaleError
+from src.online_sale.net import is_private_lan
 from src.online_sale.shops import bill_acctname, detect_platform, shop_display_name
 from src.online_sale.ui import page
 from src.online_sale.vat import split_inclusive, totals_from_amounts
+from src.online_sale.writers.cntad_simas import post_cntad
+from src.online_sale.writers.tad_simas import post_tad
 
 
 def test_line_commands_and_menu():
@@ -61,3 +69,109 @@ def test_ui_page_placeholders():
     assert "ขายออนไลน์" in html
     assert "true" in html
     assert "ทดสอบ" in html
+    assert 'data-tab="to"' in html
+
+
+def test_private_lan():
+    assert is_private_lan("127.0.0.1")
+    assert is_private_lan("192.168.1.2")
+    assert not is_private_lan("8.8.8.8")
+
+
+def test_post_tad_validation():
+    with pytest.raises(OnlineSaleError, match="อย่างน้อย"):
+        post_tad(
+            acctno="7LAZ1",
+            acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
+            online_po="ORDER1",
+            remarks="##0000000000001",
+            operator="tester",
+            lines=[],
+        )
+    with pytest.raises(OnlineSaleError, match="15"):
+        post_tad(
+            acctno="7LAZ1",
+            acctname="x",
+            online_po="1234567890123456",
+            remarks="##0000000000001",
+            operator="tester",
+            lines=[{"bcode": "A", "qty": 1, "price": 10}],
+        )
+
+
+@patch("src.online_sale.writers.tad_simas._fetch_icmas_row")
+@patch("src.online_sale.writers.tad_simas.writer_engine_for_branch")
+def test_post_tad_blocks_duplicate_po_and_stock(mock_engine, mock_icmas):
+    mock_conn = MagicMock()
+
+    def first_side_effect():
+        # First SELECT in TX = duplicate PO check; return an existing bill.
+        return {"billno": "TAD6911-001"}
+
+    mock_conn.execute.return_value.mappings.return_value.first.side_effect = first_side_effect
+
+    @contextmanager
+    def fake_begin():
+        yield mock_conn
+
+    mock_engine.return_value.begin = fake_begin
+    with pytest.raises(OnlineSaleError) as exc:
+        post_tad(
+            acctno="7LAZ1",
+            acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
+            online_po="DUPORDER",
+            remarks="##0000000000001",
+            operator="tester",
+            lines=[{"bcode": "03053231", "qty": 1, "price": 100, "detail": "x"}],
+        )
+    assert exc.value.code == "duplicate_po"
+
+    # No duplicate; stock too low.
+    mock_conn.execute.return_value.mappings.return_value.first.side_effect = lambda: None
+    mock_icmas.return_value = {
+        "PCODE": "P",
+        "MCODE": "M",
+        "UI1": "หน่วย",
+        "LOCATION1": "A1",
+        "QTYOH2": 0,
+        "DESCR": "item",
+    }
+    with pytest.raises(OnlineSaleError) as stock_exc:
+        post_tad(
+            acctno="7LAZ1",
+            acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
+            online_po="NEWORDER",
+            remarks="##0000000000001",
+            operator="tester",
+            lines=[{"bcode": "03053231", "qty": 2, "price": 100, "detail": "x"}],
+        )
+    assert stock_exc.value.code == "stock"
+
+
+def test_post_cntad_requires_tad_ref():
+    with pytest.raises(OnlineSaleError, match="TAD"):
+        post_cntad(
+            tad_billno="TAR6911-001",
+            acctno="7LAZ1",
+            acctname="x",
+            remarks="##0000000000001",
+            operator="tester",
+            lines=[{"bcode": "A", "qty": 1, "price": 10}],
+        )
+
+
+def test_to_bill_line_redirects_to_online_sale(monkeypatch):
+    captured = {}
+
+    def fake_handle(engine, **kwargs):
+        captured.update(kwargs)
+        return {"type": "text", "text": "ok"}
+
+    monkeypatch.setattr(
+        "src.handlers.to_bill_entry.handle_online_sale_command",
+        fake_handle,
+    )
+    out = handle_to_bill_command(None, line_user_id="u1", display_name="A")
+    assert out["type"] == "text"
+    assert captured["path"] == "/online-sale/?tab=to"
+    assert captured["title"] == "ใบเต็มออนไลน์"
