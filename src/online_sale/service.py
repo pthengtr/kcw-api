@@ -11,7 +11,7 @@ from src.online_sale.sheets.cntad import render_cntad_sheet
 from src.online_sale.sheets.tad import render_tad_sheet
 from src.online_sale.shops import list_platforms, list_shops, load_shop
 from src.online_sale.writers.cntad_simas import post_cntad
-from src.online_sale.writers.tad_simas import post_tad
+from src.online_sale.writers.tad_simas import post_tad, update_tad
 
 RETURN_REASONS = (
     ("cancel_order", "ยกเลิกคำสั่งซื้อ"),
@@ -38,14 +38,55 @@ def product_payload(code: str) -> dict[str, Any]:
     return {"product": parts9.lookup_product(code)}
 
 
-def check_po_payload(acctno: str, online_po: str) -> dict[str, Any]:
+def check_po_payload(
+    acctno: str, online_po: str, *, exclude_billno: str = ""
+) -> dict[str, Any]:
     po = (online_po or "").strip()
     if not po:
         raise OnlineSaleError("po", "ใส่เลขคำสั่งซื้อ")
     if len(po) > 15:
         raise OnlineSaleError("po", "เลขคำสั่งซื้อยาวเกิน 15 ตัวอักษร")
-    dups = parts9.find_duplicate_po(acctno, po)
+    dups = parts9.find_duplicate_po(acctno, po, exclude_billno=exclude_billno)
     return {"ok": not dups, "duplicates": dups}
+
+
+def _to_search_hits(raw_q: str) -> list[dict[str, Any]]:
+    """Resolve TO/RVO docnos from the to_bill overlay."""
+    q = (raw_q or "").strip().upper()
+    if not q:
+        return []
+    try:
+        from src.to_bill.db import get_invoice_by_docno, list_invoices
+        from src.to_bill.numbering import buddhist_yymm, recent_months
+    except Exception:
+        return []
+
+    hits: list[dict[str, Any]] = []
+    if q.startswith("TO") or q.startswith("RVO"):
+        try:
+            inv = get_invoice_by_docno(q)
+        except Exception:
+            inv = None
+        if inv:
+            hits.append(inv)
+            return hits
+        months = [buddhist_yymm()]
+        try:
+            months = [m["yymm"] for m in recent_months()][:6] or months
+        except Exception:
+            pass
+        for yymm in months:
+            try:
+                rows = list_invoices(status="", q=q, yymm=yymm, kind="")
+            except Exception:
+                continue
+            for row in rows:
+                docno = str(row.get("docno") or "").strip().upper()
+                if docno == q or q in docno:
+                    hits.append(row)
+            if hits:
+                break
+    return hits
 
 
 def search_payload(
@@ -58,36 +99,41 @@ def search_payload(
 ) -> dict[str, Any]:
     df = (date_from or "").strip() or None
     dt = (date_to or "").strip() or None
-    # make date_to inclusive by bumping one day for SQL < next day
     date_to_excl = None
     if dt:
         try:
             date_to_excl = (date.fromisoformat(dt) + timedelta(days=1)).isoformat()
         except ValueError:
             date_to_excl = dt
-    bills = parts9.search_bills(
-        q=q,
-        acctno=acctno,
-        date_from=df,
-        date_to=date_to_excl,
-        platform=platform,
-    )
-    # Enrich with TO docs from to_bill when q looks like TO or we have TAD hits
-    to_hits: list[dict[str, Any]] = []
-    raw_q = (q or "").strip().upper()
-    if raw_q.startswith("TO") or any(b["kind"] == "tad" for b in bills):
-        try:
-            from src.to_bill.service import month_list, search as to_search
+    raw_q = (q or "").strip()
+    upper_q = raw_q.upper()
+    bills: list[dict[str, Any]] = []
+    if not (upper_q.startswith("TO") or upper_q.startswith("RVO")):
+        bills = parts9.search_bills(
+            q=q,
+            acctno=acctno,
+            date_from=df,
+            date_to=date_to_excl,
+            platform=platform,
+        )
 
-            if raw_q.startswith("TO"):
-                to_hits = month_list(q=raw_q).get("invoices") or []
-            elif raw_q.startswith("TAD"):
-                # issued TO for this TAD via search path
-                for hit in to_search(raw_q):
-                    if hit.get("docno"):
-                        to_hits.append(hit)
-        except Exception:
-            to_hits = []
+    to_hits = _to_search_hits(raw_q)
+
+    # Attach issued/draft TO docnos onto TAD rows when available.
+    try:
+        from src.to_bill.db import open_for_bills
+
+        tad_nos = [b["billno"] for b in bills if b.get("kind") == "tad"]
+        opened = open_for_bills(tad_nos) if tad_nos else {}
+        for bill in bills:
+            docs = opened.get(bill["billno"]) or []
+            tax = next((d for d in docs if d.get("doc_kind") != "rvo"), None)
+            if tax and tax.get("docno"):
+                bill["to_docno"] = tax["docno"]
+                bill["to_status"] = tax.get("status")
+    except Exception:
+        pass
+
     return {"bills": bills, "to_invoices": to_hits}
 
 
@@ -129,6 +175,36 @@ def save_sale_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
         dup = check["duplicates"][0]["billno"]
         raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับบิล {dup}")
     result = post_tad(
+        acctno=shop["acctno"],
+        acctname=shop["bill_acctname"],
+        online_po=po,
+        remarks=shop["remarks"],
+        operator=actor,
+        lines=list(body.get("lines") or []),
+        allow_oversell=bool(body.get("allow_oversell")),
+    )
+    bill = parts9.load_bill(result["billno"])
+    return {"ok": True, "result": result, "bill": bill}
+
+
+def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[str, Any]:
+    settings = get_online_sale_settings()
+    if not settings.write_enabled:
+        raise OnlineSaleError("write_disabled", "ยังไม่เปิด ONLINE_SALE_WRITE_ENABLED", status=403)
+    exact = (billno or "").strip().upper()
+    existing = parts9.load_bill(exact)
+    if existing["kind"] != "tad":
+        raise OnlineSaleError("bill", "แก้ไขได้เฉพาะบิล TAD")
+    if existing["canceled"]:
+        raise OnlineSaleError("bill", "บิลนี้ถูกยกเลิกแล้ว แก้ไขไม่ได้")
+    shop = load_shop(str(body.get("acctno") or ""))
+    po = str(body.get("online_po") or "").strip()
+    check = check_po_payload(shop["acctno"], po, exclude_billno=exact)
+    if not check["ok"]:
+        dup = check["duplicates"][0]["billno"]
+        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับบิล {dup}")
+    result = update_tad(
+        billno=exact,
         acctno=shop["acctno"],
         acctname=shop["bill_acctname"],
         online_po=po,

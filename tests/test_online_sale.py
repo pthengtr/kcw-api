@@ -15,8 +15,10 @@ from src.online_sale.net import is_private_lan
 from src.online_sale.shops import bill_acctname, detect_platform, shop_display_name
 from src.online_sale.ui import page
 from src.online_sale.vat import split_inclusive, totals_from_amounts
+from src.online_sale.sheets.cntad import render_cntad_sheet
+from src.online_sale.staff import issuer_full_name, match_staff
 from src.online_sale.writers.cntad_simas import post_cntad
-from src.online_sale.writers.tad_simas import post_tad
+from src.online_sale.writers.tad_simas import post_tad, update_tad
 
 
 def test_line_commands_and_menu():
@@ -70,6 +72,54 @@ def test_ui_page_placeholders():
     assert "true" in html
     assert "ทดสอบ" in html
     assert 'data-tab="to"' in html
+    assert "stockWarn" in html
+    assert "status-cancel" in html
+    assert "data-edit" in html
+    assert "cancelEdit" in html
+
+
+def test_staff_roster_and_cntad_signers():
+    assert match_staff("เมย์")["full_name"] == "ปิยะนุช นันตาบุตร"
+    assert issuer_full_name("Nu") == "อานนท์ ชูสวัสดิ์"
+    assert issuer_full_name("Boss") == "สุริยะ โกศัลยกุล"
+    html = render_cntad_sheet(
+        {
+            "billno": "CNTAD6911-001",
+            "bill_date": "2026-11-15",
+            "sale": "เมย์",
+            "acctname": "ลูกค้า",
+            "lines": [],
+            "aftertax": 0,
+            "tax": 0,
+        }
+    )
+    assert "ผู้ออกเอกสาร" in html
+    assert "ผู้อนุมัติเอกสาร" in html
+    assert "ผู้รับเอกสาร" in html
+    assert "ปิยะนุช นันตาบุตร" in html
+
+
+def test_update_tad_validation():
+    with pytest.raises(OnlineSaleError, match="TAD"):
+        update_tad(
+            billno="CNTAD6911-001",
+            acctno="7LAZ1",
+            acctname="x",
+            online_po="PO1",
+            remarks="##0000000000001",
+            operator="tester",
+            lines=[{"bcode": "A", "qty": 1, "price": 10}],
+        )
+    with pytest.raises(OnlineSaleError, match="อย่างน้อย"):
+        update_tad(
+            billno="TAD6911-001",
+            acctno="7LAZ1",
+            acctname="x",
+            online_po="PO1",
+            remarks="##0000000000001",
+            operator="tester",
+            lines=[],
+        )
 
 
 def test_private_lan():

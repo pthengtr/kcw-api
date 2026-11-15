@@ -45,9 +45,15 @@ th,td{border-bottom:1px solid #eaecf0;padding:7px 4px;text-align:left;vertical-a
 .meta{color:var(--muted);font-size:12px}
 .err{color:var(--bad)}
 .ok{color:var(--ok)}
+.warn{color:#b54708}
 .total{font-size:18px;font-weight:700;color:var(--text)}
 .hidden{display:none!important}
 a{color:var(--red);font-weight:600}
+.status-cancel{color:var(--bad);font-weight:700}
+.stock-over td{background:#fff1f0}
+.edit-banner{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:8px 10px;border-radius:10px;margin-bottom:10px;font-size:13px}
+table input.cell{width:5.5rem;padding:6px 8px;border-radius:8px}
+table input.cell.price{width:7rem}
 iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14px;background:#fff}
 @media(max-width:800px){input,select{width:100%}}
 </style>
@@ -70,6 +76,7 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
 </header>
 <main>
 <section id="tab-sale" class="panel">
+  <div id="editBanner" class="edit-banner hidden"></div>
   <div class="row">
     <label class="field"><span>แพลตฟอร์ม</span>
       <select id="platform"></select>
@@ -92,13 +99,17 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
     <button type="button" id="addLine">เพิ่ม</button>
   </div>
   <p class="meta" id="prodHint"></p>
+  <p class="meta warn hidden" id="stockWarn"></p>
   <table id="linesTable" style="margin-top:12px">
     <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ที่เก็บ</th><th class="num">สต็อก</th><th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">รวม</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="row" style="justify-content:space-between;margin-top:12px">
     <div class="total">ยอดขายรวม <span id="grand">0.00</span></div>
-    <button type="button" id="saveSale" disabled>บันทึกขาย</button>
+    <div class="row">
+      <button type="button" class="ghost hidden" id="cancelEdit">ยกเลิกแก้ไข</button>
+      <button type="button" id="saveSale" disabled>บันทึกขาย</button>
+    </div>
   </div>
   <p id="saleMsg" class="meta"></p>
 </section>
@@ -134,7 +145,7 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
 <script>
 const USER = __USER_JSON__;
 const WRITE = __WRITE__;
-const state = { platforms:[], shops:[], lines:[], product:null, write:WRITE };
+const state = { platforms:[], shops:[], lines:[], product:null, write:WRITE, editBillno:null };
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -168,7 +179,7 @@ function fillPlatformSelect(sel, withAll=false) {
   }
 }
 
-async function loadShops(platform, sel) {
+async function loadShops(platform, sel, selected='') {
   sel.innerHTML = '<option value="">— เลือกร้าน —</option>';
   if (!platform) return;
   const data = await api('/api/shops?platform='+encodeURIComponent(platform));
@@ -177,8 +188,52 @@ async function loadShops(platform, sel) {
     const o = document.createElement('option');
     o.value = s.acctno;
     o.textContent = `${s.shop_name} (${s.acctno})`;
+    if (selected && s.acctno === selected) o.selected = true;
     sel.appendChild(o);
   }
+}
+
+function oversoldLines() {
+  return state.lines.filter(ln => Number(ln.qty) > Number(ln.qtyoh2||0));
+}
+
+function updateStockWarn() {
+  const bad = oversoldLines();
+  const el = $('stockWarn');
+  if (!bad.length) { el.classList.add('hidden'); el.textContent=''; return; }
+  el.classList.remove('hidden');
+  el.textContent = 'แจ้งเตือน: จำนวนขายเกินสต็อก — ' + bad.map(l => `${l.bcode} (${l.qty}/${l.qtyoh2})`).join(', ');
+}
+
+function syncEditBanner() {
+  const banner = $('editBanner');
+  const cancel = $('cancelEdit');
+  if (state.editBillno) {
+    banner.classList.remove('hidden');
+    banner.textContent = `กำลังแก้ไขบิล ${state.editBillno} — แก้เลขคำสั่งซื้อ แพลตฟอร์ม ร้านค้า รายการ แล้วกดบันทึก`;
+    cancel.classList.remove('hidden');
+    $('saveSale').textContent = 'บันทึกการแก้ไข';
+  } else {
+    banner.classList.add('hidden');
+    banner.textContent = '';
+    cancel.classList.add('hidden');
+    $('saveSale').textContent = 'บันทึกขาย';
+  }
+}
+
+function clearSaleForm() {
+  state.editBillno = null;
+  state.lines = [];
+  state.product = null;
+  $('po').value = '';
+  $('bcode').value = '';
+  $('qty').value = '1';
+  $('price').value = '';
+  $('prodHint').textContent = '';
+  $('poStatus').textContent = '';
+  $('saleMsg').textContent = '';
+  syncEditBanner();
+  renderLines();
 }
 
 function renderLines() {
@@ -186,18 +241,52 @@ function renderLines() {
   tb.innerHTML = '';
   let grand = 0;
   state.lines.forEach((ln, idx) => {
-    grand += ln.qty * ln.price;
+    grand += Number(ln.qty) * Number(ln.price);
+    const over = Number(ln.qty) > Number(ln.qtyoh2||0);
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${ln.bcode}</td><td>${ln.descr}</td><td>${ln.location||''}</td>
-      <td class="num">${ln.qtyoh2}</td><td class="num">${ln.qty}</td><td class="num">${money(ln.price)}</td>
+    if (over) tr.className = 'stock-over';
+    tr.innerHTML = `<td>${ln.bcode}</td><td>${ln.descr||''}</td><td>${ln.location||''}</td>
+      <td class="num">${ln.qtyoh2}</td>
+      <td class="num"><input class="cell" data-f="qty" data-i="${idx}" type="number" min="0.01" step="1" value="${ln.qty}"></td>
+      <td class="num"><input class="cell price" data-f="price" data-i="${idx}" type="number" min="0.01" step="0.01" value="${ln.price}"></td>
       <td class="num">${money(ln.qty*ln.price)}</td>
-      <td><button type="button" class="ghost" data-i="${idx}">ลบ</button></td>`;
+      <td><button type="button" class="ghost" data-del="${idx}">ลบ</button></td>`;
     tb.appendChild(tr);
   });
-  tb.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => {
-    state.lines.splice(Number(b.dataset.i),1); renderLines();
+  function refreshTotals() {
+    let g = 0;
+    state.lines.forEach((ln, i) => {
+      g += Number(ln.qty) * Number(ln.price);
+      const row = tb.children[i];
+      if (!row) return;
+      row.classList.toggle('stock-over', Number(ln.qty) > Number(ln.qtyoh2||0));
+      const sumCell = row.querySelector('td:nth-child(7)');
+      if (sumCell) sumCell.textContent = money(ln.qty * ln.price);
+    });
+    $('grand').textContent = money(g);
+    updateStockWarn();
+    $('saveSale').disabled = !(WRITE && state.lines.length && $('shop').value && $('po').value.trim());
+  }
+  tb.querySelectorAll('input[data-f]').forEach(inp => {
+    inp.oninput = () => {
+      const i = Number(inp.dataset.i);
+      const f = inp.dataset.f;
+      const v = Number(inp.value||0);
+      if (!state.lines[i]) return;
+      state.lines[i][f] = v;
+      if (f === 'qty' && v > Number(state.lines[i].qtyoh2||0)) {
+        $('saleMsg').textContent = `${state.lines[i].bcode} จำนวน ${v} เกินสต็อกคงเหลือ ${state.lines[i].qtyoh2}`;
+        $('saleMsg').className = 'meta warn';
+      }
+      refreshTotals();
+    };
+  });
+  tb.querySelectorAll('button[data-del]').forEach(b => b.onclick = () => {
+    state.lines.splice(Number(b.dataset.del),1); renderLines();
   });
   $('grand').textContent = money(grand);
+  updateStockWarn();
+  syncEditBanner();
   $('saveSale').disabled = !(WRITE && state.lines.length && $('shop').value && $('po').value.trim());
 }
 
@@ -222,8 +311,12 @@ function addLine() {
   const qty = Number($('qty').value||0);
   const price = Number($('price').value||0);
   if (qty<=0 || price<=0) { $('saleMsg').textContent='ใส่จำนวนและราคา'; $('saleMsg').className='meta err'; return; }
-  const existing = state.lines.find(l => l.bcode===state.product.bcode && l.price===price);
-  if (existing) existing.qty += qty;
+  if (qty > Number(state.product.qtyoh2||0)) {
+    const ok = confirm(`${state.product.bcode} จำนวน ${qty} เกินสต็อกคงเหลือ ${state.product.qtyoh2}\\nต้องการเพิ่มรายการต่อหรือไม่?`);
+    if (!ok) return;
+  }
+  const existing = state.lines.find(l => l.bcode===state.product.bcode && Number(l.price)===price);
+  if (existing) existing.qty = Number(existing.qty) + qty;
   else state.lines.push({
     bcode: state.product.bcode,
     descr: state.product.descr,
@@ -235,6 +328,43 @@ function addLine() {
   $('bcode').value=''; $('qty').value='1'; $('price').value='';
   state.product=null; $('prodHint').textContent='';
   renderLines(); $('bcode').focus();
+}
+
+async function loadBillForEdit(billno) {
+  const data = await api('/api/bills/'+encodeURIComponent(billno));
+  const bill = data.bill;
+  if (bill.kind !== 'tad') throw new Error('แก้ไขได้เฉพาะบิล TAD');
+  if (bill.canceled) throw new Error('บิลนี้ถูกยกเลิกแล้ว');
+  state.editBillno = bill.billno;
+  if (bill.platform) $('platform').value = bill.platform;
+  await loadShops($('platform').value, $('shop'), bill.acctno);
+  $('po').value = bill.online_po || '';
+  state.lines = [];
+  for (const ln of bill.lines || []) {
+    let qtyoh2 = 0, location = ln.location1 || '', descr = ln.detail || '';
+    try {
+      const prod = await api('/api/product?code='+encodeURIComponent(ln.bcode));
+      qtyoh2 = prod.product.qtyoh2;
+      location = prod.product.location || location;
+      descr = prod.product.descr || descr;
+    } catch (_) {}
+    // When editing, available stock includes qty already on this bill.
+    qtyoh2 = Number(qtyoh2) + Math.abs(Number(ln.qty)||0);
+    state.lines.push({
+      bcode: ln.bcode,
+      descr,
+      location,
+      qtyoh2,
+      ui: ln.ui || 'หน่วย',
+      qty: Math.abs(Number(ln.qty)||0),
+      price: Number(ln.price)||0,
+    });
+  }
+  syncEditBanner();
+  renderLines();
+  showTab('sale');
+  $('saleMsg').textContent = `โหลดบิล ${bill.billno} แล้ว — แก้ไขได้เลย`;
+  $('saleMsg').className = 'meta ok';
 }
 
 async function init() {
@@ -264,25 +394,43 @@ async function init() {
   $('bcode').addEventListener('keydown', e => { if (e.key==='Enter'){ e.preventDefault(); lookupProduct(); }});
   $('bcode').addEventListener('blur', lookupProduct);
   $('addLine').onclick = addLine;
+  $('cancelEdit').onclick = () => clearSaleForm();
   $('checkPo').onclick = async () => {
     try {
-      const data = await api('/api/check-po', {method:'POST', body: JSON.stringify({acctno:$('shop').value, online_po:$('po').value})});
+      const data = await api('/api/check-po', {method:'POST', body: JSON.stringify({
+        acctno:$('shop').value,
+        online_po:$('po').value,
+        exclude_billno: state.editBillno || '',
+      })});
       if (data.ok) { $('poStatus').textContent='เลขคำสั่งซื้อใช้ได้'; $('poStatus').className='meta ok'; }
       else { $('poStatus').textContent='ซ้ำกับ '+data.duplicates.map(d=>d.billno).join(', '); $('poStatus').className='meta err'; }
     } catch(e) { $('poStatus').textContent=e.message; $('poStatus').className='meta err'; }
   };
   $('saveSale').onclick = async () => {
+    const bad = oversoldLines();
+    let allow = false;
+    if (bad.length) {
+      allow = confirm('จำนวนขายเกินสต็อกคงเหลือ:\\n' + bad.map(l => `${l.bcode}: ขาย ${l.qty} / คงเหลือ ${l.qtyoh2}`).join('\\n') + '\\n\\nบันทึกต่อหรือไม่?');
+      if (!allow) return;
+    }
     $('saleMsg').textContent='กำลังบันทึก...'; $('saleMsg').className='meta';
+    const payload = {
+      acctno: $('shop').value,
+      online_po: $('po').value.trim(),
+      allow_oversell: allow,
+      lines: state.lines.map(l => ({bcode:l.bcode, qty:l.qty, price:l.price, detail:l.descr, ui:l.ui})),
+    };
     try {
-      const data = await api('/api/sales', {method:'POST', body: JSON.stringify({
-        acctno: $('shop').value,
-        online_po: $('po').value.trim(),
-        lines: state.lines.map(l => ({bcode:l.bcode, qty:l.qty, price:l.price, detail:l.descr, ui:l.ui})),
-      })});
-      $('saleMsg').innerHTML = `บันทึกแล้ว <b>${data.result.billno}</b> · <a href="/online-sale/print/tad/${encodeURIComponent(data.result.billno)}" target="_blank">พิมพ์ใบ TAD</a>
-        · <a href="/to-bill/?tad=${encodeURIComponent(data.result.billno)}" target="_blank">ออกใบเต็ม TO</a>`;
+      const editing = !!state.editBillno;
+      const data = editing
+        ? await api('/api/sales/'+encodeURIComponent(state.editBillno), {method:'PATCH', body: JSON.stringify(payload)})
+        : await api('/api/sales', {method:'POST', body: JSON.stringify(payload)});
+      const verb = editing ? 'แก้ไขแล้ว' : 'บันทึกแล้ว';
+      const billno = data.result.billno;
+      clearSaleForm();
+      $('saleMsg').innerHTML = `${verb} <b>${billno}</b> · <a href="/online-sale/print/tad/${encodeURIComponent(billno)}" target="_blank">พิมพ์ใบ TAD</a>
+        · <a href="/to-bill/?tad=${encodeURIComponent(billno)}" target="_blank">ออกใบเต็ม TO</a>`;
       $('saleMsg').className='meta ok';
-      state.lines=[]; $('po').value=''; renderLines();
     } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
   };
   $('doSearch').onclick = async () => {
@@ -295,24 +443,57 @@ async function init() {
     });
     const data = await api('/api/search?'+params);
     const box = $('searchResults');
-    if (!(data.bills||[]).length) { box.innerHTML='<p class="meta">ไม่พบรายการ</p>'; return; }
-    box.innerHTML = `<table><thead><tr><th>เลขบิล</th><th>วันที่</th><th>ร้าน</th><th>คำสั่งซื้อ</th><th class="num">ยอด</th><th></th></tr></thead><tbody></tbody></table>`;
+    const bills = data.bills || [];
+    const toDocs = data.to_invoices || [];
+    if (!bills.length && !toDocs.length) { box.innerHTML='<p class="meta">ไม่พบรายการ</p>'; return; }
+    box.innerHTML = `<table><thead><tr><th>เลขบิล</th><th>สถานะ</th><th>วันที่</th><th>ร้าน / ลูกค้า</th><th>คำสั่งซื้อ</th><th class="num">ยอด</th><th></th></tr></thead><tbody></tbody></table>`;
     const tb = box.querySelector('tbody');
-    for (const b of data.bills) {
+    for (const b of bills) {
       const tr = document.createElement('tr');
       const printHref = b.kind==='cntad'
         ? `/online-sale/print/cntad/${encodeURIComponent(b.billno)}`
         : `/online-sale/print/tad/${encodeURIComponent(b.billno)}`;
-      const extra = b.kind==='tad'
-        ? ` · <a href="#" data-ret="${b.billno}">คืน</a> · <a href="/to-bill/?tad=${encodeURIComponent(b.billno)}" target="_blank">ใบเต็ม</a>`
-        : '';
-      tr.innerHTML = `<td>${b.billno}</td><td>${b.bill_date||''}</td><td>${b.acctname||b.acctno}</td>
+      const status = b.canceled
+        ? '<span class="status-cancel">ยกเลิก</span>'
+        : (b.kind==='cntad' ? 'CNTAD' : 'TAD');
+      let actions = `<a href="${printHref}" target="_blank">พิมพ์</a>`;
+      if (b.kind==='tad' && !b.canceled) {
+        actions += ` · <a href="#" data-edit="${b.billno}">แก้ไข</a>`;
+        actions += ` · <a href="#" data-ret="${b.billno}">คืน</a>`;
+        actions += ` · <a href="/to-bill/?tad=${encodeURIComponent(b.billno)}" target="_blank">ใบเต็ม</a>`;
+      }
+      if (b.to_docno) {
+        actions += ` · <a href="/to-bill/?tad=${encodeURIComponent(b.billno)}" target="_blank">${b.to_docno}</a>`;
+      }
+      tr.innerHTML = `<td>${b.billno}</td><td>${status}</td><td>${b.bill_date||''}</td><td>${b.acctname||b.acctno||''}</td>
         <td>${b.online_po||''}</td><td class="num">${money(b.aftertax)}</td>
-        <td><a href="${printHref}" target="_blank">พิมพ์</a>${extra}</td>`;
+        <td>${actions}</td>`;
+      tb.appendChild(tr);
+    }
+    for (const inv of toDocs) {
+      const tr = document.createElement('tr');
+      const docno = inv.docno || '';
+      const tad = inv.tad_billno || '';
+      const st = inv.status === 'void'
+        ? '<span class="status-cancel">ยกเลิก</span>'
+        : (inv.status === 'issued' ? 'ออกแล้ว' : (inv.status || 'TO'));
+      const openHref = tad
+        ? `/to-bill/?tad=${encodeURIComponent(tad)}`
+        : '/to-bill/';
+      tr.innerHTML = `<td>${docno}</td><td>${st}</td><td>${(inv.bill_date||inv.issued_at||'').toString().slice(0,10)}</td>
+        <td>${inv.customer_name||inv.acctname_kss||''}</td>
+        <td>${inv.online_po||''}</td><td class="num">${money(inv.aftertax)}</td>
+        <td><a href="${openHref}" target="_blank">เปิดใบเต็ม</a>
+          ${tad ? ` · <span class="meta">${tad}</span>` : ''}</td>`;
       tb.appendChild(tr);
     }
     box.querySelectorAll('a[data-ret]').forEach(a => a.onclick = (e) => {
       e.preventDefault(); $('retTad').value=a.dataset.ret; showTab('return'); $('loadReturn').click();
+    });
+    box.querySelectorAll('a[data-edit]').forEach(a => a.onclick = async (e) => {
+      e.preventDefault();
+      try { await loadBillForEdit(a.dataset.edit); }
+      catch (err) { alert(err.message); }
     });
   };
   $('loadReturn').onclick = async () => {
