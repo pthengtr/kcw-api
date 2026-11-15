@@ -9,56 +9,65 @@ SESSION_COOKIE = "kcw_online_sale"
 _HTML = """<!doctype html>
 <html lang="th">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <title>ขายออนไลน์</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
-:root { color-scheme: light; --red:#9b1c2c; --bd:#e4e7ec; --muted:#667085; }
+:root{
+  --red:#9b1c2c;--line:#dbe3ef;--muted:#64748b;--text:#0f172a;--bg:#f4f7fb;--card:#fff;
+  --bad:#b42318;--ok:#166534;
+}
 *{box-sizing:border-box}
-body{margin:0;font-family:Prompt,"Noto Sans Thai",sans-serif;background:#f6f7f9;color:#111}
-header{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 16px;background:#fff;border-bottom:3px solid var(--red)}
-h1{margin:0;font-size:20px}
-header p{margin:2px 0 0;color:var(--muted);font-size:13px}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0;max-width:1100px;margin:0 auto}
-.tabs button{border:1px solid var(--bd);background:#fff;border-radius:999px;padding:7px 14px;cursor:pointer;font:inherit}
-.tabs button.on{background:var(--red);color:#fff;border-color:var(--red)}
-main{max-width:1100px;margin:0 auto;padding:12px 16px 40px;display:grid;gap:12px}
-.panel{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px}
+html,body{margin:0;min-height:100%}
+body{font-family:Prompt,"Noto Sans Thai",system-ui,sans-serif;background:var(--bg);color:var(--text)}
+header{position:sticky;top:0;z-index:8;background:linear-gradient(180deg,#9b1c2c,#7a1624);color:#fff;padding:max(14px,env(safe-area-inset-top)) 14px 12px}
+header .top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+header h1{margin:0;font-size:18px;font-weight:650;color:#fff}
+header p{margin:2px 0 10px;font-size:13px;opacity:.92;color:#fff}
+header .badge{font-size:12px;opacity:.95;color:#fff;white-space:nowrap}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}
+.tabs button{flex:1;min-width:5.5rem;min-height:40px;border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;border-radius:999px;padding:8px 10px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.tabs button.on{background:#fff;color:var(--red);border-color:#fff}
+main{padding:12px 12px calc(24px + env(safe-area-inset-bottom));max-width:1100px;margin:0 auto;display:grid;gap:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
-.field{display:grid;gap:4px;font-size:14px}
+.field{display:grid;gap:4px;font-size:13px}
 .field span{color:#475467;font-size:12px}
-input,select,button,textarea{font:inherit}
-input,select,textarea{border:1px solid #d0d5dd;border-radius:8px;padding:8px 10px;background:#fff;min-width:0}
-button,.btn{border:0;border-radius:8px;padding:8px 12px;background:var(--red);color:#fff;cursor:pointer}
-button.ghost{background:#fff;color:#344054;border:1px solid #d0d5dd}
+input,select,button,textarea{font:inherit;color:var(--text)}
+input,select,textarea{border:1px solid #d0d5dd;border-radius:10px;padding:9px 11px;background:#fff;min-width:0}
+button,.btn{border:0;border-radius:10px;padding:9px 12px;background:var(--red);color:#fff;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#334155;border:1px solid #d0d5dd}
 button:disabled{opacity:.55;cursor:default}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{border-bottom:1px solid #eaecf0;padding:6px 4px;text-align:left;vertical-align:top}
+table{width:100%;border-collapse:collapse;font-size:13px;color:var(--text)}
+th,td{border-bottom:1px solid #eaecf0;padding:7px 4px;text-align:left;vertical-align:top;color:var(--text)}
 .num{text-align:right;white-space:nowrap}
-.meta{color:var(--muted);font-size:13px}
-.err{color:#b42318}
-.ok{color:#027a48}
-.banner{background:#fef0c7;border-radius:8px;padding:8px 10px;margin-bottom:10px}
-.total{font-size:18px;font-weight:800}
+.meta{color:var(--muted);font-size:12px}
+.err{color:var(--bad)}
+.ok{color:var(--ok)}
+.total{font-size:18px;font-weight:700;color:var(--text)}
 .hidden{display:none!important}
-iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--bd);border-radius:12px;background:#fff}
+a{color:var(--red);font-weight:600}
+iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14px;background:#fff}
 @media(max-width:800px){input,select{width:100%}}
 </style>
 </head>
 <body>
 <header>
-  <div>
-    <h1>ขายออนไลน์</h1>
-    <p>TAD / CNTAD / ใบเต็ม TO — <span id="who"></span></p>
+  <div class="top">
+    <div>
+      <h1>ขายออนไลน์</h1>
+      <p>TAD / CNTAD / ใบเต็ม TO — <span id="who"></span></p>
+    </div>
+    <div class="badge" id="writeBadge"></div>
   </div>
-  <div class="meta" id="writeBadge"></div>
+  <nav class="tabs noprint">
+    <button type="button" data-tab="sale" class="on">ขาย</button>
+    <button type="button" data-tab="search">ค้นหา</button>
+    <button type="button" data-tab="return">คืนสินค้า</button>
+    <button type="button" data-tab="to">ใบเต็ม TO</button>
+  </nav>
 </header>
-<nav class="tabs noprint">
-  <button type="button" data-tab="sale" class="on">ขาย</button>
-  <button type="button" data-tab="search">ค้นหา</button>
-  <button type="button" data-tab="return">คืนสินค้า</button>
-  <button type="button" data-tab="to">ใบเต็ม TO</button>
-</nav>
 <main>
 <section id="tab-sale" class="panel">
   <div class="row">

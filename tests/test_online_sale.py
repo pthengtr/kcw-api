@@ -17,7 +17,16 @@ def test_line_commands_and_menu():
     assert is_to_bill_command("ใบเต็มออนไลน์")
     matched = services_menu_handlers_match()
     assert matched["online_sale"] is True
-    assert matched["to_bill"] is True
+    assert "to_bill" not in matched
+    from src.handlers.services_menu import handle_services_menu
+
+    labels = [
+        c["action"]["label"]
+        for c in handle_services_menu()["contents"]["body"]["contents"]
+        if c.get("type") == "button"
+    ]
+    assert "ขายออนไลน์" in labels
+    assert "ใบเต็มออนไลน์" not in labels
 
 
 def test_docno_format():

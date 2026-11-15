@@ -10,7 +10,6 @@ from src.handlers.stock_check_entry import is_stock_check_command
 from src.handlers.hq_po_entry import is_hq_po_command
 from src.handlers.hq_receive_entry import is_hq_receive_command
 from src.handlers.online_sale_entry import is_online_sale_command
-from src.handlers.to_bill_entry import is_to_bill_command
 from src.handlers.transfer_entry import is_transfer_command
 
 SERVICES_MENU_COMMANDS = {
@@ -55,7 +54,6 @@ def handle_services_menu() -> dict:
         _msg_button("ขายออนไลน์", "ขายออนไลน์"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
-        _msg_button("ใบเต็มออนไลน์", "ใบเต็มออนไลน์"),
         _msg_button("วิธีใช้ทั้งหมด", "help"),
     ]
     return {
@@ -102,7 +100,6 @@ def services_menu_button_messages() -> list[str]:
         _msg_button("ขายออนไลน์", "ขายออนไลน์"),
         _msg_button("จัดการรูปสินค้า", "รูป"),
         _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
-        _msg_button("ใบเต็มออนไลน์", "ใบเต็มออนไลน์"),
         _msg_button("วิธีใช้ทั้งหมด", "help"),
     ]]
 
@@ -119,5 +116,4 @@ def services_menu_handlers_match() -> dict[str, bool]:
         "online_sale": is_online_sale_command(checks[6]),
         "image": is_image_command(checks[7]),
         "pay_notes": is_pay_notes_command(checks[8]),
-        "to_bill": is_to_bill_command(checks[9]),
     }

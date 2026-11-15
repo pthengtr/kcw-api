@@ -332,4 +332,6 @@ def test_line_command_and_menu():
     assert is_to_bill_command("ใบเต็มออนไลน์")
     assert is_to_bill_command("TO Bill")
     assert not is_to_bill_command("สั่งซื้อ")
-    assert services_menu_handlers_match()["to_bill"]
+    # TO is merged into online-sale; no longer a separate LINE menu button.
+    assert "to_bill" not in services_menu_handlers_match()
+    assert services_menu_handlers_match()["online_sale"]
