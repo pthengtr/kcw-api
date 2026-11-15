@@ -38,6 +38,14 @@ systemctl --user disable --now kcw-to-bill.service
 
 Copy unit from `scripts/systemd/kcw-online-sale.service` into `~/.config/systemd/user/` if needed.
 
+## Firewall (LAN)
+
+`scripts/hq-linux-firewall.sh` includes LAN TCP **8796**. Or add only this port:
+
+```bash
+sudo bash scripts/hq-open-port-8796.sh
+```
+
 ## Auth
 
 Same pattern as hq-receive: LINE HMAC token (`APP=kcw-online-sale`) or private LAN / Tailscale. Opening the UI also sets the `kcw_to_bill` cookie so the embedded TO iframe works.
