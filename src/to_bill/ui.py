@@ -284,6 +284,7 @@ function renderEditor(inv) {
         <div class="actions">
           <button type="button" class="ghost" id="saveBtn">บันทึกฉบับร่าง</button>
           <button type="button" id="issueBtn" ${inv.kss_canceled || inv.can_issue === false ? "disabled" : ""}>ออกเอกสาร</button>
+          <button type="button" class="ghost" id="deleteDraftBtn">ลบฉบับร่าง</button>
         </div>
       </form>
     </div>`;
@@ -446,6 +447,23 @@ editor.addEventListener("click", async (event) => {
     if (!reason) return;
     try { renderEditor(await api(`/to-bill/api/invoices/${id}/void`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({reason})})); }
     catch (err) { alert(err.message); }
+  }
+  if (event.target.id === "deleteDraftBtn") {
+    const label = current.doc_kind === "rvo" ? "ใบเสร็จฉบับร่าง" : "ใบกำกับฉบับร่าง";
+    if (!confirm("ลบ" + label + "ของ " + (current.tad_billno || "") + " ?\\nลบแล้วสร้างใหม่จากบิลนี้ได้อีก")) return;
+    try {
+      await api(`/to-bill/api/invoices/${id}/delete`, {method:"POST"});
+      current = null;
+      editor.hidden = true;
+      editor.innerHTML = "";
+      if (!document.getElementById("listPanel").hidden) {
+        document.getElementById("listForm").requestSubmit();
+      }
+    } catch (err) {
+      const el = document.getElementById("formErr");
+      if (el) el.textContent = err.message;
+      else alert(err.message);
+    }
   }
 });
 const params = new URLSearchParams(location.search);

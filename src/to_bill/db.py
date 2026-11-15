@@ -740,6 +740,38 @@ def void_invoice(invoice_id: str, reason: str, actor: str) -> dict[str, Any]:
     return public_invoice(row, lines)
 
 
+def delete_draft(invoice_id: str, actor: str) -> dict[str, Any]:
+    """Hard-delete a draft so the TAD can open a new one. Issued docs must use void."""
+    _ = actor  # reserved for future audit if events outlive the invoice
+    with _connect() as conn:
+        with conn.transaction():
+            row = conn.execute(
+                """
+                select invoice_id, tad_billno, status, doc_kind, docno
+                from to_bill.invoices
+                where invoice_id = %s
+                for update
+                """,
+                (invoice_id,),
+            ).fetchone()
+            if not row:
+                raise ToBillError("missing", "ไม่พบเอกสาร", status=404)
+            if row["status"] != "draft":
+                raise ToBillError("not_draft", "ลบได้เฉพาะฉบับร่าง — เอกสารที่ออกแล้วให้ใช้ยกเลิก")
+            deleted = {
+                "invoice_id": str(row["invoice_id"]),
+                "tad_billno": row["tad_billno"] or "",
+                "status": "deleted",
+                "doc_kind": row["doc_kind"] or "to",
+                "docno": row["docno"] or "",
+            }
+            conn.execute(
+                "delete from to_bill.invoices where invoice_id = %s and status = 'draft'",
+                (invoice_id,),
+            )
+    return deleted
+
+
 def mark_printed(invoice_id: str, actor: str) -> None:
     with _connect() as conn:
         with conn.transaction():

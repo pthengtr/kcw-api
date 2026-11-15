@@ -335,3 +335,12 @@ def test_line_command_and_menu():
     # TO is merged into online-sale; no longer a separate LINE menu button.
     assert "to_bill" not in services_menu_handlers_match()
     assert services_menu_handlers_match()["online_sale"]
+
+
+def test_draft_ui_has_delete_button():
+    from src.to_bill.ui import page
+
+    html = page(user_name="tester")
+    assert "deleteDraftBtn" in html
+    assert "ลบฉบับร่าง" in html
+    assert "/to-bill/api/invoices/${id}/delete" in html
