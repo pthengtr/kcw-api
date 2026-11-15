@@ -13,6 +13,7 @@ from src.to_bill.errors import ToBillError
 from src.to_bill.net import is_private_lan
 from src.to_bill.service import (
     buyers,
+    delete_draft,
     get_one,
     issue,
     month_list,
@@ -303,6 +304,17 @@ def api_void(request: Request, invoice_id: str, body: VoidBody):
         return err
     try:
         return void(invoice_id, body.reason, _actor(ident))
+    except ToBillError as exc:
+        return _error(exc)
+
+
+@router.post("/api/invoices/{invoice_id}/delete")
+def api_delete_draft(request: Request, invoice_id: str):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return delete_draft(invoice_id, _actor(ident))
     except ToBillError as exc:
         return _error(exc)
 

@@ -250,6 +250,10 @@ def void(invoice_id: str, reason: str, actor: str) -> dict:
     return _decorate(saved, _load_live(str(saved.get("tad_billno") or "")), actor=actor)
 
 
+def delete_draft(invoice_id: str, actor: str) -> dict:
+    return db.delete_draft(invoice_id, actor)
+
+
 def printed(invoice_id: str, actor: str) -> None:
     db.mark_printed(invoice_id, actor)
 
