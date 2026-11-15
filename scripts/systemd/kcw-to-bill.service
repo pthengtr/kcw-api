@@ -1,5 +1,5 @@
 [Unit]
-Description=KCW TO full invoice / ใบเต็ม TAD (:8794)
+Description=DEPRECATED — TO merged into kcw-online-sale (:8796). Prefer disable this unit.
 After=network-online.target
 Wants=network-online.target
 
