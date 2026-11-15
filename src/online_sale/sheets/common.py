@@ -36,10 +36,11 @@ CSS = """
 .rcp .cn-box { margin-top:12px; border:1px solid #333; padding:8px 10px; font-size:14px; }
 .rcp .cn-box .row { display:flex; justify-content:space-between; gap:12px; padding:2px 0; }
 @media print {
-  @page { size:A4; margin:10mm 12mm; }
-  body { background:#fff; margin:0; }
+  /* margin:0 hides Chrome/Edge/Firefox default headers & footers (date, URL, page). */
+  @page { size:A4; margin:0; }
+  html, body { background:#fff; margin:0; padding:0; }
   .noprint { display:none !important; }
-  .rcp { max-width:none; padding:0; }
+  .rcp { max-width:none; margin:0; padding:10mm 12mm; }
 }
 """
 

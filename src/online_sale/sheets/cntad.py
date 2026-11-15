@@ -46,7 +46,7 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
     )
     return f"""<!doctype html>
 <html lang="th"><head><meta charset="utf-8">
-<title>{esc(bill.get('billno'))}</title>
+<title></title>
 <style>{CSS}</style></head><body>
 <div class="rcp">
   <div class="co">{esc(COMPANY['name'])}</div>
@@ -65,5 +65,10 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
   {cn_box}
   <div class="foot">พนักงานขาย: <b>{esc(bill.get('sale') or '')}</b></div>
 </div>
-<script>window.onload=()=>setTimeout(()=>window.print(),200)</script>
+<script>
+window.onload=function(){{
+  document.title="";
+  setTimeout(function(){{ window.print(); }}, 200);
+}};
+</script>
 </body></html>"""
