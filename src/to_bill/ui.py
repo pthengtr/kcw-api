@@ -9,9 +9,11 @@ _PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ใบเต็มออนไลน์</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root { color-scheme: light; }
-body { margin:0; font-family: Prompt, "Noto Sans Thai", sans-serif; color:#111; background:#f6f7f9; }
+body { margin:0; font-family: Prompt, "Noto Sans Thai", system-ui, sans-serif; color:#111; background:#f6f7f9; }
+button, .btn, input, select, textarea { font: inherit; color: inherit; }
 header { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px 16px; background:#fff; border-bottom:3px solid #9b1c2c; }
 h1 { margin:0; font-size:20px; }
 header p { margin:2px 0 0; color:#667085; font-size:13px; }
