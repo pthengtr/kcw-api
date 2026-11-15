@@ -62,6 +62,10 @@ from src.handlers.to_bill_entry import (
     is_to_bill_command,
     handle_to_bill_command,
 )
+from src.handlers.online_sale_entry import (
+    is_online_sale_command,
+    handle_online_sale_command,
+)
 from src.handlers.services_menu import (
     is_services_menu_request,
     handle_services_menu,
@@ -160,6 +164,16 @@ def route_user_text(
 
     if is_to_bill_command(text):
         return handle_to_bill_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+            access=access,
+        )
+
+    if is_online_sale_command(text):
+        return handle_online_sale_command(
             engine,
             line_user_id=line_user_id or "unknown",
             display_name=(access or {}).get("display_name")
