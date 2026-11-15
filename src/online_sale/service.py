@@ -9,7 +9,7 @@ from src.online_sale.config import get_online_sale_settings
 from src.online_sale.errors import OnlineSaleError
 from src.online_sale.sheets.cntad import render_cntad_sheet
 from src.online_sale.sheets.tad import render_tad_sheet
-from src.online_sale.shops import list_platforms, list_shops, load_shop
+from src.online_sale.shops import list_platforms, list_shops, load_shop, party_from_armas
 from src.online_sale.writers.cntad_simas import post_cntad
 from src.online_sale.writers.tad_simas import post_tad, update_tad
 
@@ -292,4 +292,16 @@ def print_cntad_html(billno: str, *, reason: str = "") -> str:
             original = parts9.load_bill(tad_ref)
         except OnlineSaleError:
             original = None
+    party = party_from_armas(str(bill.get("acctno") or ""))
+    bill["customer_name"] = party["customer_name"] or bill.get("acctname") or ""
+    bill["customer_address"] = party["address"]
+    bill["customer_tax_id"] = party["tax_id"]
+    bill["tad_billno"] = tad_ref
+    if original:
+        bill["tad_bill_date"] = original.get("bill_date")
+        bill["order_id"] = original.get("online_po") or ""
+        if not bill.get("shop_name"):
+            bill["shop_name"] = original.get("shop_name") or ""
+        if not bill.get("platform"):
+            bill["platform"] = original.get("platform") or ""
     return render_cntad_sheet(bill, original=original, reason=reason)

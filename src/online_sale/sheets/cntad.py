@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from src.online_sale.sheets.common import (
     COMPANY,
     CSS,
@@ -8,10 +10,9 @@ from src.online_sale.sheets.common import (
     line_rows_html,
     platform_label,
     thai_date,
-    totals_block,
 )
 from src.online_sale.staff import issuer_full_name
-from src.online_sale.vat import money
+from src.online_sale.vat import money, totals_from_amounts
 
 
 def _signature(title: str, *, name: str = "", signed_on: str = "") -> str:
@@ -29,37 +30,112 @@ def _signature(title: str, *, name: str = "", signed_on: str = "") -> str:
     </section>"""
 
 
-def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str = "") -> str:
+def _meta_row(label: str, value: str) -> str:
+    return (
+        f"<div class='row'><span class='k'>{esc(label)}</span>"
+        f"<span class='v'>{value}</span></div>"
+    )
+
+
+def credit_note_summary(bill: dict, original: dict | None = None) -> dict[str, Decimal]:
+    """Pre-VAT original / correct / credit, plus VAT and inclusive credit total.
+
+    Full return: credit_before == original_before → correct_before == 0.
+    Partial return: correct_before == original_before − credit_before.
+    Line amounts on TAD/CNTAD are VAT-inclusive; header beforetax is the source of truth.
+    """
     lines = bill.get("lines") or []
     amounts = [abs(float(ln.get("amount") or 0)) for ln in lines]
-    orig_after = money((original or {}).get("aftertax") or 0)
-    credit_after = money(abs(float(bill.get("aftertax") or sum(amounts))))
-    correct_after = orig_after - credit_after
+    from_lines = totals_from_amounts(amounts) if amounts else None
+
+    orig_before = money(abs(float((original or {}).get("beforetax") or 0)))
+    credit_before = money(abs(float(bill.get("beforetax") or 0)))
     credit_tax = money(abs(float(bill.get("tax") or 0)))
-    if credit_tax == 0 and amounts:
-        from src.online_sale.vat import totals_from_amounts
+    credit_after = money(abs(float(bill.get("aftertax") or 0)))
 
-        credit_tax = totals_from_amounts(amounts)["tax"]
+    if credit_after == 0 and from_lines:
+        credit_before = from_lines["beforetax"]
+        credit_tax = from_lines["tax"]
+        credit_after = from_lines["aftertax"]
+    elif credit_before == 0 and from_lines and from_lines["beforetax"]:
+        credit_before = from_lines["beforetax"]
+        if credit_tax == 0:
+            credit_tax = from_lines["tax"]
+        if credit_after == 0:
+            credit_after = from_lines["aftertax"]
 
+    correct_before = money(orig_before - credit_before)
+    return {
+        "original_before": orig_before,
+        "correct_before": correct_before,
+        "credit_before": credit_before,
+        "credit_tax": credit_tax,
+        "credit_after": credit_after,
+    }
+
+
+def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str = "") -> str:
+    lines = bill.get("lines") or []
+    summary = credit_note_summary(bill, original)
     reason_text = reason or bill.get("reason") or ""
     issuer_name = issuer_full_name(str(bill.get("sale") or ""))
     signed_on = thai_date(bill.get("bill_date"))
-    meta = (
-        f"<div><b>เลขที่</b> {esc(bill.get('billno'))}</div>"
-        f"<div><b>วันที่</b> {thai_date(bill.get('bill_date'))}</div>"
-        f"<div><b>อ้างอิง</b> {esc(bill.get('online_po') or bill.get('tad_billno'))}</div>"
-        f"<div><b>แพลตฟอร์ม</b> {esc(platform_label(bill.get('platform') or ''))}</div>"
-        f"<div><b>ร้านค้า</b> {esc(bill.get('shop_name') or bill.get('acctname'))}</div>"
-        f"<div><b>ลูกค้า</b> {esc(bill.get('acctname'))}</div>"
+
+    customer_name = (
+        bill.get("customer_name")
+        or bill.get("acctname")
+        or ""
+    )
+    customer_address = bill.get("customer_address") or bill.get("address") or ""
+    customer_tax_id = bill.get("customer_tax_id") or bill.get("tax_id") or ""
+
+    tad_billno = bill.get("tad_billno") or bill.get("online_po") or ""
+    tad_date = (
+        bill.get("tad_bill_date")
+        or (original or {}).get("bill_date")
+        or ""
+    )
+    order_id = (
+        bill.get("order_id")
+        or (original or {}).get("online_po")
+        or ""
+    )
+    shop = bill.get("shop_name") or ""
+    if not shop and (original or {}).get("shop_name"):
+        shop = original.get("shop_name")  # type: ignore[union-attr]
+
+    left = (
+        "<div class='side'>"
+        + _meta_row("ชื่อลูกค้า", esc(customer_name))
+        + _meta_row("ที่อยู่ลูกค้า", esc(customer_address))
+        + _meta_row("เลขประจำตัวผู้เสียภาษีลูกค้า", esc(customer_tax_id))
+        + "</div>"
+    )
+    right = (
+        "<div class='side'>"
+        + _meta_row("เลขที่ใบลดหนี้", esc(bill.get("billno")))
+        + _meta_row("วันที่ออกใบลดหนี้", thai_date(bill.get("bill_date")))
+        + _meta_row("เลขที่บิลอ้างอิง", esc(tad_billno))
+        + _meta_row("วันที่บิลอ้างอิง", thai_date(tad_date))
+        + _meta_row("แพลตฟอร์ม", esc(platform_label(bill.get("platform") or "")))
+        + _meta_row("ชื่อร้านค้า", esc(shop))
+        + _meta_row("เลขคำสั่งซื้อ", esc(order_id))
+        + "</div>"
     )
     cn_box = (
         "<div class='cn-box'>"
-        f"<div class='row'><span>เหตุผลที่ออกใบลดหนี้</span><span>{esc(reason_text)}</span></div>"
-        f"<div class='row'><span>มูลค่าตามใบกำกับภาษีเดิม</span><span>{fmt_money(orig_after)}</span></div>"
-        f"<div class='row'><span>มูลค่าที่ถูกต้อง</span><span>{fmt_money(correct_after)}</span></div>"
-        f"<div class='row'><span>ผลต่างที่ลดหนี้</span><span>{fmt_money(credit_after)}</span></div>"
-        f"<div class='row'><span>VAT ของยอดลดหนี้</span><span>{fmt_money(credit_tax)}</span></div>"
-        f"<div class='row'><b>รวมยอดลดหนี้ (รวม VAT)</b><b>{fmt_money(credit_after)}</b></div>"
+        f"<div class='reason'><span class='k'>เหตุผลที่ออกใบลดหนี้</span>"
+        f"<span class='v'>{esc(reason_text) or '—'}</span></div>"
+        f"<div class='row'><span>มูลค่าตามใบกำกับภาษีเดิม (ก่อน VAT)</span>"
+        f"<span>{fmt_money(summary['original_before'])}</span></div>"
+        f"<div class='row'><span>มูลค่าที่ถูกต้อง (ก่อน VAT)</span>"
+        f"<span>{fmt_money(summary['correct_before'])}</span></div>"
+        f"<div class='row'><span>ผลต่างที่ลดหนี้ (ก่อน VAT)</span>"
+        f"<span>{fmt_money(summary['credit_before'])}</span></div>"
+        f"<div class='row'><span>VAT 7%</span>"
+        f"<span>{fmt_money(summary['credit_tax'])}</span></div>"
+        f"<div class='row net'><span>รวมยอดลดหนี้ (รวม VAT)</span>"
+        f"<span>{fmt_money(summary['credit_after'])}</span></div>"
         "</div>"
     )
     signs = "".join(
@@ -77,7 +153,7 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
   <div class="co">{esc(COMPANY['name'])}</div>
   <div class="addr">{esc(COMPANY['address'])}<br>{esc(COMPANY['phone'])}<br>{esc(COMPANY['tax'])}</div>
   <div class="title">ใบลดหนี้/ใบกำกับภาษี</div>
-  <div class="meta">{meta}</div>
+  <div class="meta">{left}{right}</div>
   <table>
     <thead><tr>
       <th class="ctr">#</th><th>รหัสสินค้า</th><th>รายการ</th>
@@ -86,7 +162,6 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
     </tr></thead>
     <tbody>{line_rows_html(lines)}</tbody>
   </table>
-  {totals_block(amounts)}
   {cn_box}
   <div class="sign">{signs}</div>
 </div>

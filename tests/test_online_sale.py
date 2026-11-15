@@ -15,7 +15,7 @@ from src.online_sale.net import is_private_lan
 from src.online_sale.shops import bill_acctname, detect_platform, shop_display_name
 from src.online_sale.ui import page
 from src.online_sale.vat import split_inclusive, totals_from_amounts
-from src.online_sale.sheets.cntad import render_cntad_sheet
+from src.online_sale.sheets.cntad import credit_note_summary, render_cntad_sheet
 from src.online_sale.staff import issuer_full_name, match_staff
 from src.online_sale.writers.cntad_simas import post_cntad
 from src.online_sale.writers.tad_simas import post_tad, update_tad
@@ -88,7 +88,17 @@ def test_staff_roster_and_cntad_signers():
             "bill_date": "2026-11-15",
             "sale": "เมย์",
             "acctname": "ลูกค้า",
+            "customer_name": "ลูกค้าทดสอบ",
+            "customer_address": "ที่อยู่ทดสอบ",
+            "customer_tax_id": "0105551234567",
+            "tad_billno": "TAD6911-100",
+            "tad_bill_date": "2026-11-10",
+            "platform": "lazada",
+            "shop_name": "KC INDUSTRY",
+            "order_id": "ORDER123",
+            "reason": "คืนสินค้า",
             "lines": [],
+            "beforetax": 0,
             "aftertax": 0,
             "tax": 0,
         }
@@ -97,6 +107,66 @@ def test_staff_roster_and_cntad_signers():
     assert "ผู้อนุมัติเอกสาร" in html
     assert "ผู้รับเอกสาร" in html
     assert "ปิยะนุช นันตาบุตร" in html
+    assert "ชื่อลูกค้า" in html
+    assert "ลูกค้าทดสอบ" in html
+    assert "ที่อยู่ลูกค้า" in html
+    assert "ที่อยู่ทดสอบ" in html
+    assert "เลขประจำตัวผู้เสียภาษีลูกค้า" in html
+    assert "0105551234567" in html
+    assert "เลขที่ใบลดหนี้" in html
+    assert "CNTAD6911-001" in html
+    assert "เลขที่บิลอ้างอิง" in html
+    assert "TAD6911-100" in html
+    assert "วันที่บิลอ้างอิง" in html
+    assert "Lazada" in html
+    assert "KC INDUSTRY" in html
+    assert "เลขคำสั่งซื้อ" in html
+    assert "ORDER123" in html
+    assert "เหตุผลที่ออกใบลดหนี้" in html
+    assert "คืนสินค้า" in html
+    assert "มูลค่าตามใบกำกับภาษีเดิม (ก่อน VAT)" in html
+    assert "มูลค่าที่ถูกต้อง (ก่อน VAT)" in html
+    assert "ผลต่างที่ลดหนี้ (ก่อน VAT)" in html
+    # Single money summary — no duplicate totals_block.
+    assert html.count("รวมยอดลดหนี้ (รวม VAT)") == 1
+    assert "ยอดก่อน VAT" not in html
+
+
+def test_credit_note_summary_full_and_partial_return():
+    original = {"beforetax": 1841.12, "tax": 128.88, "aftertax": 1970.00}
+
+    full = credit_note_summary(
+        {"beforetax": -1841.12, "tax": -128.88, "aftertax": -1970.00, "lines": []},
+        original,
+    )
+    assert full["original_before"] == Decimal("1841.12")
+    assert full["credit_before"] == Decimal("1841.12")
+    assert full["correct_before"] == Decimal("0.00")
+    assert full["credit_tax"] == Decimal("128.88")
+    assert full["credit_after"] == Decimal("1970.00")
+
+    # Partial: return one inclusive line of 720 from a 1970 bill.
+    partial = credit_note_summary(
+        {
+            "beforetax": -672.90,
+            "tax": -47.10,
+            "aftertax": -720.00,
+            "lines": [{"amount": -720}],
+        },
+        original,
+    )
+    assert partial["original_before"] == Decimal("1841.12")
+    assert partial["credit_before"] == Decimal("672.90")
+    assert partial["correct_before"] == Decimal("1168.22")
+    assert partial["credit_tax"] == Decimal("47.10")
+    assert partial["credit_after"] == Decimal("720.00")
+
+    # Live-shaped partial sample: TAD 6500 / CNTAD 4875.
+    live = credit_note_summary(
+        {"beforetax": -4556.07, "tax": -318.93, "aftertax": -4875.00, "lines": []},
+        {"beforetax": 6074.77, "tax": 425.23, "aftertax": 6500.00},
+    )
+    assert live["correct_before"] == Decimal("1518.70")
 
 
 def test_update_tad_validation():

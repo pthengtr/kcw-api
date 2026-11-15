@@ -52,7 +52,10 @@ _ARMAS_ONE = text(
     """
     SELECT TOP 1
       LTRIM(RTRIM(ACCTNO)) AS acctno,
-      LTRIM(RTRIM(ACCTNAME)) AS acctname
+      LTRIM(RTRIM(ACCTNAME)) AS acctname,
+      LTRIM(RTRIM(ADDR1)) AS addr1,
+      LTRIM(RTRIM(ADDR2)) AS addr2,
+      LTRIM(RTRIM(MOBILE)) AS tax_id
     FROM dbo.ARMAS WITH (NOLOCK)
     WHERE LTRIM(RTRIM(ACCTNO)) = :acct
     ORDER BY CASE WHEN COALESCE(CANCELED, 'N') = 'Y' THEN 1 ELSE 0 END, ID
@@ -136,6 +139,42 @@ def list_shops(platform: str) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _join_address(addr1, addr2) -> str:
+    parts: list[str] = []
+    for raw in (addr1, addr2):
+        text = str(raw or "").strip()
+        if not text or text.upper() == "=DONE=":
+            continue
+        parts.append(text)
+    return " ".join(parts)
+
+
+def _usable_tax_id(raw: str | None) -> str:
+    """13-digit tax id; reject marketplace REMARKS placeholders (000… / empty)."""
+    digits = re.sub(r"\D", "", raw or "")
+    if len(digits) != 13:
+        return ""
+    if not digits.strip("0") or digits.startswith("000000000000"):
+        return ""
+    return digits
+
+
+def party_from_armas(acctno: str) -> dict[str, str]:
+    """Buyer block for print sheets: name / address / tax id from ARMAS."""
+    code = (acctno or "").strip()
+    if not code:
+        return {"customer_name": "", "address": "", "tax_id": ""}
+    rows = _run(_ARMAS_ONE, {"acct": code})
+    if not rows:
+        return {"customer_name": "", "address": "", "tax_id": ""}
+    row = rows[0]
+    return {
+        "customer_name": str(row.get("acctname") or "").strip(),
+        "address": _join_address(row.get("addr1"), row.get("addr2")),
+        "tax_id": _usable_tax_id(str(row.get("tax_id") or "")),
+    }
 
 
 def load_shop(acctno: str) -> dict[str, Any]:
