@@ -214,6 +214,7 @@ def page(
     }}
     .row {{
       display: flex; gap: 12px; justify-content: space-between; align-items: flex-start;
+      min-width: 0;
     }}
     .muted {{ color: var(--muted); font-size: .9rem; font-weight: 400; line-height: 1.45; }}
     .loc {{
@@ -231,18 +232,21 @@ def page(
       font-family: "Prompt", ui-monospace, monospace;
       font-weight: 600; font-size: 1.05rem;
       letter-spacing: .02em;
+      overflow-wrap: anywhere; word-break: break-word;
     }}
     .descr {{
       margin-top: 2px; color: var(--muted); font-size: .92rem;
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-      overflow: hidden;
+      overflow: hidden; overflow-wrap: anywhere;
     }}
     .model {{
       margin-top: 4px; font-size: .86rem; font-weight: 500; color: var(--ink);
+      overflow-wrap: anywhere; word-break: break-word;
     }}
     a.item {{
       display: block; text-decoration: none; color: inherit;
       transition: transform .12s ease, box-shadow .12s ease;
+      overflow: hidden;
     }}
     a.item:active {{ transform: scale(.99); }}
     a.item.card:hover {{ box-shadow: 0 14px 34px rgba(37, 99, 235, .14); }}
@@ -252,7 +256,7 @@ def page(
       border-top: 1px dashed var(--line);
       font-size: .82rem; color: var(--muted);
     }}
-    .qty-block {{ text-align: right; min-width: 72px; }}
+    .qty-block {{ text-align: right; min-width: 72px; flex: none; }}
     .qty {{
       font-size: 1.55rem; font-weight: 700; letter-spacing: -.03em;
       line-height: 1; color: var(--ink);
@@ -263,7 +267,8 @@ def page(
     }}
     .prod-thumb-btn {{
       padding: 0; border: 0; background: transparent; border-radius: 10px;
-      flex: none; cursor: zoom-in; line-height: 0;
+      flex: none; width: auto; max-width: none; box-shadow: none;
+      cursor: zoom-in; line-height: 0;
     }}
     .prod-thumb {{
       width: 52px; height: 52px; object-fit: cover; border-radius: 10px;
@@ -274,8 +279,9 @@ def page(
     }}
     .prod-head {{
       display: flex; align-items: flex-start; gap: 12px; margin-top: 10px;
+      min-width: 0;
     }}
-    .prod-head .prod-meta {{ min-width: 0; flex: 1; }}
+    .prod-head .prod-meta {{ min-width: 0; flex: 1; overflow: hidden; }}
     #photo-overlay {{
       position: fixed; inset: 0; z-index: 50;
       background: rgba(15, 23, 42, .78);
