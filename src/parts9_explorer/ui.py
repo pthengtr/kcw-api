@@ -298,6 +298,40 @@ label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align
 .pi-ai p { margin:0; color:var(--muted); font-size:.88rem; line-height:1.5; }
 .pi-ai p strong { color:var(--text); }
 .pi-foot { margin:.35rem 0 0; color:var(--muted); font-size:.68rem; text-align:center; line-height:1.4; }
+/* Insight / ประวัติซื้อ / ประวัติขาย — aligned to hq-po trade history */
+.hist-panel { margin:0 0 .75rem; }
+.hist-tabs {
+  display:flex; gap:.35rem; flex-wrap:wrap; margin:0 0 .65rem;
+}
+.hist-tabs button {
+  min-height:2.1rem; padding:.4rem .75rem; border-radius:.65rem;
+  border:1px solid var(--line); background:var(--card); color:var(--muted);
+  font:700 .82rem/1 inherit; cursor:pointer;
+}
+.hist-tabs button.on {
+  background:var(--acc); color:#fff; border-color:var(--acc);
+}
+.hist-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.hist-table th, .hist-table td {
+  padding:.5rem .35rem; border-bottom:1px solid var(--line);
+  text-align:left; vertical-align:top;
+}
+.hist-table th { color:var(--muted); font-weight:700; background:var(--inset); }
+.hist-table .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.bill-link {
+  border:0; background:transparent; color:var(--acc); font-weight:700;
+  padding:0; text-decoration:underline; font-size:inherit; cursor:pointer;
+}
+.hist-more-btn {
+  display:block; width:100%; min-height:2.4rem; margin-top:.65rem;
+  border:1px solid var(--acc); border-radius:.65rem; background:var(--card);
+  color:var(--acc); font-weight:700; font-size:.82rem; cursor:pointer;
+}
+.hist-back {
+  border:0; background:transparent; color:var(--acc); font-weight:700;
+  padding:0; margin:0 0 .55rem; cursor:pointer; font-size:.82rem;
+}
+.hist-empty { color:var(--muted); font-size:.88rem; padding:.35rem 0; }
 @media (max-width:900px) {
   .pi-grid-main, .pi-grid-two { grid-template-columns:1fr; }
   .pi-kpis { grid-template-columns:1fr 1fr; }
@@ -1475,14 +1509,22 @@ function showP(i, opts) {
     +renderPhotoManage(p)
     +stockHtml
     +"</div>"
-    +"<div id='insightPanel'></div>"
+    +"<div class='hist-panel'>"
+    +"<div class='hist-tabs' id='histTabs'>"
+    +"<button type='button' class='on' data-hist-tab='insight'>Insight</button>"
+    +"<button type='button' data-hist-tab='purchase'>ประวัติซื้อ</button>"
+    +"<button type='button' data-hist-tab='sales'>ประวัติขาย</button>"
+    +"</div>"
+    +"<div id='histBody'><div id='insightPanel'></div></div>"
+    +"</div>"
     +"<div id='subPanel'></div>"
     +"<div id='more' class='empty'>โหลดความเคลื่อนไหว…</div>";
   wireProductEdit(p, i);
-  loadInsightPanel(p.bcode, {
+  const live = {
     qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
     descr: p.descr || "", bcode: p.bcode
-  });
+  };
+  resetHistPanel(p.bcode, live);
   loadSubPanels(p.bcode);
   function fillMovement(d) {
     const m = (d && d.movement) || {};
@@ -1490,22 +1532,16 @@ function showP(i, opts) {
       if (!rows || !rows.length) return "<p class='meta'>"+title+": —</p>";
       return "<h3>"+title+"</h3>"+lineTable(rows, cols);
     }
-    const saleCols = ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"];
-    if (CAN_SEE_COST && d.fifo && d.fifo.found) saleCols.push("FIFO_UNIT","FIFO_EXT","FIFO_STATUS","MARGIN","VS_LAST","VS_AVG");
-    const piCols = CAN_SEE_COST
-      ? ["BILLNO","BILLDATE","QTY","UI","PRICE","AMOUNT"]
-      : ["BILLNO","BILLDATE","QTY","UI"];
     if ($("more")) $("more").innerHTML = (CAN_SEE_COST ? renderFifo(d.fifo) : "") +
-      tbl("ประวัติการขาย", m.sales, saleCols) +
-      tbl("ประวัติการซื้อ", m.pi, piCols) +
       tbl("ICLOW", m.iclow, ["DOCNO","DOCDATE","ORDERED","RECEIVED","CANCELED","RCVDNO","QTY"]);
-    if (d.insight) renderInsight(d.insight, {
-      qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
-      descr: p.descr || "", bcode: p.bcode
-    });
+    if (d.insight) {
+      histCache.insight = d.insight;
+      if (histTab === "insight" && !histCache.bill) renderHistBody();
+    }
   }
   if (opts.skipFetch) {
     fillMovement(opts);
+    if (!opts.insight) loadInsightPanel(p.bcode, live);
     return;
   }
   fetch("/parts9/api/product/"+encodeURIComponent(p.bcode)+"?site="+encodeURIComponent($("site").value))
@@ -1516,6 +1552,7 @@ function showP(i, opts) {
         return;
       }
       fillMovement(d);
+      if (!(d && d.insight)) loadInsightPanel(p.bcode, live);
     }).catch(() => { if ($("more")) $("more").innerHTML = ""; });
 }
 function thMonthLabel(ym) {
@@ -1567,6 +1604,210 @@ function fmtChartQty(n) {
   if (n == null) return "—";
   const rounded = (Math.abs(n - Math.round(n)) < 0.05) ? Math.round(n) : Math.round(n * 10) / 10;
   return rounded.toLocaleString("th-TH", { maximumFractionDigits: 1 });
+}
+const HIST_MONTHS = 12;
+const HIST_PAGE = 10;
+let histGen = 0;
+let histBcode = "";
+let histTab = "insight";
+let histListLimit = HIST_PAGE;
+let histLive = null;
+let histCache = {insight:null, purchase:null, sales:null, bill:null};
+function histMoney(n) {
+  if (n == null || n === "") return "—";
+  const text = money(n);
+  return text || "—";
+}
+function histQty(n) {
+  if (n == null || n === "") return "—";
+  return qty(n) || "—";
+}
+function partyLabel(row) {
+  const name = String((row && row.acctname) || "").trim();
+  const acct = String((row && row.acctno) || "").trim();
+  if (name && acct && name !== acct) return name + " · " + acct;
+  return name || acct || "—";
+}
+function histMoreBtn(total, shown) {
+  if (total <= shown) return "";
+  return "<button type='button' class='hist-more-btn' data-hist-more>ดูเพิ่มเติม</button>";
+}
+function purchaseRowsHtml(data, limit) {
+  const rows = (data && data.rows) || [];
+  if (!rows.length) return "<div class='hist-empty'>ไม่พบประวัติซื้อ</div>";
+  const shown = Math.max(HIST_PAGE, Number(limit) || HIST_PAGE);
+  const view = rows.slice(0, shown);
+  return "<table class='hist-table'><thead><tr>"
+    +"<th>วันที่</th><th>เลขบิล</th><th>เจ้าหนี้</th><th class='num'>จำนวน</th>"
+    +(CAN_SEE_COST ? "<th class='num'>ราคาซื้อ</th>" : "")
+    +"</tr></thead><tbody>"
+    +view.map(row => "<tr>"
+      +"<td>"+esc(row.billdate || "—")+"</td>"
+      +"<td><button type='button' class='bill-link' data-bill-kind='purchase' data-billno='"+esc(row.billno || "")+"'>"+esc(row.billno || "—")+"</button></td>"
+      +"<td>"+esc(partyLabel(row))+"</td>"
+      +"<td class='num'>"+esc(histQty(row.qty))+"</td>"
+      +(CAN_SEE_COST ? "<td class='num'>"+esc(histMoney(row.price))+"</td>" : "")
+      +"</tr>").join("")
+    +"</tbody></table>"+histMoreBtn(rows.length, view.length);
+}
+function salesRowsHtml(data, limit) {
+  const rows = (data && data.rows) || [];
+  if (!rows.length) return "<div class='hist-empty'>ไม่พบประวัติขาย</div>";
+  const shown = Math.max(HIST_PAGE, Number(limit) || HIST_PAGE);
+  const view = rows.slice(0, shown);
+  return "<table class='hist-table'><thead><tr>"
+    +"<th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class='num'>จำนวน</th><th class='num'>ราคาขาย</th>"
+    +(CAN_SEE_COST ? "<th class='num'>ต้นทุน</th><th class='num'>กำไร</th>" : "")
+    +"</tr></thead><tbody>"
+    +view.map(row => "<tr>"
+      +"<td>"+esc(row.billdate || "—")+"</td>"
+      +"<td><button type='button' class='bill-link' data-bill-kind='sales' data-billno='"+esc(row.billno || "")+"'>"+esc(row.billno || "—")+"</button></td>"
+      +"<td>"+esc(partyLabel(row))+"</td>"
+      +"<td class='num'>"+esc(histQty(row.qty))+"</td>"
+      +"<td class='num'>"+esc(histMoney(row.price))+"</td>"
+      +(CAN_SEE_COST
+        ? "<td class='num'>"+esc(histMoney(row.cost))+"</td><td class='num'>"+esc(histMoney(row.profit))+"</td>"
+        : "")
+      +"</tr>").join("")
+    +"</tbody></table>"+histMoreBtn(rows.length, view.length);
+}
+function billDetailHtml(data) {
+  if (!data) return "<div class='hist-empty'>ไม่พบรายละเอียดบิล</div>";
+  const lines = data.lines || [];
+  const focus = String(data.focus_bcode || "").trim();
+  const head = esc(data.billdate || "—")+" · "+esc(data.billno || "—")
+    +"<div class='meta'>"+esc(partyLabel(data))+"</div>";
+  const showCost = CAN_SEE_COST && data.kind === "sales";
+  const showBuyPrice = CAN_SEE_COST || data.kind === "sales";
+  const body = lines.length
+    ? "<table class='hist-table'><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class='num'>จำนวน</th>"
+      +(showBuyPrice ? "<th class='num'>ราคา</th><th class='num'>รวม</th>" : "")
+      +(showCost ? "<th class='num'>ต้นทุน</th><th class='num'>กำไร</th>" : "")
+      +"</tr></thead><tbody>"
+      +lines.map(line => {
+        const on = focus && String(line.bcode || "") === focus ? " style='background:var(--inset)'" : "";
+        const moneyCols = showBuyPrice
+          ? "<td class='num'>"+esc(histMoney(line.price))+"</td><td class='num'>"+esc(histMoney(line.amount))+"</td>"
+          : "";
+        const extra = showCost
+          ? "<td class='num'>"+esc(histMoney(line.cost))+"</td><td class='num'>"+esc(histMoney(line.profit))+"</td>"
+          : "";
+        return "<tr"+on+"><td><button class='linkish' data-jump='product' data-q='"+esc(line.bcode || "")+"'>"+esc(line.bcode || "—")+"</button></td>"
+          +"<td>"+esc(line.detail || "")+"</td>"
+          +"<td class='num'>"+esc(histQty(line.qty))+(line.ui ? " "+esc(line.ui) : "")+"</td>"
+          +moneyCols+extra+"</tr>";
+      }).join("")
+      +"</tbody></table>"
+    : "<div class='hist-empty'>ไม่มีรายการในบิลนี้</div>";
+  return "<button type='button' class='hist-back' data-bill-back>← กลับรายการ</button>"
+    +"<div class='pi-card'><strong>รายละเอียดบิล</strong><div style='margin-top:.35rem'>"+head+"</div></div>"
+    +body;
+}
+function syncHistTabs() {
+  const tabs = $("histTabs");
+  if (!tabs) return;
+  tabs.querySelectorAll("[data-hist-tab]").forEach(btn => {
+    btn.classList.toggle("on", btn.getAttribute("data-hist-tab") === histTab);
+  });
+}
+function renderHistBody() {
+  const host = $("histBody");
+  if (!host) return;
+  if (histCache.bill) {
+    host.innerHTML = billDetailHtml(histCache.bill);
+    return;
+  }
+  if (histTab === "insight") {
+    host.innerHTML = "<div id='insightPanel'></div>";
+    if (histCache.insight) renderInsight(histCache.insight, histLive || {});
+    else if ($("insightPanel")) {
+      $("insightPanel").innerHTML = "<div class='insight-wrap'><div class='pi-card'><p class='meta' style='margin:0'>โหลด insight…</p></div></div>";
+    }
+    return;
+  }
+  if (histTab === "purchase") {
+    if (!histCache.purchase) {
+      host.innerHTML = "<div class='hist-empty'>กำลังโหลดประวัติซื้อ…</div>";
+      return;
+    }
+    host.innerHTML = purchaseRowsHtml(histCache.purchase, histListLimit);
+    return;
+  }
+  if (!histCache.sales) {
+    host.innerHTML = "<div class='hist-empty'>กำลังโหลดประวัติขาย…</div>";
+    return;
+  }
+  host.innerHTML = salesRowsHtml(histCache.sales, histListLimit);
+}
+function resetHistPanel(bcode, live) {
+  histGen += 1;
+  histBcode = String(bcode || "").trim();
+  histTab = "insight";
+  histListLimit = HIST_PAGE;
+  histLive = live || null;
+  histCache = {insight:null, purchase:null, sales:null, bill:null};
+  syncHistTabs();
+  renderHistBody();
+}
+async function loadHistTab() {
+  if (!histBcode) return;
+  const gen = ++histGen;
+  const code = histBcode;
+  const site = $("site").value;
+  const tab = histTab;
+  histCache.bill = null;
+  syncHistTabs();
+  renderHistBody();
+  try {
+    if (tab === "insight") {
+      if (!histCache.insight) {
+        const res = await fetch("/parts9/api/insight/"+encodeURIComponent(code)+"?site="+encodeURIComponent(site));
+        const data = await res.json().catch(() => ({}));
+        if (gen !== histGen) return;
+        if (!res.ok) throw new Error(data.message || data.detail || "โหลด Insight ไม่ได้");
+        histCache.insight = data;
+      }
+    } else if (tab === "purchase") {
+      if (!histCache.purchase) {
+        const res = await fetch("/parts9/api/history/"+encodeURIComponent(code)+"/purchases?site="+encodeURIComponent(site)+"&months="+HIST_MONTHS);
+        const data = await res.json().catch(() => ({}));
+        if (gen !== histGen) return;
+        if (!res.ok) throw new Error(data.message || data.detail || "โหลดประวัติซื้อไม่ได้");
+        histCache.purchase = data;
+      }
+    } else if (!histCache.sales) {
+      const res = await fetch("/parts9/api/history/"+encodeURIComponent(code)+"/sales?site="+encodeURIComponent(site)+"&months="+HIST_MONTHS);
+      const data = await res.json().catch(() => ({}));
+      if (gen !== histGen) return;
+      if (!res.ok) throw new Error(data.message || data.detail || "โหลดประวัติขายไม่ได้");
+      histCache.sales = data;
+    }
+    if (gen !== histGen) return;
+    renderHistBody();
+  } catch (err) {
+    if (gen !== histGen) return;
+    const host = $("histBody");
+    if (host) host.innerHTML = "<div class='hist-empty'>"+esc(err.message || "โหลดไม่ได้")+"</div>";
+  }
+}
+async function openBillDetail(kind, billno) {
+  const no = String(billno || "").trim();
+  if (!no || !histBcode) return;
+  const gen = ++histGen;
+  const host = $("histBody");
+  if (host) host.innerHTML = "<div class='hist-empty'>กำลังโหลดรายละเอียดบิล…</div>";
+  try {
+    const res = await fetch("/parts9/api/history/bills/"+encodeURIComponent(kind)+"/"+encodeURIComponent(no)
+      +"?site="+encodeURIComponent($("site").value)+"&bcode="+encodeURIComponent(histBcode));
+    const data = await res.json().catch(() => ({}));
+    if (gen !== histGen) return;
+    if (!res.ok) throw new Error(data.message || data.detail || "โหลดรายละเอียดบิลไม่ได้");
+    histCache.bill = data;
+    renderHistBody();
+  } catch (err) {
+    if (gen !== histGen) return;
+    if (host) host.innerHTML = "<div class='hist-empty'>"+esc(err.message || "โหลดรายละเอียดบิลไม่ได้")+"</div>";
+  }
 }
 function renderInsight(ins, live) {
   const el = $("insightPanel");
@@ -1849,12 +2090,27 @@ function renderInsight(ins, live) {
   el.innerHTML = html;
 }
 function loadInsightPanel(bcode, live) {
+  histLive = live || histLive;
+  if (String(bcode || "").trim()) histBcode = String(bcode).trim();
+  if (histCache.insight) {
+    if (histTab === "insight" && !histCache.bill) renderInsight(histCache.insight, live || histLive || {});
+    return;
+  }
   const el = $("insightPanel");
-  if (!el) return;
-  el.innerHTML = "<div class='insight-wrap'><div class='pi-card'><p class='meta' style='margin:0'>โหลด insight…</p></div></div>";
+  if (el && histTab === "insight" && !histCache.bill) {
+    el.innerHTML = "<div class='insight-wrap'><div class='pi-card'><p class='meta' style='margin:0'>โหลด insight…</p></div></div>";
+  }
+  const gen = histGen;
   fetch("/parts9/api/insight/"+encodeURIComponent(bcode)+"?site="+encodeURIComponent($("site").value))
-    .then(r => r.json()).then(ins => renderInsight(ins, live))
-    .catch(() => { el.innerHTML = ""; });
+    .then(r => r.json()).then(ins => {
+      if (gen !== histGen) return;
+      histCache.insight = ins;
+      if (histTab === "insight" && !histCache.bill) renderInsight(ins, live || histLive || {});
+    })
+    .catch(() => {
+      if (gen !== histGen) return;
+      if (histTab === "insight" && $("insightPanel")) $("insightPanel").innerHTML = "";
+    });
 }
 function fmtSuggestEvidence(p) {
   const raw = (p && p.evidence || "").trim();
@@ -1909,6 +2165,34 @@ $("modes").addEventListener("click", (ev) => {
   if (b) setKind(b.dataset.k);
 });
 document.addEventListener("click", (ev) => {
+  const histBtn = ev.target.closest("#histTabs [data-hist-tab]");
+  if (histBtn) {
+    const tab = histBtn.getAttribute("data-hist-tab") || "insight";
+    if (!histBcode) return;
+    if (tab === histTab && !histCache.bill) return;
+    histTab = tab;
+    histListLimit = HIST_PAGE;
+    histCache.bill = null;
+    loadHistTab();
+    return;
+  }
+  const more = ev.target.closest("[data-hist-more]");
+  if (more) {
+    histListLimit += HIST_PAGE;
+    renderHistBody();
+    return;
+  }
+  const billBack = ev.target.closest("[data-bill-back]");
+  if (billBack) {
+    histCache.bill = null;
+    renderHistBody();
+    return;
+  }
+  const bill = ev.target.closest("[data-billno]");
+  if (bill) {
+    openBillDetail(bill.getAttribute("data-bill-kind") || "sales", bill.getAttribute("data-billno") || "");
+    return;
+  }
   const b = ev.target.closest("[data-jump]");
   if (!b) return;
   const kind = b.getAttribute("data-jump");
