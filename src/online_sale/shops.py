@@ -151,14 +151,41 @@ def _join_address(addr1, addr2) -> str:
     return " ".join(parts)
 
 
-def _usable_tax_id(raw: str | None) -> str:
-    """13-digit tax id; reject marketplace REMARKS placeholders (000… / empty)."""
+def tax_id_digits(raw: str | None) -> str:
+    """Return a 13-digit taxpayer id, or '' if not exactly 13 digits."""
     digits = re.sub(r"\D", "", raw or "")
-    if len(digits) != 13:
-        return ""
-    if not digits.strip("0") or digits.startswith("000000000000"):
-        return ""
-    return digits
+    return digits if len(digits) == 13 else ""
+
+
+def tax_id_from_remarks(remarks: str | None) -> str:
+    """Match curated_kcw.fn_vat_tax_id: 13 digits after the last # in REMARKS.
+
+    Marketplace TAD/CNTAD stamp e.g. ##0000000000001 (Lazada) — that value is
+    what the VAT books and POS use as the buyer tax id.
+    """
+    text = str(remarks or "")
+    tail = text.rsplit("#", 1)[-1] if "#" in text else text
+    return tax_id_digits(tail)
+
+
+def customer_name_without_shop(acctname: str | None) -> str:
+    """คุณลูกค้าทั่วไป LAZADA (PNT TRACTOR) → คุณลูกค้าทั่วไป LAZADA."""
+    raw = re.sub(r"\s+", " ", (acctname or "").strip())
+    return re.sub(r"\s*\([^)]*\)\s*$", "", raw).strip()
+
+
+def channel_label(platform: str | None, shop_name: str | None) -> str:
+    """Lazada (PNT TRACTOR) — platform + shop on one line."""
+    plat = {
+        "shopee": "Shopee",
+        "lazada": "Lazada",
+        "tiktok": "TikTok",
+        "line": "Line Shopping",
+    }.get((platform or "").lower(), (platform or "").strip())
+    shop = re.sub(r"\s+", " ", (shop_name or "").strip())
+    if plat and shop:
+        return f"{plat} ({shop})"
+    return plat or shop
 
 
 def party_from_armas(acctno: str) -> dict[str, str]:
@@ -173,7 +200,7 @@ def party_from_armas(acctno: str) -> dict[str, str]:
     return {
         "customer_name": str(row.get("acctname") or "").strip(),
         "address": _join_address(row.get("addr1"), row.get("addr2")),
-        "tax_id": _usable_tax_id(str(row.get("tax_id") or "")),
+        "tax_id": tax_id_digits(str(row.get("tax_id") or "")),
     }
 
 
