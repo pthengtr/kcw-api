@@ -17,6 +17,26 @@ from src.transfer.writers._engine import (
 )
 
 
+def _line_mtp(product: dict[str, Any], ui: str) -> float:
+    """Match POS: UI2 uses ICMAS.MTP2; UI1 (or unknown) uses 1."""
+    chosen = (ui or "").strip()
+    ui2 = str(product.get("UI2") or "").strip()
+    try:
+        mtp2 = float(product.get("MTP2") or 1) or 1.0
+    except (TypeError, ValueError):
+        mtp2 = 1.0
+    if chosen and ui2 and chosen == ui2 and mtp2 > 1:
+        return mtp2
+    return 1.0
+
+
+def _stock_units(qty: float, mtp: float) -> float:
+    factor = float(mtp or 0)
+    if factor <= 0:
+        factor = 1.0
+    return abs(float(qty or 0)) * factor
+
+
 def _next_tad_billno(conn, when: datetime) -> str:
     stem = tad_prefix(when)
     row = conn.execute(
@@ -177,7 +197,7 @@ def post_tad(
                   :jourmode, 'SJ', :billdate, :billtype, :billdate, :billno,
                   :line, 1, :bcode, :pcode, :mcode, :detail, 'Y', :location1,
                   1, 'N', 'Y', 'N', 'Y',
-                  :qty, :ui, 1, :price, 0, 0, :amount,
+                  :qty, :ui, :mtp, :price, 0, 0, :amount,
                   'N', 'N', 'N'
                 )
                 """
@@ -193,11 +213,15 @@ def post_tad(
                 product = _fetch_icmas_row(conn, line["bcode"])
                 if not product:
                     raise OnlineSaleError("product", f"ไม่พบ BCODE {line['bcode']} ใน ICMAS")
+                ui = (line["ui"] or str(product.get("UI1") or "หน่วย"))[:10]
+                mtp = _line_mtp(product, ui)
+                stock_qty = _stock_units(line["qty"], mtp)
                 on_hand = float(product.get("QTYOH2") or 0)
-                if not allow_oversell and on_hand < line["qty"]:
+                if not allow_oversell and on_hand < stock_qty:
                     raise OnlineSaleError(
                         "stock",
-                        f"{line['bcode']} สต็อกคงเหลือ {on_hand:g} ไม่พอขาย {line['qty']:g}",
+                        f"{line['bcode']} สต็อกคงเหลือ {on_hand:g} ไม่พอขาย {line['qty']:g} {ui}"
+                        + (f" ({stock_qty:g} หน่วยย่อย)" if mtp > 1 else ""),
                     )
                 detail = line["detail"] or str(product.get("DESCR") or "")[:60]
                 conn.execute(
@@ -214,14 +238,15 @@ def post_tad(
                         "detail": detail,
                         "location1": (str(product.get("LOCATION1") or "")[:10] or None),
                         "qty": line["qty"],
-                        "ui": line["ui"] or str(product.get("UI1") or "หน่วย")[:10],
+                        "ui": ui,
+                        "mtp": mtp,
                         "price": float(line["price"]),
                         "amount": float(line["amount"]),
                     },
                 )
                 conn.execute(
                     qtyoh2_update,
-                    {"qty": on_hand - line["qty"], "bcode": line["bcode"]},
+                    {"qty": on_hand - stock_qty, "bcode": line["bcode"]},
                 )
     except OnlineSaleError:
         raise
@@ -353,7 +378,8 @@ def update_tad(
                     SELECT
                       LINE AS line_no,
                       LTRIM(RTRIM(BCODE)) AS bcode,
-                      QTY AS qty
+                      QTY AS qty,
+                      MTP AS mtp
                     FROM dbo.SIDET WITH (UPDLOCK, HOLDLOCK)
                     WHERE UPPER(LTRIM(RTRIM(BILLNO))) = :exact
                       AND COALESCE(CANCELED, 'N') <> 'Y'
@@ -372,13 +398,15 @@ def update_tad(
             for old in old_lines:
                 bcode = str(old.get("bcode") or "").strip()
                 qty = abs(float(old.get("qty") or 0))
-                if not bcode or qty <= 0:
+                mtp = float(old.get("mtp") or 1) or 1.0
+                stock_qty = _stock_units(qty, mtp)
+                if not bcode or stock_qty <= 0:
                     continue
                 product = _fetch_icmas_row(conn, bcode)
                 if not product:
                     raise OnlineSaleError("product", f"ไม่พบ BCODE {bcode} ใน ICMAS")
                 on_hand = float(product.get("QTYOH2") or 0)
-                conn.execute(qtyoh2_update, {"qty": on_hand + qty, "bcode": bcode})
+                conn.execute(qtyoh2_update, {"qty": on_hand + stock_qty, "bcode": bcode})
 
             conn.execute(
                 text(
@@ -404,7 +432,7 @@ def update_tad(
                   :jourmode, 'SJ', :billdate, :billtype, :billdate, :billno,
                   :line, 1, :bcode, :pcode, :mcode, :detail, 'Y', :location1,
                   1, 'N', 'Y', 'N', 'Y',
-                  :qty, :ui, 1, :price, 0, 0, :amount,
+                  :qty, :ui, :mtp, :price, 0, 0, :amount,
                   'N', 'N', 'N'
                 )
                 """
@@ -414,11 +442,15 @@ def update_tad(
                 product = _fetch_icmas_row(conn, line["bcode"])
                 if not product:
                     raise OnlineSaleError("product", f"ไม่พบ BCODE {line['bcode']} ใน ICMAS")
+                ui = (line["ui"] or str(product.get("UI1") or "หน่วย"))[:10]
+                mtp = _line_mtp(product, ui)
+                stock_qty = _stock_units(line["qty"], mtp)
                 on_hand = float(product.get("QTYOH2") or 0)
-                if not allow_oversell and on_hand < line["qty"]:
+                if not allow_oversell and on_hand < stock_qty:
                     raise OnlineSaleError(
                         "stock",
-                        f"{line['bcode']} สต็อกคงเหลือ {on_hand:g} ไม่พอขาย {line['qty']:g}",
+                        f"{line['bcode']} สต็อกคงเหลือ {on_hand:g} ไม่พอขาย {line['qty']:g} {ui}"
+                        + (f" ({stock_qty:g} หน่วยย่อย)" if mtp > 1 else ""),
                     )
                 detail = line["detail"] or str(product.get("DESCR") or "")[:60]
                 conn.execute(
@@ -435,14 +467,15 @@ def update_tad(
                         "detail": detail,
                         "location1": (str(product.get("LOCATION1") or "")[:10] or None),
                         "qty": line["qty"],
-                        "ui": line["ui"] or str(product.get("UI1") or "หน่วย")[:10],
+                        "ui": ui,
+                        "mtp": mtp,
                         "price": float(line["price"]),
                         "amount": float(line["amount"]),
                     },
                 )
                 conn.execute(
                     qtyoh2_update,
-                    {"qty": on_hand - line["qty"], "bcode": line["bcode"]},
+                    {"qty": on_hand - stock_qty, "bcode": line["bcode"]},
                 )
 
             conn.execute(

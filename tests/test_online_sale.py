@@ -92,10 +92,15 @@ def test_ui_page_placeholders():
     assert "data-edit" in html
     assert "cancelEdit" in html
     assert "qtyUnit" in html
-    assert "print/pick/" in html
+    assert "unit-select" in html
+    assert "print/pick?bills=" in html
     assert "พิมพ์ใบจัดสินค้า" in html
     assert "พิมพ์ TAD" in html
     assert "ใบจัดสินค้า" in html
+    assert "pick-bill" in html
+    assert "printPick" in html
+    # Sale page must not offer pick-sheet after save.
+    assert "print/pick/${encodeURIComponent(billno)}" not in html
 
 
 def test_pick_sheet_sorted_no_price():
@@ -143,6 +148,105 @@ def test_pick_sheet_sorted_no_price():
     assert "1,998" not in html
     assert "ราคา" not in html
     assert "https://example.com/b2.jpg" in html
+
+
+def test_pick_sheet_merges_multi_bill_same_sku_unit():
+    from src.online_sale.sheets.pick import merge_pick_lines
+
+    merged = merge_pick_lines(
+        [
+            {
+                "billno": "TAD6911-001",
+                "lines": [
+                    {
+                        "bcode": "B1",
+                        "detail": "สินค้า A",
+                        "qty": 2,
+                        "ui": "ขวด",
+                        "location1": "A-1",
+                    },
+                    {
+                        "bcode": "B2",
+                        "detail": "สินค้า B",
+                        "qty": 1,
+                        "ui": "ลัง",
+                        "location1": "Z-9",
+                    },
+                ],
+            },
+            {
+                "billno": "TAD6911-002",
+                "lines": [
+                    {
+                        "bcode": "B1",
+                        "detail": "สินค้า A",
+                        "qty": 3,
+                        "ui": "ขวด",
+                        "location1": "A-1",
+                    },
+                    {
+                        "bcode": "B1",
+                        "detail": "สินค้า A",
+                        "qty": 1,
+                        "ui": "ลัง",
+                        "location1": "A-1",
+                    },
+                ],
+            },
+        ]
+    )
+    by_key = {(r["bcode"], r["ui"]): r for r in merged}
+    assert by_key[("B1", "ขวด")]["qty"] == 5
+    assert {x["billno"]: x["qty"] for x in by_key[("B1", "ขวด")]["bill_qtys"]} == {
+        "TAD6911-001": 2,
+        "TAD6911-002": 3,
+    }
+    assert by_key[("B1", "ลัง")]["qty"] == 1
+    html = render_pick_sheet(
+        bills=[
+            {
+                "billno": "TAD6911-001",
+                "online_po": "PO1",
+                "lines": [
+                    {
+                        "bcode": "B1",
+                        "detail": "สินค้า A",
+                        "qty": 2,
+                        "ui": "ขวด",
+                        "location1": "A-1",
+                    }
+                ],
+            },
+            {
+                "billno": "TAD6911-002",
+                "online_po": "PO2",
+                "lines": [
+                    {
+                        "bcode": "B1",
+                        "detail": "สินค้า A",
+                        "qty": 3,
+                        "ui": "ขวด",
+                        "location1": "A-1",
+                    }
+                ],
+            },
+        ]
+    )
+    assert "จำนวนบิล" in html
+    assert "TAD6911-001" in html
+    assert "TAD6911-002" in html
+    assert "TAD6911-001: 2" in html
+    assert "TAD6911-002: 3" in html
+    assert ">5<" in html or ">5</td>" in html
+
+
+def test_line_mtp_resolves_large_unit():
+    from src.online_sale.writers.tad_simas import _line_mtp, _stock_units
+
+    product = {"UI1": "หลอด", "UI2": "ลัง", "MTP2": 20}
+    assert _line_mtp(product, "ลัง") == 20
+    assert _line_mtp(product, "หลอด") == 1
+    assert _stock_units(2, 20) == 40
 
 
 def test_staff_roster_and_cntad_signers():

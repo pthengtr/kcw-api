@@ -339,6 +339,19 @@ def print_tad(request: Request, billno: str):
         return HTMLResponse(f"<h1>{exc}</h1>", status_code=500)
 
 
+@router.get("/print/pick", response_class=HTMLResponse)
+def print_pick_multi(request: Request, bills: str = ""):
+    _, err = _require(request)
+    if err is not None:
+        return err
+    try:
+        return HTMLResponse(print_pick_html(billnos=[bills]))
+    except Exception as exc:
+        if isinstance(exc, OnlineSaleError):
+            return HTMLResponse(f"<h1>{exc.message}</h1>", status_code=exc.status)
+        return HTMLResponse(f"<h1>{exc}</h1>", status_code=500)
+
+
 @router.get("/print/pick/{billno}", response_class=HTMLResponse)
 def print_pick(request: Request, billno: str):
     _, err = _require(request)

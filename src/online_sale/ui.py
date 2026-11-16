@@ -55,7 +55,10 @@ a{color:var(--red);font-weight:600}
 table input.cell{width:5.5rem;padding:6px 8px;border-radius:8px}
 table input.cell.price{width:7rem}
 .qty-with-unit{display:inline-flex;align-items:center;gap:6px}
-.unit-tag{font-size:13px;font-weight:600;color:#334155;white-space:nowrap;min-width:2.5rem}
+.unit-select{min-width:5.5rem;max-width:7.5rem;padding:6px 8px;border-radius:8px;font-weight:600}
+table select.unit-select{width:6.5rem;padding:5px 6px}
+.pick-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:12px 0 8px}
+.pick-bar .count{color:var(--muted);font-size:13px}
 iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14px;background:#fff}
 @media(max-width:800px){input,select{width:100%}}
 </style>
@@ -99,7 +102,7 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
     <label class="field"><span>จำนวน</span>
       <span class="qty-with-unit">
         <input id="qty" type="number" min="0.01" step="1" value="1" style="width:6rem">
-        <span id="qtyUnit" class="unit-tag">หน่วย</span>
+        <select id="qtyUnit" class="unit-select" disabled><option value="">หน่วย</option></select>
       </span>
     </label>
     <label class="field"><span>ราคา/หน่วย (รวม VAT)</span><input id="price" type="number" min="0.01" step="0.01" style="width:8rem"></label>
@@ -152,10 +155,55 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
 <script>
 const USER = __USER_JSON__;
 const WRITE = __WRITE__;
-const state = { platforms:[], shops:[], lines:[], product:null, write:WRITE, editBillno:null };
+const state = { platforms:[], shops:[], lines:[], product:null, write:WRITE, editBillno:null, searchBills:[] };
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+function stockUnits(ln){ return Number(ln.qty||0) * (Number(ln.mtp||1) || 1); }
+function unitChoices(p){
+  const ui1 = ((p && p.ui1) || (p && p.ui) || 'หน่วย').trim() || 'หน่วย';
+  const ui2 = ((p && p.ui2) || '').trim();
+  const mtp2 = Number((p && p.mtp2) || 1) || 1;
+  const out = [{ui:ui1, mtp:1}];
+  if (mtp2 > 1 && ui2 && ui2 !== ui1) out.push({ui:ui2, mtp:mtp2});
+  return out;
+}
+function fillUnitSelect(sel, product, chosenUi=''){
+  if (!product) {
+    sel.innerHTML = '<option value="">หน่วย</option>';
+    sel.disabled = true;
+    return;
+  }
+  const choices = unitChoices(product);
+  const want = (chosenUi || product.ui || product.ui1 || choices[0].ui || '').trim();
+  sel.innerHTML = '';
+  sel.disabled = false;
+  for (const c of choices) {
+    const o = document.createElement('option');
+    o.value = c.ui;
+    o.dataset.mtp = String(c.mtp);
+    o.textContent = c.mtp > 1 ? `${c.ui} (×${c.mtp})` : c.ui;
+    if (c.ui === want) o.selected = true;
+    sel.appendChild(o);
+  }
+  if (!sel.value && choices.length) sel.selectedIndex = 0;
+}
+function selectedUnit(sel){
+  const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+  return {
+    ui: (sel && sel.value) || 'หน่วย',
+    mtp: Number((opt && opt.dataset.mtp) || 1) || 1,
+  };
+}
+function lineUnitSelectHtml(ln, idx){
+  const choices = unitChoices(ln);
+  const opts = choices.map(c => {
+    const sel = c.ui === (ln.ui||'') ? ' selected' : '';
+    const label = c.mtp > 1 ? `${c.ui} (×${c.mtp})` : c.ui;
+    return `<option value="${c.ui}" data-mtp="${c.mtp}"${sel}>${label}</option>`;
+  }).join('');
+  return `<select class="unit-select" data-unit="${idx}">${opts || `<option value="${ln.ui||'หน่วย'}" data-mtp="${ln.mtp||1}">${ln.ui||'หน่วย'}</option>`}</select>`;
+}
 
 async function api(path, opts={}) {
   const res = await fetch('/online-sale'+path, {
@@ -201,7 +249,7 @@ async function loadShops(platform, sel, selected='') {
 }
 
 function oversoldLines() {
-  return state.lines.filter(ln => Number(ln.qty) > Number(ln.qtyoh2||0));
+  return state.lines.filter(ln => stockUnits(ln) > Number(ln.qtyoh2||0));
 }
 
 function updateStockWarn() {
@@ -209,7 +257,10 @@ function updateStockWarn() {
   const el = $('stockWarn');
   if (!bad.length) { el.classList.add('hidden'); el.textContent=''; return; }
   el.classList.remove('hidden');
-  el.textContent = 'แจ้งเตือน: จำนวนขายเกินสต็อก — ' + bad.map(l => `${l.bcode} (${l.qty}/${l.qtyoh2})`).join(', ');
+  el.textContent = 'แจ้งเตือน: จำนวนขายเกินสต็อก — ' + bad.map(l => {
+    const need = stockUnits(l);
+    return `${l.bcode} (${l.qty} ${l.ui||''} = ${need}/${l.qtyoh2})`;
+  }).join(', ');
 }
 
 function syncEditBanner() {
@@ -236,7 +287,8 @@ function clearSaleForm() {
   $('bcode').value = '';
   $('qty').value = '1';
   $('price').value = '';
-  $('qtyUnit').textContent = 'หน่วย';
+  fillUnitSelect($('qtyUnit'), null);
+  $('qtyUnit').disabled = true;
   $('prodHint').textContent = '';
   $('poStatus').textContent = '';
   $('saleMsg').textContent = '';
@@ -250,13 +302,13 @@ function renderLines() {
   let grand = 0;
   state.lines.forEach((ln, idx) => {
     grand += Number(ln.qty) * Number(ln.price);
-    const over = Number(ln.qty) > Number(ln.qtyoh2||0);
+    const over = stockUnits(ln) > Number(ln.qtyoh2||0);
     const tr = document.createElement('tr');
     if (over) tr.className = 'stock-over';
     tr.innerHTML = `<td>${ln.bcode}</td><td>${ln.descr||''}</td><td>${ln.location||''}</td>
       <td class="num">${ln.qtyoh2}</td>
       <td class="num"><input class="cell" data-f="qty" data-i="${idx}" type="number" min="0.01" step="1" value="${ln.qty}"></td>
-      <td>${ln.ui||'หน่วย'}</td>
+      <td>${lineUnitSelectHtml(ln, idx)}</td>
       <td class="num"><input class="cell price" data-f="price" data-i="${idx}" type="number" min="0.01" step="0.01" value="${ln.price}"></td>
       <td class="num">${money(ln.qty*ln.price)}</td>
       <td><button type="button" class="ghost" data-del="${idx}">ลบ</button></td>`;
@@ -268,7 +320,7 @@ function renderLines() {
       g += Number(ln.qty) * Number(ln.price);
       const row = tb.children[i];
       if (!row) return;
-      row.classList.toggle('stock-over', Number(ln.qty) > Number(ln.qtyoh2||0));
+      row.classList.toggle('stock-over', stockUnits(ln) > Number(ln.qtyoh2||0));
       const sumCell = row.querySelector('td:nth-child(8)');
       if (sumCell) sumCell.textContent = money(ln.qty * ln.price);
     });
@@ -283,11 +335,30 @@ function renderLines() {
       const v = Number(inp.value||0);
       if (!state.lines[i]) return;
       state.lines[i][f] = v;
-      if (f === 'qty' && v > Number(state.lines[i].qtyoh2||0)) {
-        $('saleMsg').textContent = `${state.lines[i].bcode} จำนวน ${v} เกินสต็อกคงเหลือ ${state.lines[i].qtyoh2}`;
+      if (f === 'qty' && stockUnits(state.lines[i]) > Number(state.lines[i].qtyoh2||0)) {
+        const need = stockUnits(state.lines[i]);
+        $('saleMsg').textContent = `${state.lines[i].bcode} จำนวน ${v} ${state.lines[i].ui||''} (=${need}) เกินสต็อกคงเหลือ ${state.lines[i].qtyoh2}`;
         $('saleMsg').className = 'meta warn';
       }
       refreshTotals();
+    };
+  });
+  tb.querySelectorAll('select[data-unit]').forEach(sel => {
+    sel.onchange = () => {
+      const i = Number(sel.dataset.unit);
+      const ln = state.lines[i];
+      if (!ln) return;
+      const next = selectedUnit(sel);
+      const oldMtp = Number(ln.mtp||1) || 1;
+      const newMtp = next.mtp;
+      if (oldMtp !== newMtp && oldMtp > 0 && newMtp > 0) {
+        const factor = oldMtp / newMtp;
+        ln.qty = Number((Number(ln.qty||0) * factor).toFixed(4));
+        ln.price = Number((Number(ln.price||0) / factor).toFixed(2));
+      }
+      ln.ui = next.ui;
+      ln.mtp = newMtp;
+      renderLines();
     };
   });
   tb.querySelectorAll('button[data-del]').forEach(b => b.onclick = () => {
@@ -305,13 +376,15 @@ async function lookupProduct() {
   try {
     const data = await api('/api/product?code='+encodeURIComponent(code));
     state.product = data.product;
-    $('qtyUnit').textContent = data.product.ui || 'หน่วย';
-    $('prodHint').textContent = `${data.product.descr} · หน่วย ${data.product.ui||'หน่วย'} · สต็อก ${data.product.qtyoh2} · ที่เก็บ ${data.product.location||'-'}`;
+    fillUnitSelect($('qtyUnit'), data.product);
+    const units = unitChoices(data.product).map(c => c.mtp > 1 ? `${c.ui}×${c.mtp}` : c.ui).join('/');
+    $('prodHint').textContent = `${data.product.descr} · หน่วย ${units || data.product.ui || 'หน่วย'} · สต็อก ${data.product.qtyoh2} · ที่เก็บ ${data.product.location||'-'}`;
     $('prodHint').className = 'meta ok';
     $('bcode').value = data.product.bcode;
   } catch (e) {
     state.product = null;
-    $('qtyUnit').textContent = 'หน่วย';
+    fillUnitSelect($('qtyUnit'), null);
+    $('qtyUnit').disabled = true;
     $('prodHint').textContent = e.message;
     $('prodHint').className = 'meta err';
   }
@@ -321,23 +394,32 @@ function addLine() {
   if (!state.product) { lookupProduct().then(() => { if (state.product) addLine(); }); return; }
   const qty = Number($('qty').value||0);
   const price = Number($('price').value||0);
+  const unit = selectedUnit($('qtyUnit'));
   if (qty<=0 || price<=0) { $('saleMsg').textContent='ใส่จำนวนและราคา'; $('saleMsg').className='meta err'; return; }
-  if (qty > Number(state.product.qtyoh2||0)) {
-    const ok = confirm(`${state.product.bcode} จำนวน ${qty} เกินสต็อกคงเหลือ ${state.product.qtyoh2}\\nต้องการเพิ่มรายการต่อหรือไม่?`);
+  const need = qty * (unit.mtp || 1);
+  if (need > Number(state.product.qtyoh2||0)) {
+    const ok = confirm(`${state.product.bcode} จำนวน ${qty} ${unit.ui} (=${need}) เกินสต็อกคงเหลือ ${state.product.qtyoh2}\\nต้องการเพิ่มรายการต่อหรือไม่?`);
     if (!ok) return;
   }
-  const existing = state.lines.find(l => l.bcode===state.product.bcode && Number(l.price)===price);
+  const existing = state.lines.find(l =>
+    l.bcode===state.product.bcode && Number(l.price)===price && (l.ui||'')===unit.ui
+  );
   if (existing) existing.qty = Number(existing.qty) + qty;
   else state.lines.push({
     bcode: state.product.bcode,
     descr: state.product.descr,
     location: state.product.location,
     qtyoh2: state.product.qtyoh2,
-    ui: state.product.ui,
+    ui: unit.ui,
+    ui1: state.product.ui1 || state.product.ui,
+    ui2: state.product.ui2 || '',
+    mtp2: state.product.mtp2 || 1,
+    mtp: unit.mtp,
     qty, price,
   });
   $('bcode').value=''; $('qty').value='1'; $('price').value='';
-  $('qtyUnit').textContent = 'หน่วย';
+  fillUnitSelect($('qtyUnit'), null);
+  $('qtyUnit').disabled = true;
   state.product=null; $('prodHint').textContent='';
   renderLines(); $('bcode').focus();
 }
@@ -354,20 +436,31 @@ async function loadBillForEdit(billno) {
   state.lines = [];
   for (const ln of bill.lines || []) {
     let qtyoh2 = 0, location = ln.location1 || '', descr = ln.detail || '';
+    let ui1 = ln.ui || 'หน่วย', ui2 = '', mtp2 = 1;
     try {
       const prod = await api('/api/product?code='+encodeURIComponent(ln.bcode));
       qtyoh2 = prod.product.qtyoh2;
       location = prod.product.location || location;
       descr = prod.product.descr || descr;
+      ui1 = prod.product.ui1 || prod.product.ui || ui1;
+      ui2 = prod.product.ui2 || '';
+      mtp2 = Number(prod.product.mtp2 || 1) || 1;
     } catch (_) {}
-    // When editing, available stock includes qty already on this bill.
-    qtyoh2 = Number(qtyoh2) + Math.abs(Number(ln.qty)||0);
+    const mtp = Number(ln.mtp || 0) > 0
+      ? Number(ln.mtp)
+      : ((ln.ui || '') === ui2 && mtp2 > 1 ? mtp2 : 1);
+    // When editing, available stock includes qty already on this bill (base units).
+    qtyoh2 = Number(qtyoh2) + Math.abs(Number(ln.qty)||0) * (mtp || 1);
     state.lines.push({
       bcode: ln.bcode,
       descr,
       location,
       qtyoh2,
-      ui: ln.ui || 'หน่วย',
+      ui: ln.ui || ui1 || 'หน่วย',
+      ui1,
+      ui2,
+      mtp2,
+      mtp,
       qty: Math.abs(Number(ln.qty)||0),
       price: Number(ln.price)||0,
     });
@@ -422,7 +515,7 @@ async function init() {
     const bad = oversoldLines();
     let allow = false;
     if (bad.length) {
-      allow = confirm('จำนวนขายเกินสต็อกคงเหลือ:\\n' + bad.map(l => `${l.bcode}: ขาย ${l.qty} / คงเหลือ ${l.qtyoh2}`).join('\\n') + '\\n\\nบันทึกต่อหรือไม่?');
+      allow = confirm('จำนวนขายเกินสต็อกคงเหลือ:\\n' + bad.map(l => `${l.bcode}: ขาย ${l.qty} ${l.ui||''} (=${stockUnits(l)}) / คงเหลือ ${l.qtyoh2}`).join('\\n') + '\\n\\nบันทึกต่อหรือไม่?');
       if (!allow) return;
     }
     $('saleMsg').textContent='กำลังบันทึก...'; $('saleMsg').className='meta';
@@ -430,7 +523,7 @@ async function init() {
       acctno: $('shop').value,
       online_po: $('po').value.trim(),
       allow_oversell: allow,
-      lines: state.lines.map(l => ({bcode:l.bcode, qty:l.qty, price:l.price, detail:l.descr, ui:l.ui})),
+      lines: state.lines.map(l => ({bcode:l.bcode, qty:l.qty, price:l.price, detail:l.descr, ui:l.ui, mtp:l.mtp})),
     };
     try {
       const editing = !!state.editBillno;
@@ -442,25 +535,36 @@ async function init() {
       clearSaleForm();
       $('saleMsg').innerHTML = `${verb} <b>${billno}</b>
         · <a href="/online-sale/print/tad/${encodeURIComponent(billno)}" target="_blank">พิมพ์ใบ TAD</a>
-        · <a href="/online-sale/print/pick/${encodeURIComponent(billno)}" target="_blank">พิมพ์ใบจัดสินค้า</a>
         · <a href="/to-bill/?tad=${encodeURIComponent(billno)}" target="_blank">ออกใบเต็ม TO</a>`;
       $('saleMsg').className='meta ok';
     } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
   };
-  $('doSearch').onclick = async () => {
-    const params = new URLSearchParams({
-      q: $('q').value.trim(),
-      platform: $('qPlatform').value,
-      acctno: $('qShop').value,
-      date_from: $('df').value,
-      date_to: $('dt').value,
-    });
-    const data = await api('/api/search?'+params);
+  function canPickBill(b){ return b && b.kind==='tad' && !b.canceled; }
+  function selectedPickBillnos(){
+    return [...document.querySelectorAll('#searchResults input.pick-bill:checked')].map(el => el.value);
+  }
+  function syncPickBar(){
+    const btn = $('printPick');
+    const count = $('pickCount');
+    if (!btn || !count) return;
+    const nos = selectedPickBillnos();
+    count.textContent = nos.length ? `เลือกแล้ว ${nos.length} บิล` : 'ยังไม่ได้เลือกบิล';
+    btn.disabled = nos.length === 0;
+  }
+  function renderSearchResults(bills, toDocs){
     const box = $('searchResults');
-    const bills = data.bills || [];
-    const toDocs = data.to_invoices || [];
+    state.searchBills = bills || [];
     if (!bills.length && !toDocs.length) { box.innerHTML='<p class="meta">ไม่พบรายการ</p>'; return; }
-    box.innerHTML = `<table><thead><tr><th>เลขบิล</th><th>สถานะ</th><th>วันที่</th><th>ร้าน / ลูกค้า</th><th>คำสั่งซื้อ</th><th class="num">ยอด</th><th></th></tr></thead><tbody></tbody></table>`;
+    const pickable = bills.filter(canPickBill);
+    box.innerHTML = `
+      <div class="pick-bar">
+        <button type="button" id="printPick" disabled>พิมพ์ใบจัดสินค้า</button>
+        <span class="count" id="pickCount">ยังไม่ได้เลือกบิล</span>
+      </div>
+      <table><thead><tr>
+        <th style="width:2.2rem"><input type="checkbox" id="pickAll" title="เลือกทั้งหมด" ${pickable.length?'':'disabled'}></th>
+        <th>เลขบิล</th><th>สถานะ</th><th>วันที่</th><th>ร้าน / ลูกค้า</th><th>คำสั่งซื้อ</th><th class="num">ยอด</th><th></th>
+      </tr></thead><tbody></tbody></table>`;
     const tb = box.querySelector('tbody');
     for (const b of bills) {
       const tr = document.createElement('tr');
@@ -469,8 +573,7 @@ async function init() {
         : (b.kind==='cntad' ? 'CNTAD' : 'TAD');
       let actions = b.kind==='cntad'
         ? `<a href="/online-sale/print/cntad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์</a>`
-        : `<a href="/online-sale/print/tad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์ TAD</a>
-           · <a href="/online-sale/print/pick/${encodeURIComponent(b.billno)}" target="_blank">ใบจัดสินค้า</a>`;
+        : `<a href="/online-sale/print/tad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์ TAD</a>`;
       if (b.kind==='tad' && !b.canceled) {
         actions += ` · <a href="#" data-edit="${b.billno}">แก้ไข</a>`;
         actions += ` · <a href="#" data-ret="${b.billno}">คืน</a>`;
@@ -479,7 +582,10 @@ async function init() {
       if (b.to_docno) {
         actions += ` · <a href="/to-bill/?tad=${encodeURIComponent(b.billno)}" target="_blank">${b.to_docno}</a>`;
       }
-      tr.innerHTML = `<td>${b.billno}</td><td>${status}</td><td>${b.bill_date||''}</td><td>${b.acctname||b.acctno||''}</td>
+      const pickCell = canPickBill(b)
+        ? `<input type="checkbox" class="pick-bill" value="${b.billno}">`
+        : '';
+      tr.innerHTML = `<td>${pickCell}</td><td>${b.billno}</td><td>${status}</td><td>${b.bill_date||''}</td><td>${b.acctname||b.acctno||''}</td>
         <td>${b.online_po||''}</td><td class="num">${money(b.aftertax)}</td>
         <td>${actions}</td>`;
       tb.appendChild(tr);
@@ -494,13 +600,36 @@ async function init() {
       const openHref = tad
         ? `/to-bill/?tad=${encodeURIComponent(tad)}`
         : '/to-bill/';
-      tr.innerHTML = `<td>${docno}</td><td>${st}</td><td>${(inv.bill_date||inv.issued_at||'').toString().slice(0,10)}</td>
+      tr.innerHTML = `<td></td><td>${docno}</td><td>${st}</td><td>${(inv.bill_date||inv.issued_at||'').toString().slice(0,10)}</td>
         <td>${inv.customer_name||inv.acctname_kss||''}</td>
         <td>${inv.online_po||''}</td><td class="num">${money(inv.aftertax)}</td>
         <td><a href="${openHref}" target="_blank">เปิดใบเต็ม</a>
           ${tad ? ` · <span class="meta">${tad}</span>` : ''}</td>`;
       tb.appendChild(tr);
     }
+    const pickAll = $('pickAll');
+    if (pickAll) {
+      pickAll.onchange = () => {
+        box.querySelectorAll('input.pick-bill').forEach(el => { el.checked = pickAll.checked; });
+        syncPickBar();
+      };
+    }
+    box.querySelectorAll('input.pick-bill').forEach(el => {
+      el.onchange = () => {
+        if (pickAll) {
+          const all = [...box.querySelectorAll('input.pick-bill')];
+          pickAll.checked = all.length > 0 && all.every(x => x.checked);
+          pickAll.indeterminate = all.some(x => x.checked) && !pickAll.checked;
+        }
+        syncPickBar();
+      };
+    });
+    $('printPick').onclick = () => {
+      const nos = selectedPickBillnos();
+      if (!nos.length) return;
+      window.open('/online-sale/print/pick?bills='+encodeURIComponent(nos.join(',')), '_blank');
+    };
+    syncPickBar();
     box.querySelectorAll('a[data-ret]').forEach(a => a.onclick = (e) => {
       e.preventDefault(); $('retTad').value=a.dataset.ret; showTab('return'); $('loadReturn').click();
     });
@@ -509,6 +638,17 @@ async function init() {
       try { await loadBillForEdit(a.dataset.edit); }
       catch (err) { alert(err.message); }
     });
+  }
+  $('doSearch').onclick = async () => {
+    const params = new URLSearchParams({
+      q: $('q').value.trim(),
+      platform: $('qPlatform').value,
+      acctno: $('qShop').value,
+      date_from: $('df').value,
+      date_to: $('dt').value,
+    });
+    const data = await api('/api/search?'+params);
+    renderSearchResults(data.bills || [], data.to_invoices || []);
   };
   $('loadReturn').onclick = async () => {
     const box = $('returnBox');

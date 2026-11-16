@@ -84,6 +84,7 @@ _LINES = text(
       LTRIM(RTRIM(DETAIL)) AS detail,
       QTY AS qty,
       LTRIM(RTRIM(UI)) AS ui,
+      MTP AS mtp,
       PRICE AS price,
       AMOUNT AS amount,
       LTRIM(RTRIM(LOCATION1)) AS location1
@@ -145,10 +146,22 @@ def lookup_product(code: str) -> dict[str, Any]:
     hit = lookup_transfer_product(bcode=raw)
     if not hit:
         raise OnlineSaleError("product", f"ไม่พบสินค้า {raw}")
+    ui1 = (hit.get("ui1") or "หน่วย").strip() or "หน่วย"
+    ui2 = (hit.get("ui2") or "").strip()
+    try:
+        mtp2 = float(hit.get("mtp2") or 1) or 1.0
+    except (TypeError, ValueError):
+        mtp2 = 1.0
+    if mtp2 <= 1:
+        mtp2 = 1.0
+        ui2 = ""
     return {
         "bcode": hit["bcode"],
         "descr": hit.get("descr") or "",
-        "ui": hit.get("ui1") or "หน่วย",
+        "ui": ui1,
+        "ui1": ui1,
+        "ui2": ui2,
+        "mtp2": mtp2,
         "qtyoh2": float(hit.get("hq_qtyoh2") or 0),
         "location": hit.get("location_hq") or hit.get("location") or "",
         "location1": hit.get("location1") or hit.get("location_hq") or "",
@@ -243,6 +256,7 @@ def load_bill(billno: str) -> dict[str, Any]:
             "detail": str(r.get("detail") or "").strip(),
             "qty": _num(r.get("qty")),
             "ui": str(r.get("ui") or "").strip(),
+            "mtp": _num(r.get("mtp")) or 1.0,
             "price": _num(r.get("price")),
             "amount": _num(r.get("amount")),
             "location1": str(r.get("location1") or "").strip(),
