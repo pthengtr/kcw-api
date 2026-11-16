@@ -10,6 +10,7 @@ from sqlalchemy.exc import DBAPIError, ProgrammingError
 from src.online_sale.docno import cntad_prefix, format_cntad
 from src.online_sale.errors import OnlineSaleError
 from src.online_sale.vat import money, totals_from_amounts
+from src.online_sale.writers.tad_simas import _line_mtp, _stock_units
 from src.transfer.writers._engine import (
     _fetch_icmas_row,
     transfer_write_permission_hint,
@@ -82,6 +83,10 @@ def post_cntad(
             raise OnlineSaleError("lines", "รายการคืนไม่ครบ (รหัส/จำนวน/ราคา)")
         amount = money(Decimal(str(qty)) * price)
         amounts.append(amount)
+        try:
+            mtp = float(raw.get("mtp") or 0)
+        except (TypeError, ValueError):
+            mtp = 0.0
         prepared.append(
             {
                 "bcode": bcode,
@@ -90,6 +95,7 @@ def post_cntad(
                 "amount": amount,
                 "detail": str(raw.get("detail") or raw.get("descr") or "")[:60],
                 "ui": str(raw.get("ui") or "หน่วย")[:10],
+                "mtp": mtp,
             }
         )
     # Credit note stores negative money totals
@@ -154,7 +160,7 @@ def post_cntad(
                   :jourmode, 'SJ', :billdate, :billtype, :billdate, :billno,
                   :line, 1, :bcode, :pcode, :mcode, :detail, 'Y', :location1,
                   1, 'N', 'Y', 'N', 'Y',
-                  :qty, :ui, 1, :price, 0, 0, :amount,
+                  :qty, :ui, :mtp, :price, 0, 0, :amount,
                   'N', 'N', 'N'
                 )
                 """
@@ -170,6 +176,14 @@ def post_cntad(
                 product = _fetch_icmas_row(conn, line["bcode"])
                 if not product:
                     raise OnlineSaleError("product", f"ไม่พบ BCODE {line['bcode']} ใน ICMAS")
+                ui = (line["ui"] or str(product.get("UI1") or "หน่วย"))[:10]
+                # Prefer MTP stored on the original TAD line when the client sends it.
+                try:
+                    raw_mtp = float(line.get("mtp") or 0)
+                except (TypeError, ValueError):
+                    raw_mtp = 0.0
+                mtp = raw_mtp if raw_mtp > 0 else _line_mtp(product, ui)
+                stock_qty = _stock_units(line["qty"], mtp)
                 on_hand = float(product.get("QTYOH2") or 0)
                 detail = line["detail"] or str(product.get("DESCR") or "")[:60]
                 conn.execute(
@@ -186,14 +200,15 @@ def post_cntad(
                         "detail": detail,
                         "location1": (str(product.get("LOCATION1") or "")[:10] or None),
                         "qty": -line["qty"],
-                        "ui": line["ui"] or str(product.get("UI1") or "หน่วย")[:10],
+                        "ui": ui,
+                        "mtp": mtp,
                         "price": float(line["price"]),
                         "amount": -float(line["amount"]),
                     },
                 )
                 conn.execute(
                     qtyoh2_update,
-                    {"qty": on_hand + line["qty"], "bcode": line["bcode"]},
+                    {"qty": on_hand + stock_qty, "bcode": line["bcode"]},
                 )
     except OnlineSaleError:
         raise

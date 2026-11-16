@@ -263,6 +263,7 @@ def save_return_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
                 "price": src["price"],
                 "detail": src["detail"],
                 "ui": src["ui"],
+                "mtp": src.get("mtp") or 1,
             }
         )
     if not return_lines:
@@ -290,10 +291,7 @@ def print_tad_html(billno: str) -> str:
     return render_tad_sheet(bill)
 
 
-def print_pick_html(billno: str) -> str:
-    bill = parts9.load_bill(billno)
-    if bill["kind"] != "tad":
-        raise OnlineSaleError("bill", "พิมพ์ใบจัดสินค้าได้จากบิล TAD เท่านั้น")
+def _attach_pick_photos(bill: dict[str, Any]) -> None:
     try:
         from src.transfer.parts9 import product_thumb_url
     except Exception:  # pragma: no cover - optional import path
@@ -302,7 +300,29 @@ def print_pick_html(billno: str) -> str:
         code = str(ln.get("bcode") or "").strip()
         if product_thumb_url and code and not ln.get("photo"):
             ln["photo"] = product_thumb_url(code)
-    return render_pick_sheet(bill)
+
+
+def print_pick_html(billno: str = "", *, billnos: list[str] | None = None) -> str:
+    nos: list[str] = []
+    for raw in list(billnos or []) + ([billno] if billno else []):
+        for part in str(raw or "").replace(";", ",").split(","):
+            exact = part.strip().upper()
+            if exact and exact not in nos:
+                nos.append(exact)
+    if not nos:
+        raise OnlineSaleError("bill", "เลือกบิล TAD ที่จะพิมพ์ใบจัดสินค้า")
+    bills: list[dict[str, Any]] = []
+    for exact in nos:
+        bill = parts9.load_bill(exact)
+        if bill["kind"] != "tad":
+            raise OnlineSaleError("bill", f"{exact} ไม่ใช่บิล TAD — พิมพ์ใบจัดสินค้าได้เฉพาะ TAD")
+        if bill.get("canceled"):
+            raise OnlineSaleError("bill", f"{exact} ถูกยกเลิกแล้ว — เลือกพิมพ์ไม่ได้")
+        _attach_pick_photos(bill)
+        bills.append(bill)
+    if len(bills) == 1:
+        return render_pick_sheet(bills[0])
+    return render_pick_sheet(bills=bills)
 
 
 def print_cntad_html(billno: str, *, reason: str = "") -> str:

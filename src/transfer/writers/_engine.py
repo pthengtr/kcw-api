@@ -229,7 +229,7 @@ def _fetch_icmas_row(conn, bcode: str) -> dict[str, Any] | None:
     row = conn.execute(
         text(
             """
-            SELECT MCODE, PCODE, UI1, LOCATION1, QTYOH2
+            SELECT MCODE, PCODE, DESCR, UI1, UI2, MTP2, LOCATION1, QTYOH2
             FROM dbo.ICMAS
             WHERE LTRIM(RTRIM(BCODE)) = :bcode
             """
