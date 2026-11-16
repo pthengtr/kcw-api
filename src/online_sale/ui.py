@@ -54,6 +54,8 @@ a{color:var(--red);font-weight:600}
 .edit-banner{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:8px 10px;border-radius:10px;margin-bottom:10px;font-size:13px}
 table input.cell{width:5.5rem;padding:6px 8px;border-radius:8px}
 table input.cell.price{width:7rem}
+.qty-with-unit{display:inline-flex;align-items:center;gap:6px}
+.unit-tag{font-size:13px;font-weight:600;color:#334155;white-space:nowrap;min-width:2.5rem}
 iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14px;background:#fff}
 @media(max-width:800px){input,select{width:100%}}
 </style>
@@ -94,14 +96,19 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
     <label class="field" style="flex:1;min-width:180px"><span>รหัสสินค้า / บาร์โค้ด</span>
       <input id="bcode" autocomplete="off" placeholder="สแกนหรือพิมพ์แล้ว Enter">
     </label>
-    <label class="field"><span>จำนวน</span><input id="qty" type="number" min="0.01" step="1" value="1" style="width:6rem"></label>
+    <label class="field"><span>จำนวน</span>
+      <span class="qty-with-unit">
+        <input id="qty" type="number" min="0.01" step="1" value="1" style="width:6rem">
+        <span id="qtyUnit" class="unit-tag">หน่วย</span>
+      </span>
+    </label>
     <label class="field"><span>ราคา/หน่วย (รวม VAT)</span><input id="price" type="number" min="0.01" step="0.01" style="width:8rem"></label>
     <button type="button" id="addLine">เพิ่ม</button>
   </div>
   <p class="meta" id="prodHint"></p>
   <p class="meta warn hidden" id="stockWarn"></p>
   <table id="linesTable" style="margin-top:12px">
-    <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ที่เก็บ</th><th class="num">สต็อก</th><th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">รวม</th><th></th></tr></thead>
+    <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ที่เก็บ</th><th class="num">สต็อก</th><th class="num">จำนวน</th><th>หน่วย</th><th class="num">ราคา</th><th class="num">รวม</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="row" style="justify-content:space-between;margin-top:12px">
@@ -229,6 +236,7 @@ function clearSaleForm() {
   $('bcode').value = '';
   $('qty').value = '1';
   $('price').value = '';
+  $('qtyUnit').textContent = 'หน่วย';
   $('prodHint').textContent = '';
   $('poStatus').textContent = '';
   $('saleMsg').textContent = '';
@@ -248,6 +256,7 @@ function renderLines() {
     tr.innerHTML = `<td>${ln.bcode}</td><td>${ln.descr||''}</td><td>${ln.location||''}</td>
       <td class="num">${ln.qtyoh2}</td>
       <td class="num"><input class="cell" data-f="qty" data-i="${idx}" type="number" min="0.01" step="1" value="${ln.qty}"></td>
+      <td>${ln.ui||'หน่วย'}</td>
       <td class="num"><input class="cell price" data-f="price" data-i="${idx}" type="number" min="0.01" step="0.01" value="${ln.price}"></td>
       <td class="num">${money(ln.qty*ln.price)}</td>
       <td><button type="button" class="ghost" data-del="${idx}">ลบ</button></td>`;
@@ -260,7 +269,7 @@ function renderLines() {
       const row = tb.children[i];
       if (!row) return;
       row.classList.toggle('stock-over', Number(ln.qty) > Number(ln.qtyoh2||0));
-      const sumCell = row.querySelector('td:nth-child(7)');
+      const sumCell = row.querySelector('td:nth-child(8)');
       if (sumCell) sumCell.textContent = money(ln.qty * ln.price);
     });
     $('grand').textContent = money(g);
@@ -296,11 +305,13 @@ async function lookupProduct() {
   try {
     const data = await api('/api/product?code='+encodeURIComponent(code));
     state.product = data.product;
-    $('prodHint').textContent = `${data.product.descr} · สต็อก ${data.product.qtyoh2} · ที่เก็บ ${data.product.location||'-'}`;
+    $('qtyUnit').textContent = data.product.ui || 'หน่วย';
+    $('prodHint').textContent = `${data.product.descr} · หน่วย ${data.product.ui||'หน่วย'} · สต็อก ${data.product.qtyoh2} · ที่เก็บ ${data.product.location||'-'}`;
     $('prodHint').className = 'meta ok';
     $('bcode').value = data.product.bcode;
   } catch (e) {
     state.product = null;
+    $('qtyUnit').textContent = 'หน่วย';
     $('prodHint').textContent = e.message;
     $('prodHint').className = 'meta err';
   }
@@ -326,6 +337,7 @@ function addLine() {
     qty, price,
   });
   $('bcode').value=''; $('qty').value='1'; $('price').value='';
+  $('qtyUnit').textContent = 'หน่วย';
   state.product=null; $('prodHint').textContent='';
   renderLines(); $('bcode').focus();
 }
@@ -428,7 +440,9 @@ async function init() {
       const verb = editing ? 'แก้ไขแล้ว' : 'บันทึกแล้ว';
       const billno = data.result.billno;
       clearSaleForm();
-      $('saleMsg').innerHTML = `${verb} <b>${billno}</b> · <a href="/online-sale/print/tad/${encodeURIComponent(billno)}" target="_blank">พิมพ์ใบ TAD</a>
+      $('saleMsg').innerHTML = `${verb} <b>${billno}</b>
+        · <a href="/online-sale/print/tad/${encodeURIComponent(billno)}" target="_blank">พิมพ์ใบ TAD</a>
+        · <a href="/online-sale/print/pick/${encodeURIComponent(billno)}" target="_blank">พิมพ์ใบจัดสินค้า</a>
         · <a href="/to-bill/?tad=${encodeURIComponent(billno)}" target="_blank">ออกใบเต็ม TO</a>`;
       $('saleMsg').className='meta ok';
     } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
@@ -450,13 +464,13 @@ async function init() {
     const tb = box.querySelector('tbody');
     for (const b of bills) {
       const tr = document.createElement('tr');
-      const printHref = b.kind==='cntad'
-        ? `/online-sale/print/cntad/${encodeURIComponent(b.billno)}`
-        : `/online-sale/print/tad/${encodeURIComponent(b.billno)}`;
       const status = b.canceled
         ? '<span class="status-cancel">ยกเลิก</span>'
         : (b.kind==='cntad' ? 'CNTAD' : 'TAD');
-      let actions = `<a href="${printHref}" target="_blank">พิมพ์</a>`;
+      let actions = b.kind==='cntad'
+        ? `<a href="/online-sale/print/cntad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์</a>`
+        : `<a href="/online-sale/print/tad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์ TAD</a>
+           · <a href="/online-sale/print/pick/${encodeURIComponent(b.billno)}" target="_blank">ใบจัดสินค้า</a>`;
       if (b.kind==='tad' && !b.canceled) {
         actions += ` · <a href="#" data-edit="${b.billno}">แก้ไข</a>`;
         actions += ` · <a href="#" data-ret="${b.billno}">คืน</a>`;

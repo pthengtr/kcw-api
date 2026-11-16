@@ -23,6 +23,7 @@ from src.online_sale.shops import (
 from src.online_sale.ui import page
 from src.online_sale.vat import split_inclusive, totals_from_amounts
 from src.online_sale.sheets.cntad import credit_note_summary, render_cntad_sheet
+from src.online_sale.sheets.pick import render_pick_sheet
 from src.online_sale.staff import issuer_full_name, match_staff
 from src.online_sale.writers.cntad_simas import post_cntad
 from src.online_sale.writers.tad_simas import post_tad, update_tad
@@ -90,6 +91,58 @@ def test_ui_page_placeholders():
     assert "status-cancel" in html
     assert "data-edit" in html
     assert "cancelEdit" in html
+    assert "qtyUnit" in html
+    assert "print/pick/" in html
+    assert "พิมพ์ใบจัดสินค้า" in html
+    assert "พิมพ์ TAD" in html
+    assert "ใบจัดสินค้า" in html
+
+
+def test_pick_sheet_sorted_no_price():
+    html = render_pick_sheet(
+        {
+            "billno": "TAD6911-010",
+            "bill_date": "2026-11-16",
+            "platform": "shopee",
+            "shop_name": "PNT TRACTOR",
+            "online_po": "251116ABC",
+            "lines": [
+                {
+                    "bcode": "B2",
+                    "detail": "สินค้า B",
+                    "qty": 2,
+                    "ui": "ลัง",
+                    "location1": "Z-9",
+                    "price": 999,
+                    "amount": 1998,
+                    "photo": "https://example.com/b2.jpg",
+                },
+                {
+                    "bcode": "B1",
+                    "detail": "สินค้า A",
+                    "qty": 1,
+                    "ui": "ขวด",
+                    "location1": "A-1",
+                    "price": 100,
+                    "amount": 100,
+                },
+            ],
+        }
+    )
+    assert "ใบจัดสินค้า" in html
+    assert "TAD6911-010" in html
+    assert "Shopee" in html
+    assert "PNT TRACTOR" in html
+    assert "251116ABC" in html
+    assert "ผู้จัดสินค้า" in html
+    assert "ผู้ตรวจสินค้า" in html
+    assert "ที่เก็บ" in html
+    assert "☐" in html
+    assert html.index("A-1") < html.index("Z-9")
+    assert "999" not in html
+    assert "1,998" not in html
+    assert "ราคา" not in html
+    assert "https://example.com/b2.jpg" in html
 
 
 def test_staff_roster_and_cntad_signers():

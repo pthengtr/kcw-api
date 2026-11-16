@@ -14,6 +14,7 @@ from src.online_sale.service import (
     check_po_payload,
     meta_payload,
     print_cntad_html,
+    print_pick_html,
     print_tad_html,
     product_payload,
     return_preview_payload,
@@ -332,6 +333,19 @@ def print_tad(request: Request, billno: str):
         return err
     try:
         return HTMLResponse(print_tad_html(billno))
+    except Exception as exc:
+        if isinstance(exc, OnlineSaleError):
+            return HTMLResponse(f"<h1>{exc.message}</h1>", status_code=exc.status)
+        return HTMLResponse(f"<h1>{exc}</h1>", status_code=500)
+
+
+@router.get("/print/pick/{billno}", response_class=HTMLResponse)
+def print_pick(request: Request, billno: str):
+    _, err = _require(request)
+    if err is not None:
+        return err
+    try:
+        return HTMLResponse(print_pick_html(billno))
     except Exception as exc:
         if isinstance(exc, OnlineSaleError):
             return HTMLResponse(f"<h1>{exc.message}</h1>", status_code=exc.status)
