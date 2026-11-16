@@ -8,9 +8,9 @@ from src.online_sale.sheets.common import (
     esc,
     fmt_money,
     line_rows_html,
-    platform_label,
     thai_date,
 )
+from src.online_sale.shops import channel_label, customer_name_without_shop
 from src.online_sale.staff import issuer_full_name
 from src.online_sale.vat import money, totals_from_amounts
 
@@ -32,7 +32,7 @@ def _signature(title: str, *, name: str = "", signed_on: str = "") -> str:
 
 def _meta_row(label: str, value: str) -> str:
     return (
-        f"<div class='row'><span class='k'>{esc(label)}</span>"
+        f"<div class='row'><span class='k'>{esc(label)}:</span> "
         f"<span class='v'>{value}</span></div>"
     )
 
@@ -81,11 +81,8 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
     issuer_name = issuer_full_name(str(bill.get("sale") or ""))
     signed_on = thai_date(bill.get("bill_date"))
 
-    customer_name = (
-        bill.get("customer_name")
-        or bill.get("acctname")
-        or ""
-    )
+    raw_name = bill.get("customer_name") or bill.get("acctname") or ""
+    customer_name = customer_name_without_shop(str(raw_name))
     customer_address = bill.get("customer_address") or bill.get("address") or ""
     customer_tax_id = bill.get("customer_tax_id") or bill.get("tax_id") or ""
 
@@ -103,22 +100,22 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
     shop = bill.get("shop_name") or ""
     if not shop and (original or {}).get("shop_name"):
         shop = original.get("shop_name")  # type: ignore[union-attr]
+    channel = bill.get("channel") or channel_label(bill.get("platform"), shop)
 
     left = (
         "<div class='side'>"
-        + _meta_row("ชื่อลูกค้า", esc(customer_name))
-        + _meta_row("ที่อยู่ลูกค้า", esc(customer_address))
-        + _meta_row("เลขประจำตัวผู้เสียภาษีลูกค้า", esc(customer_tax_id))
+        + _meta_row("ลูกค้า", esc(customer_name))
+        + _meta_row("ที่อยู่", esc(customer_address))
+        + _meta_row("เลขประจำตัวผู้เสียภาษี", esc(customer_tax_id))
         + "</div>"
     )
     right = (
         "<div class='side'>"
-        + _meta_row("เลขที่ใบลดหนี้", esc(bill.get("billno")))
-        + _meta_row("วันที่ออกใบลดหนี้", thai_date(bill.get("bill_date")))
-        + _meta_row("เลขที่บิลอ้างอิง", esc(tad_billno))
+        + _meta_row("เลขที่", esc(bill.get("billno")))
+        + _meta_row("วันที่", thai_date(bill.get("bill_date")))
+        + _meta_row("อ้างอิง", esc(tad_billno))
         + _meta_row("วันที่บิลอ้างอิง", thai_date(tad_date))
-        + _meta_row("แพลตฟอร์ม", esc(platform_label(bill.get("platform") or "")))
-        + _meta_row("ชื่อร้านค้า", esc(shop))
+        + _meta_row("ช่องทาง", esc(channel))
         + _meta_row("เลขคำสั่งซื้อ", esc(order_id))
         + "</div>"
     )

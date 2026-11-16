@@ -12,7 +12,14 @@ from src.handlers.to_bill_entry import handle_to_bill_command, is_to_bill_comman
 from src.online_sale.docno import buddhist_yymm, format_cntad, format_tad
 from src.online_sale.errors import OnlineSaleError
 from src.online_sale.net import is_private_lan
-from src.online_sale.shops import bill_acctname, detect_platform, shop_display_name
+from src.online_sale.shops import (
+    bill_acctname,
+    channel_label,
+    customer_name_without_shop,
+    detect_platform,
+    shop_display_name,
+    tax_id_from_remarks,
+)
 from src.online_sale.ui import page
 from src.online_sale.vat import split_inclusive, totals_from_amounts
 from src.online_sale.sheets.cntad import credit_note_summary, render_cntad_sheet
@@ -64,6 +71,13 @@ def test_shop_helpers():
     assert detect_platform("บริษัท ส.บุญรักษา จำกัด (สำนักงานใหญ่)", "7SB") == ""
     assert shop_display_name("คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)") == "KC INDUSTRY"
     assert "LAZADA" in bill_acctname("lazada", "KC INDUSTRY")
+    assert customer_name_without_shop(
+        "คุณลูกค้าทั่วไป LAZADA ( PNT TRACTOR)"
+    ) == "คุณลูกค้าทั่วไป LAZADA"
+    assert channel_label("lazada", "PNT TRACTOR") == "Lazada (PNT TRACTOR)"
+    assert tax_id_from_remarks("##0000000000001") == "0000000000001"
+    assert tax_id_from_remarks("โอน##0105524009949") == "0105524009949"
+    assert tax_id_from_remarks("") == ""
 
 
 def test_ui_page_placeholders():
@@ -88,14 +102,14 @@ def test_staff_roster_and_cntad_signers():
             "bill_date": "2026-11-15",
             "sale": "เมย์",
             "acctname": "ลูกค้า",
-            "customer_name": "ลูกค้าทดสอบ",
+            "customer_name": "คุณลูกค้าทั่วไป LAZADA ( PNT TRACTOR)",
             "customer_address": "ที่อยู่ทดสอบ",
-            "customer_tax_id": "0105551234567",
-            "tad_billno": "TAD6911-100",
-            "tad_bill_date": "2026-11-10",
+            "customer_tax_id": "0000000000001",
+            "tad_billno": "TAD6910-611",
+            "tad_bill_date": "2026-10-23",
             "platform": "lazada",
-            "shop_name": "KC INDUSTRY",
-            "order_id": "ORDER123",
+            "shop_name": "PNT TRACTOR",
+            "order_id": "33210966075295",
             "reason": "คืนสินค้า",
             "lines": [],
             "beforetax": 0,
@@ -107,21 +121,24 @@ def test_staff_roster_and_cntad_signers():
     assert "ผู้อนุมัติเอกสาร" in html
     assert "ผู้รับเอกสาร" in html
     assert "ปิยะนุช นันตาบุตร" in html
-    assert "ชื่อลูกค้า" in html
-    assert "ลูกค้าทดสอบ" in html
-    assert "ที่อยู่ลูกค้า" in html
+    assert "ลูกค้า:" in html
+    assert "คุณลูกค้าทั่วไป LAZADA" in html
+    assert "PNT TRACTOR)" not in html.split("ลูกค้า:")[1].split("</div>")[0]
+    assert "ที่อยู่:" in html
     assert "ที่อยู่ทดสอบ" in html
-    assert "เลขประจำตัวผู้เสียภาษีลูกค้า" in html
-    assert "0105551234567" in html
-    assert "เลขที่ใบลดหนี้" in html
+    assert "เลขประจำตัวผู้เสียภาษี:" in html
+    assert "0000000000001" in html
+    assert "เลขที่:" in html
     assert "CNTAD6911-001" in html
-    assert "เลขที่บิลอ้างอิง" in html
-    assert "TAD6911-100" in html
-    assert "วันที่บิลอ้างอิง" in html
-    assert "Lazada" in html
-    assert "KC INDUSTRY" in html
-    assert "เลขคำสั่งซื้อ" in html
-    assert "ORDER123" in html
+    assert "อ้างอิง:" in html
+    assert "TAD6910-611" in html
+    assert "วันที่บิลอ้างอิง:" in html
+    assert "ช่องทาง:" in html
+    assert "Lazada (PNT TRACTOR)" in html
+    assert "แพลตฟอร์ม" not in html
+    assert "ชื่อร้านค้า" not in html
+    assert "เลขคำสั่งซื้อ:" in html
+    assert "33210966075295" in html
     assert "เหตุผลที่ออกใบลดหนี้" in html
     assert "คืนสินค้า" in html
     assert "มูลค่าตามใบกำกับภาษีเดิม (ก่อน VAT)" in html

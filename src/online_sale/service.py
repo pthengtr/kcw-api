@@ -9,7 +9,15 @@ from src.online_sale.config import get_online_sale_settings
 from src.online_sale.errors import OnlineSaleError
 from src.online_sale.sheets.cntad import render_cntad_sheet
 from src.online_sale.sheets.tad import render_tad_sheet
-from src.online_sale.shops import list_platforms, list_shops, load_shop, party_from_armas
+from src.online_sale.shops import (
+    channel_label,
+    customer_name_without_shop,
+    list_platforms,
+    list_shops,
+    load_shop,
+    party_from_armas,
+    tax_id_from_remarks,
+)
 from src.online_sale.writers.cntad_simas import post_cntad
 from src.online_sale.writers.tad_simas import post_tad, update_tad
 
@@ -293,9 +301,15 @@ def print_cntad_html(billno: str, *, reason: str = "") -> str:
         except OnlineSaleError:
             original = None
     party = party_from_armas(str(bill.get("acctno") or ""))
-    bill["customer_name"] = party["customer_name"] or bill.get("acctname") or ""
+    raw_name = party["customer_name"] or bill.get("acctname") or ""
+    bill["customer_name"] = customer_name_without_shop(str(raw_name))
     bill["customer_address"] = party["address"]
-    bill["customer_tax_id"] = party["tax_id"]
+    # Prefer SIMAS REMARKS (## + 13 digits), same source as the VAT books.
+    bill["customer_tax_id"] = (
+        tax_id_from_remarks(bill.get("remarks"))
+        or party["tax_id"]
+        or tax_id_from_remarks((original or {}).get("remarks") if original else "")
+    )
     bill["tad_billno"] = tad_ref
     if original:
         bill["tad_bill_date"] = original.get("bill_date")
@@ -304,4 +318,5 @@ def print_cntad_html(billno: str, *, reason: str = "") -> str:
             bill["shop_name"] = original.get("shop_name") or ""
         if not bill.get("platform"):
             bill["platform"] = original.get("platform") or ""
+    bill["channel"] = channel_label(bill.get("platform"), bill.get("shop_name"))
     return render_cntad_sheet(bill, original=original, reason=reason)

@@ -23,11 +23,11 @@ CSS = """
 .rcp .co { font-weight:700; font-size:18px; }
 .rcp .addr { font-size:13px; }
 .rcp .title { text-align:center; font-weight:800; font-size:20px; margin:8px 0 4px; }
-.rcp .meta { display:grid; grid-template-columns:1.2fr 1fr; gap:8px 24px; margin:8px 0 10px; font-size:14px; align-items:start; }
-.rcp .meta .side { display:grid; gap:3px 0; }
-.rcp .meta .row { display:grid; grid-template-columns:9.5rem 1fr; gap:6px 10px; align-items:start; }
-.rcp .meta .k { color:#333; }
-.rcp .meta .v { white-space:pre-wrap; }
+.rcp .meta { display:grid; grid-template-columns:1.15fr 1fr; gap:4px 28px; margin:8px 0 10px; font-size:14px; align-items:start; }
+.rcp .meta .side { display:grid; gap:1px 0; }
+.rcp .meta .row { line-height:1.4; }
+.rcp .meta .row .k { font-weight:700; }
+.rcp .meta .row .v { white-space:pre-wrap; }
 .rcp table { width:100%; border-collapse:collapse; font-size:14px; }
 .rcp th { border-top:1px solid #111; border-bottom:1px solid #111; padding:4px 3px; text-align:left; }
 .rcp td { border-bottom:1px solid #ddd; padding:4px 3px; vertical-align:top; }
