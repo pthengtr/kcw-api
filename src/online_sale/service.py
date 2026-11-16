@@ -8,6 +8,7 @@ from src.online_sale import parts9
 from src.online_sale.config import get_online_sale_settings
 from src.online_sale.errors import OnlineSaleError
 from src.online_sale.sheets.cntad import render_cntad_sheet
+from src.online_sale.sheets.pick import render_pick_sheet
 from src.online_sale.sheets.tad import render_tad_sheet
 from src.online_sale.shops import (
     channel_label,
@@ -287,6 +288,21 @@ def print_tad_html(billno: str) -> str:
     if bill["kind"] != "tad":
         raise OnlineSaleError("bill", "พิมพ์ใบ TAD ได้จากบิล TAD เท่านั้น")
     return render_tad_sheet(bill)
+
+
+def print_pick_html(billno: str) -> str:
+    bill = parts9.load_bill(billno)
+    if bill["kind"] != "tad":
+        raise OnlineSaleError("bill", "พิมพ์ใบจัดสินค้าได้จากบิล TAD เท่านั้น")
+    try:
+        from src.transfer.parts9 import product_thumb_url
+    except Exception:  # pragma: no cover - optional import path
+        product_thumb_url = None  # type: ignore[assignment]
+    for ln in bill.get("lines") or []:
+        code = str(ln.get("bcode") or "").strip()
+        if product_thumb_url and code and not ln.get("photo"):
+            ln["photo"] = product_thumb_url(code)
+    return render_pick_sheet(bill)
 
 
 def print_cntad_html(billno: str, *, reason: str = "") -> str:
