@@ -7,6 +7,8 @@ Search / detail UI on `:8788` (`kcw-parts9-explorer`). Product discovery is read
 - `GET /parts9/` — search UI
 - `GET /parts9/api/search` — products / docs / ICLOW summary
 - `GET /parts9/api/product/{bcode}` — detail + movement + insight + open **รอสั่ง** (`waiting`)
+- `GET /parts9/api/history/{bcode}/purchases|sales` — ประวัติซื้อ/ขาย (same payload as hq-po)
+- `GET /parts9/api/history/bills/{kind}/{billno}` — รายละเอียดบิล
 - Substitutes manage under `/parts9/substitutes`
 
 ## Writes (product detail / + สินค้าใหม่)

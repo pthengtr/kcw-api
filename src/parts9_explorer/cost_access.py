@@ -39,6 +39,8 @@ _LINE_COST_KEYS = frozenset(
 )
 _PURCHASE_KINDS = frozenset({"pi", "po", "iclow"})
 _PURCHASE_MONEY = frozenset({"PRICE", "AMOUNT", "AFTERTAX"})
+_TRADE_PURCHASE_MONEY = frozenset({"price", "amount"})
+_TRADE_SALES_COST = frozenset({"cost", "profit", "cost_status"})
 
 
 def can_see_explorer_cost(line_user_id: str | None) -> bool:
@@ -68,6 +70,25 @@ def redact_movement(movement: dict[str, Any] | None) -> dict[str, Any]:
     data["pi"] = [_without(row, _PURCHASE_MONEY) for row in data.get("pi") or []]
     data["sales"] = [_without(row, _LINE_COST_KEYS - {"PRICE", "AMOUNT"}) for row in data.get("sales") or []]
     return data
+
+
+def redact_trade_history(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Strip purchase unit prices / sales cost+profit for non-admin trade history."""
+    if not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    kind = str(out.get("kind") or "").strip().lower()
+    if kind in ("purchase", "pi", "buy"):
+        money = _TRADE_PURCHASE_MONEY
+    elif kind in ("sales", "si", "sell"):
+        money = _TRADE_SALES_COST
+    else:
+        money = _TRADE_PURCHASE_MONEY | _TRADE_SALES_COST
+    if "rows" in out:
+        out["rows"] = [_without(row, money) for row in out.get("rows") or []]
+    if "lines" in out:
+        out["lines"] = [_without(row, money) for row in out.get("lines") or []]
+    return out
 
 
 def redact_documents(documents: list[dict[str, Any]] | None) -> list[dict[str, Any]]:

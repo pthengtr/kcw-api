@@ -1,7 +1,12 @@
 from datetime import date
 
 from src.handlers.explorer_entry import is_explorer_command
-from src.parts9_explorer.cost_access import can_see_explorer_cost, redact_insight, redact_movement
+from src.parts9_explorer.cost_access import (
+    can_see_explorer_cost,
+    redact_insight,
+    redact_movement,
+    redact_trade_history,
+)
 from src.parts9_explorer.fifo import (
     annotate_yearly,
     attach_line_costs,
@@ -616,6 +621,35 @@ def test_explorer_page_has_insight_v12_layout():
     assert "AI แนะนำ" in html
     assert "monthly_sales" in html
     assert "insight-dash" not in html
+    assert "hist-tabs" in html
+    assert "ประวัติซื้อ" in html
+    assert "ประวัติขาย" in html
+    assert "purchaseRowsHtml" in html
+    assert "salesRowsHtml" in html
+    assert "/parts9/api/history/" in html
+    assert "hist-table" in html
+
+
+def test_redact_trade_history_strips_purchase_price_and_sales_cost():
+    purchase = redact_trade_history(
+        {
+            "kind": "purchase",
+            "rows": [{"billno": "PI1", "price": 10, "amount": 20, "qty": 2, "acctname": "A"}],
+        }
+    )
+    assert purchase["rows"][0]["qty"] == 2
+    assert purchase["rows"][0]["acctname"] == "A"
+    assert "price" not in purchase["rows"][0]
+    assert "amount" not in purchase["rows"][0]
+    sales = redact_trade_history(
+        {
+            "kind": "sales",
+            "rows": [{"billno": "SI1", "price": 30, "cost": 10, "profit": 20, "qty": 1}],
+        }
+    )
+    assert sales["rows"][0]["price"] == 30
+    assert "cost" not in sales["rows"][0]
+    assert "profit" not in sales["rows"][0]
 
 
 def test_monthly_customer_sales_from_snap():

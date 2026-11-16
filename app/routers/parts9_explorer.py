@@ -25,6 +25,13 @@ from src.parts9_explorer.cost_access import (
     redact_iclow_summary,
     redact_insight,
     redact_movement,
+    redact_trade_history,
+)
+from src.hq_po.guards import HqPoError
+from src.hq_po.service import (
+    product_bill_detail_payload,
+    product_purchase_history_payload,
+    product_sales_history_payload,
 )
 from src.parts9_explorer.fifo import fifo_for_product, insight_avg_buy
 from src.parts9_explorer.insights import lookup_insight
@@ -470,6 +477,67 @@ def api_insight(request: Request, bcode: str, site: str = "hq"):
     if isinstance(insight, dict):
         insight = {**insight, "can_see_cost": see_cost}
     return insight
+
+
+def _history_err(exc: Exception, *, fallback: str) -> JSONResponse:
+    if isinstance(exc, HqPoError):
+        status = 400 if exc.code == "missing" else 502
+        return JSONResponse({"error": exc.code, "message": str(exc)}, status_code=status)
+    return JSONResponse({"error": fallback, "message": str(exc)}, status_code=502)
+
+
+@router.get("/api/history/{bcode}/purchases")
+def api_purchase_history(
+    request: Request, bcode: str, site: str = "hq", months: int = 12
+):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    try:
+        data = product_purchase_history_payload(bcode, site=site, months=months)
+    except Exception as exc:
+        return _history_err(exc, fallback="purchase_history_failed")
+    if not _see_cost(ident):
+        data = redact_trade_history(data)
+    return data
+
+
+@router.get("/api/history/{bcode}/sales")
+def api_sales_history(
+    request: Request, bcode: str, site: str = "hq", months: int = 12
+):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    try:
+        data = product_sales_history_payload(bcode, site=site, months=months)
+    except Exception as exc:
+        return _history_err(exc, fallback="sales_history_failed")
+    if not _see_cost(ident):
+        data = redact_trade_history(data)
+    return data
+
+
+@router.get("/api/history/bills/{kind}/{billno}")
+def api_bill_detail(
+    request: Request,
+    kind: str,
+    billno: str,
+    site: str = "hq",
+    bcode: str = "",
+):
+    ident, err = _require(request)
+    if err:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    try:
+        data = product_bill_detail_payload(
+            kind=kind, billno=billno, site=site, bcode=bcode
+        )
+    except Exception as exc:
+        return _history_err(exc, fallback="bill_detail_failed")
+    if not _see_cost(ident):
+        data = redact_trade_history(data)
+    return data
 
 
 @router.get("/api/ap/search")
