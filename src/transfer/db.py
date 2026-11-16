@@ -796,6 +796,7 @@ def list_receive_queue(client: Client, *, site: str) -> list[dict[str, Any]]:
                         "line_id": sl.get("line_id"),
                         "bcode": sl.get("bcode"),
                         "descr": tr_line.get("descr") or "",
+                        "photo": tr_line.get("photo") or "",
                         "qty_shipped": qty_shipped,
                         "qty_received": qty_received,
                         "qty_open": qty_open,

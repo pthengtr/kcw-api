@@ -122,6 +122,9 @@ def test_transfer_page_renders():
     assert "bindDetailEvidence" in html
     assert "deleteShipmentPhoto" in html
     assert "/photos/" in html
+    assert "data-product-photo" in html
+    assert "bcodeWithThumb" in html
+    assert "prod-thumb" in html
     assert "@media (max-width:640px)" in html
     assert "max-width:1200px" in html
     assert "view-table" in html

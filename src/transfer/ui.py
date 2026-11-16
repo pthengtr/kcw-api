@@ -365,6 +365,11 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
 .evidence-remove{position:absolute;top:-6px;right:-6px;z-index:2;width:24px;height:24px;border:0;border-radius:999px;background:#b91c1c;color:#fff;font-weight:700;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .evidence-edit{margin-top:.35rem}
 .prep-photo-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.prod-thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0;vertical-align:middle}
+.prod-thumb{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
+.prod-with-thumb{display:inline-flex;align-items:center;gap:.45rem;max-width:100%}
+.prod-with-thumb > span{min-width:0}
+#printSheet .prod-thumb{width:1.6cm;height:1.6cm}
 #evidenceView{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.78);display:flex;align-items:center;justify-content:center;padding:48px 16px 16px}
 #evidenceView[hidden]{display:none}
 #evidenceView img{max-width:min(960px,100%);max-height:calc(100vh - 88px);object-fit:contain;border-radius:12px;background:#fff}
@@ -555,6 +560,15 @@ function fmtSubsHint(row){
 }
 function fmtDescr(row){
   return `${escText((row && row.descr) || "")}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}${fmtSubsHint(row)}`;
+}
+function thumbHtml(row){
+  if(!row || !row.photo) return "";
+  const label = String(row.bcode||"").trim();
+  return `<button type="button" class="prod-thumb-btn" data-product-photo="${escText(row.photo)}" aria-label="ดูรูปสินค้า${label ? " "+escText(label) : ""}"><img class="prod-thumb" alt="" loading="lazy" src="${escText(row.photo)}" onerror="this.closest('button').remove()"/></button>`;
+}
+function bcodeWithThumb(row, extra=""){
+  const code = escText((row && row.bcode) || "");
+  return `<span class="prod-with-thumb">${thumbHtml(row)}<span><code>${code}</code>${extra||""}</span></span>`;
 }
 function proposeMeta(row){
   const m = row && row.propose_meta;
@@ -949,6 +963,7 @@ function stickerLinesFromDetail(detail, {selected}={}){
     lines: lines.filter(ln=>Number(ln.qty_received||0)>0).map(ln=>({
       bcode: ln.bcode,
       descr: ln.descr || "",
+      photo: ln.photo || "",
       qty: Number(ln.qty_received||0),
       selected: selected === true ? true : selected === false ? false : !!ln.selected,
     })),
@@ -1042,7 +1057,7 @@ function renderStickerComposer(el, job){
   const rows = (job.lines||[]).map((ln,i)=>`
     <tr class="sticker-row">
       <td><input type="checkbox" class="pick-check stk-sel" data-i="${i}" ${ln.selected?"checked":""}/></td>
-      <td><code>${ln.bcode}</code></td>
+      <td>${bcodeWithThumb(ln)}</td>
       <td>${(ln.descr||"").replace(/</g,"&lt;")}</td>
       <td class="num"><span class="qty-step">
         <button type="button" data-stk-delta="${i}" data-d="-1">−</button>
@@ -1052,7 +1067,7 @@ function renderStickerComposer(el, job){
     </tr>`).join("");
   const cards = (job.lines||[]).map((ln,i)=>`<div class="item-card">
     <div class="item-card-head">
-      <label style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" class="pick-check stk-sel" data-i="${i}" ${ln.selected?"checked":""}/><code>${ln.bcode}</code></label>
+      <label style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" class="pick-check stk-sel" data-i="${i}" ${ln.selected?"checked":""}/>${bcodeWithThumb(ln)}</label>
     </div>
     <div class="item-card-desc">${(ln.descr||"").replace(/</g,"&lt;")}</div>
     <div class="item-card-actions">
@@ -1257,7 +1272,7 @@ function printRequestBill(detail){
   const recvBills = (detail.shipments || []).map(s => s.receive_billno || "").filter(b => b);
   const rows = lines.map((ln,i)=>`<tr>
     <td class="num">${i+1}</td>
-    <td><code>${ln.bcode||""}</code></td>
+    <td>${bcodeWithThumb(ln)}</td>
     <td>${(ln.descr||"").replace(/</g,"&lt;")}${ln.brand?`<div class="meta">ยี่ห้อ ${String(ln.brand).replace(/</g,"&lt;")}</div>`:""}${(ln.pcode||ln.mcode)?`<div class="meta">${[ln.pcode?`เบอร์แท้ ${String(ln.pcode).replace(/</g,"&lt;")}`:"",ln.mcode?`เบอร์โรงงาน ${String(ln.mcode).replace(/</g,"&lt;")}`:""].filter(Boolean).join(" · ")}</div>`:""}${ln.model?`<div class="meta">รุ่น ${String(ln.model).replace(/</g,"&lt;")}</div>`:""}${ln.location?`<div class="meta">ที่เก็บ ${String(ln.location).replace(/</g,"&lt;")}</div>`:(ln.location_hq||ln.location_syp)?`<div class="meta">ที่เก็บ สนญ ${String(ln.location_hq||"—").replace(/</g,"&lt;")} · สาขา ${String(ln.location_syp||"—").replace(/</g,"&lt;")}</div>`:""}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
     <td class="num">${fmtQty(ln.qty_prepared)}</td>
@@ -1312,7 +1327,7 @@ function printPrepareBill(req){
     return `<tr>
     <td style="text-align:center;width:1.6rem">□</td>
     <td class="num">${i+1}</td>
-    <td><code>${esc(ln.bcode)}</code></td>
+    <td>${bcodeWithThumb(ln)}</td>
     <td>${esc(ln.descr)}${ln.brand?`<div class="meta">ยี่ห้อ ${esc(ln.brand)}</div>`:""}${(ln.pcode||ln.mcode)?`<div class="meta">${[ln.pcode?`เบอร์แท้ ${esc(ln.pcode)}`:"",ln.mcode?`เบอร์โรงงาน ${esc(ln.mcode)}`:""].filter(Boolean).join(" · ")}</div>`:""}${ln.model?`<div class="meta">รุ่น ${esc(ln.model)}</div>`:""}</td>
     <td>${esc(shipLoc(ln))}</td>
     <td class="num">${shipStock(ln)}</td>
@@ -1344,6 +1359,7 @@ async function openRequestDetail(transferId){
   const stickerLines = lines.filter(ln=>Number(ln.qty_received||0)>0).map(ln=>({
     bcode: ln.bcode,
     descr: ln.descr || "",
+    photo: ln.photo || "",
     qty: Number(ln.qty_received||0),
   }));
   const stickerIndex = Object.fromEntries(stickerLines.map((ln,i)=>[ln.bcode, i]));
@@ -1352,7 +1368,7 @@ async function openRequestDetail(transferId){
     const pick = si!=null ? `<input type="checkbox" class="pick-check stk-pick" data-i="${si}" title="พิมพ์บาร์โค้ด"/>` : "";
     return `<tr>
     <td>${pick}</td>
-    <td><code>${escText(ln.bcode)}</code>${aiBadgeHtml(ln)}</td>
+    <td>${bcodeWithThumb(ln, aiBadgeHtml(ln))}</td>
     <td>${fmtDescr(ln)}${aiMetaHtml(ln)}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
     <td class="num">${fmtQty(ln.qty_prepared)}</td>
@@ -1379,7 +1395,8 @@ async function openRequestDetail(transferId){
         : (recvBill ? `<code>${escText(recvBill)}</code>` : "");
       const slines = (ship.lines||[]).map(sl=>{
         const open = Math.max(Number(sl.qty_shipped||0)-Number(sl.qty_received||0),0);
-        return `<tr><td><code>${sl.bcode||""}</code></td><td class="num">${fmtQty(sl.qty_shipped)}</td><td class="num">${fmtQty(sl.qty_received)}</td><td class="num">${fmtQty(open)}</td></tr>`;
+        const meta = lines.find(ln=>String(ln.line_id||"")===String(sl.line_id||"")) || sl;
+        return `<tr><td>${bcodeWithThumb({bcode:sl.bcode, photo:meta.photo||sl.photo||""})}</td><td class="num">${fmtQty(sl.qty_shipped)}</td><td class="num">${fmtQty(sl.qty_received)}</td><td class="num">${fmtQty(open)}</td></tr>`;
       }).join("");
       const canEditPhotos = canEditShipmentPhotos(fromB, toB);
       return `<div style="margin-top:.65rem" data-ship-block="${escText(ship.shipment_id||"")}">
@@ -1396,7 +1413,9 @@ async function openRequestDetail(transferId){
   const recvAp = apCounterpartyLabel(toB, fromB);
   const lineCards = lines.map(ln=>{
     const si = stickerIndex[ln.bcode];
-    const pick = si!=null ? `<label style="display:flex;align-items:center;gap:.35rem"><input type="checkbox" class="pick-check stk-pick" data-i="${si}"/><code>${escText(ln.bcode)}</code></label>` : `<code>${escText(ln.bcode)}</code>${aiBadgeHtml(ln)}`;
+    const pick = si!=null
+      ? `<label style="display:flex;align-items:center;gap:.35rem">${thumbHtml(ln)}<input type="checkbox" class="pick-check stk-pick" data-i="${si}"/><code>${escText(ln.bcode)}</code></label>`
+      : bcodeWithThumb(ln, aiBadgeHtml(ln));
     return `<div class="item-card">
     <div class="item-card-head">${pick}${lineStatusLabel(ln)}</div>
     <div class="item-card-desc">${fmtDescr(ln)}${aiMetaHtml(ln)}</div>
@@ -1797,7 +1816,7 @@ async function renderRequest(el, opts){
         const aiCol = (aiEnabled && !onAiTab) ? `<td class="num">${aiQtyCell(r)}</td>` : "";
         const suggestCell = onAiTab ? `${fmtStockDual(r.suggest_qty,r)}${aiMetaHtml(r)}` : fmtStockDual(r.suggest_qty,r);
         return `<tr class="${rowClass}"><td><input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""} ${inCart?"title=\"มีในคำขอแล้ว — ติ๊กแล้วเพิ่มซ้ำได้\"":""}/></td>
-          <td><code>${escText(r.bcode)}</code>${inCart?` <span class="meta">ในคำขอ</span>`:""}</td><td class="meta"${srcTitle}>${src}${aiBadgeHtml(r)}</td><td>${fmtDescr(r)}</td>
+          <td>${bcodeWithThumb(r, inCart?` <span class="meta">ในคำขอ</span>`:"")}</td><td class="meta"${srcTitle}>${src}${aiBadgeHtml(r)}</td><td>${fmtDescr(r)}</td>
           <td class="num">${fmtHqStock(r)}</td><td class="num">${fmtStockDual(r.syp_qtyoh2,r)}</td>
           <td class="num">${suggestCell}</td>${aiCol}
           <td><select class="unit-select" data-unit="${idx}">${unitOpts}</select></td>
@@ -1815,7 +1834,7 @@ async function renderRequest(el, opts){
           <div class="item-card-head">
             <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer">
               <input type="checkbox" class="pick-check" data-pick="${idx}" ${pick.checked?"checked":""}/>
-              <code>${escText(r.bcode)}</code>${aiBadgeHtml(r)}
+              ${bcodeWithThumb(r, aiBadgeHtml(r))}
             </label>
             <span class="meta">${src}${inCart?" · ในคำขอ":""}</span>
           </div>
@@ -1846,10 +1865,10 @@ async function renderRequest(el, opts){
     html += `<div class="card card-table"><strong>รายการในคำขอ (${cartItems.length})</strong>`;
     if(!cartItems.length) html += `<div class="empty">ยังไม่มีรายการ — ติ๊กจากรายการแนะนำแล้วกดถัดไป</div>`;
     else {
-      const cartTableRows = cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}</td><td>${fmtDescr(n)}${aiMetaHtml(n)}</td><td class="num">${fmtQty(n.qty)}</td>
+      const cartTableRows = cartItems.map(n=>`<tr><td>${bcodeWithThumb(n, aiBadgeHtml(n))}</td><td>${fmtDescr(n)}${aiMetaHtml(n)}</td><td class="num">${fmtQty(n.qty)}</td>
         <td><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></td></tr>`).join("");
       const cartCardRows = cartItems.map(n=>`<div class="item-card">
-        <div class="item-card-head"><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}<span class="num">${fmtQty(n.qty)}</span></div>
+        <div class="item-card-head">${bcodeWithThumb(n, aiBadgeHtml(n))}<span class="num">${fmtQty(n.qty)}</span></div>
         <div class="item-card-desc">${fmtDescr(n)}${aiMetaHtml(n)}</div>
         <div class="item-card-actions"><button class="btn btn-ghost" data-del="${n.need_id}">ลบ</button></div>
       </div>`).join("");
@@ -2160,7 +2179,7 @@ async function renderRequest(el, opts){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b),{quiet:true});
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<strong>${escText(p.descr||"—")}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}`;
+        manualPreviewEl.innerHTML = `<div class="prod-with-thumb" style="align-items:flex-start">${thumbHtml(p)}<span><strong>${escText(p.descr||"—")}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}</span></div>`;
         setManualAddEnabled(true);
       }catch(e){
         manualPreviewEl.style.display = "block";
@@ -2207,10 +2226,10 @@ async function renderRequest(el, opts){
         ${submitBillNoteHtml(OTHER, SITE)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
-            ${cartItems.map(n=>`<tr><td><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}</td><td>${fmtDescr(n)}${aiMetaHtml(n)}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
+            ${cartItems.map(n=>`<tr><td>${bcodeWithThumb(n, aiBadgeHtml(n))}</td><td>${fmtDescr(n)}${aiMetaHtml(n)}</td><td class="num">${fmtQty(n.qty)}</td></tr>`).join("")}
           </tbody></table></div>`,
           itemCards(cartItems.map(n=>`<div class="item-card">
-            <div class="item-card-head"><code>${escText(n.bcode)}</code>${aiBadgeHtml(n)}<span class="num">${fmtQty(n.qty)}</span></div>
+            <div class="item-card-head">${bcodeWithThumb(n, aiBadgeHtml(n))}<span class="num">${fmtQty(n.qty)}</span></div>
             <div class="item-card-desc">${fmtDescr(n)}${aiMetaHtml(n)}</div>
           </div>`).join(""))
         )}
@@ -2338,10 +2357,11 @@ async function deleteShipmentPhoto(shipmentId, photoId){
     return j;
   } finally { setBusy(false); }
 }
-function openEvidence(url){
+function openEvidence(url, alt){
   const box = document.getElementById("evidenceView");
   const img = document.getElementById("evidenceImg");
   if(!box || !img || !url) return;
+  img.alt = alt || "รูปสินค้า";
   img.src = url;
   box.hidden = false;
 }
@@ -2355,6 +2375,13 @@ document.getElementById("evidenceClose").onclick = closeEvidence;
 document.getElementById("evidenceView").onclick = (e)=>{
   if(e.target.id === "evidenceView" || e.target.closest("#evidenceClose")) closeEvidence();
 };
+document.addEventListener("click", (e)=>{
+  const shot = e.target.closest("[data-product-photo]");
+  if(!shot) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openEvidence(shot.getAttribute("data-product-photo")||"", "รูปสินค้า");
+});
 function bindPreparePhotos(el, req){
   const input = el.querySelector("#prepPhotoInput");
   const preview = el.querySelector("#prepPhotoPreview");
@@ -2546,7 +2573,7 @@ async function renderReceive(el){
     const rows = openLines.map(ln=>{
       const remain = Number(ln.qty_open||0);
       const ft = escapeAttr(lineFilterText(ln));
-      return `<tr class="recv-line" data-filter-text="${ft}"><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td>
+      return `<tr class="recv-line" data-filter-text="${ft}"><td>${bcodeWithThumb(ln)}</td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td>
         <td class="num"><input class="qty-input recv-qty" type="number" min="0" max="${remain}" step="1" value="${remain}"
           data-shipment-line="${ln.shipment_line_id}"/></td></tr>`;
     }).join("");
@@ -2554,7 +2581,7 @@ async function renderReceive(el){
       const remain = Number(ln.qty_open||0);
       const ft = escapeAttr(lineFilterText(ln));
       return `<div class="item-card recv-line" data-filter-text="${ft}">
-        <div class="item-card-head"><code>${ln.bcode}</code></div>
+        <div class="item-card-head">${bcodeWithThumb(ln)}</div>
         <div class="item-card-desc">${fmtDescr(ln)}</div>
         <div class="item-card-grid">
           <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_shipped)}</span></div>
@@ -2612,10 +2639,10 @@ async function renderReceive(el){
   if(receiveStep === 3){
     const qtyMap = ship._qtyDraft||{};
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.shipment_line_id])}</strong></td></tr>
+      <tr><td>${bcodeWithThumb(ln)}</td><td>${fmtDescr(ln)}</td><td class="num">${fmtQty(ln.qty_shipped)}</td><td class="num">${fmtQty(ln.qty_received)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.shipment_line_id])}</strong></td></tr>
     `).join("");
     const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0).map(ln=>`<div class="item-card">
-      <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.shipment_line_id])}</strong></div>
+      <div class="item-card-head">${bcodeWithThumb(ln)}<strong class="num">${fmtQty(qtyMap[ln.shipment_line_id])}</strong></div>
       <div class="item-card-desc">${fmtDescr(ln)}</div>
       <div class="item-card-grid">
         <div class="item-field num"><span class="lbl">จัด</span><span class="val">${fmtQty(ln.qty_shipped)}</span></div>
@@ -2660,9 +2687,9 @@ async function renderReceive(el){
         const bill = result.receive_billno || "";
         const printLines = (result.lines && result.lines.length ? result.lines : openLines
           .filter(ln=>Number(qtyMap[ln.shipment_line_id]||0)>0)
-          .map(ln=>({bcode:ln.bcode, descr:ln.descr||"", qty:Number(qtyMap[ln.shipment_line_id]||0)}))
+          .map(ln=>({bcode:ln.bcode, descr:ln.descr||"", photo:ln.photo||"", qty:Number(qtyMap[ln.shipment_line_id]||0)}))
         ).filter(ln=>ln.bcode && Number(ln.qty||ln.qty_receive||0)>0)
-         .map(ln=>({bcode:ln.bcode, descr:ln.descr||"", qty:Number(ln.qty||ln.qty_receive||0)}));
+         .map(ln=>({bcode:ln.bcode, descr:ln.descr||"", photo:ln.photo||"", qty:Number(ln.qty||ln.qty_receive||0)}));
         showToast(bill ? ("รับสินค้าแล้ว — ออกใบ "+bill) : "รับสินค้าแล้ว");
         receiveShipment = null;
         if(wantPrint && printLines.length){
@@ -2747,7 +2774,7 @@ async function renderPrepare(el){
       const remain = Number(ln.qty_requested||0)-Number(ln.qty_prepared||0);
       const qtyVal = qtyDraft[ln.line_id] != null ? qtyDraft[ln.line_id] : remain;
       const shipAsVal = shipAsDraft[ln.line_id] || "";
-      return `<tr><td><code>${ln.bcode}</code></td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
+      return `<tr><td>${bcodeWithThumb(ln)}</td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td>
         <td class="num"><input class="qty-input prep-qty" type="number" min="0" max="${remain}" step="1" value="${escapeAttr(String(qtyVal))}"
           data-line="${ln.line_id}"/></td>
         <td><input class="text-input prep-ship-as" type="text" inputmode="numeric" autocomplete="off"
@@ -2758,7 +2785,7 @@ async function renderPrepare(el){
       const qtyVal = qtyDraft[ln.line_id] != null ? qtyDraft[ln.line_id] : remain;
       const shipAsVal = shipAsDraft[ln.line_id] || "";
       return `<div class="item-card">
-        <div class="item-card-head"><code>${ln.bcode}</code></div>
+        <div class="item-card-head">${bcodeWithThumb(ln)}</div>
         <div class="item-card-desc">${fmtDescr(ln)}</div>
         <div class="item-card-grid">
           <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>
@@ -2810,10 +2837,10 @@ async function renderPrepare(el){
     const shipBranch = (req.from_branch||SITE).toUpperCase();
     const shipBranchLabel = branchLabel(shipBranch);
     const confirmRows = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`
-      <tr><td><code>${ln.bcode}</code>${fmtShipAsConfirm(ln.line_id, shipAsMap)}</td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
+      <tr><td>${bcodeWithThumb(ln)}${fmtShipAsConfirm(ln.line_id, shipAsMap)}</td><td>${fmtDescr(ln)}</td><td class="num">${fmtBranchStock(ln, shipBranch)}</td><td class="num">${fmtQty(ln.qty_requested)}</td><td class="num">${fmtQty(ln.qty_prepared)}</td><td class="num"><strong>${fmtQty(qtyMap[ln.line_id])}</strong></td></tr>
     `).join("");
     const confirmCards = openLines.filter(ln=>Number(qtyMap[ln.line_id]||0)>0).map(ln=>`<div class="item-card">
-      <div class="item-card-head"><code>${ln.bcode}</code><strong class="num">${fmtQty(qtyMap[ln.line_id])}</strong></div>
+      <div class="item-card-head">${bcodeWithThumb(ln)}<strong class="num">${fmtQty(qtyMap[ln.line_id])}</strong></div>
       <div class="item-card-desc">${fmtDescr(ln)}${fmtShipAsConfirm(ln.line_id, shipAsMap)}</div>
       <div class="item-card-grid">
         <div class="item-field num"><span class="lbl">คงเหลือ ${shipBranchLabel}</span><span class="val">${fmtBranchStock(ln, shipBranch)}</span></div>

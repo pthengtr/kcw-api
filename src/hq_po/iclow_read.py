@@ -147,16 +147,12 @@ def fetch_incoming_qty() -> dict[str, float]:
 
 def thumb_url(bcode: str) -> str:
     """First public product photo. An empty string means the line has no picture."""
-    code = str(bcode or "").strip()
-    if not code:
-        return ""
     try:
-        from src.parts9_explorer.search import product_image_urls
+        from src.parts9_explorer.search import product_thumb_url
 
-        urls = product_image_urls(code)
+        return product_thumb_url(bcode)
     except Exception:
         return ""
-    return urls[0] if urls else ""
 
 
 def fetch_incoming_lines() -> list[dict[str, Any]]:

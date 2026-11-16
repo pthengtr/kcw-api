@@ -80,6 +80,7 @@ from src.transfer.parts9 import (
     enrich_transfer_lines,
     fetch_local_icmas_meta,
     fetch_sticker_catalog,
+    attach_product_photos,
     lookup_transfer_product,
     missing_icmas_bcodes,
     suggest_transfer_skus,
@@ -480,7 +481,7 @@ def api_need_list(request: Request, enrich: str = "none"):
     rows = list_need(get_transfer_supabase_client())
     mode = (enrich or "none").strip().lower()
     if mode in ("0", "false", "no", "none"):
-        return {"items": rows}
+        return {"items": attach_product_photos(rows)}
     # Stock/descr only — cart UI does not need substitute discovery.
     return {"items": enrich_transfer_lines(rows, include_suggestions=False)}
 

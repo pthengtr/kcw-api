@@ -18,7 +18,12 @@ from src.parts9_explorer.query import (
     parse_query,
     size_labels,
 )
-from src.parts9_explorer.search import _DOC_SPECS, _pack_doc, product_image_urls
+from src.parts9_explorer.search import (
+    _DOC_SPECS,
+    _pack_doc,
+    product_image_urls,
+    product_thumb_url,
+)
 from src.parts9_explorer.config import get_explorer_settings
 from src.parts9_explorer.ui import page
 
@@ -213,6 +218,8 @@ def test_product_image_urls(monkeypatch):
     get_explorer_settings.cache_clear()
     urls = product_image_urls("ABC")
     assert urls[0].endswith("/pictures/product/ABC/ABC.jpg")
+    assert product_thumb_url("ABC") == urls[0]
+    assert product_thumb_url("") == ""
     get_explorer_settings.cache_clear()
 
 

@@ -62,7 +62,8 @@ Operators type `เช็คสต็อก`, `เช็กสตอก`, `เ�
 
 Everyday **Take N** batch uses weighted ABC + risk pools (see below).
 
-1. Take N → leased pick list with LOCATION1/2 + pool badge → open product → count  
+1. Take N → leased pick list with LOCATION1/2 + pool badge + catalog product photo (tap to enlarge) → open product → count  
+
 2. Variance 0 → auto complete + audit mirror  
 3. Variance ≠ 0 → pending draft → **another operator** audits and posts SA/3SA (maker-checker: creator cannot approve own draft; owner can edit pending count)  
 4. Auditor **ปฏิเสธ** must enter a reason. The same draft returns to the original checker as **รอตรวจสอบใหม่** (`recheck`). They open the original item, recount, then **ส่งอนุมัติใหม่**. History stores who rejected, the reason, and when (`draft_rejections`). Owner **ยกเลิก** still withdraws the draft.  

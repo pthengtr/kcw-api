@@ -77,10 +77,11 @@ def test_lookup_transfer_product_merges_hq_and_syp():
     def fake_engine(site):
         return hq_engine if site == "hq" else syp_engine
 
-    with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
-        with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
-            with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_meta):
-                product = lookup_transfer_product(bcode="02050663")
+    with patch("src.transfer.parts9.product_thumb_url", return_value="https://example/02050663.jpg"):
+        with patch("src.transfer.parts9.site_sql_hosts_collide", return_value=False):
+            with patch("src.transfer.parts9.get_site_engine", side_effect=fake_engine):
+                with patch("src.transfer.parts9._fetch_icmas_meta", side_effect=fake_meta):
+                    product = lookup_transfer_product(bcode="02050663")
 
     assert product is not None
     assert product["descr"] == "สะดือแหนบหน้า"
@@ -94,6 +95,7 @@ def test_lookup_transfer_product_merges_hq_and_syp():
     assert product["hq_qtymin"] == 2.0
     assert product["location_hq"] == "13P-4-13 / B"
     assert product["location_syp"] == "T0-4-4"
+    assert product["photo"] == "https://example/02050663.jpg"
 
 
 def test_enrich_transfer_lines_includes_shipper_location():

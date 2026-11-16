@@ -46,6 +46,21 @@ def _pool_info_json() -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _thumb_html(item: dict[str, Any], *, size: str = "sm") -> str:
+    """Catalog product thumb; click opens lightbox. Missing/broken images hide themselves."""
+    url = str(item.get("photo") or "").strip()
+    if not url:
+        return ""
+    label = str(item.get("bcode") or "").strip()
+    cls = "prod-thumb prod-thumb--lg" if size == "lg" else "prod-thumb"
+    return (
+        f'<button type="button" class="prod-thumb-btn" data-photo="{escape(url)}" '
+        f'aria-label="ดูรูปสินค้า{(" " + escape(label)) if label else ""}">'
+        f'<img class="{cls}" alt="" loading="lazy" src="{escape(url)}" '
+        f'onerror="this.closest(\'button\').remove()"/></button>'
+    )
+
+
 def _pool_badge_html(item: dict[str, Any]) -> str:
     raw = item.get("pick_priority")
     if raw is None:
@@ -245,6 +260,38 @@ def page(
     .qty-label {{
       margin-top: 4px; font-size: .75rem; font-weight: 500;
       color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+    }}
+    .prod-thumb-btn {{
+      padding: 0; border: 0; background: transparent; border-radius: 10px;
+      flex: none; cursor: zoom-in; line-height: 0;
+    }}
+    .prod-thumb {{
+      width: 52px; height: 52px; object-fit: cover; border-radius: 10px;
+      background: #e2e8f0; display: block;
+    }}
+    .prod-thumb--lg {{
+      width: 96px; height: 96px; border-radius: 14px;
+    }}
+    .prod-head {{
+      display: flex; align-items: flex-start; gap: 12px; margin-top: 10px;
+    }}
+    .prod-head .prod-meta {{ min-width: 0; flex: 1; }}
+    #photo-overlay {{
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(15, 23, 42, .78);
+      display: flex; align-items: center; justify-content: center;
+      padding: 48px 16px 16px;
+    }}
+    #photo-overlay[hidden] {{ display: none; }}
+    #photo-overlay img {{
+      max-width: min(960px, 100%); max-height: calc(100vh - 88px);
+      object-fit: contain; border-radius: 12px; background: #fff;
+    }}
+    #photo-close {{
+      position: absolute; top: 12px; right: 12px; min-height: 40px;
+      width: auto; border: 0; border-radius: 10px; background: #fff;
+      color: var(--accent); font-weight: 700; padding: 8px 14px;
+      box-shadow: none;
     }}
     button, .btn, input[type=submit] {{
       appearance: none; border: 0; border-radius: 14px;
@@ -503,6 +550,10 @@ def page(
       <div class="busy-text">กำลังดำเนินการ…</div>
     </div>
   </div>
+  <div id="photo-overlay" hidden>
+    <button type="button" id="photo-close">ปิด</button>
+    <img id="photo-img" alt="รูปสินค้า"/>
+  </div>
   <dialog id="pool-dialog">
     <div class="dlg">
       <h2 id="pool-dialog-title">กลุ่มงาน Take N</h2>
@@ -570,9 +621,33 @@ def page(
       if (typeof dlg.showModal === "function") dlg.showModal();
       else dlg.setAttribute("open", "open");
     }}
+    var photoOverlay = document.getElementById("photo-overlay");
+    var photoImg = document.getElementById("photo-img");
+    function openPhoto(url) {{
+      if (!photoOverlay || !photoImg || !url) return;
+      photoImg.alt = "รูปสินค้า";
+      photoImg.src = url;
+      photoOverlay.hidden = false;
+    }}
+    function closePhoto() {{
+      if (!photoOverlay || photoOverlay.hidden) return;
+      photoOverlay.hidden = true;
+      if (photoImg) photoImg.removeAttribute("src");
+    }}
     document.addEventListener("click", function (ev) {{
       var t = ev.target;
       if (!t) return;
+      var shot = t.closest ? t.closest("[data-photo]") : null;
+      if (shot) {{
+        ev.preventDefault();
+        ev.stopPropagation();
+        openPhoto(shot.getAttribute("data-photo") || "");
+        return;
+      }}
+      if (t.id === "photo-overlay" || t.id === "photo-close" || (t.closest && t.closest("#photo-close"))) {{
+        closePhoto();
+        return;
+      }}
       var badge = t.closest ? t.closest("[data-pool]") : null;
       if (badge) {{
         ev.preventDefault();
@@ -686,6 +761,7 @@ def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> st
             f"<div class='muted' style='margin-top:6px;font-size:0.78rem'>"
             f"ABC {escape(str(abc))}{escape(str(days_bit))}</div>"
         )
+    thumb = _thumb_html(item)
     return f"""
     <div class="item-wrap">
       {top}
@@ -694,7 +770,8 @@ def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> st
           <div class="loc">{escape(loc)}</div>
         </div>
         <div class="row" style="margin-top:10px">
-          <div style="min-width:0">
+          {thumb}
+          <div style="min-width:0;flex:1">
             <div class="bcode">{escape(item['bcode'])}</div>
             <div class="descr">{escape(item.get('descr') or '')}</div>
             {_product_model_html(item)}
@@ -761,8 +838,13 @@ def home_page(
                   <div class="row">
                     <span class="pill warn">รอตรวจสอบใหม่</span>
                   </div>
-                  <div class="bcode" style="margin-top:8px">{escape(draft['bcode'])}</div>
-                  <div class="descr">{escape(draft.get('descr') or '')}</div>
+                  <div class="prod-head">
+                    {_thumb_html(draft)}
+                    <div class="prod-meta">
+                      <div class="bcode">{escape(draft['bcode'])}</div>
+                      <div class="descr">{escape(draft.get('descr') or '')}</div>
+                    </div>
+                  </div>
                   <div class="muted" style="margin-top:8px">{escape(reason)}</div>
                   <div class="meta-row">
                     <span>{escape(latest.get('rejected_by_name') or '')} · {_fmt_ts(latest.get('rejected_at'))}</span>
@@ -829,9 +911,14 @@ def product_page(
       {badge_row}
       {block_banner}
       <div class="loc">{escape(loc)}</div>
-      <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(item['bcode'])}</div>
-      <div class="descr" style="-webkit-line-clamp:4">{escape(item.get('descr') or '')}</div>
-      {_product_model_html(item)}
+      <div class="prod-head">
+        {_thumb_html(item, size="lg")}
+        <div class="prod-meta">
+          <div class="bcode" style="font-size:1.25rem">{escape(item['bcode'])}</div>
+          <div class="descr" style="-webkit-line-clamp:4">{escape(item.get('descr') or '')}</div>
+          {_product_model_html(item)}
+        </div>
+      </div>
       <div class="stats">
         <div class="stat"><b>{qty_disp}</b><span>ระบบ</span></div>
         <div class="stat"><b>{_fmt_ts(item.get('last_audited_at'))}</b><span>ตรวจล่าสุด</span></div>
@@ -1108,9 +1195,14 @@ def approve_page(
             f"""
             <div class="{card_class}">
               <div class="loc">{escape(loc)}</div>
-              <div class="bcode" style="margin-top:8px">{escape(d['bcode'])}</div>
-              <div class="descr">{escape(d.get('descr') or '')}</div>
-              {_product_model_html(d)}
+              <div class="prod-head">
+                {_thumb_html(d)}
+                <div class="prod-meta">
+                  <div class="bcode">{escape(d['bcode'])}</div>
+                  <div class="descr">{escape(d.get('descr') or '')}</div>
+                  {_product_model_html(d)}
+                </div>
+              </div>
               <div class="stats">
                 <div class="stat"><b>{_fmt_qty(d['system_qty'])}</b><span>ระบบ</span></div>
                 <div class="stat"><b>{_fmt_qty(d['counted_qty'])}</b><span>นับได้</span></div>
@@ -1151,9 +1243,14 @@ def reject_page(
     body = f"""
     <div class="card">
       <div class="loc">{escape(loc)}</div>
-      <div class="bcode" style="margin-top:8px">{escape(draft['bcode'])}</div>
-      <div class="descr">{escape(draft.get('descr') or '')}</div>
-      {_product_model_html(draft)}
+      <div class="prod-head">
+        {_thumb_html(draft)}
+        <div class="prod-meta">
+          <div class="bcode">{escape(draft['bcode'])}</div>
+          <div class="descr">{escape(draft.get('descr') or '')}</div>
+          {_product_model_html(draft)}
+        </div>
+      </div>
       <div class="stats">
         <div class="stat"><b>{_fmt_qty(draft['system_qty'])}</b><span>ระบบ</span></div>
         <div class="stat"><b>{_fmt_qty(draft['counted_qty'])}</b><span>นับได้</span></div>
@@ -1203,9 +1300,14 @@ def recheck_page(
     <div class="card soft">
       <span class="pill warn">รอตรวจสอบใหม่</span>
       <div class="loc" style="margin-top:10px">{escape(loc)}</div>
-      <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(product['bcode'])}</div>
-      <div class="descr" style="-webkit-line-clamp:4">{escape(product.get('descr') or '')}</div>
-      {_product_model_html(product)}
+      <div class="prod-head">
+        {_thumb_html(product, size="lg")}
+        <div class="prod-meta">
+          <div class="bcode" style="font-size:1.25rem">{escape(product['bcode'])}</div>
+          <div class="descr" style="-webkit-line-clamp:4">{escape(product.get('descr') or '')}</div>
+          {_product_model_html(product)}
+        </div>
+      </div>
       <div class="stats">
         <div class="stat"><b>{qty_disp}</b><span>ระบบตอนนี้</span></div>
         <div class="stat"><b>{counted_disp}</b><span>นับรอบก่อน</span></div>
@@ -1261,9 +1363,14 @@ def draft_edit_page(
     body = f"""
     <div class="card soft">
       <div class="loc">{escape(loc)}</div>
-      <div class="bcode" style="margin-top:10px;font-size:1.25rem">{escape(product['bcode'])}</div>
-      <div class="descr" style="-webkit-line-clamp:4">{escape(product.get('descr') or '')}</div>
-      {_product_model_html(product)}
+      <div class="prod-head">
+        {_thumb_html(product, size="lg")}
+        <div class="prod-meta">
+          <div class="bcode" style="font-size:1.25rem">{escape(product['bcode'])}</div>
+          <div class="descr" style="-webkit-line-clamp:4">{escape(product.get('descr') or '')}</div>
+          {_product_model_html(product)}
+        </div>
+      </div>
       <div class="stats">
         <div class="stat"><b>{qty_disp}</b><span>ระบบตอนนี้</span></div>
         <div class="stat"><b>{counted_disp}</b><span>นับเดิม</span></div>
