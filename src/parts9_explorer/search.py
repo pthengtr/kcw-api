@@ -28,6 +28,10 @@ _PV_HEADER_COLS = (
     "JOURTYPE, VOUCED, VOUCDATE, VOUCNO, NOTED, NOTEDATE, NOTENO, RCPTNO, "
     "ACCTNO, ACCTNAME, BILLCNT, BILLAMT, CHKAMT, CASHAMT, NETAMT, PAYAMT, PAID, CANCELED"
 )
+_RV_HEADER_COLS = (
+    "VOUCNO, VOUCDATE, ACCTNO, ACCTNAME, BILLAMT, CHKAMT, CASHAMT, NETAMT, "
+    "PAYAMT, PAID, RCPTNO, CANCELED"
+)
 
 PRODUCT_COLS = """
   LTRIM(RTRIM(BCODE)) AS BCODE,
@@ -535,15 +539,18 @@ _DOC_SPECS: dict[str, dict[str, str]] = {
         "no": "VOUCNO",
     },
     "rv": {
+        # Read-uncommitted (NOLOCK): KACC often leaves open RVMAS transactions
+        # after voucher form errors; committed reads then time out in explorer.
+        # VOUCNO-only here — RCPTNO is a separate NOLOCK fallback in _fetch_rv_headers
+        # (OR RCPTNO forces a table scan even worse under locks).
         "header": (
-            "SELECT TOP 12 VOUCNO, VOUCDATE, ACCTNO, ACCTNAME, BILLAMT, CHKAMT, CASHAMT, NETAMT, "
-            "PAYAMT, PAID, RCPTNO, CANCELED FROM dbo.RVMAS WHERE LTRIM(RTRIM(VOUCNO)) = :q "
-            "OR LTRIM(RTRIM(VOUCNO)) LIKE :pre OR LTRIM(RTRIM(COALESCE(RCPTNO,''))) = :q "
-            "ORDER BY CASE WHEN LTRIM(RTRIM(VOUCNO)) = :q THEN 0 ELSE 1 END, VOUCDATE DESC"
+            f"SELECT TOP 12 {_RV_HEADER_COLS} FROM dbo.RVMAS WITH (NOLOCK) "
+            "WHERE VOUCNO = :q OR VOUCNO LIKE :pre "
+            "ORDER BY CASE WHEN VOUCNO = :qexact THEN 0 ELSE 1 END, VOUCDATE DESC"
         ),
         "lines": (
             "SELECT TOP 80 VOUCDATE, VOUCNO, ACCTNO, CARDNAME, CHKNO, CHKDATE, CHKAMT, BANKNAME, PAYTYPE, STATUS "
-            "FROM dbo.BRDET WHERE LTRIM(RTRIM(VOUCNO)) = :q ORDER BY CHKDATE"
+            "FROM dbo.BRDET WITH (NOLOCK) WHERE VOUCNO = :q ORDER BY CHKDATE"
         ),
         "no": "VOUCNO",
     },
@@ -630,11 +637,35 @@ def _pi_lines(conn, billno: str) -> list[dict[str, str]]:
         return []
 
 
+def _fetch_rv_headers(conn, value: str) -> list:
+    """Load RVMAS headers without blocking on locked rows.
+
+    VOUCNO can use IDX_RVMAS_JOURTYPE. RCPTNO is unindexed — a locked KACC
+    edit makes ``WHERE RCPTNO=…`` wait forever, so that path uses NOLOCK.
+    """
+    q = (value or "").strip()
+    if not q:
+        return []
+    params = {"q": q, "pre": q + "%", "qexact": q}
+    rows = list(conn.execute(text(_DOC_SPECS["rv"]["header"]), params).mappings().all())
+    if rows:
+        return rows
+    sql_rcpt = text(
+        f"SELECT TOP 12 {_RV_HEADER_COLS} FROM dbo.RVMAS WITH (NOLOCK) "
+        "WHERE RCPTNO = :q "
+        "ORDER BY VOUCDATE DESC"
+    )
+    return list(conn.execute(sql_rcpt, {"q": q}).mappings().all())
+
+
 def _fetch_kind(engine, kind: str, value: str, site: str) -> list[dict[str, Any]]:
     spec = _DOC_SPECS[kind]
     params = {"q": value, "pre": value + "%"}
     with engine.connect() as conn:
-        headers = conn.execute(text(spec["header"]), params).mappings().all()
+        if kind == "rv":
+            headers = _fetch_rv_headers(conn, value)
+        else:
+            headers = conn.execute(text(spec["header"]), params).mappings().all()
         if not headers:
             return []
         out = []

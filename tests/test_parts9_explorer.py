@@ -230,6 +230,15 @@ def test_pv_sql_matches_note_and_voucher():
     assert "NOTENO" in _DOC_SPECS["pi"]["header"]
 
 
+def test_rv_sql_avoids_rcptno_in_primary_scan():
+    """RCPTNO OR on RVMAS table-scans and blocks under KACC locks."""
+    sql = _DOC_SPECS["rv"]["header"]
+    assert "VOUCNO" in sql
+    assert "WITH (NOLOCK)" in sql
+    assert "RCPTNO" not in sql.split("WHERE", 1)[-1]
+    assert "WITH (NOLOCK)" in _DOC_SPECS["rv"]["lines"]
+
+
 def test_explorer_page_has_theme_toggle():
     html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
     assert 'id="themeBtn"' in html
