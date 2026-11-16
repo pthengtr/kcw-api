@@ -165,6 +165,12 @@ def product_image_urls(bcode: str) -> list[str]:
     return [f"{root}/storage/v1/object/public/{bucket}/{folder}/{code}/{name}" for name in names]
 
 
+def product_thumb_url(bcode: str) -> str:
+    """First public product photo URL. Empty string when bcode/settings are missing."""
+    urls = product_image_urls(bcode)
+    return urls[0] if urls else ""
+
+
 def _format_location(loc1: Any, loc2: Any) -> str:
     parts = [str(v or "").strip() for v in (loc1, loc2)]
     return " / ".join(p for p in parts if p)

@@ -936,13 +936,19 @@ def test_product_card_and_info_show_model():
         "location2": "",
         "qtyoh2": 4,
         "last_audited_at": None,
+        "photo": "https://example/p1.jpg",
     }
     card = _product_card_html(item, href="/stock-check/product/P1")
     assert "รุ่น 1LT" in card
+    assert 'data-photo="https://example/p1.jpg"' in card
+    assert "prod-thumb" in card
     info = product_page(user={"display_name": "T", "line_user_id": "U1"}, item=item)
     assert "รุ่น 1LT" in info
-    blank = _product_card_html({**item, "model": ""}, href="/x")
+    assert 'id="photo-overlay"' in info
+    assert 'data-photo="https://example/p1.jpg"' in info
+    blank = _product_card_html({**item, "model": "", "photo": ""}, href="/x")
     assert "รุ่น" not in blank
+    assert "data-photo" not in blank
 
 
 def test_qty_display_is_fixed_point_not_scientific():

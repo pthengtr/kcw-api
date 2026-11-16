@@ -217,6 +217,13 @@ class StockCheckService:
             data["last_audited_at"] = None
             data["last_audited_by"] = None
             data["last_outcome"] = None
+        if not data.get("photo"):
+            try:
+                from src.parts9_explorer.search import product_thumb_url
+
+                data["photo"] = product_thumb_url(data.get("bcode") or "")
+            except Exception:
+                data["photo"] = ""
         return data
 
     def attach_rejections(self, drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -233,10 +240,17 @@ class StockCheckService:
         if not codes:
             return drafts
         by_code = {p.bcode: p for p in get_products_by_bcodes(codes)}
+        try:
+            from src.parts9_explorer.search import product_thumb_url
+        except Exception:
+            product_thumb_url = None  # type: ignore[assignment]
         for draft in drafts:
-            product = by_code.get(str(draft.get("bcode") or "").strip())
+            code = str(draft.get("bcode") or "").strip()
+            product = by_code.get(code)
             if product and product.model:
                 draft["model"] = product.model
+            if code and not draft.get("photo") and product_thumb_url:
+                draft["photo"] = product_thumb_url(code)
         return drafts
 
     def product_detail(self, bcode: str, *, session_id: str | None = None) -> dict[str, Any] | None:

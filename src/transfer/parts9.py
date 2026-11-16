@@ -36,6 +36,29 @@ def _format_location(loc1: Any, loc2: Any) -> str:
     return " / ".join(p for p in parts if p)
 
 
+def product_thumb_url(bcode: str) -> str:
+    """First public catalog photo for a BCODE (URL only — missing files stay blank in UI)."""
+    try:
+        from src.parts9_explorer.search import product_thumb_url as _thumb
+
+        return _thumb(bcode)
+    except Exception:
+        return ""
+
+
+def attach_product_photos(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Set ``photo`` on each row from the public product image URL (cheap, no I/O)."""
+    for item in items:
+        if item.get("photo"):
+            continue
+        code = str(item.get("bcode") or "").strip()
+        if code:
+            item["photo"] = product_thumb_url(code)
+        else:
+            item["photo"] = ""
+    return items
+
+
 def _peer_request_headers() -> dict[str, str]:
     """Cookie token so peer works even when hostname resolves to LAN/loopback (not Tailscale CGNAT)."""
     settings = get_transfer_settings()
@@ -442,6 +465,8 @@ def _enrich_suggest_item(
     else:
         item["qtyoh2"] = item.get(f"{site_key}_qtyoh2", 0.0)
         item["location"] = item.get(f"location_{site_key}", "") or ""
+    if not item.get("photo"):
+        item["photo"] = product_thumb_url(bcode)
     return item
 
 
@@ -781,6 +806,7 @@ def lookup_transfer_product(*, bcode: str) -> dict[str, Any] | None:
         "location": location_hq or location_syp,
         "location1": ((hq_meta or syp_meta or {}).get("location1") or "").strip(),
         "location2": ((hq_meta or syp_meta or {}).get("location2") or "").strip(),
+        "photo": product_thumb_url(code),
     }
 
 
@@ -858,6 +884,8 @@ def enrich_transfer_lines(
                 row["ui2"] = meta["ui2"]
             if float(meta.get("mtp2") or 1.0) > 1.0:
                 row["mtp2"] = float(meta["mtp2"])
+        if not row.get("photo"):
+            row["photo"] = product_thumb_url(bcode)
         out.append(row)
 
     ship_branch = from_u if from_u in ("HQ", "SYP") else ""
