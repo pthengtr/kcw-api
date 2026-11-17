@@ -26,6 +26,7 @@ header .top{display:flex;justify-content:space-between;gap:12px;align-items:flex
 header h1{margin:0;font-size:18px;font-weight:650;color:#fff}
 header p{margin:2px 0 10px;font-size:13px;opacity:.92;color:#fff}
 header .badge{font-size:12px;opacity:.95;color:#fff;white-space:nowrap}
+header .top-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .tabs{display:flex;gap:8px;flex-wrap:wrap}
 .tabs button{flex:1;min-width:5.5rem;min-height:40px;border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;border-radius:999px;padding:8px 10px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .tabs button.on{background:#fff;color:var(--red);border-color:#fff}
@@ -72,7 +73,10 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
       <h1>ขายออนไลน์</h1>
       <p>TAD / CNTAD / ใบเต็ม TO — <span id="who"></span></p>
     </div>
-    <div class="badge" id="writeBadge"></div>
+    <div class="top-actions">
+      <div class="badge" id="writeBadge"></div>
+      <div id="kcwShellSlot" aria-hidden="false"></div>
+    </div>
   </div>
   <nav class="tabs noprint">
     <button type="button" data-tab="sale" class="on">ขาย</button>
@@ -159,17 +163,30 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
 </section>
 
 <section id="tab-to" class="panel hidden" style="padding:0;border:0;background:transparent">
-  <iframe class="toframe" id="toFrame" title="ใบเต็ม TO" src="/to-bill/"></iframe>
+  <iframe class="toframe" id="toFrame" title="ใบเต็ม TO" src="about:blank"></iframe>
 </section>
 </main>
 <script>
 const USER = __USER_JSON__;
 const WRITE = __WRITE__;
+const TO_BILL_TOKEN = __TO_BILL_TOKEN_JSON__;
 const state = {
   platforms:[], shops:[], lines:[], product:null, write:WRITE,
   editBillno:null, editDraftId:null, searchBills:[],
   poLenByPlatform: { tiktok:18, lazada:16, shopee:14 },
 };
+function toBillHref(params){
+  const q = new URLSearchParams();
+  if (TO_BILL_TOKEN) q.set('t', TO_BILL_TOKEN);
+  if (params && typeof params === 'object') {
+    Object.keys(params).forEach((k) => {
+      const v = params[k];
+      if (v != null && String(v) !== '') q.set(k, String(v));
+    });
+  }
+  const s = q.toString();
+  return '/to-bill/' + (s ? ('?' + s) : '');
+}
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -234,12 +251,27 @@ async function api(path, opts={}) {
   return data;
 }
 
+function ensureToFrame(params){
+  const frame = $('toFrame');
+  if (!frame) return;
+  const next = toBillHref(params || {});
+  // Always (re)load with LINE entry token so iframe never falls back to LAN identity.
+  if (frame.dataset.loaded !== next) {
+    frame.dataset.loaded = next;
+    frame.src = next;
+  }
+}
+
 function showTab(name) {
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab===name));
   ['sale','search','return','to'].forEach(t => $(`tab-${t}`).classList.toggle('hidden', t!==name));
   const url = new URL(location.href);
   url.searchParams.set('tab', name);
   history.replaceState(null, '', url);
+  if (name === 'to') {
+    const tad = url.searchParams.get('tad') || '';
+    ensureToFrame(tad ? {tad} : {});
+  }
 }
 
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -726,7 +758,7 @@ async function init() {
       clearSaleForm();
       $('saleMsg').innerHTML = `${verb} <b>${billno}</b>
         · <a href="/online-sale/print/tad/${encodeURIComponent(billno)}" target="_blank">พิมพ์ใบ TAD</a>
-        · <a href="/to-bill/?tad=${encodeURIComponent(billno)}" target="_blank">ออกใบเต็ม TO</a>`;
+        · <a href="${toBillHref({tad: billno})}" target="_blank">ออกใบเต็ม TO</a>`;
       $('saleMsg').className='meta ok';
     } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
   };
@@ -785,10 +817,10 @@ async function init() {
       if (b.kind==='tad' && !b.canceled) {
         actions += ` · <a href="#" data-edit="${b.billno}">แก้ไข</a>`;
         actions += ` · <a href="#" data-ret="${b.billno}">คืน</a>`;
-        actions += ` · <a href="/to-bill/?tad=${encodeURIComponent(b.billno)}" target="_blank">ใบเต็ม</a>`;
+        actions += ` · <a href="${toBillHref({tad: b.billno})}" target="_blank">ใบเต็ม</a>`;
       }
       if (b.to_docno) {
-        actions += ` · <a href="/to-bill/?tad=${encodeURIComponent(b.billno)}" target="_blank">${b.to_docno}</a>`;
+        actions += ` · <a href="${toBillHref({tad: b.billno})}" target="_blank">${b.to_docno}</a>`;
       }
       const pickCell = canPickDraft(b)
         ? `<input type="checkbox" class="pick-draft" value="${b.draft_id}">`
@@ -806,9 +838,7 @@ async function init() {
       const st = inv.status === 'void'
         ? '<span class="status-cancel">ยกเลิก</span>'
         : (inv.status === 'issued' ? 'ออกแล้ว' : (inv.status || 'TO'));
-      const openHref = tad
-        ? `/to-bill/?tad=${encodeURIComponent(tad)}`
-        : '/to-bill/';
+      const openHref = toBillHref(tad ? {tad} : {});
       tr.innerHTML = `<td></td><td>${docno}</td><td>${st}</td><td>${(inv.bill_date||inv.issued_at||'').toString().slice(0,10)}</td>
         <td>${inv.customer_name||inv.acctname_kss||''}</td>
         <td>${inv.online_po||''}</td><td class="num">${money(inv.aftertax)}</td>
@@ -929,12 +959,10 @@ async function init() {
   };
 
   const tab = new URL(location.href).searchParams.get('tab') || 'sale';
+  const tad = new URL(location.href).searchParams.get('tad') || '';
+  if (tad) ensureToFrame({tad});
   showTab(['sale','search','return','to'].includes(tab) ? tab : 'sale');
-  const tad = new URL(location.href).searchParams.get('tad');
-  if (tad) {
-    $('toFrame').src = '/to-bill/?tad='+encodeURIComponent(tad);
-    if (tab==='to' || new URL(location.href).searchParams.get('open')==='to') showTab('to');
-  }
+  if (tad && (tab==='to' || new URL(location.href).searchParams.get('open')==='to')) showTab('to');
 }
 init().catch(e => { $('saleMsg').textContent = e.message; $('saleMsg').className='meta err'; });
 </script>
@@ -943,10 +971,11 @@ init().catch(e => { $('saleMsg').textContent = e.message; $('saleMsg').className
 """
 
 
-def page(*, user_name: str = "", write_enabled: bool = False) -> str:
+def page(*, user_name: str = "", write_enabled: bool = False, to_bill_token: str = "") -> str:
     who = (user_name or "operator").strip()
     return (
         _HTML.replace("__USER_JSON__", json.dumps(who, ensure_ascii=False))
         .replace("__USER__", html_lib.escape(who))
         .replace("__WRITE__", "true" if write_enabled else "false")
+        .replace("__TO_BILL_TOKEN_JSON__", json.dumps((to_bill_token or "").strip(), ensure_ascii=False))
     )
