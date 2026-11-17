@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, ProgrammingError
 
+from src.db.nvarchar import truncate_sql_nvarchar
 from src.transfer.db import get_receipt_by_token, get_transfer_supabase_client
 from src.transfer.writers._engine import (
     TransferWriteError,
@@ -158,7 +159,8 @@ def post_transfer_receive(
                     "lines": len(detail_rows),
                     "acctno": acctno,
                     "acctname": acctname,
-                    "sale": operator[:15],
+                    # PIMAS.SALE is nvarchar(15); see ship_simas SALE note.
+                    "sale": truncate_sql_nvarchar(operator or "", 15),
                     "remarks": remarks,
                 },
             )
