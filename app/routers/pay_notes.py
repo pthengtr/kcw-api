@@ -209,6 +209,7 @@ class NoteCreate(BaseModel):
     remark_extra: str | None = None
     kbiz_datetime: str | None = None
     settle_method: str = "transfer"  # transfer | cheque — intended payout
+    confirm_unmapped: bool = False
 
 
 class NoteUpdate(BaseModel):
@@ -599,6 +600,41 @@ def api_delete_bill_image(
     return {"deleted": rel, "remaining": remaining}
 
 
+def _issuer_label_for_identity(ident, *, confirm_unmapped: bool = False) -> str | JSONResponse:
+    """Resolve printable preparer name; 409 when staff profile is missing."""
+    from src.staff.errors import StaffMappingError
+    from src.staff.profiles import issuer_label_for_actor, require_staff_mapping
+
+    line_uid = (ident.line_user_id if ident else "") or ""
+    display = (ident.display_name if ident else "") or ""
+    try:
+        mapped = require_staff_mapping(line_uid, display)
+        if mapped.get("issuer_label"):
+            return str(mapped["issuer_label"])
+    except StaffMappingError as exc:
+        if not confirm_unmapped:
+            return JSONResponse(
+                {"error": exc.message, "code": exc.code},
+                status_code=exc.status,
+            )
+    return issuer_label_for_actor(line_user_id=line_uid, display_name=display)
+
+
+def _enrich_reminder_issuer(rem: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Prefer snapshotted issuer_label; fall back via created_by LINE user id."""
+    if not rem:
+        return rem
+    out = dict(rem)
+    if str(out.get("issuer_label") or "").strip():
+        return out
+    from src.staff.profiles import issuer_label_for_actor
+
+    label = issuer_label_for_actor(line_user_id=str(out.get("created_by") or ""))
+    if label:
+        out["issuer_label"] = label
+    return out
+
+
 @router.post("/api/notes")
 def api_create_note(request: Request, body: NoteCreate):
     ident, err = _require_api(request)
@@ -617,6 +653,12 @@ def api_create_note(request: Request, body: NoteCreate):
         settle_method = _normalize_note_pay_method(body.settle_method)
     except ValueError as exc:
         return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+
+    issuer_label = _issuer_label_for_identity(
+        ident, confirm_unmapped=bool(body.confirm_unmapped)
+    )
+    if isinstance(issuer_label, JSONResponse):
+        return issuer_label
 
     client = get_pay_notes_supabase_client()
     bank = get_vendor_bank(client, body.bank_id)
@@ -700,6 +742,7 @@ def api_create_note(request: Request, body: NoteCreate):
         "settle_method": settle_method,
         **rem_fields,
         "created_by": ident.line_user_id if ident else None,
+        "issuer_label": issuer_label or None,
     }
     if kbiz_dt:
         rem_row["kbiz_datetime"] = kbiz_dt
@@ -955,6 +998,7 @@ def _note_detail_response(settings, acctno: str, noteno: str):
         proofs = list_folder(client, payment_image_prefix(voucno))
     banks = list_vendor_banks(client, acctno)
     rem = get_reminder(client, acctno, noteno)
+    rem = _enrich_reminder_issuer(rem)
     if rem and rem.get("bank_id"):
         bank = get_vendor_bank(client, str(rem.get("bank_id") or ""))
         if bank:
