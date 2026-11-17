@@ -11,16 +11,25 @@ from src.barcode import (
     sanitize_barcode,
 )
 from src.stock_check.audit_mirror import flush_audit_outbox
-from src.stock_check.auth import TokenError, build_entry_url, mint_access_token, verify_access_token
+from src.stock_check.auth import (
+    StockCheckIdentity,
+    TokenError,
+    build_entry_url,
+    mint_access_token,
+    verify_access_token,
+)
 from src.stock_check.config import get_stock_check_settings
 from src.stock_check.net import client_ip, is_tailscale_cg_nat
 from src.stock_check.service import StockCheckService
 from src.stock_check.work_mirror import flush_work_outbox
 from src.stock_check import ui
+from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 
 router = APIRouter(prefix="/stock-check", tags=["stock-check"])
 
 SESSION_COOKIE = "kcw_stock_check_session"
+SESSION_COOKIE_PATH = "/stock-check"
 
 
 def _q(msg: str) -> str:
@@ -77,6 +86,56 @@ def _flush_outboxes(service: StockCheckService) -> None:
     flush_work_outbox(service.store, branch=branch)
 
 
+def _identity_from_user(user: dict) -> StockCheckIdentity:
+    settings = _settings()
+    return StockCheckIdentity(
+        line_user_id=str(user.get("line_user_id") or ""),
+        display_name=str(user.get("display_name") or user.get("line_user_id") or ""),
+        branch=settings.stock_check_branch,
+        app="stock-check",
+    )
+
+
+def _shell_identity(request: Request) -> StockCheckIdentity | None:
+    service = _service()
+    user = _user_from_request(request, service)
+    if not user:
+        return None
+    return _identity_from_user(user)
+
+
+def _stamp_stock_check(
+    resp,
+    identity: StockCheckIdentity,
+    *,
+    request: Request,
+    session_id: str,
+    has_entry_token: bool,
+) -> None:
+    settings = _settings()
+    ttl = max(settings.lease_idle_seconds * 48, 86_400)
+    resp.set_cookie(
+        SESSION_COOKIE,
+        session_id,
+        httponly=True,
+        samesite="lax",
+        max_age=ttl,
+        path=SESSION_COOKIE_PATH,
+    )
+    had_staff = bool(request.cookies.get(STAFF_COOKIE))
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.stock_check_token_secret,
+        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        service_id="stock-check",
+        source=source,
+        path="/stock-check/",
+        log_open=log_open,
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, t: str | None = None):
     settings = _settings()
@@ -101,12 +160,8 @@ def home(request: Request, t: str | None = None):
             is_approver=False,
         )
         resp = RedirectResponse(url="/stock-check/", status_code=303)
-        resp.set_cookie(
-            SESSION_COOKIE,
-            session_id,
-            httponly=True,
-            samesite="lax",
-            max_age=max(settings.lease_idle_seconds * 48, 86_400),
+        _stamp_stock_check(
+            resp, identity, request=request, session_id=session_id, has_entry_token=True
         )
         return resp
 
@@ -117,13 +172,15 @@ def home(request: Request, t: str | None = None):
             display_name="tailnet",
             is_approver=False,
         )
+        identity = StockCheckIdentity(
+            line_user_id="tailscale",
+            display_name="tailnet",
+            branch=settings.stock_check_branch,
+            app="stock-check",
+        )
         resp = RedirectResponse(url="/stock-check/", status_code=303)
-        resp.set_cookie(
-            SESSION_COOKIE,
-            session_id,
-            httponly=True,
-            samesite="lax",
-            max_age=max(settings.lease_idle_seconds * 48, 86_400),
+        _stamp_stock_check(
+            resp, identity, request=request, session_id=session_id, has_entry_token=False
         )
         return resp
     if err:
@@ -136,7 +193,7 @@ def home(request: Request, t: str | None = None):
             operator_line_user_id=str(user.get("line_user_id") or "").strip()
         )
     )
-    return HTMLResponse(
+    html = shell_page(
         ui.home_page(
             user=user,
             items=items,
@@ -144,8 +201,34 @@ def home(request: Request, t: str | None = None):
             flash=flash,
             error=error,
             browser_entry_url=_browser_entry_url(user),
-        )
+        ),
+        service_id="stock-check",
+        api_base="/stock-check/_shell",
+        user_name=str(user.get("display_name") or ""),
+        branch=settings.stock_check_branch,
     )
+    resp = HTMLResponse(html)
+    stamp_staff_session(
+        resp,
+        _identity_from_user(user),
+        secret=settings.stock_check_token_secret,
+        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        service_id="stock-check",
+        log_open=False,
+    )
+    return resp
+
+
+wire_shell(
+    router,
+    current_service_id="stock-check",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path=SESSION_COOKIE_PATH,
+    get_secret=lambda: _settings().stock_check_token_secret,
+    get_ttl=lambda: max(_settings().stock_check_token_ttl_seconds, 86400),
+    get_site=lambda: _settings().stock_check_branch,
+    get_app_identity=_shell_identity,
+)
 
 
 @router.post("/take")

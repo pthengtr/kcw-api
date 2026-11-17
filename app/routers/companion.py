@@ -32,11 +32,14 @@ from src.tiger_pay import voucher_repos
 from src.tiger_pay.cash_inventory import cached_or_live_cash
 from src.tiger_pay.force_auth import can_force_complete
 from src.tiger_pay.submitter import submitter_from_identity
+from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 
 router = APIRouter(prefix="/companion", tags=["companion"])
 
 _UI_PATH = Path(__file__).resolve().parents[2] / "src" / "companion" / "static" / "index.html"
 SESSION_COOKIE = "kcw_companion_token"
+SESSION_COOKIE_PATH = "/companion"
 
 
 def _line_auth_required() -> bool:
@@ -107,37 +110,85 @@ def _submitter_kwargs(identity: StockCheckIdentity | None) -> dict[str, str | No
     }
 
 
+def _shell_identity(request: Request) -> StockCheckIdentity | None:
+    if not _line_auth_required():
+        settings = get_stock_check_settings()
+        return StockCheckIdentity(
+            line_user_id="local",
+            display_name="local",
+            branch=settings.stock_check_branch,
+            app="companion",
+        )
+    token = request.cookies.get(SESSION_COOKIE) or ""
+    if not token:
+        return None
+    try:
+        return _verify_companion_token(token)
+    except TokenError:
+        return None
+
+
+def _stamp_companion_session(
+    resp,
+    identity: StockCheckIdentity,
+    *,
+    request: Request,
+    has_entry_token: bool,
+    token: str,
+) -> None:
+    settings = get_stock_check_settings()
+    ttl = max(settings.stock_check_token_ttl_seconds, 3600)
+    resp.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=ttl,
+        path=SESSION_COOKIE_PATH,
+    )
+    had_staff = bool(request.cookies.get(STAFF_COOKIE))
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.stock_check_token_secret,
+        ttl_seconds=ttl,
+        service_id="companion",
+        source=source,
+        path="/companion/",
+        log_open=log_open,
+    )
+
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
     if not _UI_PATH.is_file():
         raise HTTPException(status_code=404, detail="Companion UI not found")
 
+    settings = get_stock_check_settings()
+    raw_html = _UI_PATH.read_text(encoding="utf-8")
+
     if _line_auth_required() and t:
         try:
-            _verify_companion_token(t)
+            identity = _verify_companion_token(t)
         except TokenError as exc:
             return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
         resp = RedirectResponse(url="/companion/", status_code=303)
-        settings = get_stock_check_settings()
-        resp.set_cookie(
-            SESSION_COOKIE,
-            t,
-            httponly=True,
-            samesite="lax",
-            max_age=max(settings.stock_check_token_ttl_seconds, 3600),
+        _stamp_companion_session(
+            resp, identity, request=request, has_entry_token=True, token=t
         )
         return resp
 
+    identity: StockCheckIdentity | None = None
     if _line_auth_required():
         token = request.cookies.get(SESSION_COOKIE) or ""
         try:
             if not token:
                 raise TokenError("missing token")
-            _verify_companion_token(token)
+            identity = _verify_companion_token(token)
         except TokenError:
             if is_tailscale_cg_nat(client_ip(request)):
-                settings = get_stock_check_settings()
                 minted = mint_access_token(
                     secret=settings.stock_check_token_secret,
                     line_user_id="tailscale",
@@ -146,21 +197,55 @@ def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
                     ttl_seconds=max(settings.stock_check_token_ttl_seconds, 3600),
                     app="companion",
                 )
+                identity = StockCheckIdentity(
+                    line_user_id="tailscale",
+                    display_name="Tailscale account",
+                    branch=settings.stock_check_branch,
+                    app="companion",
+                )
                 resp = RedirectResponse(url="/companion/", status_code=303)
-                resp.set_cookie(
-                    SESSION_COOKIE,
-                    minted,
-                    httponly=True,
-                    samesite="lax",
-                    max_age=max(settings.stock_check_token_ttl_seconds, 3600),
+                _stamp_companion_session(
+                    resp, identity, request=request, has_entry_token=False, token=minted
                 )
                 return resp
             return HTMLResponse(
                 "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ ไทเกอร์ หรือ tiger pay ในแชทแล้วกดลิงก์สาขา</p>",
                 status_code=401,
             )
+    else:
+        identity = _shell_identity(request)
 
-    return HTMLResponse(content=_UI_PATH.read_text(encoding="utf-8"))
+    html = shell_page(
+        raw_html,
+        service_id="companion",
+        api_base="/companion/_shell",
+        user_name=(identity.display_name if identity else ""),
+        branch=(identity.branch if identity else settings.stock_check_branch),
+    )
+    resp = HTMLResponse(content=html)
+    if identity is not None and settings.stock_check_token_secret:
+        # Refresh staff cookie without spamming open logs on reload.
+        stamp_staff_session(
+            resp,
+            identity,
+            secret=settings.stock_check_token_secret,
+            ttl_seconds=max(settings.stock_check_token_ttl_seconds, 3600),
+            service_id="companion",
+            log_open=False,
+        )
+    return resp
+
+
+wire_shell(
+    router,
+    current_service_id="companion",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path=SESSION_COOKIE_PATH,
+    get_secret=lambda: get_stock_check_settings().stock_check_token_secret,
+    get_ttl=lambda: max(get_stock_check_settings().stock_check_token_ttl_seconds, 3600),
+    get_site=lambda: get_stock_check_settings().stock_check_branch,
+    get_app_identity=_shell_identity,
+)
 
 
 @router.get("/me")

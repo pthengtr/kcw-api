@@ -36,6 +36,8 @@ from src.hq_po.service import (
 from src.parts9_explorer.fifo import fifo_for_product, insight_avg_buy
 from src.parts9_explorer.insights import lookup_insight
 from src.parts9_explorer.ui import APP, SESSION_COOKIE, page
+from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.parts9_explorer.writes import (
     ExplorerWriteError,
     create_product_from_explorer,
@@ -142,17 +144,39 @@ def _tailscale_identity():
     )
 
 
-def _set_session(resp, identity) -> None:
+def _set_session(resp, identity, *, request: Request | None = None, has_entry_token: bool = False) -> None:
     settings = _settings()
+    ttl = max(settings.stock_check_token_ttl_seconds, 86400)
     token = mint_access_token(
         secret=settings.token_secret,
         line_user_id=identity.line_user_id,
         display_name=identity.display_name,
         branch=identity.branch,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=ttl,
         app=APP,
     )
     resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=86400 * 7, path="/parts9")
+    had_staff = bool(request and request.cookies.get(STAFF_COOKIE)) if request else False
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.token_secret,
+        ttl_seconds=ttl,
+        service_id="parts9-explorer",
+        source=source,
+        path="/parts9/",
+        log_open=log_open,
+    )
+
+
+def _shell_identity(request: Request):
+    ident = _identity_from_request(request)
+    if ident is False:
+        return None
+    if ident is None:
+        return _tailscale_identity()
+    return ident
 
 
 def _see_cost(ident) -> bool:
@@ -226,19 +250,37 @@ def home(request: Request, t: str | None = None, site: str | None = None):
         err = None
     if err:
         return err
-    html = page(
+    html = shell_page(
+        page(
+            user_name=ident.display_name,
+            site=(site or settings.site).lower(),
+            probes=probe_sites(),
+            can_see_cost=_see_cost(ident),
+        ),
+        service_id="parts9-explorer",
+        api_base="/parts9/_shell",
         user_name=ident.display_name,
-        site=(site or settings.site).lower(),
-        probes=probe_sites(),
-        can_see_cost=_see_cost(ident),
+        branch=settings.site,
     )
     if t:
         redir = RedirectResponse(url="/parts9/", status_code=303)
-        _set_session(redir, ident)
+        _set_session(redir, ident, request=request, has_entry_token=True)
         return redir
     resp = HTMLResponse(html)
-    _set_session(resp, ident)
+    _set_session(resp, ident, request=request, has_entry_token=False)
     return resp
+
+
+wire_shell(
+    router,
+    current_service_id="parts9-explorer",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path="/parts9",
+    get_secret=lambda: _settings().token_secret,
+    get_ttl=lambda: max(_settings().stock_check_token_ttl_seconds, 86400),
+    get_site=lambda: _settings().site,
+    get_app_identity=_shell_identity,
+)
 
 
 @router.get("/api/search")
