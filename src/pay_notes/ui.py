@@ -1606,8 +1606,20 @@ function noteQs(acctno, noteno) {
 async function api(path, opts) {
   const r = await fetch('/pay-notes/api' + path, opts || {});
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.detail || j.error || r.statusText);
+  if (!r.ok) {
+    const err = new Error(j.detail || j.error || r.statusText);
+    err.code = j.code || '';
+    throw err;
+  }
   return j;
+}
+
+async function confirmUnmappedOrThrow(err) {
+  if (err && err.code === 'staff_unmapped') {
+    const ok = confirm(err.message + '\\n\\nยืนยันออกเอกสารด้วยชื่อ LINE ชั่วคราวหรือไม่?');
+    if (ok) return true;
+  }
+  throw err;
 }
 
 function wireDatePicker(el) {
@@ -2353,7 +2365,7 @@ function fillPrintSheet(det, row) {
       </div>
       <div class="pv-sign">
         <div class="col">ผู้รับเงิน / เช็ค<div class="line"></div>วันที่<div class="line"></div></div>
-        <div class="col" style="text-align:right">ผู้จัดทำ<div class="line">${esc(USER_NAME || '')}</div></div>
+        <div class="col" style="text-align:right">ผู้จัดทำ<div class="line">${esc((rem.issuer_label || '').trim() || USER_NAME || '')}</div></div>
       </div>
     </div>`;
 }
@@ -3354,18 +3366,29 @@ $('btnCreateNote').onclick = async () => {
   if (resolveDiscAmount(total) - total > 1e-9) {
     $('createMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
   }
+  let confirmUnmapped = false;
   try {
-    const res = await api('/notes', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        acctno: picked.acctno, acctname: picked.acctname, noteno, due_date: due,
-        bank_id, billnos, discount_mode: discMode,
-        discount_input: Number($('discInput').value || 0),
-        ...readRemarkForm('note'),
-        kbiz_datetime: notePayMethod === 'cheque' ? null : (($('kbizDatetime').value || '').trim() || null),
-        settle_method: notePayMethod
-      })
-    });
+    let res;
+    while (true) {
+      try {
+        res = await api('/notes', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            acctno: picked.acctno, acctname: picked.acctname, noteno, due_date: due,
+            bank_id, billnos, discount_mode: discMode,
+            discount_input: Number($('discInput').value || 0),
+            ...readRemarkForm('note'),
+            kbiz_datetime: notePayMethod === 'cheque' ? null : (($('kbizDatetime').value || '').trim() || null),
+            settle_method: notePayMethod,
+            confirm_unmapped: confirmUnmapped
+          })
+        });
+        break;
+      } catch (e) {
+        await confirmUnmappedOrThrow(e);
+        confirmUnmapped = true;
+      }
+    }
     const rem = res.reminder || {};
     const discShow = Number(rem.discount_amount != null ? rem.discount_amount : resolveDiscAmount(total));
     const netShow = Math.max(0, Number(res.billamt || total) - discShow);
