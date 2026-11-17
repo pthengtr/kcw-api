@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
+from src.online_sale import drafts as draft_store
 from src.online_sale import parts9
 from src.online_sale.config import get_online_sale_settings
 from src.online_sale.errors import OnlineSaleError
@@ -48,7 +49,11 @@ def product_payload(code: str) -> dict[str, Any]:
 
 
 def check_po_payload(
-    acctno: str, online_po: str, *, exclude_billno: str = ""
+    acctno: str,
+    online_po: str,
+    *,
+    exclude_billno: str = "",
+    exclude_draft_id: str = "",
 ) -> dict[str, Any]:
     po = (online_po or "").strip()
     if not po:
@@ -56,7 +61,14 @@ def check_po_payload(
     if len(po) > 15:
         raise OnlineSaleError("po", "เลขคำสั่งซื้อยาวเกิน 15 ตัวอักษร")
     dups = parts9.find_duplicate_po(acctno, po, exclude_billno=exclude_billno)
-    return {"ok": not dups, "duplicates": dups}
+    try:
+        draft_dups = draft_store.find_duplicate_draft_po(
+            acctno, po, exclude_draft_id=exclude_draft_id
+        )
+    except Exception:
+        draft_dups = []
+    all_dups = list(dups) + list(draft_dups)
+    return {"ok": not all_dups, "duplicates": all_dups}
 
 
 def _to_search_hits(raw_q: str) -> list[dict[str, Any]]:
@@ -105,6 +117,7 @@ def search_payload(
     acctno: str = "",
     date_from: str = "",
     date_to: str = "",
+    kind: str = "",
 ) -> dict[str, Any]:
     df = (date_from or "").strip() or None
     dt = (date_to or "").strip() or None
@@ -116,17 +129,38 @@ def search_payload(
             date_to_excl = dt
     raw_q = (q or "").strip()
     upper_q = raw_q.upper()
-    bills: list[dict[str, Any]] = []
-    if not (upper_q.startswith("TO") or upper_q.startswith("RVO")):
-        bills = parts9.search_bills(
-            q=q,
-            acctno=acctno,
-            date_from=df,
-            date_to=date_to_excl,
-            platform=platform,
-        )
+    kind_key = (kind or "").strip().lower()
+    want_drafts = kind_key in ("", "all", "draft", "drafts")
+    want_bills = kind_key in ("", "all", "tad", "cntad", "bill", "bills")
 
-    to_hits = _to_search_hits(raw_q)
+    bills: list[dict[str, Any]] = []
+    draft_rows: list[dict[str, Any]] = []
+
+    if want_drafts and not (upper_q.startswith("TO") or upper_q.startswith("RVO")):
+        try:
+            draft_rows = draft_store.list_drafts(
+                q=q,
+                platform=platform,
+                acctno=acctno,
+                date_from=date_from,
+                date_to=date_to,
+            )
+        except Exception:
+            draft_rows = []
+
+    if want_bills and kind_key != "draft" and kind_key != "drafts":
+        if not (upper_q.startswith("TO") or upper_q.startswith("RVO")):
+            bills = parts9.search_bills(
+                q=q,
+                acctno=acctno,
+                date_from=df,
+                date_to=date_to_excl,
+                platform=platform,
+            )
+
+    to_hits: list[dict[str, Any]] = []
+    if want_bills and kind_key not in ("draft", "drafts"):
+        to_hits = _to_search_hits(raw_q)
 
     # Attach issued/draft TO docnos onto TAD rows when available.
     try:
@@ -143,7 +177,8 @@ def search_payload(
     except Exception:
         pass
 
-    return {"bills": bills, "to_invoices": to_hits}
+    # Drafts first so pick staff see open orders before posted TAD.
+    return {"bills": list(draft_rows) + list(bills), "to_invoices": to_hits, "drafts": draft_rows}
 
 
 def bill_payload(billno: str) -> dict[str, Any]:
@@ -179,10 +214,18 @@ def save_sale_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
         raise OnlineSaleError("write_disabled", "ยังไม่เปิด ONLINE_SALE_WRITE_ENABLED", status=403)
     shop = load_shop(str(body.get("acctno") or ""))
     po = str(body.get("online_po") or "").strip()
-    check = check_po_payload(shop["acctno"], po)
+    draft_id = str(body.get("draft_id") or "").strip()
+    check = check_po_payload(
+        shop["acctno"], po, exclude_draft_id=draft_id
+    )
     if not check["ok"]:
         dup = check["duplicates"][0]["billno"]
-        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับบิล {dup}")
+        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")
+    if draft_id:
+        # Ensure draft still open before cutting stock / issuing TAD.
+        draft = draft_store.get_draft(draft_id)
+        if draft["status"] not in ("open", "printed"):
+            raise OnlineSaleError("draft", "ฉบับร่างนี้ขายหรือยกเลิกไปแล้ว")
     result = post_tad(
         acctno=shop["acctno"],
         acctname=shop["bill_acctname"],
@@ -192,8 +235,58 @@ def save_sale_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
         lines=list(body.get("lines") or []),
         allow_oversell=bool(body.get("allow_oversell")),
     )
+    if draft_id:
+        try:
+            draft_store.mark_draft_sold(draft_id, result["billno"], actor)
+        except OnlineSaleError:
+            # TAD already posted — surface soft warning via response.
+            pass
     bill = parts9.load_bill(result["billno"])
     return {"ok": True, "result": result, "bill": bill}
+
+
+def save_draft_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
+    settings = get_online_sale_settings()
+    if not settings.write_enabled:
+        raise OnlineSaleError("write_disabled", "ยังไม่เปิด ONLINE_SALE_WRITE_ENABLED", status=403)
+    shop = load_shop(str(body.get("acctno") or ""))
+    po = str(body.get("online_po") or "").strip()
+    draft_id = str(body.get("draft_id") or "").strip()
+    check = check_po_payload(
+        shop["acctno"],
+        po,
+        exclude_draft_id=draft_id,
+    )
+    if not check["ok"]:
+        dup = check["duplicates"][0]["billno"]
+        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")
+    platform = str(body.get("platform") or shop.get("platform") or "").strip()
+    payload = dict(
+        platform=platform,
+        acctno=shop["acctno"],
+        acctname=shop.get("bill_acctname") or shop.get("acctname") or "",
+        shop_name=shop.get("shop_name") or "",
+        online_po=po,
+        lines=list(body.get("lines") or []),
+        actor=actor,
+    )
+    if draft_id:
+        draft = draft_store.update_draft(draft_id, **payload)
+    else:
+        draft = draft_store.create_draft(**payload)
+    return {"ok": True, "draft": draft}
+
+
+def draft_payload(draft_id: str) -> dict[str, Any]:
+    return {"draft": draft_store.get_draft(draft_id)}
+
+
+def cancel_draft_payload(draft_id: str, actor: str) -> dict[str, Any]:
+    settings = get_online_sale_settings()
+    if not settings.write_enabled:
+        raise OnlineSaleError("write_disabled", "ยังไม่เปิด ONLINE_SALE_WRITE_ENABLED", status=403)
+    draft = draft_store.cancel_draft(draft_id, actor)
+    return {"ok": True, "draft": draft}
 
 
 def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[str, Any]:
@@ -211,7 +304,7 @@ def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[s
     check = check_po_payload(shop["acctno"], po, exclude_billno=exact)
     if not check["ok"]:
         dup = check["duplicates"][0]["billno"]
-        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับบิล {dup}")
+        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")
     result = update_tad(
         billno=exact,
         acctno=shop["acctno"],
@@ -302,24 +395,28 @@ def _attach_pick_photos(bill: dict[str, Any]) -> None:
             ln["photo"] = product_thumb_url(code)
 
 
-def print_pick_html(billno: str = "", *, billnos: list[str] | None = None) -> str:
-    nos: list[str] = []
-    for raw in list(billnos or []) + ([billno] if billno else []):
+def print_pick_html(
+    billno: str = "",
+    *,
+    billnos: list[str] | None = None,
+    draft_ids: list[str] | None = None,
+) -> str:
+    """Print pick sheet from drafts only (order id), not from posted TAD."""
+    ids: list[str] = []
+    for raw in list(draft_ids or []) + list(billnos or []) + ([billno] if billno else []):
         for part in str(raw or "").replace(";", ",").split(","):
-            exact = part.strip().upper()
-            if exact and exact not in nos:
-                nos.append(exact)
-    if not nos:
-        raise OnlineSaleError("bill", "เลือกบิล TAD ที่จะพิมพ์ใบจัดสินค้า")
-    bills: list[dict[str, Any]] = []
-    for exact in nos:
-        bill = parts9.load_bill(exact)
-        if bill["kind"] != "tad":
-            raise OnlineSaleError("bill", f"{exact} ไม่ใช่บิล TAD — พิมพ์ใบจัดสินค้าได้เฉพาะ TAD")
-        if bill.get("canceled"):
-            raise OnlineSaleError("bill", f"{exact} ถูกยกเลิกแล้ว — เลือกพิมพ์ไม่ได้")
+            exact = part.strip()
+            if exact and exact not in ids:
+                ids.append(exact)
+    if not ids:
+        raise OnlineSaleError("draft", "เลือกฉบับร่างที่จะพิมพ์ใบจัดสินค้า")
+    bills = draft_store.drafts_for_pick(ids)
+    for bill in bills:
         _attach_pick_photos(bill)
-        bills.append(bill)
+    try:
+        draft_store.mark_drafts_printed(ids)
+    except Exception:
+        pass
     if len(bills) == 1:
         return render_pick_sheet(bills[0])
     return render_pick_sheet(bills=bills)

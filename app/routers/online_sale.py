@@ -11,13 +11,16 @@ from src.online_sale.errors import OnlineSaleError
 from src.online_sale.net import is_private_lan
 from src.online_sale.service import (
     bill_payload,
+    cancel_draft_payload,
     check_po_payload,
+    draft_payload,
     meta_payload,
     print_cntad_html,
     print_pick_html,
     print_tad_html,
     product_payload,
     return_preview_payload,
+    save_draft_payload,
     save_return_payload,
     save_sale_payload,
     search_payload,
@@ -36,6 +39,8 @@ router = APIRouter(prefix="/online-sale", tags=["kcw-online-sale"])
 class SaleBody(BaseModel):
     acctno: str = ""
     online_po: str = ""
+    platform: str = ""
+    draft_id: str = ""
     allow_oversell: bool = False
     lines: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -44,6 +49,7 @@ class CheckPoBody(BaseModel):
     acctno: str = ""
     online_po: str = ""
     exclude_billno: str = ""
+    exclude_draft_id: str = ""
 
 
 class ReturnBody(BaseModel):
@@ -241,8 +247,44 @@ def api_check_po(request: Request, body: CheckPoBody):
         return err
     try:
         return check_po_payload(
-            body.acctno, body.online_po, exclude_billno=body.exclude_billno
+            body.acctno,
+            body.online_po,
+            exclude_billno=body.exclude_billno,
+            exclude_draft_id=body.exclude_draft_id,
         )
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.post("/api/drafts")
+def api_save_draft(request: Request, body: SaleBody):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return save_draft_payload(body.model_dump(), _actor(ident))
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.get("/api/drafts/{draft_id}")
+def api_get_draft(request: Request, draft_id: str):
+    _, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return draft_payload(draft_id)
+    except Exception as exc:
+        return _err(exc)
+
+
+@router.delete("/api/drafts/{draft_id}")
+def api_cancel_draft(request: Request, draft_id: str):
+    ident, err = _require_api(request)
+    if err is not None:
+        return err
+    try:
+        return cancel_draft_payload(draft_id, _actor(ident))
     except Exception as exc:
         return _err(exc)
 
@@ -277,6 +319,7 @@ def api_search(
     acctno: str = "",
     date_from: str = "",
     date_to: str = "",
+    kind: str = "",
 ):
     _, err = _require_api(request)
     if err is not None:
@@ -288,6 +331,7 @@ def api_search(
             acctno=acctno,
             date_from=date_from,
             date_to=date_to,
+            kind=kind,
         )
     except Exception as exc:
         return _err(exc)
@@ -340,25 +384,26 @@ def print_tad(request: Request, billno: str):
 
 
 @router.get("/print/pick", response_class=HTMLResponse)
-def print_pick_multi(request: Request, bills: str = ""):
+def print_pick_multi(request: Request, drafts: str = "", bills: str = ""):
+    """Pick sheet from drafts (order ids). Legacy `bills` query is treated as draft ids."""
     _, err = _require(request)
     if err is not None:
         return err
     try:
-        return HTMLResponse(print_pick_html(billnos=[bills]))
+        return HTMLResponse(print_pick_html(draft_ids=[drafts or bills]))
     except Exception as exc:
         if isinstance(exc, OnlineSaleError):
             return HTMLResponse(f"<h1>{exc.message}</h1>", status_code=exc.status)
         return HTMLResponse(f"<h1>{exc}</h1>", status_code=500)
 
 
-@router.get("/print/pick/{billno}", response_class=HTMLResponse)
-def print_pick(request: Request, billno: str):
+@router.get("/print/pick/{draft_id}", response_class=HTMLResponse)
+def print_pick(request: Request, draft_id: str):
     _, err = _require(request)
     if err is not None:
         return err
     try:
-        return HTMLResponse(print_pick_html(billno))
+        return HTMLResponse(print_pick_html(draft_ids=[draft_id]))
     except Exception as exc:
         if isinstance(exc, OnlineSaleError):
             return HTMLResponse(f"<h1>{exc.message}</h1>", status_code=exc.status)

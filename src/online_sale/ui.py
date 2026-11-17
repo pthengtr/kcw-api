@@ -50,6 +50,8 @@ th,td{border-bottom:1px solid #eaecf0;padding:7px 4px;text-align:left;vertical-a
 .hidden{display:none!important}
 a{color:var(--red);font-weight:600}
 .status-cancel{color:var(--bad);font-weight:700}
+.status-draft{color:#1d4ed8;font-weight:700}
+.status-printed{color:#b54708;font-weight:700}
 .stock-over td{background:#fff1f0}
 .edit-banner{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:8px 10px;border-radius:10px;margin-bottom:10px;font-size:13px}
 table input.cell{width:5.5rem;padding:6px 8px;border-radius:8px}
@@ -118,6 +120,7 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
     <div class="total">ยอดขายรวม <span id="grand">0.00</span></div>
     <div class="row">
       <button type="button" class="ghost hidden" id="cancelEdit">ยกเลิกแก้ไข</button>
+      <button type="button" class="ghost" id="saveDraft" disabled>บันทึกฉบับร่าง</button>
       <button type="button" id="saveSale" disabled>บันทึกขาย</button>
     </div>
   </div>
@@ -126,8 +129,15 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
 
 <section id="tab-search" class="panel hidden">
   <div class="row">
-    <label class="field" style="flex:1;min-width:180px"><span>ค้นหา TAD / TO / CNTAD / เลขคำสั่งซื้อ</span>
+    <label class="field" style="flex:1;min-width:180px"><span>ค้นหา TAD / ฉบับร่าง / TO / CNTAD / เลขคำสั่งซื้อ</span>
       <input id="q" autocomplete="off">
+    </label>
+    <label class="field"><span>ประเภท</span>
+      <select id="qKind">
+        <option value="">ทั้งหมด</option>
+        <option value="draft">ฉบับร่าง</option>
+        <option value="tad">TAD / CNTAD</option>
+      </select>
     </label>
     <label class="field"><span>แพลตฟอร์ม</span><select id="qPlatform"><option value="">ทั้งหมด</option></select></label>
     <label class="field"><span>ร้าน</span><select id="qShop"><option value="">ทั้งหมด</option></select></label>
@@ -155,7 +165,7 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
 <script>
 const USER = __USER_JSON__;
 const WRITE = __WRITE__;
-const state = { platforms:[], shops:[], lines:[], product:null, write:WRITE, editBillno:null, searchBills:[] };
+const state = { platforms:[], shops:[], lines:[], product:null, write:WRITE, editBillno:null, editDraftId:null, searchBills:[] };
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -263,6 +273,9 @@ function updateStockWarn() {
   }).join(', ');
 }
 
+function saleFormReady(){
+  return !!(WRITE && state.lines.length && $('shop').value && $('po').value.trim());
+}
 function syncEditBanner() {
   const banner = $('editBanner');
   const cancel = $('cancelEdit');
@@ -271,16 +284,25 @@ function syncEditBanner() {
     banner.textContent = `กำลังแก้ไขบิล ${state.editBillno} — แก้เลขคำสั่งซื้อ แพลตฟอร์ม ร้านค้า รายการ แล้วกดบันทึก`;
     cancel.classList.remove('hidden');
     $('saveSale').textContent = 'บันทึกการแก้ไข';
+    $('saveDraft').classList.add('hidden');
+  } else if (state.editDraftId) {
+    banner.classList.remove('hidden');
+    banner.textContent = `กำลังแก้ไขฉบับร่าง — แก้สินค้า/จำนวน/ราคา แล้วกดบันทึกฉบับร่าง หรือยืนยันขายเพื่อออก TAD`;
+    cancel.classList.remove('hidden');
+    $('saveSale').textContent = 'ยืนยันขาย (ออก TAD)';
+    $('saveDraft').classList.remove('hidden');
   } else {
     banner.classList.add('hidden');
     banner.textContent = '';
     cancel.classList.add('hidden');
     $('saveSale').textContent = 'บันทึกขาย';
+    $('saveDraft').classList.remove('hidden');
   }
 }
 
 function clearSaleForm() {
   state.editBillno = null;
+  state.editDraftId = null;
   state.lines = [];
   state.product = null;
   $('po').value = '';
@@ -326,7 +348,9 @@ function renderLines() {
     });
     $('grand').textContent = money(g);
     updateStockWarn();
-    $('saveSale').disabled = !(WRITE && state.lines.length && $('shop').value && $('po').value.trim());
+    const ready = saleFormReady();
+    $('saveSale').disabled = !ready;
+    $('saveDraft').disabled = !ready || !!state.editBillno;
   }
   tb.querySelectorAll('input[data-f]').forEach(inp => {
     inp.oninput = () => {
@@ -367,7 +391,9 @@ function renderLines() {
   $('grand').textContent = money(grand);
   updateStockWarn();
   syncEditBanner();
-  $('saveSale').disabled = !(WRITE && state.lines.length && $('shop').value && $('po').value.trim());
+  const ready = saleFormReady();
+  $('saveSale').disabled = !ready;
+  $('saveDraft').disabled = !ready || !!state.editBillno;
 }
 
 async function lookupProduct() {
@@ -424,18 +450,10 @@ function addLine() {
   renderLines(); $('bcode').focus();
 }
 
-async function loadBillForEdit(billno) {
-  const data = await api('/api/bills/'+encodeURIComponent(billno));
-  const bill = data.bill;
-  if (bill.kind !== 'tad') throw new Error('แก้ไขได้เฉพาะบิล TAD');
-  if (bill.canceled) throw new Error('บิลนี้ถูกยกเลิกแล้ว');
-  state.editBillno = bill.billno;
-  if (bill.platform) $('platform').value = bill.platform;
-  await loadShops($('platform').value, $('shop'), bill.acctno);
-  $('po').value = bill.online_po || '';
-  state.lines = [];
-  for (const ln of bill.lines || []) {
-    let qtyoh2 = 0, location = ln.location1 || '', descr = ln.detail || '';
+async function hydrateLines(sourceLines, { creditStock=false } = {}) {
+  const lines = [];
+  for (const ln of sourceLines || []) {
+    let qtyoh2 = 0, location = ln.location1 || ln.location || '', descr = ln.detail || ln.descr || '';
     let ui1 = ln.ui || 'หน่วย', ui2 = '', mtp2 = 1;
     try {
       const prod = await api('/api/product?code='+encodeURIComponent(ln.bcode));
@@ -449,9 +467,11 @@ async function loadBillForEdit(billno) {
     const mtp = Number(ln.mtp || 0) > 0
       ? Number(ln.mtp)
       : ((ln.ui || '') === ui2 && mtp2 > 1 ? mtp2 : 1);
-    // When editing, available stock includes qty already on this bill (base units).
-    qtyoh2 = Number(qtyoh2) + Math.abs(Number(ln.qty)||0) * (mtp || 1);
-    state.lines.push({
+    if (creditStock) {
+      // When editing TAD, available stock includes qty already on this bill (base units).
+      qtyoh2 = Number(qtyoh2) + Math.abs(Number(ln.qty)||0) * (mtp || 1);
+    }
+    lines.push({
       bcode: ln.bcode,
       descr,
       location,
@@ -465,11 +485,59 @@ async function loadBillForEdit(billno) {
       price: Number(ln.price)||0,
     });
   }
+  return lines;
+}
+
+async function loadBillForEdit(billno) {
+  const data = await api('/api/bills/'+encodeURIComponent(billno));
+  const bill = data.bill;
+  if (bill.kind !== 'tad') throw new Error('แก้ไขได้เฉพาะบิล TAD');
+  if (bill.canceled) throw new Error('บิลนี้ถูกยกเลิกแล้ว');
+  state.editBillno = bill.billno;
+  state.editDraftId = null;
+  if (bill.platform) $('platform').value = bill.platform;
+  await loadShops($('platform').value, $('shop'), bill.acctno);
+  $('po').value = bill.online_po || '';
+  state.lines = await hydrateLines(bill.lines || [], { creditStock:true });
   syncEditBanner();
   renderLines();
   showTab('sale');
   $('saleMsg').textContent = `โหลดบิล ${bill.billno} แล้ว — แก้ไขได้เลย`;
   $('saleMsg').className = 'meta ok';
+}
+
+async function loadDraftForEdit(draftId) {
+  const data = await api('/api/drafts/'+encodeURIComponent(draftId));
+  const draft = data.draft;
+  if (draft.canceled || draft.status === 'canceled') throw new Error('ฉบับร่างนี้ถูกยกเลิกแล้ว');
+  if (draft.status === 'sold') throw new Error('ฉบับร่างนี้ยืนยันขายไปแล้ว');
+  state.editDraftId = draft.draft_id;
+  state.editBillno = null;
+  if (draft.platform) $('platform').value = draft.platform;
+  await loadShops($('platform').value, $('shop'), draft.acctno);
+  $('po').value = draft.online_po || '';
+  state.lines = await hydrateLines(draft.lines || []);
+  syncEditBanner();
+  renderLines();
+  showTab('sale');
+  const stamped = draft.pick_printed || draft.status === 'printed' ? ' (พิมพ์ใบจัดแล้ว)' : '';
+  $('saleMsg').textContent = `โหลดฉบับร่างคำสั่งซื้อ ${draft.online_po||''}${stamped} — แก้แล้วกดยืนยันขายเพื่อออก TAD`;
+  $('saleMsg').className = 'meta ok';
+}
+
+function salePayload(allow){
+  return {
+    acctno: $('shop').value,
+    online_po: $('po').value.trim(),
+    platform: $('platform').value,
+    draft_id: state.editDraftId || '',
+    allow_oversell: !!allow,
+    lines: state.lines.map(l => ({
+      bcode:l.bcode, qty:l.qty, price:l.price, detail:l.descr, descr:l.descr,
+      ui:l.ui, mtp:l.mtp, ui1:l.ui1, ui2:l.ui2, mtp2:l.mtp2,
+      location:l.location, location1:l.location, qtyoh2:l.qtyoh2,
+    })),
+  };
 }
 
 async function init() {
@@ -506,10 +574,24 @@ async function init() {
         acctno:$('shop').value,
         online_po:$('po').value,
         exclude_billno: state.editBillno || '',
+        exclude_draft_id: state.editDraftId || '',
       })});
       if (data.ok) { $('poStatus').textContent='เลขคำสั่งซื้อใช้ได้'; $('poStatus').className='meta ok'; }
       else { $('poStatus').textContent='ซ้ำกับ '+data.duplicates.map(d=>d.billno).join(', '); $('poStatus').className='meta err'; }
     } catch(e) { $('poStatus').textContent=e.message; $('poStatus').className='meta err'; }
+  };
+  $('saveDraft').onclick = async () => {
+    if (state.editBillno) return;
+    $('saleMsg').textContent='กำลังบันทึกฉบับร่าง...'; $('saleMsg').className='meta';
+    try {
+      const data = await api('/api/drafts', {method:'POST', body: JSON.stringify(salePayload(false))});
+      const draft = data.draft;
+      state.editDraftId = draft.draft_id;
+      state.editBillno = null;
+      syncEditBanner();
+      $('saleMsg').innerHTML = `บันทึกฉบับร่างแล้ว · คำสั่งซื้อ <b>${draft.online_po||''}</b> — ไปหน้าค้นหาเพื่อพิมพ์ใบจัดสินค้ารวม`;
+      $('saleMsg').className='meta ok';
+    } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
   };
   $('saveSale').onclick = async () => {
     const bad = oversoldLines();
@@ -519,18 +601,13 @@ async function init() {
       if (!allow) return;
     }
     $('saleMsg').textContent='กำลังบันทึก...'; $('saleMsg').className='meta';
-    const payload = {
-      acctno: $('shop').value,
-      online_po: $('po').value.trim(),
-      allow_oversell: allow,
-      lines: state.lines.map(l => ({bcode:l.bcode, qty:l.qty, price:l.price, detail:l.descr, ui:l.ui, mtp:l.mtp})),
-    };
+    const payload = salePayload(allow);
     try {
       const editing = !!state.editBillno;
       const data = editing
         ? await api('/api/sales/'+encodeURIComponent(state.editBillno), {method:'PATCH', body: JSON.stringify(payload)})
         : await api('/api/sales', {method:'POST', body: JSON.stringify(payload)});
-      const verb = editing ? 'แก้ไขแล้ว' : 'บันทึกแล้ว';
+      const verb = editing ? 'แก้ไขแล้ว' : (state.editDraftId ? 'ยืนยันขายแล้ว' : 'บันทึกแล้ว');
       const billno = data.result.billno;
       clearSaleForm();
       $('saleMsg').innerHTML = `${verb} <b>${billno}</b>
@@ -539,41 +616,58 @@ async function init() {
       $('saleMsg').className='meta ok';
     } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
   };
-  function canPickBill(b){ return b && b.kind==='tad' && !b.canceled; }
-  function selectedPickBillnos(){
-    return [...document.querySelectorAll('#searchResults input.pick-bill:checked')].map(el => el.value);
+  function canPickDraft(b){ return b && b.kind==='draft' && !b.canceled && b.status !== 'sold' && b.status !== 'canceled'; }
+  function selectedPickDraftIds(){
+    return [...document.querySelectorAll('#searchResults input.pick-draft:checked')].map(el => el.value);
   }
   function syncPickBar(){
     const btn = $('printPick');
     const count = $('pickCount');
     if (!btn || !count) return;
-    const nos = selectedPickBillnos();
-    count.textContent = nos.length ? `เลือกแล้ว ${nos.length} บิล` : 'ยังไม่ได้เลือกบิล';
+    const nos = selectedPickDraftIds();
+    count.textContent = nos.length ? `เลือกแล้ว ${nos.length} ฉบับร่าง` : 'เลือกฉบับร่างเพื่อพิมพ์ใบจัด';
     btn.disabled = nos.length === 0;
   }
   function renderSearchResults(bills, toDocs){
     const box = $('searchResults');
     state.searchBills = bills || [];
     if (!bills.length && !toDocs.length) { box.innerHTML='<p class="meta">ไม่พบรายการ</p>'; return; }
-    const pickable = bills.filter(canPickBill);
+    const pickable = bills.filter(canPickDraft);
     box.innerHTML = `
       <div class="pick-bar">
-        <button type="button" id="printPick" disabled>พิมพ์ใบจัดสินค้า</button>
-        <span class="count" id="pickCount">ยังไม่ได้เลือกบิล</span>
+        <button type="button" id="printPick" disabled>พิมพ์ใบจัดสินค้ารวม</button>
+        <span class="count" id="pickCount">เลือกฉบับร่างเพื่อพิมพ์ใบจัด</span>
       </div>
       <table><thead><tr>
-        <th style="width:2.2rem"><input type="checkbox" id="pickAll" title="เลือกทั้งหมด" ${pickable.length?'':'disabled'}></th>
-        <th>เลขบิล</th><th>สถานะ</th><th>วันที่</th><th>ร้าน / ลูกค้า</th><th>คำสั่งซื้อ</th><th class="num">ยอด</th><th></th>
+        <th style="width:2.2rem"><input type="checkbox" id="pickAll" title="เลือกฉบับร่างทั้งหมด" ${pickable.length?'':'disabled'}></th>
+        <th>เลขบิล / ฉบับร่าง</th><th>สถานะ</th><th>วันที่</th><th>ร้าน / ลูกค้า</th><th>คำสั่งซื้อ</th><th class="num">ยอด</th><th></th>
       </tr></thead><tbody></tbody></table>`;
     const tb = box.querySelector('tbody');
     for (const b of bills) {
       const tr = document.createElement('tr');
-      const status = b.canceled
-        ? '<span class="status-cancel">ยกเลิก</span>'
-        : (b.kind==='cntad' ? 'CNTAD' : 'TAD');
-      let actions = b.kind==='cntad'
-        ? `<a href="/online-sale/print/cntad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์</a>`
-        : `<a href="/online-sale/print/tad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์ TAD</a>`;
+      let status = '';
+      if (b.kind === 'draft') {
+        if (b.canceled || b.status === 'canceled') status = '<span class="status-cancel">ยกเลิก</span>';
+        else if (b.pick_printed || b.status === 'printed') status = '<span class="status-printed">พิมพ์ใบจัดแล้ว</span>';
+        else status = '<span class="status-draft">ฉบับร่าง</span>';
+      } else if (b.canceled) {
+        status = '<span class="status-cancel">ยกเลิก</span>';
+      } else {
+        status = b.kind==='cntad' ? 'CNTAD' : 'TAD';
+      }
+      let actions = '';
+      if (b.kind === 'draft') {
+        if (canPickDraft(b)) {
+          actions = `<a href="#" data-edit-draft="${b.draft_id}">แก้ไข / ยืนยันขาย</a>`;
+          if (WRITE) actions += ` · <a href="#" data-cancel-draft="${b.draft_id}">ยกเลิก</a>`;
+        } else {
+          actions = '<span class="meta">—</span>';
+        }
+      } else if (b.kind==='cntad') {
+        actions = `<a href="/online-sale/print/cntad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์</a>`;
+      } else {
+        actions = `<a href="/online-sale/print/tad/${encodeURIComponent(b.billno)}" target="_blank">พิมพ์ TAD</a>`;
+      }
       if (b.kind==='tad' && !b.canceled) {
         actions += ` · <a href="#" data-edit="${b.billno}">แก้ไข</a>`;
         actions += ` · <a href="#" data-ret="${b.billno}">คืน</a>`;
@@ -582,10 +676,11 @@ async function init() {
       if (b.to_docno) {
         actions += ` · <a href="/to-bill/?tad=${encodeURIComponent(b.billno)}" target="_blank">${b.to_docno}</a>`;
       }
-      const pickCell = canPickBill(b)
-        ? `<input type="checkbox" class="pick-bill" value="${b.billno}">`
+      const pickCell = canPickDraft(b)
+        ? `<input type="checkbox" class="pick-draft" value="${b.draft_id}">`
         : '';
-      tr.innerHTML = `<td>${pickCell}</td><td>${b.billno}</td><td>${status}</td><td>${b.bill_date||''}</td><td>${b.acctname||b.acctno||''}</td>
+      const label = b.kind === 'draft' ? (b.billno || 'ฉบับร่าง') : b.billno;
+      tr.innerHTML = `<td>${pickCell}</td><td>${label}</td><td>${status}</td><td>${b.bill_date||''}</td><td>${b.shop_name||b.acctname||b.acctno||''}</td>
         <td>${b.online_po||''}</td><td class="num">${money(b.aftertax)}</td>
         <td>${actions}</td>`;
       tb.appendChild(tr);
@@ -610,14 +705,14 @@ async function init() {
     const pickAll = $('pickAll');
     if (pickAll) {
       pickAll.onchange = () => {
-        box.querySelectorAll('input.pick-bill').forEach(el => { el.checked = pickAll.checked; });
+        box.querySelectorAll('input.pick-draft').forEach(el => { el.checked = pickAll.checked; });
         syncPickBar();
       };
     }
-    box.querySelectorAll('input.pick-bill').forEach(el => {
+    box.querySelectorAll('input.pick-draft').forEach(el => {
       el.onchange = () => {
         if (pickAll) {
-          const all = [...box.querySelectorAll('input.pick-bill')];
+          const all = [...box.querySelectorAll('input.pick-draft')];
           pickAll.checked = all.length > 0 && all.every(x => x.checked);
           pickAll.indeterminate = all.some(x => x.checked) && !pickAll.checked;
         }
@@ -625,9 +720,11 @@ async function init() {
       };
     });
     $('printPick').onclick = () => {
-      const nos = selectedPickBillnos();
+      const nos = selectedPickDraftIds();
       if (!nos.length) return;
-      window.open('/online-sale/print/pick?bills='+encodeURIComponent(nos.join(',')), '_blank');
+      window.open('/online-sale/print/pick?drafts='+encodeURIComponent(nos.join(',')), '_blank');
+      // Refresh after print so status flips to พิมพ์ใบจัดแล้ว.
+      setTimeout(() => { $('doSearch').click(); }, 800);
     };
     syncPickBar();
     box.querySelectorAll('a[data-ret]').forEach(a => a.onclick = (e) => {
@@ -638,6 +735,19 @@ async function init() {
       try { await loadBillForEdit(a.dataset.edit); }
       catch (err) { alert(err.message); }
     });
+    box.querySelectorAll('a[data-edit-draft]').forEach(a => a.onclick = async (e) => {
+      e.preventDefault();
+      try { await loadDraftForEdit(a.dataset.editDraft); }
+      catch (err) { alert(err.message); }
+    });
+    box.querySelectorAll('a[data-cancel-draft]').forEach(a => a.onclick = async (e) => {
+      e.preventDefault();
+      if (!confirm('ยืนยันยกเลิกฉบับร่างนี้?')) return;
+      try {
+        await api('/api/drafts/'+encodeURIComponent(a.dataset.cancelDraft), {method:'DELETE'});
+        $('doSearch').click();
+      } catch (err) { alert(err.message); }
+    });
   }
   $('doSearch').onclick = async () => {
     const params = new URLSearchParams({
@@ -646,6 +756,7 @@ async function init() {
       acctno: $('qShop').value,
       date_from: $('df').value,
       date_to: $('dt').value,
+      kind: $('qKind').value,
     });
     const data = await api('/api/search?'+params);
     renderSearchResults(data.bills || [], data.to_invoices || []);
