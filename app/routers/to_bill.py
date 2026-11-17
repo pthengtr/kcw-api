@@ -133,6 +133,13 @@ def _actor(identity) -> str:
     return name[:80] or "unknown"
 
 
+def _is_placeholder_identity(identity) -> bool:
+    """LAN/Tailscale bypass identities — must not overwrite a real LINE session cookie."""
+    uid = (getattr(identity, "line_user_id", None) or "").strip().casefold()
+    name = (getattr(identity, "display_name", None) or "").strip().casefold()
+    return uid in {"lan", "tailscale"} or name in {"lan", "tailnet"}
+
+
 def _require(request: Request):
     settings = _settings()
     if not settings.to_bill_enabled:
@@ -182,6 +189,7 @@ def home(request: Request, t: str | None = None, tad: str | None = None, kind: s
             return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
     if err:
         return err
+    # Prefer an explicit ?t= identity over a stale LAN cookie from an iframe race.
     if t:
         dest = "/to-bill/" + _page_query(tad, kind)
         resp = RedirectResponse(url=dest, status_code=303)
@@ -190,7 +198,10 @@ def home(request: Request, t: str | None = None, tad: str | None = None, kind: s
         return resp
     resp = HTMLResponse(page(user_name=ident.display_name))
     resp.headers["Cache-Control"] = "no-store"
-    _set_session(resp, ident)
+    # Never let LAN/tailnet fallback stomp a real LINE cookie (iframe race on :8796).
+    existing = (request.cookies.get(SESSION_COOKIE) or "").strip()
+    if not _is_placeholder_identity(ident) or not existing:
+        _set_session(resp, ident)
     return resp
 
 

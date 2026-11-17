@@ -225,9 +225,23 @@ def ui_home(request: Request):
         return err
     settings = _settings()
     has_t = bool((request.query_params.get("t") or "").strip())
+    ttl = max(settings.stock_check_token_ttl_seconds, 86400)
+    # Mint a to-bill entry token for the iframe so it never races into LAN identity.
+    to_bill_token = mint_access_token(
+        secret=settings.token_secret,
+        line_user_id=ident.line_user_id,
+        display_name=ident.display_name,
+        branch=ident.branch,
+        ttl_seconds=ttl,
+        app=TO_APP,
+    )
     resp = HTMLResponse(
         shell_page(
-            page(user_name=_actor(ident), write_enabled=settings.write_enabled),
+            page(
+                user_name=_actor(ident),
+                write_enabled=settings.write_enabled,
+                to_bill_token=to_bill_token,
+            ),
             service_id="online-sale",
             api_base="/online-sale/_shell",
             user_name=_actor(ident),

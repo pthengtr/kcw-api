@@ -68,6 +68,8 @@ def _decorate(row: dict, live: LiveBill | None, *, actor: str = "") -> dict:
     out["shop_label"] = shop_label(row.get("acctname_kss"), row.get("acctno"))
     out["seller_ready"] = _seller_ready()
     out["can_issue"] = can_issue(actor)
+    actor_key = (actor or "").strip().casefold()
+    out["needs_line_login"] = actor_key in {"", "lan", "tailnet", "unknown"}
     status = row.get("status")
     if status == "draft":
         receipt = row.get("doc_kind") == "rvo"

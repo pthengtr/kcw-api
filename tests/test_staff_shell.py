@@ -128,6 +128,23 @@ def test_inject_shell_once():
     )
 
 
+def test_online_sale_page_hosts_shell_slot():
+    from src.online_sale.ui import page
+    from src.staff_shell.ui import inject_shell
+
+    html = inject_shell(
+        page(user_name="Ann", write_enabled=True, to_bill_token="tok"),
+        service_id="online-sale",
+        api_base="/online-sale/_shell",
+        user_name="Ann",
+        branch="HQ",
+    )
+    assert 'id="kcwShellSlot"' in html
+    assert "kcwShellSlot" in html
+    assert "button.kcw-shell-btn" in html
+    assert "kcw-shell-rooted" in html  # mount script references the class
+
+
 def test_services_menu_still_matches_handlers():
     msg = handle_services_menu()
     labels = [

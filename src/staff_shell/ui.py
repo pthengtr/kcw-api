@@ -31,6 +31,7 @@ def render_shell_html(
 <style id="kcw-shell-css">
 #kcw-shell-root{{position:fixed;top:0;right:0;z-index:10050;pointer-events:none;
   font-family:Prompt,"Noto Sans Thai",system-ui,sans-serif}}
+#kcw-shell-root.kcw-shell-rooted{{position:static;z-index:auto}}
 #kcw-shell-root *{{box-sizing:border-box}}
 .kcw-shell-bar{{pointer-events:auto;display:flex;align-items:center;gap:8px;
   padding:max(8px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 8px 10px}}
@@ -39,18 +40,30 @@ def render_shell_html(
   padding:6px 10px;backdrop-filter:blur(6px)}}
 .kcw-shell-name{{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}}
 .kcw-shell-branch{{font-size:11px;opacity:.85}}
-.kcw-shell-btn{{pointer-events:auto;width:40px;height:40px;border:0;border-radius:12px;
-  background:rgba(15,23,42,.88);color:#fff;display:grid;place-items:center;cursor:pointer;
-  box-shadow:0 6px 18px rgba(15,23,42,.28)}}
-.kcw-shell-btn:hover,.kcw-shell-btn:focus-visible{{background:#0f172a;outline:2px solid #93c5fd;outline-offset:2px}}
-.kcw-shell-btn svg{{width:20px;height:20px;display:block}}
+/* Beat host-page `button {{ background }}` resets (e.g. online-sale red buttons). */
+#kcw-shell-root button.kcw-shell-btn{{
+  pointer-events:auto;width:40px;height:40px;min-width:40px;min-height:40px;padding:0;
+  border:0;border-radius:12px;background:#0f172a !important;color:#fff !important;
+  display:grid;place-items:center;cursor:pointer;font:inherit;line-height:1;
+  box-shadow:0 0 0 2px #fff,0 6px 18px rgba(15,23,42,.35)}}
+#kcw-shell-root button.kcw-shell-btn:hover,
+#kcw-shell-root button.kcw-shell-btn:focus-visible{{
+  background:#020617 !important;outline:2px solid #93c5fd;outline-offset:2px}}
+#kcw-shell-root button.kcw-shell-btn svg{{width:20px;height:20px;display:block}}
+#kcwShellSlot{{display:inline-flex;align-items:center;flex:0 0 auto}}
+#kcwShellSlot button.kcw-shell-btn{{
+  background:rgba(255,255,255,.18) !important;color:#fff !important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.85),0 4px 12px rgba(0,0,0,.18)}}
+#kcwShellSlot button.kcw-shell-btn:hover,
+#kcwShellSlot button.kcw-shell-btn:focus-visible{{
+  background:rgba(255,255,255,.28) !important}}
 .kcw-shell-backdrop{{pointer-events:auto;position:fixed;inset:0;background:rgba(15,23,42,.35);
-  opacity:0;visibility:hidden;transition:opacity .15s ease}}
+  opacity:0;visibility:hidden;transition:opacity .15s ease;z-index:10050}}
 .kcw-shell-backdrop.open{{opacity:1;visibility:visible}}
 .kcw-shell-panel{{pointer-events:auto;position:fixed;top:max(56px,calc(env(safe-area-inset-top) + 48px));
   right:max(10px,env(safe-area-inset-right));width:min(320px,calc(100vw - 20px));
   background:#fff;color:#0f172a;border-radius:16px;box-shadow:0 18px 50px rgba(15,23,42,.28);
-  transform:translateY(-6px) scale(.98);opacity:0;visibility:hidden;
+  transform:translateY(-6px) scale(.98);opacity:0;visibility:hidden;z-index:10055;
   transition:opacity .15s ease,transform .15s ease;overflow:hidden}}
 .kcw-shell-panel.open{{opacity:1;visibility:visible;transform:none}}
 .kcw-shell-panel-hd{{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -66,9 +79,9 @@ def render_shell_html(
   display:grid;place-items:center;font-size:12px;font-weight:700}}
 .kcw-shell-tile .lbl{{font-size:12px;font-weight:600;text-align:center;line-height:1.25}}
 .kcw-shell-foot{{display:flex;gap:8px;padding:0 12px 12px}}
-.kcw-shell-foot button{{flex:1;min-height:40px;border-radius:10px;border:1px solid #e2e8f0;
-  background:#fff;font:inherit;font-weight:600;cursor:pointer}}
-.kcw-shell-foot .logout{{border-color:#fecaca;color:#b91c1c;background:#fef2f2}}
+#kcw-shell-root .kcw-shell-foot button{{flex:1;min-height:40px;border-radius:10px;border:1px solid #e2e8f0;
+  background:#fff !important;color:#0f172a !important;font:inherit;font-weight:600;cursor:pointer}}
+#kcw-shell-root .kcw-shell-foot button.logout{{border-color:#fecaca;color:#b91c1c !important;background:#fef2f2 !important}}
 .kcw-shell-idle{{pointer-events:auto;position:fixed;inset:0;z-index:10060;background:rgba(15,23,42,.55);
   display:none;place-items:center;padding:16px}}
 .kcw-shell-idle.open{{display:grid}}
@@ -77,9 +90,9 @@ def render_shell_html(
 .kcw-shell-idle-card h2{{margin:0 0 8px;font-size:16px}}
 .kcw-shell-idle-card p{{margin:0 0 14px;font-size:13px;color:#475569;line-height:1.45}}
 .kcw-shell-idle-card .row{{display:flex;gap:8px}}
-.kcw-shell-idle-card button{{flex:1;min-height:40px;border-radius:10px;border:0;font:inherit;font-weight:600;cursor:pointer}}
-.kcw-shell-idle-card .stay{{background:#1d4ed8;color:#fff}}
-.kcw-shell-idle-card .out{{background:#fee2e2;color:#991b1b}}
+#kcw-shell-root .kcw-shell-idle-card button{{flex:1;min-height:40px;border-radius:10px;border:0;font:inherit;font-weight:600;cursor:pointer}}
+#kcw-shell-root .kcw-shell-idle-card .stay{{background:#1d4ed8 !important;color:#fff !important}}
+#kcw-shell-root .kcw-shell-idle-card .out{{background:#fee2e2 !important;color:#991b1b !important}}
 </style>
 <div id="kcw-shell-root" data-kcw-shell="1" aria-live="polite">
   <div class="kcw-shell-bar">
@@ -149,6 +162,15 @@ def render_shell_html(
   const grid = document.getElementById("kcwShellGrid");
   const siteLabel = document.getElementById("kcwShellSiteLabel");
   const idle = document.getElementById("kcwShellIdle");
+  const bar = root ? root.querySelector(".kcw-shell-bar") : null;
+  // Pages with a colored sticky header can host the 9-dot in #kcwShellSlot
+  // so it is not lost under/against the header paint.
+  const slot = document.getElementById("kcwShellSlot");
+  if (slot && btn && bar) {{
+    slot.appendChild(btn);
+    bar.style.display = "none";
+    if (root) root.classList.add("kcw-shell-rooted");
+  }}
 
   function setOpen(v){{
     state.open = !!v;
