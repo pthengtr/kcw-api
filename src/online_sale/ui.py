@@ -92,7 +92,7 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
       <select id="shop"><option value="">— เลือกร้าน —</option></select>
     </label>
     <label class="field" style="flex:1;min-width:220px"><span>เลขคำสั่งซื้อ (วางจากแพลตฟอร์ม)</span>
-      <input id="po" maxlength="15" autocomplete="off" placeholder="วางเลขคำสั่งซื้อ">
+      <input id="po" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="วางเลขคำสั่งซื้อ">
     </label>
     <button type="button" class="ghost" id="checkPo">ตรวจซ้ำ</button>
   </div>
@@ -165,7 +165,11 @@ iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-ra
 <script>
 const USER = __USER_JSON__;
 const WRITE = __WRITE__;
-const state = { platforms:[], shops:[], lines:[], product:null, write:WRITE, editBillno:null, editDraftId:null, searchBills:[] };
+const state = {
+  platforms:[], shops:[], lines:[], product:null, write:WRITE,
+  editBillno:null, editDraftId:null, searchBills:[],
+  poLenByPlatform: { tiktok:18, lazada:16, shopee:14 },
+};
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -278,8 +282,62 @@ function updateStockWarn() {
   }).join(', ');
 }
 
+function expectedPoLen(platform){
+  const key = String(platform || '').trim().toLowerCase();
+  const n = state.poLenByPlatform[key];
+  return (typeof n === 'number' && n > 0) ? n : null;
+}
+function poValue(){
+  // Keep as plain text — never Number() — so digits are not truncated/changed.
+  return String($('po').value || '').trim();
+}
+function poLengthOk(){
+  const po = poValue();
+  if (!po) return false;
+  const expected = expectedPoLen($('platform').value);
+  if (expected == null) return true;
+  return po.length === expected;
+}
+function syncPoStatus(){
+  const po = poValue();
+  const expected = expectedPoLen($('platform').value);
+  const el = $('poStatus');
+  if (!po) {
+    if (expected != null) {
+      el.textContent = `เลขคำสั่งซื้อต้องมี ${expected} ตัวอักษร`;
+      el.className = 'meta';
+    } else {
+      el.textContent = '';
+      el.className = 'meta';
+    }
+    return false;
+  }
+  if (expected != null && po.length !== expected) {
+    el.textContent = `เลขคำสั่งซื้อต้องมี ${expected} ตัวอักษร (ตอนนี้ ${po.length} ตัว) — ตรวจว่าคัดลอกครบหรือไม่`;
+    el.className = 'meta err';
+    return false;
+  }
+  if (!el.classList.contains('ok') && !el.classList.contains('err')) {
+    el.textContent = expected != null
+      ? `เลขคำสั่งซื้อครบ ${expected} ตัวอักษร`
+      : `เลขคำสั่งซื้อ ${po.length} ตัวอักษร`;
+    el.className = 'meta ok';
+  } else if (el.classList.contains('err') && (expected == null || po.length === expected)) {
+    el.textContent = expected != null
+      ? `เลขคำสั่งซื้อครบ ${expected} ตัวอักษร`
+      : `เลขคำสั่งซื้อ ${po.length} ตัวอักษร`;
+    el.className = 'meta ok';
+  }
+  return true;
+}
+function syncPoMaxLength(){
+  const expected = expectedPoLen($('platform').value);
+  const inp = $('po');
+  if (expected != null) inp.setAttribute('maxlength', String(expected));
+  else inp.removeAttribute('maxlength');
+}
 function saleFormReady(){
-  return !!(WRITE && state.lines.length && $('shop').value && $('po').value.trim());
+  return !!(WRITE && state.lines.length && $('shop').value && poLengthOk());
 }
 function syncEditBanner() {
   const banner = $('editBanner');
@@ -320,6 +378,8 @@ function clearSaleForm() {
   $('poStatus').textContent = '';
   $('saleMsg').textContent = '';
   syncEditBanner();
+  syncPoMaxLength();
+  syncPoStatus();
   renderLines();
 }
 
@@ -502,7 +562,9 @@ async function loadBillForEdit(billno) {
   state.editDraftId = null;
   if (bill.platform) $('platform').value = bill.platform;
   await loadShops($('platform').value, $('shop'), bill.acctno);
+  syncPoMaxLength();
   $('po').value = bill.online_po || '';
+  syncPoStatus();
   state.lines = await hydrateLines(bill.lines || [], { creditStock:true });
   syncEditBanner();
   renderLines();
@@ -520,7 +582,9 @@ async function loadDraftForEdit(draftId) {
   state.editBillno = null;
   if (draft.platform) $('platform').value = draft.platform;
   await loadShops($('platform').value, $('shop'), draft.acctno);
+  syncPoMaxLength();
   $('po').value = draft.online_po || '';
+  syncPoStatus();
   state.lines = await hydrateLines(draft.lines || []);
   syncEditBanner();
   renderLines();
@@ -533,7 +597,7 @@ async function loadDraftForEdit(draftId) {
 function salePayload(allow, confirmUnmapped=false){
   return {
     acctno: $('shop').value,
-    online_po: $('po').value.trim(),
+    online_po: poValue(),
     platform: $('platform').value,
     draft_id: state.editDraftId || '',
     allow_oversell: !!allow,
@@ -560,11 +624,18 @@ async function init() {
   const meta = await api('/api/meta');
   state.platforms = meta.platforms || [];
   state.write = !!meta.write_enabled;
+  if (meta.po_len_by_platform && typeof meta.po_len_by_platform === 'object') {
+    state.poLenByPlatform = Object.assign({}, state.poLenByPlatform, meta.po_len_by_platform);
+  }
   fillPlatformSelect($('platform'));
   fillPlatformSelect($('qPlatform'), true);
   await loadShops($('platform').value, $('shop'));
+  syncPoMaxLength();
+  syncPoStatus();
   $('platform').onchange = async () => {
     await loadShops($('platform').value, $('shop'));
+    syncPoMaxLength();
+    syncPoStatus();
     renderLines();
   };
   $('qPlatform').onchange = async () => {
@@ -577,16 +648,22 @@ async function init() {
     }
   };
   $('shop').onchange = renderLines;
-  $('po').oninput = renderLines;
+  $('po').oninput = () => { syncPoStatus(); renderLines(); };
+  $('po').onpaste = () => { setTimeout(() => { syncPoStatus(); renderLines(); }, 0); };
   $('bcode').addEventListener('keydown', e => { if (e.key==='Enter'){ e.preventDefault(); lookupProduct(); }});
   $('bcode').addEventListener('blur', lookupProduct);
   $('addLine').onclick = addLine;
   $('cancelEdit').onclick = () => clearSaleForm();
   $('checkPo').onclick = async () => {
     try {
+      if (!poLengthOk()) {
+        syncPoStatus();
+        return;
+      }
       const data = await api('/api/check-po', {method:'POST', body: JSON.stringify({
         acctno:$('shop').value,
-        online_po:$('po').value,
+        online_po: poValue(),
+        platform: $('platform').value,
         exclude_billno: state.editBillno || '',
         exclude_draft_id: state.editDraftId || '',
       })});
@@ -596,6 +673,12 @@ async function init() {
   };
   $('saveDraft').onclick = async () => {
     if (state.editBillno) return;
+    if (!poLengthOk()) {
+      syncPoStatus();
+      $('saleMsg').textContent = $('poStatus').textContent || 'เลขคำสั่งซื้อไม่ถูกต้อง';
+      $('saleMsg').className = 'meta err';
+      return;
+    }
     $('saleMsg').textContent='กำลังบันทึกฉบับร่าง...'; $('saleMsg').className='meta';
     try {
       const data = await api('/api/drafts', {method:'POST', body: JSON.stringify(salePayload(false))});
@@ -608,6 +691,12 @@ async function init() {
     } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
   };
   $('saveSale').onclick = async () => {
+    if (!poLengthOk()) {
+      syncPoStatus();
+      $('saleMsg').textContent = $('poStatus').textContent || 'เลขคำสั่งซื้อไม่ถูกต้อง';
+      $('saleMsg').className = 'meta err';
+      return;
+    }
     const bad = oversoldLines();
     let allow = false;
     if (bad.length) {

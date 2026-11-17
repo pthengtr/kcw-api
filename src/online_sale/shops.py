@@ -17,6 +17,48 @@ PLATFORMS = (
 
 _PLATFORM_KEYS = {k for k, _ in PLATFORMS}
 
+# Exact order-id length required before save (copy/paste often truncates).
+PO_LEN_BY_PLATFORM: dict[str, int] = {
+    "tiktok": 18,
+    "lazada": 16,
+    "shopee": 14,
+}
+
+# PARTS9 SIMAS.PO is nvarchar — keep headroom above TikTok's 18.
+PO_HARD_MAX_LEN = 30
+
+
+def normalize_online_po(online_po: Any) -> str:
+    """Always treat order id as text (never int/float) to avoid truncation."""
+    return str(online_po if online_po is not None else "").strip()
+
+
+def po_expected_len(platform: str | None) -> int | None:
+    key = (platform or "").strip().lower()
+    return PO_LEN_BY_PLATFORM.get(key)
+
+
+def validate_online_po(platform: str | None, online_po: Any) -> str:
+    """Require non-empty PO; enforce exact length for TikTok/Lazada/Shopee."""
+    po = normalize_online_po(online_po)
+    if not po:
+        raise OnlineSaleError("po", "ใส่เลขคำสั่งซื้อ")
+    if len(po) > PO_HARD_MAX_LEN:
+        raise OnlineSaleError(
+            "po",
+            f"เลขคำสั่งซื้อยาวเกิน {PO_HARD_MAX_LEN} ตัวอักษร",
+        )
+    expected = po_expected_len(platform)
+    if expected is not None and len(po) != expected:
+        labels = {k: label for k, label in PLATFORMS}
+        key = (platform or "").strip().lower()
+        label = labels.get(key, key or "แพลตฟอร์มนี้")
+        raise OnlineSaleError(
+            "po",
+            f"เลขคำสั่งซื้อ{label}ต้องมี {expected} ตัวอักษร (ตอนนี้ {len(po)} ตัว) — ตรวจว่าคัดลอกครบหรือไม่",
+        )
+    return po
+
 # POS REMARKS stamp by marketplace (live TAD pattern). Line Shopping has no history yet.
 PLATFORM_REMARKS = {
     "lazada": "##0000000000001",

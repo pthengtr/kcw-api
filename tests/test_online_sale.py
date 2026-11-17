@@ -19,6 +19,7 @@ from src.online_sale.shops import (
     detect_platform,
     shop_display_name,
     tax_id_from_remarks,
+    validate_online_po,
 )
 from src.online_sale.ui import page
 from src.online_sale.vat import split_inclusive, totals_from_amounts
@@ -356,8 +357,8 @@ def test_update_tad_validation():
         update_tad(
             billno="CNTAD6911-001",
             acctno="7LAZ1",
-            acctname="x",
-            online_po="PO1",
+            acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
+            online_po="1234567890123456",
             remarks="##0000000000001",
             operator="tester",
             lines=[{"bcode": "A", "qty": 1, "price": 10}],
@@ -366,8 +367,8 @@ def test_update_tad_validation():
         update_tad(
             billno="TAD6911-001",
             acctno="7LAZ1",
-            acctname="x",
-            online_po="PO1",
+            acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
+            online_po="1234567890123456",
             remarks="##0000000000001",
             operator="tester",
             lines=[],
@@ -380,21 +381,35 @@ def test_private_lan():
     assert not is_private_lan("8.8.8.8")
 
 
+def test_online_po_length_by_platform():
+    assert validate_online_po("shopee", "12345678901234") == "12345678901234"
+    assert validate_online_po("lazada", "1234567890123456") == "1234567890123456"
+    assert validate_online_po("tiktok", "123456789012345678") == "123456789012345678"
+    # Always string — numeric inputs must not lose precision / leading zeros.
+    assert validate_online_po("shopee", 12345678901234) == "12345678901234"
+    with pytest.raises(OnlineSaleError, match="14"):
+        validate_online_po("shopee", "1234567890123")
+    with pytest.raises(OnlineSaleError, match="16"):
+        validate_online_po("lazada", "123456789012345")
+    with pytest.raises(OnlineSaleError, match="18"):
+        validate_online_po("tiktok", "12345678901234567")
+
+
 def test_post_tad_validation():
     with pytest.raises(OnlineSaleError, match="อย่างน้อย"):
         post_tad(
             acctno="7LAZ1",
             acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
-            online_po="ORDER1",
+            online_po="1234567890123456",
             remarks="##0000000000001",
             operator="tester",
             lines=[],
         )
-    with pytest.raises(OnlineSaleError, match="15"):
+    with pytest.raises(OnlineSaleError, match="16"):
         post_tad(
             acctno="7LAZ1",
-            acctname="x",
-            online_po="1234567890123456",
+            acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
+            online_po="123456789012345",
             remarks="##0000000000001",
             operator="tester",
             lines=[{"bcode": "A", "qty": 1, "price": 10}],
@@ -421,7 +436,7 @@ def test_post_tad_blocks_duplicate_po_and_stock(mock_engine, mock_icmas):
         post_tad(
             acctno="7LAZ1",
             acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
-            online_po="DUPORDER",
+            online_po="1234567890123456",
             remarks="##0000000000001",
             operator="tester",
             lines=[{"bcode": "03053231", "qty": 1, "price": 100, "detail": "x"}],
@@ -442,7 +457,7 @@ def test_post_tad_blocks_duplicate_po_and_stock(mock_engine, mock_icmas):
         post_tad(
             acctno="7LAZ1",
             acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
-            online_po="NEWORDER",
+            online_po="1234567890123456",
             remarks="##0000000000001",
             operator="tester",
             lines=[{"bcode": "03053231", "qty": 2, "price": 100, "detail": "x"}],

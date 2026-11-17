@@ -14,12 +14,25 @@ Local HQ LAN/Tailscale service that replaces opening **TAD** bills in legacy PAR
 
 | Doc | `BOOKNO` | `BILLTYPE` | Stock | Notes |
 |-----|----------|------------|-------|-------|
-| `TAD{YYMM}-{###}` | `2` | `1` | `QTYOH2 -= qty` | Credit (`CASHED=N`), VAT inclusive (`TAXIC=Y`), `PO`=order id |
+| `TAD{YYMM}-{###}` | `2` | `1` | `QTYOH2 -= qty` | Credit (`CASHED=N`), VAT inclusive (`TAXIC=Y`), `PO`=order id (text; exact length by platform) |
 | `CNTAD{YYMM}-{###}` | `7` | `2` | `QTYOH2 += qty` | `PO`=original TAD; negative line qty/amount |
 
 `JOURMODE=1` for both. Platform `REMARKS`: Lazada `##…1`, TikTok `##…2`, Shopee `##…3`, Line `##…4`.
 
 Full tax invoice **TO** still uses Supabase `to_bill.*` only (no PARTS9 rewrite).
+
+### Order id (`PO`) length
+
+Stored as text (PARTS9 `SIMAS.PO` nvarchar(30), drafts/to_bill `text`). Save is blocked unless the pasted id matches the platform length:
+
+| Platform | Length |
+|----------|--------|
+| TikTok | 18 |
+| Lazada | 16 |
+| Shopee | 14 |
+| Line Shopping | any non-empty |
+
+DDL: [`scripts/sql/alter_simas_po_nvarchar30.sql`](../scripts/sql/alter_simas_po_nvarchar30.sql) (already applied on KSS).
 
 ## Draft → pick → TAD flow
 

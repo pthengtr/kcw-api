@@ -49,6 +49,7 @@ class SaleBody(BaseModel):
 class CheckPoBody(BaseModel):
     acctno: str = ""
     online_po: str = ""
+    platform: str = ""
     exclude_billno: str = ""
     exclude_draft_id: str = ""
 
@@ -251,6 +252,7 @@ def api_check_po(request: Request, body: CheckPoBody):
         return check_po_payload(
             body.acctno,
             body.online_po,
+            platform=body.platform,
             exclude_billno=body.exclude_billno,
             exclude_draft_id=body.exclude_draft_id,
         )
