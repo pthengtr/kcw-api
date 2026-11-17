@@ -13,6 +13,7 @@ from src.online_sale.sheets.cntad import render_cntad_sheet
 from src.online_sale.sheets.pick import render_pick_sheet
 from src.online_sale.sheets.tad import render_tad_sheet
 from src.online_sale.shops import (
+    PO_LEN_BY_PLATFORM,
     channel_label,
     customer_name_without_shop,
     list_platforms,
@@ -20,6 +21,7 @@ from src.online_sale.shops import (
     load_shop,
     party_from_armas,
     tax_id_from_remarks,
+    validate_online_po,
 )
 from src.online_sale.writers.cntad_simas import post_cntad
 from src.online_sale.writers.tad_simas import post_tad, update_tad
@@ -39,7 +41,9 @@ def meta_payload() -> dict[str, Any]:
         "platforms": list_platforms(),
         "return_reasons": [{"id": k, "label": v} for k, v in RETURN_REASONS],
         "write_enabled": settings.write_enabled,
-        "po_max_len": 15,
+        "po_len_by_platform": dict(PO_LEN_BY_PLATFORM),
+        # Hard ceiling for PARTS9 SIMAS.PO (nvarchar(30)); exact lengths come from po_len_by_platform.
+        "po_max_len": 30,
     }
 
 
@@ -55,14 +59,17 @@ def check_po_payload(
     acctno: str,
     online_po: str,
     *,
+    platform: str = "",
     exclude_billno: str = "",
     exclude_draft_id: str = "",
 ) -> dict[str, Any]:
-    po = (online_po or "").strip()
-    if not po:
-        raise OnlineSaleError("po", "ใส่เลขคำสั่งซื้อ")
-    if len(po) > 15:
-        raise OnlineSaleError("po", "เลขคำสั่งซื้อยาวเกิน 15 ตัวอักษร")
+    plat = (platform or "").strip().lower()
+    if not plat and (acctno or "").strip():
+        try:
+            plat = str(load_shop(acctno).get("platform") or "").strip().lower()
+        except OnlineSaleError:
+            plat = ""
+    po = validate_online_po(plat, online_po)
     dups = parts9.find_duplicate_po(acctno, po, exclude_billno=exclude_billno)
     try:
         draft_dups = draft_store.find_duplicate_draft_po(
@@ -71,7 +78,14 @@ def check_po_payload(
     except Exception:
         draft_dups = []
     all_dups = list(dups) + list(draft_dups)
-    return {"ok": not all_dups, "duplicates": all_dups}
+    return {
+        "ok": not all_dups,
+        "duplicates": all_dups,
+        "online_po": po,
+        "platform": plat,
+        "expected_len": PO_LEN_BY_PLATFORM.get(plat),
+        "actual_len": len(po),
+    }
 
 
 def _to_search_hits(raw_q: str) -> list[dict[str, Any]]:
@@ -247,10 +261,14 @@ def save_sale_payload(
         confirm_unmapped=confirm_unmapped,
     )
     shop = load_shop(str(body.get("acctno") or ""))
-    po = str(body.get("online_po") or "").strip()
+    platform = str(body.get("platform") or shop.get("platform") or "").strip()
+    po = validate_online_po(platform, body.get("online_po"))
     draft_id = str(body.get("draft_id") or "").strip()
     check = check_po_payload(
-        shop["acctno"], po, exclude_draft_id=draft_id
+        shop["acctno"],
+        po,
+        platform=platform,
+        exclude_draft_id=draft_id,
     )
     if not check["ok"]:
         dup = check["duplicates"][0]["billno"]
@@ -294,17 +312,18 @@ def save_draft_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
     if not settings.write_enabled:
         raise OnlineSaleError("write_disabled", "ยังไม่เปิด ONLINE_SALE_WRITE_ENABLED", status=403)
     shop = load_shop(str(body.get("acctno") or ""))
-    po = str(body.get("online_po") or "").strip()
+    platform = str(body.get("platform") or shop.get("platform") or "").strip()
+    po = validate_online_po(platform, body.get("online_po"))
     draft_id = str(body.get("draft_id") or "").strip()
     check = check_po_payload(
         shop["acctno"],
         po,
+        platform=platform,
         exclude_draft_id=draft_id,
     )
     if not check["ok"]:
         dup = check["duplicates"][0]["billno"]
         raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")
-    platform = str(body.get("platform") or shop.get("platform") or "").strip()
     payload = dict(
         platform=platform,
         acctno=shop["acctno"],
@@ -344,8 +363,11 @@ def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[s
     if existing["canceled"]:
         raise OnlineSaleError("bill", "บิลนี้ถูกยกเลิกแล้ว แก้ไขไม่ได้")
     shop = load_shop(str(body.get("acctno") or ""))
-    po = str(body.get("online_po") or "").strip()
-    check = check_po_payload(shop["acctno"], po, exclude_billno=exact)
+    platform = str(body.get("platform") or shop.get("platform") or "").strip()
+    po = validate_online_po(platform, body.get("online_po"))
+    check = check_po_payload(
+        shop["acctno"], po, platform=platform, exclude_billno=exact
+    )
     if not check["ok"]:
         dup = check["duplicates"][0]["billno"]
         raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")

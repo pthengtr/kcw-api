@@ -9,6 +9,7 @@ from sqlalchemy.exc import DBAPIError, ProgrammingError
 
 from src.online_sale.docno import format_tad, tad_prefix
 from src.online_sale.errors import OnlineSaleError
+from src.online_sale.shops import detect_platform, validate_online_po
 from src.online_sale.vat import money, totals_from_amounts
 from src.transfer.writers._engine import (
     _fetch_icmas_row,
@@ -80,11 +81,8 @@ def post_tad(
 ) -> dict[str, Any]:
     if not lines:
         raise OnlineSaleError("lines", "เพิ่มอย่างน้อย 1 รายการสินค้า")
-    po = (online_po or "").strip()
-    if not po:
-        raise OnlineSaleError("po", "ใส่เลขคำสั่งซื้อ")
-    if len(po) > 15:
-        raise OnlineSaleError("po", "เลขคำสั่งซื้อยาวเกิน 15 ตัวอักษร (จำกัดของ PARTS9)")
+    platform = detect_platform(acctname, acctno)
+    po = validate_online_po(platform, online_po)
 
     engine = writer_engine_for_branch("HQ")
     now = datetime.now()
@@ -179,7 +177,7 @@ def post_tad(
                     "dueamt": float(aftertax),
                     "acctno": acctno[:15],
                     "acctname": (acctname or "")[:60],
-                    "po": po[:15],
+                    "po": po,  # text; SIMAS.PO is nvarchar(30)
                     "sale": (operator or "")[:15],
                     "remarks": (remarks or "")[:30],
                 },
@@ -315,11 +313,8 @@ def update_tad(
     exact = (billno or "").strip().upper()
     if not exact.startswith("TAD"):
         raise OnlineSaleError("bill", "แก้ไขได้เฉพาะบิล TAD")
-    po = (online_po or "").strip()
-    if not po:
-        raise OnlineSaleError("po", "ใส่เลขคำสั่งซื้อ")
-    if len(po) > 15:
-        raise OnlineSaleError("po", "เลขคำสั่งซื้อยาวเกิน 15 ตัวอักษร (จำกัดของ PARTS9)")
+    platform = detect_platform(acctname, acctno)
+    po = validate_online_po(platform, online_po)
 
     prepared, totals = _prepare_lines(lines)
     aftertax = totals["aftertax"]
@@ -501,7 +496,7 @@ def update_tad(
                     "exact": exact,
                     "acctno": acctno[:15],
                     "acctname": (acctname or "")[:60],
-                    "po": po[:15],
+                    "po": po,  # text; SIMAS.PO is nvarchar(30)
                     "remarks": (remarks or "")[:30],
                     "lines": len(prepared),
                     "beforetax": float(totals["beforetax"]),
