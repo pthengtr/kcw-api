@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.online_sale.issuers import resolve_print_issuer
 from src.online_sale.sheets.common import (
     COMPANY,
     CSS,
@@ -15,6 +16,9 @@ from src.online_sale.sheets.common import (
 def render_tad_sheet(bill: dict) -> str:
     lines = bill.get("lines") or []
     amounts = [ln.get("amount") for ln in lines]
+    seller_name = (
+        str(bill.get("issuer_label") or "").strip() or resolve_print_issuer(bill)
+    )
     meta = (
         f"<div><b>เลขที่</b> {esc(bill.get('billno'))}</div>"
         f"<div><b>วันที่</b> {thai_date(bill.get('bill_date'))}</div>"
@@ -41,7 +45,7 @@ def render_tad_sheet(bill: dict) -> str:
     <tbody>{line_rows_html(lines)}</tbody>
   </table>
   {totals_block(amounts)}
-  <div class="foot">พนักงานขาย: <b>{esc(bill.get('sale') or '')}</b></div>
+  <div class="foot">พนักงานขาย: <b>{esc(seller_name)}</b></div>
 </div>
 <script>
 window.onload=function(){{

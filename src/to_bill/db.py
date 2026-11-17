@@ -66,6 +66,8 @@ def public_invoice(row: dict[str, Any], lines: list[dict[str, Any]] | None = Non
         "email": row.get("email") or "",
         "issued_at": _iso(row.get("issued_at")),
         "issued_by": row.get("issued_by") or "",
+        "issuer_label": row.get("issuer_label") or "",
+        "approver_label": row.get("approver_label") or "",
         "voided_at": _iso(row.get("voided_at")),
         "void_reason": row.get("void_reason") or "",
         "voided_by": row.get("voided_by") or "",
@@ -574,6 +576,8 @@ def issue_invoice(
     series: str,
     pay_via: str | None,
     bill: LiveBill | None,
+    issuer_label: str = "",
+    approver_label: str = "",
 ) -> dict[str, Any]:
     yymm = buddhist_yymm()
     with _connect() as conn:
@@ -634,6 +638,8 @@ def issue_invoice(
                         email = %s,
                         issued_at = now(),
                         issued_by = %s,
+                        issuer_label = %s,
+                        approver_label = %s,
                         updated_at = now()
                     where invoice_id = %s
                     returning *
@@ -649,6 +655,8 @@ def issue_invoice(
                         buyer.branch_label,
                         buyer.email,
                         actor,
+                        (issuer_label or "").strip() or None,
+                        (approver_label or "").strip() or None,
                         invoice_id,
                     ),
                 ).fetchone()
@@ -680,6 +688,8 @@ def issue_invoice(
                         email = %s,
                         issued_at = now(),
                         issued_by = %s,
+                        issuer_label = %s,
+                        approver_label = %s,
                         updated_at = now()
                     where invoice_id = %s
                     returning *
@@ -694,6 +704,8 @@ def issue_invoice(
                         buyer.branch_label,
                         buyer.email,
                         actor,
+                        (issuer_label or "").strip() or None,
+                        (approver_label or "").strip() or None,
                         invoice_id,
                     ),
                 ).fetchone()

@@ -42,6 +42,7 @@ class SaleBody(BaseModel):
     platform: str = ""
     draft_id: str = ""
     allow_oversell: bool = False
+    confirm_unmapped: bool = False
     lines: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -56,6 +57,7 @@ class ReturnBody(BaseModel):
     tad_billno: str = ""
     reason_id: str = ""
     reason_note: str = ""
+    confirm_unmapped: bool = False
     lines: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -295,7 +297,14 @@ def api_sales(request: Request, body: SaleBody):
     if err is not None:
         return err
     try:
-        return save_sale_payload(body.model_dump(), _actor(ident))
+        data = body.model_dump()
+        confirm = bool(data.pop("confirm_unmapped", False))
+        return save_sale_payload(
+            data,
+            _actor(ident),
+            line_user_id=ident.line_user_id,
+            confirm_unmapped=confirm,
+        )
     except Exception as exc:
         return _err(exc)
 
@@ -365,7 +374,14 @@ def api_returns(request: Request, body: ReturnBody):
     if err is not None:
         return err
     try:
-        return save_return_payload(body.model_dump(), _actor(ident))
+        data = body.model_dump()
+        confirm = bool(data.pop("confirm_unmapped", False))
+        return save_return_payload(
+            data,
+            _actor(ident),
+            line_user_id=ident.line_user_id,
+            confirm_unmapped=confirm,
+        )
     except Exception as exc:
         return _err(exc)
 

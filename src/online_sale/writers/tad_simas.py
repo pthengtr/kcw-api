@@ -478,6 +478,8 @@ def update_tad(
                     {"qty": on_hand - stock_qty, "bcode": line["bcode"]},
                 )
 
+            # Keep original SALE (issuer LINE name). Edits must not rewrite
+            # the salesperson snapshotted at issue time.
             conn.execute(
                 text(
                     """
@@ -486,7 +488,6 @@ def update_tad(
                         ACCTNAME = :acctname,
                         PO = :po,
                         REMARKS = :remarks,
-                        SALE = :sale,
                         LINES = :lines,
                         BEFORETAX = :beforetax,
                         TAX = :tax,
@@ -502,7 +503,6 @@ def update_tad(
                     "acctname": (acctname or "")[:60],
                     "po": po[:15],
                     "remarks": (remarks or "")[:30],
-                    "sale": (operator or "")[:15],
                     "lines": len(prepared),
                     "beforetax": float(totals["beforetax"]),
                     "tax": float(totals["tax"]),

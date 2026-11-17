@@ -259,8 +259,8 @@ def test_line_mtp_resolves_large_unit():
 
 def test_staff_roster_and_cntad_signers():
     assert match_staff("เมย์")["full_name"] == "ปิยะนุช นันตาบุตร"
-    assert issuer_full_name("Nu") == "อานนท์ ชูสวัสดิ์"
-    assert issuer_full_name("Boss") == "สุริยะ โกศัลยกุล"
+    assert issuer_full_name("Nu") == "อานนท์ ชูสวัสดิ์ (นุ)"
+    assert issuer_full_name("Boss") == "สุริยะ โกศัลยกุล (บอส)"
     html = render_cntad_sheet(
         {
             "billno": "CNTAD6911-001",
@@ -285,7 +285,7 @@ def test_staff_roster_and_cntad_signers():
     assert "ผู้ออกเอกสาร" in html
     assert "ผู้อนุมัติเอกสาร" in html
     assert "ผู้รับเอกสาร" in html
-    assert "ปิยะนุช นันตาบุตร" in html
+    assert "ปิยะนุช นันตาบุตร (เมย์)" in html
     assert "ลูกค้า:" in html
     assert "คุณลูกค้าทั่วไป LAZADA" in html
     assert "PNT TRACTOR)" not in html.split("ลูกค้า:")[1].split("</div>")[0]

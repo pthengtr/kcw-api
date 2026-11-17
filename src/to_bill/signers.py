@@ -110,8 +110,12 @@ def assert_can_issue(actor: str) -> None:
 
 
 def display_name(signer: dict) -> str:
-    """Printed name on the sheet — full name only, no nickname."""
-    return str(signer.get("full_name") or "").strip()
+    """Printed name on the sheet — full name (nickname)."""
+    full = str(signer.get("full_name") or "").strip()
+    nick = str(signer.get("nick") or "").strip()
+    if full and nick:
+        return f"{full} ({nick})"
+    return full or nick
 
 
 def sheet_signers(issued_by: str = "") -> tuple[dict, dict]:

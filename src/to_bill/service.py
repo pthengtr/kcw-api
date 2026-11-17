@@ -183,8 +183,24 @@ def save(invoice_id: str, payload: dict, actor: str = "") -> dict:
     return _decorate(saved, live, actor=actor)
 
 
-def issue(invoice_id: str, payload: dict, actor: str) -> dict:
+def issue(
+    invoice_id: str,
+    payload: dict,
+    actor: str,
+    *,
+    line_user_id: str = "",
+    confirm_unmapped: bool = False,
+) -> dict:
     assert_can_issue(actor)
+    from src.staff.errors import StaffMappingError
+    from src.staff.profiles import require_staff_mapping
+    from src.to_bill.signers import display_name, sheet_signers
+
+    try:
+        require_staff_mapping(line_user_id, actor)
+    except StaffMappingError as exc:
+        if not confirm_unmapped:
+            raise ToBillError(exc.code, exc.message, status=exc.status) from exc
     try:
         buyer = parse_buyer(payload)
     except ValueError as exc:
@@ -209,6 +225,9 @@ def issue(invoice_id: str, payload: dict, actor: str) -> dict:
             "seller_tax",
             "ยังไม่ได้ตั้งเลขประจำตัวผู้เสียภาษีของผู้ขาย (TO_BILL_SELLER_TAX_ID)",
         )
+    issuer, approver = sheet_signers(actor)
+    issuer_label = display_name(issuer)
+    approver_label = display_name(approver)
     if receipt:
         issued = db.issue_invoice(
             invoice_id,
@@ -217,6 +236,8 @@ def issue(invoice_id: str, payload: dict, actor: str) -> dict:
             series="RVO",
             pay_via=pay_via,
             bill=None,
+            issuer_label=issuer_label,
+            approver_label=approver_label,
         )
         return _decorate(issued, _load_live(str(issued.get("tad_billno") or "")), actor=actor)
     live = load_tad(str(current.get("tad_billno") or ""))
@@ -236,6 +257,8 @@ def issue(invoice_id: str, payload: dict, actor: str) -> dict:
         series="TO",
         pay_via=None,
         bill=live,
+        issuer_label=issuer_label,
+        approver_label=approver_label,
     )
     return _decorate(issued, live, actor=actor)
 
