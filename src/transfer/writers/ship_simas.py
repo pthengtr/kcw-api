@@ -8,6 +8,7 @@ from sqlalchemy.exc import DBAPIError, ProgrammingError
 
 from src.transfer.db import get_shipment_by_token, get_transfer_supabase_client
 from src.transfer.direction import ship_billno_prefix
+from src.db.nvarchar import truncate_sql_nvarchar
 from src.transfer.writers._engine import (
     TransferWriteError,
     TRANSFER_BOOKNO,
@@ -101,7 +102,9 @@ def post_transfer_ship(
                     "lines": len(lines),
                     "acctno": acctno,
                     "acctname": acctname,
-                    "sale": operator[:15],
+                    # SIMAS.SALE is nvarchar(15); fancy Unicode (math script /
+                    # emoji) is 2 UTF-16 units per char, so Python [:15] overflows.
+                    "sale": truncate_sql_nvarchar(operator or "", 15),
                     "remarks": remarks,
                 },
             )

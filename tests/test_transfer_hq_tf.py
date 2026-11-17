@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.db.nvarchar import sql_nvarchar_len
 from src.transfer.writers.receive_pimas import TransferReceiveError, post_transfer_receive
 from src.transfer.writers.ship_simas import TransferShipError, post_transfer_ship
 
@@ -163,3 +164,45 @@ def test_post_transfer_ship_syp_uses_kcw_ap(
     )
     assert simas_params["acctno"] == "KCW"
     assert "สำนักงานใหญ่" in simas_params["acctname"]
+
+
+@patch("src.transfer.writers.ship_simas.ensure_hq_low_stock_iclow")
+@patch("src.transfer.writers.ship_simas.get_transfer_supabase_client")
+@patch("src.transfer.writers.ship_simas.writer_engine_for_branch")
+@patch("src.transfer.writers.ship_simas.get_shipment_by_token")
+def test_post_transfer_ship_sale_fits_nvarchar15_for_math_script_name(
+    mock_get_shipment, mock_engine, mock_client, _mock_low
+):
+    """LINE fancy-script display names overflow Python [:15] vs nvarchar(15)."""
+    fancy = "𝓡𝓪𝓽𝓽𝓱𝓹𝓱𝓾𝓶𝓲 𝓢𝓻𝓲𝓼𝓪𝔀𝓪𝓽🌹"
+    assert sql_nvarchar_len(fancy[:15]) > 15
+
+    mock_get_shipment.return_value = None
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.mappings.return_value.first.return_value = {
+        "ACCTNAME": "สาขาสี่แยกพัฒนา",
+        "QTYOH2": 20,
+        "UI1": "หน่วย",
+        "LOCATION1": "A1",
+    }
+
+    @contextmanager
+    def fake_begin():
+        yield mock_conn
+
+    mock_engine.return_value.begin = fake_begin
+    with patch("src.transfer.writers.ship_simas.next_simas_billno", return_value="TF2308-00001"):
+        post_transfer_ship(
+            from_branch="HQ",
+            transfer_id="test-id",
+            short_id="test-short",
+            lines=[{"line_id": "line1", "bcode": "BCODE1", "qty_ship": 1, "descr": "x"}],
+            operator=fancy,
+            client_token="tok",
+        )
+    sale = next(
+        call.args[1]["sale"]
+        for call in mock_conn.execute.call_args_list
+        if "INSERT INTO dbo.SIMAS" in str(call.args[0])
+    )
+    assert sql_nvarchar_len(sale) <= 15
