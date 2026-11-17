@@ -198,17 +198,21 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
     heading = "ใบเสร็จรับเงิน" if receipt else "ใบกำกับภาษี"
     signed_on = _thai_date(invoice.get("issued_at") or invoice.get("bill_date"))
     issuer, approver = sheet_signers(str(invoice.get("issued_by") or ""))
+    issuer_name = str(invoice.get("issuer_label") or "").strip() or display_name(issuer)
+    approver_name = str(invoice.get("approver_label") or "").strip() or display_name(
+        approver
+    )
     signs = "".join(
         (
             _signature(
                 f"{ROLE_ISSUER} (ผู้ขาย)",
-                name=display_name(issuer),
+                name=issuer_name,
                 image_file=issuer["image"],
                 signed_on=signed_on,
             ),
             _signature(
                 f"{ROLE_APPROVER} (ผู้ขาย)",
-                name=display_name(approver),
+                name=approver_name,
                 image_file=approver["image"],
                 signed_on=signed_on,
             ),

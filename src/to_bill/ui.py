@@ -168,7 +168,11 @@ function money(value) {
 async function api(path, options) {
   const res = await fetch(path, options);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || data.error || "ไม่สำเร็จ");
+  if (!res.ok) {
+    const err = new Error(data.message || data.error || "ไม่สำเร็จ");
+    err.code = data.error || "";
+    throw err;
+  }
   return data;
 }
 function docChip(doc, issuedLabel, draftLabel, emptyLabel) {
@@ -294,7 +298,7 @@ function renderEditor(inv) {
   });
   document.getElementById("taxId").addEventListener("input", suggestBuyers);
 }
-function payload() {
+function payload(confirmUnmapped) {
   const branch = document.getElementById("branch").value;
   return {
     customer_name: document.getElementById("customerName").value,
@@ -304,7 +308,8 @@ function payload() {
     branch_no: branch === "branch" ? document.getElementById("branchNo").value : "",
     phone: document.getElementById("phone").value,
     email: document.getElementById("email").value,
-    pay_via: document.getElementById("payVia") ? document.getElementById("payVia").value : ""
+    pay_via: document.getElementById("payVia") ? document.getElementById("payVia").value : "",
+    confirm_unmapped: !!confirmUnmapped
   };
 }
 function applyBuyer(row) {
@@ -435,8 +440,22 @@ editor.addEventListener("click", async (event) => {
   if (event.target.id === "issueBtn") {
     const next = current.next_docno ? ("ออกเอกสารเลขประมาณ " + current.next_docno + String.fromCharCode(10) + "เลขจริงจองตอนบันทึก") : "ออกเอกสาร";
     if (!confirm(next)) return;
-    try { renderEditor(await api(`/to-bill/api/invoices/${id}/issue`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload())})); }
-    catch (err) { const el = document.getElementById("formErr"); if (el) el.textContent = err.message; }
+    let confirmUnmapped = false;
+    try {
+      while (true) {
+        try {
+          renderEditor(await api(`/to-bill/api/invoices/${id}/issue`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload(confirmUnmapped))}));
+          break;
+        } catch (err) {
+          if (err.code === "staff_unmapped") {
+            if (!confirm(err.message + String.fromCharCode(10) + String.fromCharCode(10) + "ยืนยันออกเอกสารด้วยชื่อ LINE ชั่วคราวหรือไม่?")) throw err;
+            confirmUnmapped = true;
+            continue;
+          }
+          throw err;
+        }
+      }
+    } catch (err) { const el = document.getElementById("formErr"); if (el) el.textContent = err.message; }
   }
   if (event.target.id === "printBtn") {
     try { await api(`/to-bill/api/invoices/${id}/printed`, {method:"POST"}); } catch (err) {}

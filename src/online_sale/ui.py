@@ -221,7 +221,12 @@ async function api(path, opts={}) {
     ...opts,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || data.detail || data.error || ('HTTP '+res.status));
+  if (!res.ok) {
+    const err = new Error(data.message || data.detail || data.error || ('HTTP '+res.status));
+    err.code = data.error || '';
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -525,19 +530,28 @@ async function loadDraftForEdit(draftId) {
   $('saleMsg').className = 'meta ok';
 }
 
-function salePayload(allow){
+function salePayload(allow, confirmUnmapped=false){
   return {
     acctno: $('shop').value,
     online_po: $('po').value.trim(),
     platform: $('platform').value,
     draft_id: state.editDraftId || '',
     allow_oversell: !!allow,
+    confirm_unmapped: !!confirmUnmapped,
     lines: state.lines.map(l => ({
       bcode:l.bcode, qty:l.qty, price:l.price, detail:l.descr, descr:l.descr,
       ui:l.ui, mtp:l.mtp, ui1:l.ui1, ui2:l.ui2, mtp2:l.mtp2,
       location:l.location, location1:l.location, qtyoh2:l.qtyoh2,
     })),
   };
+}
+
+async function confirmUnmappedOrThrow(err){
+  if (err && err.code === 'staff_unmapped') {
+    const ok = confirm(err.message + '\\n\\nยืนยันออกเอกสารด้วยชื่อ LINE ชั่วคราวหรือไม่?');
+    if (ok) return true;
+  }
+  throw err;
 }
 
 async function init() {
@@ -601,12 +615,23 @@ async function init() {
       if (!allow) return;
     }
     $('saleMsg').textContent='กำลังบันทึก...'; $('saleMsg').className='meta';
-    const payload = salePayload(allow);
+    let confirmUnmapped = false;
     try {
       const editing = !!state.editBillno;
-      const data = editing
-        ? await api('/api/sales/'+encodeURIComponent(state.editBillno), {method:'PATCH', body: JSON.stringify(payload)})
-        : await api('/api/sales', {method:'POST', body: JSON.stringify(payload)});
+      let data;
+      while (true) {
+        const payload = salePayload(allow, confirmUnmapped);
+        try {
+          data = editing
+            ? await api('/api/sales/'+encodeURIComponent(state.editBillno), {method:'PATCH', body: JSON.stringify(payload)})
+            : await api('/api/sales', {method:'POST', body: JSON.stringify(payload)});
+          break;
+        } catch (e) {
+          if (editing) throw e;
+          await confirmUnmappedOrThrow(e);
+          confirmUnmapped = true;
+        }
+      }
       const verb = editing ? 'แก้ไขแล้ว' : (state.editDraftId ? 'ยืนยันขายแล้ว' : 'บันทึกแล้ว');
       const billno = data.result.billno;
       clearSaleForm();
@@ -789,13 +814,24 @@ async function init() {
           const qty = Number(inp.value||0);
           if (qty>0) lines.push({bcode:inp.dataset.bcode, qty, price:Number(inp.dataset.price), detail:inp.dataset.detail, ui:inp.dataset.ui});
         });
+        let confirmUnmapped = false;
         try {
-          const saved = await api('/api/returns', {method:'POST', body: JSON.stringify({
-            tad_billno: data.bill.billno,
-            reason_id: $('reason').value,
-            reason_note: $('reasonNote').value,
-            lines,
-          })});
+          let saved;
+          while (true) {
+            try {
+              saved = await api('/api/returns', {method:'POST', body: JSON.stringify({
+                tad_billno: data.bill.billno,
+                reason_id: $('reason').value,
+                reason_note: $('reasonNote').value,
+                confirm_unmapped: confirmUnmapped,
+                lines,
+              })});
+              break;
+            } catch (e) {
+              await confirmUnmappedOrThrow(e);
+              confirmUnmapped = true;
+            }
+          }
           $('retMsg').innerHTML = `บันทึกแล้ว <b>${saved.result.billno}</b> · <a href="/online-sale/print/cntad/${encodeURIComponent(saved.result.billno)}?reason=${encodeURIComponent(saved.bill.reason||'')}" target="_blank">พิมพ์ใบลดหนี้</a>`;
           $('retMsg').className='meta ok';
         } catch(e) { $('retMsg').textContent=e.message; $('retMsg').className='meta err'; }

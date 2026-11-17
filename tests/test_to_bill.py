@@ -201,10 +201,8 @@ def test_sheet_names_the_tad_and_buyer():
     assert html.count("ผู้ออกเอกสาร (ผู้ขาย)") == 2
     assert html.count("ผู้อนุมัติเอกสาร (ผู้ขาย)") == 2
     assert html.count("ผู้รับเอกสาร (ลูกค้า)") == 2
-    assert html.count("มัญชุนันท์ คำลา") == 2
-    assert html.count("ปิยะนุช นันตาบุตร") == 2
-    assert "อ้อน" not in html
-    assert "เมย์" not in html
+    assert html.count("มัญชุนันท์ คำลา (อ้อน)") == 2
+    assert html.count("ปิยะนุช นันตาบุตร (เมย์)") == 2
     assert "data:image/jpeg;base64," in html
     assert "ลายมือชื่อ" in html
     assert "TAD6910-014" in html
@@ -234,8 +232,8 @@ def test_only_named_sellers_may_issue():
     assert sheet_signers("อ้อน") == (AON, MAY)
     assert sheet_signers("Manchunannnnn") == (AON, MAY)
     assert sheet_signers("การ์ตูน") == (CARTOON, CARTOON)
-    assert display_name(AON) == "มัญชุนันท์ คำลา"
-    assert display_name(CARTOON) == "จิดาภา กระจาย"
+    assert display_name(AON) == "มัญชุนันท์ คำลา (อ้อน)"
+    assert display_name(CARTOON) == "จิดาภา กระจาย (การ์ตูน)"
     assert not can_issue("LAN")
     assert not can_issue("Pannawit")
     assert not can_issue("peung")
@@ -269,10 +267,9 @@ def test_cartoon_signs_both_roles_on_sheet():
         },
         seller_tax_id="0105537000000",
     )
-    assert html.count("จิดาภา กระจาย") == 4
+    assert html.count("จิดาภา กระจาย (การ์ตูน)") == 4
     assert "มัญชุนันท์ คำลา" not in html
     assert "ปิยะนุช นันตาบุตร" not in html
-    assert "การ์ตูน" not in html
 
 
 def test_receipt_sheet_names_payment():

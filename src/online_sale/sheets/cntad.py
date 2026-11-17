@@ -11,7 +11,7 @@ from src.online_sale.sheets.common import (
     thai_date,
 )
 from src.online_sale.shops import channel_label, customer_name_without_shop
-from src.online_sale.staff import issuer_full_name
+from src.online_sale.issuers import resolve_print_issuer
 from src.online_sale.vat import money, totals_from_amounts
 
 
@@ -78,7 +78,7 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
     lines = bill.get("lines") or []
     summary = credit_note_summary(bill, original)
     reason_text = reason or bill.get("reason") or ""
-    issuer_name = issuer_full_name(str(bill.get("sale") or ""))
+    issuer_name = str(bill.get("issuer_label") or "").strip() or resolve_print_issuer(bill)
     signed_on = thai_date(bill.get("bill_date"))
 
     raw_name = bill.get("customer_name") or bill.get("acctname") or ""

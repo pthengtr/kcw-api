@@ -44,6 +44,7 @@ class BuyerBody(BaseModel):
     branch_no: str = ""
     email: str = ""
     pay_via: str = ""
+    confirm_unmapped: bool = False
 
 
 class VoidBody(BaseModel):
@@ -292,7 +293,15 @@ def api_issue(request: Request, invoice_id: str, body: BuyerBody):
     if err:
         return err
     try:
-        return issue(invoice_id, body.model_dump(), _actor(ident))
+        data = body.model_dump()
+        confirm = bool(data.pop("confirm_unmapped", False))
+        return issue(
+            invoice_id,
+            data,
+            _actor(ident),
+            line_user_id=ident.line_user_id,
+            confirm_unmapped=confirm,
+        )
     except ToBillError as exc:
         return _error(exc)
 

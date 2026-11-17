@@ -8,6 +8,7 @@ from src.online_sale import drafts as draft_store
 from src.online_sale import parts9
 from src.online_sale.config import get_online_sale_settings
 from src.online_sale.errors import OnlineSaleError
+from src.online_sale.issuers import resolve_print_issuer, save_doc_issuer
 from src.online_sale.sheets.cntad import render_cntad_sheet
 from src.online_sale.sheets.pick import render_pick_sheet
 from src.online_sale.sheets.tad import render_tad_sheet
@@ -22,6 +23,8 @@ from src.online_sale.shops import (
 )
 from src.online_sale.writers.cntad_simas import post_cntad
 from src.online_sale.writers.tad_simas import post_tad, update_tad
+from src.staff.errors import StaffMappingError
+from src.staff.profiles import issuer_label_for_actor, require_staff_mapping
 
 RETURN_REASONS = (
     ("cancel_order", "ยกเลิกคำสั่งซื้อ"),
@@ -208,10 +211,41 @@ def return_preview_payload(tad_billno: str) -> dict[str, Any]:
     return {"bill": bill, "lines": lines, "reasons": meta_payload()["return_reasons"]}
 
 
-def save_sale_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
+def _guard_staff_mapping(
+    *,
+    line_user_id: str,
+    display_name: str,
+    confirm_unmapped: bool,
+) -> str:
+    """Return printable issuer label; warn unless confirm_unmapped."""
+    try:
+        mapped = require_staff_mapping(line_user_id, display_name)
+        if mapped.get("issuer_label"):
+            return str(mapped["issuer_label"])
+    except StaffMappingError as exc:
+        if not confirm_unmapped:
+            raise OnlineSaleError(exc.code, exc.message, status=exc.status) from exc
+    return issuer_label_for_actor(
+        line_user_id=line_user_id,
+        display_name=display_name,
+    )
+
+
+def save_sale_payload(
+    body: dict[str, Any],
+    actor: str,
+    *,
+    line_user_id: str = "",
+    confirm_unmapped: bool = False,
+) -> dict[str, Any]:
     settings = get_online_sale_settings()
     if not settings.write_enabled:
         raise OnlineSaleError("write_disabled", "ยังไม่เปิด ONLINE_SALE_WRITE_ENABLED", status=403)
+    issuer_label = _guard_staff_mapping(
+        line_user_id=line_user_id,
+        display_name=actor,
+        confirm_unmapped=confirm_unmapped,
+    )
     shop = load_shop(str(body.get("acctno") or ""))
     po = str(body.get("online_po") or "").strip()
     draft_id = str(body.get("draft_id") or "").strip()
@@ -235,6 +269,15 @@ def save_sale_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
         lines=list(body.get("lines") or []),
         allow_oversell=bool(body.get("allow_oversell")),
     )
+    try:
+        save_doc_issuer(
+            result["billno"],
+            line_user_id=line_user_id,
+            display_name=actor,
+            issuer_label=issuer_label,
+        )
+    except Exception:
+        pass
     if draft_id:
         try:
             draft_store.mark_draft_sold(draft_id, result["billno"], actor)
@@ -242,6 +285,7 @@ def save_sale_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
             # TAD already posted — surface soft warning via response.
             pass
     bill = parts9.load_bill(result["billno"])
+    bill["issuer_label"] = issuer_label
     return {"ok": True, "result": result, "bill": bill}
 
 
@@ -319,10 +363,21 @@ def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[s
     return {"ok": True, "result": result, "bill": bill}
 
 
-def save_return_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
+def save_return_payload(
+    body: dict[str, Any],
+    actor: str,
+    *,
+    line_user_id: str = "",
+    confirm_unmapped: bool = False,
+) -> dict[str, Any]:
     settings = get_online_sale_settings()
     if not settings.write_enabled:
         raise OnlineSaleError("write_disabled", "ยังไม่เปิด ONLINE_SALE_WRITE_ENABLED", status=403)
+    issuer_label = _guard_staff_mapping(
+        line_user_id=line_user_id,
+        display_name=actor,
+        confirm_unmapped=confirm_unmapped,
+    )
     tad = str(body.get("tad_billno") or "").strip().upper()
     preview = return_preview_payload(tad)
     bill = preview["bill"]
@@ -371,9 +426,19 @@ def save_return_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
         lines=return_lines,
         reason=reason_text,
     )
+    try:
+        save_doc_issuer(
+            result["billno"],
+            line_user_id=line_user_id,
+            display_name=actor,
+            issuer_label=issuer_label,
+        )
+    except Exception:
+        pass
     cn = parts9.load_bill(result["billno"])
     cn["reason"] = reason_text
     cn["tad_billno"] = tad
+    cn["issuer_label"] = issuer_label
     return {"ok": True, "result": result, "bill": cn, "original": bill}
 
 
@@ -381,6 +446,7 @@ def print_tad_html(billno: str) -> str:
     bill = parts9.load_bill(billno)
     if bill["kind"] != "tad":
         raise OnlineSaleError("bill", "พิมพ์ใบ TAD ได้จากบิล TAD เท่านั้น")
+    bill["issuer_label"] = resolve_print_issuer(bill)
     return render_tad_sheet(bill)
 
 
@@ -452,4 +518,5 @@ def print_cntad_html(billno: str, *, reason: str = "") -> str:
         if not bill.get("platform"):
             bill["platform"] = original.get("platform") or ""
     bill["channel"] = channel_label(bill.get("platform"), bill.get("shop_name"))
+    bill["issuer_label"] = resolve_print_issuer(bill)
     return render_cntad_sheet(bill, original=original, reason=reason)

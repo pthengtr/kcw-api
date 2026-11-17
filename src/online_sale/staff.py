@@ -1,4 +1,8 @@
-"""Map LINE display names to full legal names for CNTAD signature blocks."""
+"""Legacy LINE display-name → legal name roster for old PARTS9 SALE strings.
+
+New issues resolve by LINE user id via ops.staff_profiles (src.staff).
+This module remains as a fallback for bills issued before the snapshot table.
+"""
 
 from __future__ import annotations
 
@@ -60,8 +64,22 @@ def match_staff(actor: str) -> dict | None:
     return None
 
 
+def _label(full_name: str, nick: str) -> str:
+    full = (full_name or "").strip()
+    name = (nick or "").strip()
+    if full and name:
+        return f"{full} ({name})"
+    return full or name
+
+
 def issuer_full_name(actor: str) -> str:
+    """Printed name: full name (nickname). Falls back to raw actor string."""
     hit = match_staff(actor)
     if hit:
-        return hit["full_name"]
+        return _label(hit["full_name"], hit["nick"])
     return (actor or "").strip()
+
+
+def issuer_document_name(actor: str) -> str:
+    """Alias kept for call sites that want the document print format."""
+    return issuer_full_name(actor)
