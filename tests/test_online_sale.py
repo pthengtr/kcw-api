@@ -93,14 +93,18 @@ def test_ui_page_placeholders():
     assert "cancelEdit" in html
     assert "qtyUnit" in html
     assert "unit-select" in html
-    assert "print/pick?bills=" in html
-    assert "พิมพ์ใบจัดสินค้า" in html
+    assert "print/pick?drafts=" in html
+    assert "พิมพ์ใบจัดสินค้ารวม" in html
     assert "พิมพ์ TAD" in html
-    assert "ใบจัดสินค้า" in html
-    assert "pick-bill" in html
+    assert "บันทึกฉบับร่าง" in html
+    assert "pick-draft" in html
     assert "printPick" in html
+    assert "saveDraft" in html
+    assert "qKind" in html
     # Sale page must not offer pick-sheet after save.
     assert "print/pick/${encodeURIComponent(billno)}" not in html
+    # Pick is from drafts only — no TAD checkbox class.
+    assert "pick-bill" not in html
 
 
 def test_pick_sheet_sorted_no_price():
@@ -135,10 +139,11 @@ def test_pick_sheet_sorted_no_price():
         }
     )
     assert "ใบจัดสินค้า" in html
-    assert "TAD6911-010" in html
+    # Packing refs use order id, not TAD.
+    assert "251116ABC" in html
+    assert "เลขคำสั่งซื้อ" in html
     assert "Shopee" in html
     assert "PNT TRACTOR" in html
-    assert "251116ABC" in html
     assert "ผู้จัดสินค้า" in html
     assert "ผู้ตรวจสินค้า" in html
     assert "ที่เก็บ" in html
@@ -157,6 +162,7 @@ def test_pick_sheet_merges_multi_bill_same_sku_unit():
         [
             {
                 "billno": "TAD6911-001",
+                "online_po": "PO1",
                 "lines": [
                     {
                         "bcode": "B1",
@@ -176,6 +182,7 @@ def test_pick_sheet_merges_multi_bill_same_sku_unit():
             },
             {
                 "billno": "TAD6911-002",
+                "online_po": "PO2",
                 "lines": [
                     {
                         "bcode": "B1",
@@ -198,8 +205,8 @@ def test_pick_sheet_merges_multi_bill_same_sku_unit():
     by_key = {(r["bcode"], r["ui"]): r for r in merged}
     assert by_key[("B1", "ขวด")]["qty"] == 5
     assert {x["billno"]: x["qty"] for x in by_key[("B1", "ขวด")]["bill_qtys"]} == {
-        "TAD6911-001": 2,
-        "TAD6911-002": 3,
+        "PO1": 2,
+        "PO2": 3,
     }
     assert by_key[("B1", "ลัง")]["qty"] == 1
     html = render_pick_sheet(
@@ -232,11 +239,12 @@ def test_pick_sheet_merges_multi_bill_same_sku_unit():
             },
         ]
     )
-    assert "จำนวนบิล" in html
-    assert "TAD6911-001" in html
-    assert "TAD6911-002" in html
-    assert "TAD6911-001: 2" in html
-    assert "TAD6911-002: 3" in html
+    assert "จำนวนออเดอร์" in html
+    assert "PO1" in html
+    assert "PO2" in html
+    assert "PO1: 2" in html
+    assert "PO2: 3" in html
+    assert "TAD6911-001" not in html
     assert ">5<" in html or ">5</td>" in html
 
 

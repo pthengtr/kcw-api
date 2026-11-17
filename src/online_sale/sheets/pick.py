@@ -41,34 +41,46 @@ def _thumb_cell(ln: dict) -> str:
     )
 
 
+def _order_ref(bill: dict | None = None, *, fallback: str = "") -> str:
+    """Prefer online order id for packing (drafts); fall back to billno."""
+    if bill:
+        po = str(bill.get("online_po") or "").strip()
+        if po:
+            return po
+        billno = str(bill.get("billno") or "").strip()
+        if billno:
+            return billno
+    return str(fallback or "").strip()
+
+
 def _bill_breakdown_html(ln: dict) -> str:
     parts = ln.get("bill_qtys") or []
     if not parts:
-        billno = str(ln.get("billno") or "").strip()
-        if not billno:
+        ref = str(ln.get("billno") or ln.get("online_po") or "").strip()
+        if not ref:
             return ""
         qty = abs(float(ln.get("qty") or 0))
         return (
-            f"<div class='bill-break'>{esc(billno)}: {esc(fmt_qty(qty))}</div>"
+            f"<div class='bill-break'>{esc(ref)}: {esc(fmt_qty(qty))}</div>"
         )
     bits = []
     for part in parts:
-        billno = str(part.get("billno") or "").strip()
-        if not billno:
+        ref = str(part.get("billno") or part.get("online_po") or "").strip()
+        if not ref:
             continue
         qty = abs(float(part.get("qty") or 0))
-        bits.append(f"{esc(billno)}: {esc(fmt_qty(qty))}")
+        bits.append(f"{esc(ref)}: {esc(fmt_qty(qty))}")
     if not bits:
         return ""
     return f"<div class='bill-break'>{' · '.join(bits)}</div>"
 
 
 def merge_pick_lines(bills: list[dict]) -> list[dict]:
-    """Merge lines across bills by (bcode, ui); keep per-bill qty for packing."""
+    """Merge lines across orders by (bcode, ui); keep per-order qty for packing."""
     buckets: dict[tuple[str, str], dict] = {}
     order: list[tuple[str, str]] = []
     for bill in bills or []:
-        billno = str(bill.get("billno") or "").strip()
+        ref = _order_ref(bill)
         for ln in bill.get("lines") or []:
             bcode = str(ln.get("bcode") or "").strip()
             ui = str(ln.get("ui") or "").strip()
@@ -96,13 +108,13 @@ def merge_pick_lines(bills: list[dict]) -> list[dict]:
             if not bucket.get("photo") and ln.get("photo"):
                 bucket["photo"] = ln.get("photo")
             found = next(
-                (x for x in bucket["bill_qtys"] if x.get("billno") == billno),
+                (x for x in bucket["bill_qtys"] if x.get("billno") == ref),
                 None,
             )
             if found:
                 found["qty"] = float(found["qty"]) + qty
-            elif billno:
-                bucket["bill_qtys"].append({"billno": billno, "qty": qty})
+            elif ref:
+                bucket["bill_qtys"].append({"billno": ref, "qty": qty})
     return _sorted_lines([buckets[k] for k in order])
 
 
@@ -131,23 +143,19 @@ def _meta_from_bills(bills: list[dict]) -> str:
     if len(bills) == 1:
         bill = bills[0]
         return (
-            f"<div><b>เลข TAD</b> {esc(bill.get('billno'))}</div>"
+            f"<div><b>เลขคำสั่งซื้อ</b> {esc(_order_ref(bill))}</div>"
             f"<div><b>วันที่</b> {thai_date(bill.get('bill_date'))}</div>"
             f"<div><b>แพลตฟอร์ม</b> {esc(platform_label(bill.get('platform') or ''))}</div>"
             f"<div><b>ร้านค้า</b> {esc(bill.get('shop_name') or bill.get('acctname'))}</div>"
-            f"<div><b>เลขคำสั่งซื้อ</b> {esc(bill.get('online_po'))}</div>"
         )
-    bill_bits = []
+    refs = []
     for bill in bills:
-        billno = esc(bill.get("billno"))
-        po = str(bill.get("online_po") or "").strip()
-        if po:
-            bill_bits.append(f"{billno} ({esc(po)})")
-        else:
-            bill_bits.append(billno)
+        ref = _order_ref(bill)
+        if ref:
+            refs.append(esc(ref))
     return (
-        f"<div><b>จำนวนบิล</b> {len(bills)} ใบ</div>"
-        f"<div style='grid-column:1/-1'><b>เลข TAD</b> {' · '.join(bill_bits)}</div>"
+        f"<div><b>จำนวนออเดอร์</b> {len(bills)} รายการ</div>"
+        f"<div style='grid-column:1/-1'><b>เลขคำสั่งซื้อ</b> {' · '.join(refs)}</div>"
     )
 
 
