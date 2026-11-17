@@ -115,6 +115,8 @@ from src.transfer.state import (
 )
 from src.transfer.ui import APP, SESSION_COOKIE, page
 from src.pay_notes.net import is_tailscale_cg_nat
+from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.transfer.writers.syp_iclow_stamp import (
     ICLOWStampError,
     mark_received,
@@ -278,7 +280,7 @@ def _tailscale_identity():
     )
 
 
-def _set_session(resp, identity) -> None:
+def _set_session(resp, identity, *, request: Request | None = None, has_entry_token: bool = False) -> None:
     settings = _settings()
     ttl = max(settings.stock_check_token_ttl_seconds, 86400)
     token = mint_access_token(
@@ -297,6 +299,27 @@ def _set_session(resp, identity) -> None:
         max_age=ttl,
         path="/transfer",
     )
+    had_staff = bool(request and request.cookies.get(STAFF_COOKIE)) if request else False
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.token_secret,
+        ttl_seconds=ttl,
+        service_id="transfer",
+        source=source,
+        path="/transfer/",
+        log_open=log_open,
+    )
+
+
+def _shell_identity(request: Request):
+    ident = _identity_from_request(request)
+    if ident is False:
+        return None
+    if ident is None:
+        return _tailscale_identity()
+    return ident
 
 
 def _require(request: Request):
@@ -351,25 +374,43 @@ def home(request: Request, t: str | None = None):
     if err:
         return err
     settings = _settings()
-    html = page(
+    html = shell_page(
+        page(
+            user_name=ident.display_name,
+            site=settings.site,
+            hq_ship_enabled=settings.hq_ship_write_enabled,
+            syp_ship_enabled=settings.syp_ship_write_enabled,
+            hq_receive_enabled=settings.hq_receive_write_enabled,
+            syp_receive_enabled=settings.syp_receive_write_enabled,
+            sticker_printer_model=settings.transfer_sticker_printer_model,
+            sticker_printer_host=settings.transfer_sticker_printer_host,
+        ),
+        service_id="transfer",
+        api_base="/transfer/_shell",
         user_name=ident.display_name,
-        site=settings.site,
-        hq_ship_enabled=settings.hq_ship_write_enabled,
-        syp_ship_enabled=settings.syp_ship_write_enabled,
-        hq_receive_enabled=settings.hq_receive_write_enabled,
-        syp_receive_enabled=settings.syp_receive_write_enabled,
-        sticker_printer_model=settings.transfer_sticker_printer_model,
-        sticker_printer_host=settings.transfer_sticker_printer_host,
+        branch=settings.site,
     )
     if t:
         resp = RedirectResponse(url="/transfer/", status_code=303)
-        _set_session(resp, ident)
+        _set_session(resp, ident, request=request, has_entry_token=True)
         resp.headers["Cache-Control"] = "no-store"
         return resp
     resp = HTMLResponse(html)
     resp.headers["Cache-Control"] = "no-store"
-    _set_session(resp, ident)
+    _set_session(resp, ident, request=request, has_entry_token=False)
     return resp
+
+
+wire_shell(
+    router,
+    current_service_id="transfer",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path="/transfer",
+    get_secret=lambda: _settings().token_secret,
+    get_ttl=lambda: max(_settings().stock_check_token_ttl_seconds, 86400),
+    get_site=lambda: _settings().site,
+    get_app_identity=_shell_identity,
+)
 
 
 @router.get("/api/counts")

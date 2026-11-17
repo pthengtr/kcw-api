@@ -56,6 +56,8 @@ from src.pay_notes.storage import (
     upload_bytes,
 )
 from src.pay_notes.ui import APP, SESSION_COOKIE, page
+from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.pay_notes.company_banks import (
     DEFAULT_PAY_BANK_KEY,
     bpdet_line_from_payment,
@@ -128,14 +130,15 @@ def _tailscale_identity():
     )
 
 
-def _set_session(resp, identity) -> None:
+def _set_session(resp, identity, *, request: Request | None = None, has_entry_token: bool = False) -> None:
     settings = _settings()
+    ttl = max(settings.stock_check_token_ttl_seconds, 86400)
     token = mint_access_token(
         secret=settings.token_secret,
         line_user_id=identity.line_user_id,
         display_name=identity.display_name,
         branch=identity.branch,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=ttl,
         app=APP,
     )
     resp.set_cookie(
@@ -146,6 +149,27 @@ def _set_session(resp, identity) -> None:
         max_age=86400 * 7,
         path="/pay-notes",
     )
+    had_staff = bool(request and request.cookies.get(STAFF_COOKIE)) if request else False
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.token_secret,
+        ttl_seconds=ttl,
+        service_id="pay-notes",
+        source=source,
+        path="/pay-notes/",
+        log_open=log_open,
+    )
+
+
+def _shell_identity(request: Request):
+    ident = _identity_from_request(request)
+    if ident is False:
+        return None
+    if ident is None:
+        return _tailscale_identity()
+    return ident
 
 
 def _require(request: Request):
@@ -346,16 +370,34 @@ def home(request: Request, t: str | None = None):
     if err:
         return err
     name = ident.display_name if ident else "operator"
-    html = page(
+    html = shell_page(
+        page(
+            user_name=name,
+            site=settings.site,
+            write_enabled=settings.pay_notes_write_enabled,
+            ai_enabled=settings.ai_available,
+        ),
+        service_id="pay-notes",
+        api_base="/pay-notes/_shell",
         user_name=name,
-        site=settings.site,
-        write_enabled=settings.pay_notes_write_enabled,
-        ai_enabled=settings.ai_available,
+        branch=settings.site,
     )
     resp = HTMLResponse(html)
     if ident and ident.line_user_id != "tailscale":
-        _set_session(resp, ident)
+        _set_session(resp, ident, request=request, has_entry_token=bool(t))
     return resp
+
+
+wire_shell(
+    router,
+    current_service_id="pay-notes",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path="/pay-notes",
+    get_secret=lambda: _settings().token_secret,
+    get_ttl=lambda: max(_settings().stock_check_token_ttl_seconds, 86400),
+    get_site=lambda: _settings().site,
+    get_app_identity=_shell_identity,
+)
 
 
 @router.get("/api/vendors")

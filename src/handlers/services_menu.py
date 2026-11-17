@@ -11,6 +11,7 @@ from src.handlers.hq_po_entry import is_hq_po_command
 from src.handlers.hq_receive_entry import is_hq_receive_command
 from src.handlers.online_sale_entry import is_online_sale_command
 from src.handlers.transfer_entry import is_transfer_command
+from src.staff_shell.catalog import line_menu_entries
 
 SERVICES_MENU_COMMANDS = {
     "menu",
@@ -44,18 +45,7 @@ def _msg_button(label: str, message: str) -> dict:
 
 def handle_services_menu() -> dict:
     """Flex card listing all KCW tool entry commands (tap sends message to bot)."""
-    buttons = [
-        _msg_button("เช็คสต็อก", "เช็คสต็อก"),
-        _msg_button("ไทเกอร์เพย์", "ไทเกอร์"),
-        _msg_button("ค้นหา PARTS9", "ค้นหา"),
-        _msg_button("โอนสินค้า", "โอนสินค้า"),
-        _msg_button("สั่งซื้อ", "สั่งซื้อ"),
-        _msg_button("รับสินค้าเข้า", "รับสินค้า"),
-        _msg_button("ขายออนไลน์", "ขายออนไลน์"),
-        _msg_button("จัดการรูปสินค้า", "รูป"),
-        _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
-        _msg_button("วิธีใช้ทั้งหมด", "help"),
-    ]
+    buttons = [_msg_button(label, message) for label, message in line_menu_entries()]
     return {
         "type": "flex",
         "altText": "เมนูบริการ KCW — กดเลือก",
@@ -90,22 +80,12 @@ def handle_services_menu() -> dict:
 
 
 def services_menu_button_messages() -> list[str]:
-    return [btn["action"]["text"] for btn in [
-        _msg_button("เช็คสต็อก", "เช็คสต็อก"),
-        _msg_button("ไทเกอร์เพย์", "ไทเกอร์"),
-        _msg_button("ค้นหา PARTS9", "ค้นหา"),
-        _msg_button("โอนสินค้า", "โอนสินค้า"),
-        _msg_button("สั่งซื้อ", "สั่งซื้อ"),
-        _msg_button("รับสินค้าเข้า", "รับสินค้า"),
-        _msg_button("ขายออนไลน์", "ขายออนไลน์"),
-        _msg_button("จัดการรูปสินค้า", "รูป"),
-        _msg_button("ชำระเจ้าหนี้", "ชำระเจ้าหนี้"),
-        _msg_button("วิธีใช้ทั้งหมด", "help"),
-    ]]
+    return [message for _label, message in line_menu_entries()]
 
 
 def services_menu_handlers_match() -> dict[str, bool]:
     checks = services_menu_button_messages()
+    # Order matches line_menu_entries(): web services then รูป, help.
     return {
         "stock_check": is_stock_check_command(checks[0]),
         "companion": is_companion_command(checks[1]),
@@ -114,6 +94,6 @@ def services_menu_handlers_match() -> dict[str, bool]:
         "hq_po": is_hq_po_command(checks[4]),
         "hq_receive": is_hq_receive_command(checks[5]),
         "online_sale": is_online_sale_command(checks[6]),
-        "image": is_image_command(checks[7]),
-        "pay_notes": is_pay_notes_command(checks[8]),
+        "pay_notes": is_pay_notes_command(checks[7]),
+        "image": is_image_command(checks[8]),
     }

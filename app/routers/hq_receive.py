@@ -34,6 +34,8 @@ from src.hq_receive.service import (
     vendors_payload,
 )
 from src.hq_receive.ui import APP, SESSION_COOKIE, page
+from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 from src.stock_check.net import is_tailscale_cg_nat
 
@@ -169,7 +171,7 @@ def _identity_from_request(request: Request):
     return None
 
 
-def _set_session(resp, identity) -> None:
+def _set_session(resp, identity, *, request: Request | None = None, has_entry_token: bool = False) -> None:
     settings = _settings()
     ttl = max(settings.stock_check_token_ttl_seconds, 86400)
     token = mint_access_token(
@@ -188,6 +190,22 @@ def _set_session(resp, identity) -> None:
         max_age=ttl,
         path="/hq-receive",
     )
+    had_staff = bool(request and request.cookies.get(STAFF_COOKIE)) if request else False
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.token_secret,
+        ttl_seconds=ttl,
+        service_id="hq-receive",
+        source=source,
+        path="/hq-receive/",
+        log_open=log_open,
+    )
+
+
+def _shell_identity(request: Request):
+    return _identity_from_request(request)
 
 
 def _actor(identity) -> str:
@@ -240,11 +258,30 @@ def ui_home(request: Request):
     if err is not None:
         return err
     settings = _settings()
+    has_t = bool((request.query_params.get("t") or "").strip())
     resp = HTMLResponse(
-        page(user_name=_actor(ident), write_enabled=settings.write_enabled)
+        shell_page(
+            page(user_name=_actor(ident), write_enabled=settings.write_enabled),
+            service_id="hq-receive",
+            api_base="/hq-receive/_shell",
+            user_name=_actor(ident),
+            branch="HQ",
+        )
     )
-    _set_session(resp, ident)
+    _set_session(resp, ident, request=request, has_entry_token=has_t)
     return resp
+
+
+wire_shell(
+    router,
+    current_service_id="hq-receive",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path="/hq-receive",
+    get_secret=lambda: _settings().token_secret,
+    get_ttl=lambda: max(_settings().stock_check_token_ttl_seconds, 86400),
+    get_site=lambda: "HQ",
+    get_app_identity=_shell_identity,
+)
 
 
 @router.get("/api/meta")

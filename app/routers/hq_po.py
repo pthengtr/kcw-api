@@ -38,6 +38,8 @@ from src.hq_po.service import (
 )
 from src.hq_po.sheet import build_sheet_forms
 from src.hq_po.ui import APP, SESSION_COOKIE, page
+from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 from src.stock_check.net import is_tailscale_cg_nat
 
@@ -144,7 +146,7 @@ def _tailscale_identity():
     )
 
 
-def _set_session(resp, identity) -> None:
+def _set_session(resp, identity, *, request: Request | None = None, has_entry_token: bool = False) -> None:
     settings = _settings()
     ttl = max(settings.stock_check_token_ttl_seconds, 86400)
     token = mint_access_token(
@@ -163,6 +165,27 @@ def _set_session(resp, identity) -> None:
         max_age=ttl,
         path="/hq-po",
     )
+    had_staff = bool(request and request.cookies.get(STAFF_COOKIE)) if request else False
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.token_secret,
+        ttl_seconds=ttl,
+        service_id="hq-po",
+        source=source,
+        path="/hq-po/",
+        log_open=log_open,
+    )
+
+
+def _shell_identity(request: Request):
+    ident = _identity_from_request(request)
+    if ident is False:
+        return None
+    if ident is None:
+        return _tailscale_identity()
+    return ident
 
 
 def _require(request: Request):
@@ -208,16 +231,34 @@ def home(request: Request, t: str | None = None):
     if err:
         return err
     settings = _settings()
-    html = page(user_name=ident.display_name, stamp_enabled=settings.stamp_enabled)
+    html = shell_page(
+        page(user_name=ident.display_name, stamp_enabled=settings.stamp_enabled),
+        service_id="hq-po",
+        api_base="/hq-po/_shell",
+        user_name=ident.display_name,
+        branch="HQ",
+    )
     if t:
         resp = RedirectResponse(url="/hq-po/", status_code=303)
-        _set_session(resp, ident)
+        _set_session(resp, ident, request=request, has_entry_token=True)
         resp.headers["Cache-Control"] = "no-store"
         return resp
     resp = HTMLResponse(html)
     resp.headers["Cache-Control"] = "no-store"
-    _set_session(resp, ident)
+    _set_session(resp, ident, request=request, has_entry_token=False)
     return resp
+
+
+wire_shell(
+    router,
+    current_service_id="hq-po",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path="/hq-po",
+    get_secret=lambda: _settings().token_secret,
+    get_ttl=lambda: max(_settings().stock_check_token_ttl_seconds, 86400),
+    get_site=lambda: "HQ",
+    get_app_identity=_shell_identity,
+)
 
 
 @router.get("/api/suggest")
