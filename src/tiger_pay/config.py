@@ -55,6 +55,22 @@ class TigerPaySettings(BaseSettings):
         default="KBANK",
         validation_alias="TIGER_PAY_QR_GATEWAY",
     )
+    tiger_backoffice_base: str = Field(
+        default="https://api.tigercashbox.com",
+        validation_alias="TIGER_BACKOFFICE_BASE",
+    )
+    tiger_box_serial: str = Field(
+        default="",
+        validation_alias="TIGER_BOX_SERIAL",
+    )
+    tiger_backoffice_service_id: str = Field(
+        default="3",
+        validation_alias="TIGER_BACKOFFICE_SERVICE_ID",
+    )
+    tiger_backoffice_qr_gateway: str = Field(
+        default="KBANK",
+        validation_alias="TIGER_BACKOFFICE_QR_GATEWAY",
+    )
     supabase_url: str = Field(validation_alias="SUPABASE_URL")
     supabase_service_role_key: str = Field(validation_alias="SUPABASE_SERVICE_ROLE_KEY")
     tiger_pay_max_body_bytes: int = Field(
@@ -180,6 +196,9 @@ class TigerPaySettings(BaseSettings):
         "tiger_voucher_mobile",
         "tiger_voucher_authen_required",
         "tiger_voucher_approved_required",
+        "tiger_backoffice_base",
+        "tiger_box_serial",
+        "tiger_backoffice_service_id",
     )
     @classmethod
     def strip_optional(cls, value: str) -> str:
@@ -207,12 +226,18 @@ class TigerPaySettings(BaseSettings):
             raise ValueError("must be greater than zero")
         return value
 
-    @field_validator("tiger_pay_qr_gateway")
+    @field_validator("tiger_pay_qr_gateway", "tiger_backoffice_qr_gateway")
     @classmethod
     def qr_gateway(cls, value: str) -> str:
         cleaned = value.strip().upper() or "KBANK"
         if cleaned not in {"KBANK", "SCB"}:
             raise ValueError("must be KBANK or SCB")
+        return cleaned
+
+    @field_validator("tiger_backoffice_service_id")
+    @classmethod
+    def backoffice_service_id(cls, value: str) -> str:
+        cleaned = (value or "").strip() or "3"
         return cleaned
 
     @field_validator("tiger_pay_poll_interval_seconds")
