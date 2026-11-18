@@ -715,10 +715,11 @@ async function init() {
     try {
       const data = await api('/api/drafts', {method:'POST', body: JSON.stringify(salePayload(false))});
       const draft = data.draft;
-      state.editDraftId = draft.draft_id;
-      state.editBillno = null;
-      syncEditBanner();
-      $('saleMsg').innerHTML = `บันทึกฉบับร่างแล้ว · คำสั่งซื้อ <b>${draft.online_po||''}</b> — ไปหน้าค้นหาเพื่อพิมพ์ใบจัดสินค้ารวม`;
+      const po = draft.online_po || '';
+      // Clear the sale form so staff can key the next order immediately
+      // (do not stay in edit mode after a successful draft save).
+      clearSaleForm();
+      $('saleMsg').innerHTML = `บันทึกฉบับร่างแล้ว · คำสั่งซื้อ <b>${po}</b> — ไปหน้าค้นหาเพื่อพิมพ์ใบจัดสินค้ารวม`;
       $('saleMsg').className='meta ok';
     } catch(e) { $('saleMsg').textContent=e.message; $('saleMsg').className='meta err'; }
   };
