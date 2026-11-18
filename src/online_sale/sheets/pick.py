@@ -14,6 +14,7 @@ _PICK_CSS = (
 .rcp .thumb { width:1.5cm; height:1.5cm; object-fit:cover; border:1px solid #ccc; background:#f3f4f6; display:block; }
 .rcp .chk { width:1.4cm; text-align:center; font-size:16px; }
 .rcp .bill-break { font-size:12px; color:#333; margin-top:2px; line-height:1.35; }
+.rcp td.warn { color:#b91c1c; font-weight:700; }
 .rcp .sig2 { display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-top:32px; font-size:14px; break-inside:avoid; page-break-inside:avoid; }
 .rcp .sig2 .box { border-top:1px solid #111; padding-top:8px; min-height:4.5rem; }
 .rcp .sig2 .label { font-weight:700; margin-bottom:18px; }
@@ -96,6 +97,8 @@ def merge_pick_lines(bills: list[dict]) -> list[dict]:
                     "location1": ln.get("location1") or ln.get("location") or "",
                     "photo": ln.get("photo") or "",
                     "qty": 0.0,
+                    "qtyoh2": float(ln.get("qtyoh2") or 0),
+                    "mtp": float(ln.get("mtp") or 1) or 1.0,
                     "bill_qtys": [],
                 }
                 order.append(key)
@@ -107,6 +110,18 @@ def merge_pick_lines(bills: list[dict]) -> list[dict]:
                 bucket["location1"] = ln.get("location1") or ln.get("location") or ""
             if not bucket.get("photo") and ln.get("photo"):
                 bucket["photo"] = ln.get("photo")
+            # Keep the freshest / highest on-hand reading across merged drafts.
+            try:
+                oh = float(ln.get("qtyoh2") or 0)
+            except (TypeError, ValueError):
+                oh = 0.0
+            if oh > float(bucket.get("qtyoh2") or 0):
+                bucket["qtyoh2"] = oh
+            if not bucket.get("mtp"):
+                try:
+                    bucket["mtp"] = float(ln.get("mtp") or 1) or 1.0
+                except (TypeError, ValueError):
+                    bucket["mtp"] = 1.0
             found = next(
                 (x for x in bucket["bill_qtys"] if x.get("billno") == ref),
                 None,
@@ -118,10 +133,29 @@ def merge_pick_lines(bills: list[dict]) -> list[dict]:
     return _sorted_lines([buckets[k] for k in order])
 
 
+def _remain_in_line_ui(ln: dict) -> float:
+    """On-hand stock converted to the pick line's unit (qtyoh2 ÷ mtp)."""
+    try:
+        oh = float(ln.get("qtyoh2") or 0)
+    except (TypeError, ValueError):
+        oh = 0.0
+    try:
+        mtp = float(ln.get("mtp") or 1) or 1.0
+    except (TypeError, ValueError):
+        mtp = 1.0
+    if mtp <= 0:
+        mtp = 1.0
+    return oh / mtp
+
+
 def pick_rows_html(lines: list[dict]) -> str:
     parts = []
     for ln in _sorted_lines(lines):
         loc = str(ln.get("location1") or ln.get("location") or "").strip() or "—"
+        need = abs(float(ln.get("qty") or 0))
+        remain = _remain_in_line_ui(ln)
+        short = remain + 1e-9 < need
+        remain_cls = "num warn" if short else "num"
         parts.append(
             "<tr>"
             f"{_thumb_cell(ln)}"
@@ -129,12 +163,13 @@ def pick_rows_html(lines: list[dict]) -> str:
             f"<td>{esc(ln.get('detail') or ln.get('descr') or '')}"
             f"{_bill_breakdown_html(ln)}</td>"
             f"<td>{esc(loc)}</td>"
-            f"<td class='num'>{fmt_qty(abs(float(ln.get('qty') or 0)))}</td>"
+            f"<td class='num'>{fmt_qty(need)}</td>"
+            f"<td class='{remain_cls}'>{fmt_qty(remain)}</td>"
             f"<td class='ctr'>{esc(ln.get('ui') or '')}</td>"
             "<td class='chk'>☐</td>"
             "</tr>"
         )
-    return "\n".join(parts) or "<tr><td colspan='7' class='ctr'>ไม่มีรายการ</td></tr>"
+    return "\n".join(parts) or "<tr><td colspan='8' class='ctr'>ไม่มีรายการ</td></tr>"
 
 
 def _meta_from_bills(bills: list[dict]) -> str:
@@ -175,8 +210,8 @@ def render_pick_sheet(bill: dict | None = None, *, bills: list[dict] | None = No
   <table>
     <thead><tr>
       <th class="ctr">รูป</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
-      <th>ที่เก็บ</th><th class="num">จำนวน</th><th class="ctr">หน่วย</th>
-      <th class="chk">ตรวจ</th>
+      <th>ที่เก็บ</th><th class="num">จำนวน</th><th class="num">คงเหลือ</th>
+      <th class="ctr">หน่วย</th><th class="chk">ตรวจ</th>
     </tr></thead>
     <tbody>{pick_rows_html(lines)}</tbody>
   </table>

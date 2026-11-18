@@ -80,10 +80,15 @@ def get_doc_issuer(billno: str) -> dict[str, Any] | None:
 def resolve_print_issuer(bill: dict[str, Any]) -> str:
     """Prefer snapshot; fall back to remapping SIMAS.SALE for older bills."""
     if str(bill.get("issuer_label") or "").strip():
-        return str(bill["issuer_label"]).strip()
+        label = str(bill["issuer_label"]).strip()
+        # Stale callers may put the raw LINE/POS stamp in issuer_label — remap.
+        remapped = issuer_label_for_actor(display_name=label)
+        return remapped or label
     billno = str(bill.get("billno") or "")
     snap = get_doc_issuer(billno)
     if snap and snap.get("issuer_label"):
-        return str(snap["issuer_label"])
+        label = str(snap["issuer_label"]).strip()
+        remapped = issuer_label_for_actor(display_name=label)
+        return remapped or label
     sale = str(bill.get("sale") or "").strip()
-    return issuer_label_for_actor(display_name=sale)
+    return issuer_label_for_actor(display_name=sale) or sale
