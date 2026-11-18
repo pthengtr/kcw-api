@@ -439,13 +439,23 @@ def api_returns(request: Request, body: ReturnBody):
         return _err(exc)
 
 
+def _embed_print_html(html: str, *, embed: bool) -> str:
+    """VAT register embeds the live online-sale sheet; skip auto-print there."""
+    if not embed:
+        return html
+    return html.replace("window.print();", "").replace(
+        "setTimeout(function(){ window.print(); }, 200);",
+        "",
+    )
+
+
 @router.get("/print/tad/{billno}", response_class=HTMLResponse)
-def print_tad(request: Request, billno: str):
+def print_tad(request: Request, billno: str, embed: int = 0):
     _, err = _require(request)
     if err is not None:
         return err
     try:
-        return HTMLResponse(print_tad_html(billno))
+        return HTMLResponse(_embed_print_html(print_tad_html(billno), embed=bool(embed)))
     except Exception as exc:
         if isinstance(exc, OnlineSaleError):
             return HTMLResponse(f"<h1>{exc.message}</h1>", status_code=exc.status)
@@ -480,12 +490,14 @@ def print_pick(request: Request, draft_id: str):
 
 
 @router.get("/print/cntad/{billno}", response_class=HTMLResponse)
-def print_cntad(request: Request, billno: str, reason: str = ""):
+def print_cntad(request: Request, billno: str, reason: str = "", embed: int = 0):
     _, err = _require(request)
     if err is not None:
         return err
     try:
-        return HTMLResponse(print_cntad_html(billno, reason=reason))
+        return HTMLResponse(
+            _embed_print_html(print_cntad_html(billno, reason=reason), embed=bool(embed))
+        )
     except Exception as exc:
         if isinstance(exc, OnlineSaleError):
             return HTMLResponse(f"<h1>{exc.message}</h1>", status_code=exc.status)

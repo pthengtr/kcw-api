@@ -426,7 +426,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
           </select>
         </label>
       </div>
-      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ นมฮPT / I K ซีล / PO เลขบิล" autofocus />
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ นมฮPT / ที่เก็บ / I K ซีล / PO เลขบิล" autofocus />
       <div id="codeSizePanel" class="code-size-panel" aria-hidden="true">
         <div class="code-size-fields">
           <label class="field code-field" for="code1">
@@ -493,8 +493,8 @@ const MODES = [
   {id:"ap", label:"เจ้าหนี้ AP"},
 ];
 const PLACE = {
-  all: "รหัส / เบอร์แท้ PCODE / เบอร์โรงงาน MCODE / ชื่อย่อ นมฮPT ลป / I K ซีล 31 46 / PO เลขบิล",
-  product: "รหัสสินค้า / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ ACODE / I K C ซีล 31 46 / ยี่ห้อ",
+  all: "รหัส / เบอร์แท้ PCODE / เบอร์โรงงาน MCODE / ชื่อย่อ นมฮPT ลป / ที่เก็บ / I K ซีล 31 46 / PO เลขบิล",
+  product: "รหัสสินค้า / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ ACODE / ที่เก็บ / I K C ซีล 31 46 / ยี่ห้อ",
   code_size: "ประเภท + ขนาด — C หรือ ซีล 31×46×7 · I นอก 72 หนา 17",
   si: "เลขบิลขาย เช่น 8K69-0013225",
   pi: "เลขบิลซื้อ / เลขโน้ต / เลขใบสำคัญจ่าย",

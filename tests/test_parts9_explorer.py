@@ -293,6 +293,8 @@ def test_product_search_matches_pcode_mcode_and_code1():
     assert "MCODE LIKE :t0" in sql
     assert "ACODE LIKE :t0" in sql
     assert "CODE1" in sql
+    assert "LOCATION1" in sql
+    assert "LOCATION2" in sql
     sized = _term_match_sql("sz1", include_size_slot=1)
     assert "SIZE1" in sized
     assert "PCODE LIKE :sz1" in sized

@@ -25,6 +25,7 @@ def test_catalog_entry():
     assert svc.port == 8797
     assert svc.path == "/receive-notes/"
     assert "HQ" in svc.hosts
+    assert svc.icon == "ar"
 
 
 def test_voucher_stems_match_mined_series():

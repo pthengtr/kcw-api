@@ -209,7 +209,7 @@ html.kcw-shell-pad .appbar{{top:var(--kcw-shell-h) !important}}
   }}
 
   function iconGlyph(icon){{
-    const map = {{ stock:"SC", pay:"TP", search:"P9", transfer:"TF", po:"PO", receive:"RC", sale:"OL", notes:"AP", app:"•" }};
+    const map = {{ stock:"SC", pay:"TP", search:"P9", transfer:"TF", po:"PO", receive:"RC", sale:"OL", notes:"AP", ar:"AR", app:"•" }};
     return map[icon] || map.app;
   }}
 

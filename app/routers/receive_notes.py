@@ -129,22 +129,31 @@ def _set_session(resp, identity, *, request: Request | None = None, has_entry_to
         max_age=86400 * 7,
         path="/receive-notes",
     )
-    if request is not None:
-        stamp_staff_session(
-            resp,
-            request=request,
-            identity=identity,
-            has_entry_token=has_entry_token,
-        )
+    had_staff = bool(request and request.cookies.get(STAFF_COOKIE)) if request else False
+    source, log_open = entry_source(had_staff_cookie=had_staff, has_entry_token=has_entry_token)
+    stamp_staff_session(
+        resp,
+        identity,
+        secret=settings.token_secret,
+        ttl_seconds=ttl,
+        service_id="receive-notes",
+        source=source,
+        path="/receive-notes/",
+        log_open=log_open,
+    )
 
 
-def _require_identity(request: Request):
+def _shell_identity(request: Request):
     ident = _identity_from_request(request)
     if ident is False:
         return None
     if ident is None:
         return _tailscale_identity()
     return ident
+
+
+def _require_identity(request: Request):
+    return _shell_identity(request)
 
 
 def _err(exc: Exception, status: int = 400) -> JSONResponse:
@@ -198,23 +207,34 @@ def index(request: Request):
         return HTMLResponse("unauthorized — open from LINE or Tailscale", status_code=401)
     if ident is None:
         ident = _tailscale_identity()
-    html = page(
-        user_name=ident.display_name or ident.line_user_id,
-        site=settings.site,
-        write_enabled=settings.receive_notes_write_enabled,
-    )
+    name = ident.display_name or ident.line_user_id
     html = shell_page(
-        html,
-        request=request,
-        current_service_id="receive-notes",
-        site=settings.site,
+        page(
+            user_name=name,
+            site=settings.site,
+            write_enabled=settings.receive_notes_write_enabled,
+        ),
+        service_id="receive-notes",
+        api_base="/receive-notes/_shell",
+        user_name=name,
+        branch=settings.site,
     )
     resp = HTMLResponse(html)
-    _set_session(resp, ident, request=request, has_entry_token=has_token)
-    wire_shell(resp, request=request)
-    _ = entry_source
-    _ = STAFF_COOKIE
+    if ident.line_user_id != "tailscale":
+        _set_session(resp, ident, request=request, has_entry_token=has_token)
     return resp
+
+
+wire_shell(
+    router,
+    current_service_id="receive-notes",
+    session_cookie=SESSION_COOKIE,
+    session_cookie_path="/receive-notes",
+    get_secret=lambda: _settings().token_secret,
+    get_ttl=lambda: max(_settings().stock_check_token_ttl_seconds, 86400),
+    get_site=lambda: _settings().site,
+    get_app_identity=_shell_identity,
+)
 
 
 @router.get("/api/health")

@@ -311,7 +311,7 @@ def _enrich_with_peer_location(products: list[dict[str, Any]], *, site: str) -> 
 
 
 def _term_match_sql(key: str, *, include_size_slot: int | None = None) -> str:
-    """Match a token against OEM (PCODE), factory (MCODE), codes, name, and optional SIZE slot."""
+    """Match a token against OEM (PCODE), factory (MCODE), codes, name, location, and optional SIZE slot."""
     parts = [
         f"DESCR LIKE :{key}",
         f"PCODE LIKE :{key}",
@@ -321,6 +321,8 @@ def _term_match_sql(key: str, *, include_size_slot: int | None = None) -> str:
         f"ACODE LIKE :{key}",
         f"BCODE LIKE :{key}",
         f"UPPER(LTRIM(RTRIM(COALESCE(CODE1,'')))) LIKE :{key}",
+        f"LTRIM(RTRIM(COALESCE(LOCATION1,''))) LIKE :{key}",
+        f"LTRIM(RTRIM(COALESCE(LOCATION2,''))) LIKE :{key}",
     ]
     if include_size_slot is not None:
         parts.insert(
