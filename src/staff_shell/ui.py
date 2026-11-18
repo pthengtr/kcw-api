@@ -29,23 +29,31 @@ def render_shell_html(
     branch_chip = f'<span class="kcw-shell-branch">{site}</span>' if site else ""
     return f"""
 <style id="kcw-shell-css">
-#kcw-shell-root{{position:fixed;top:0;right:0;z-index:10050;pointer-events:none;
+/* Dedicated launcher strip — never overlays host Service controls. */
+html.kcw-shell-pad{{--kcw-shell-h:56px}}
+html.kcw-shell-pad body{{padding-top:var(--kcw-shell-h) !important}}
+html.kcw-shell-pad header,
+html.kcw-shell-pad .hdr,
+html.kcw-shell-pad .appbar{{top:var(--kcw-shell-h) !important}}
+#kcw-shell-root{{position:fixed;top:0;left:0;right:0;z-index:10050;pointer-events:none;
   font-family:Prompt,"Noto Sans Thai",system-ui,sans-serif}}
-#kcw-shell-root.kcw-shell-rooted{{position:static;z-index:auto}}
+#kcw-shell-root.kcw-shell-rooted{{position:static;z-index:auto;left:auto;right:auto}}
 #kcw-shell-root *{{box-sizing:border-box}}
-.kcw-shell-bar{{pointer-events:auto;display:flex;align-items:center;gap:8px;
-  padding:max(8px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 8px 10px}}
+.kcw-shell-bar{{pointer-events:auto;display:flex;align-items:center;justify-content:flex-end;gap:8px;
+  width:100%;min-height:48px;
+  padding:max(6px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 6px 12px;
+  background:rgba(248,250,252,.96);border-bottom:1px solid #e2e8f0;backdrop-filter:blur(8px);
+  box-shadow:0 1px 0 rgba(15,23,42,.04)}}
 .kcw-shell-who{{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;
-  max-width:42vw;background:rgba(15,23,42,.78);color:#f8fafc;border-radius:10px;
-  padding:6px 10px;backdrop-filter:blur(6px)}}
+  max-width:min(48vw,220px);color:#0f172a;padding:2px 4px}}
 .kcw-shell-name{{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}}
-.kcw-shell-branch{{font-size:11px;opacity:.85}}
+.kcw-shell-branch{{font-size:11px;color:#64748b}}
 /* Beat host-page `button {{ background }}` resets (e.g. online-sale red buttons). */
 #kcw-shell-root button.kcw-shell-btn{{
   pointer-events:auto;width:40px;height:40px;min-width:40px;min-height:40px;padding:0;
   border:0;border-radius:12px;background:#0f172a !important;color:#fff !important;
   display:grid;place-items:center;cursor:pointer;font:inherit;line-height:1;
-  box-shadow:0 0 0 2px #fff,0 6px 18px rgba(15,23,42,.35)}}
+  box-shadow:0 0 0 1px rgba(15,23,42,.12),0 4px 12px rgba(15,23,42,.18)}}
 #kcw-shell-root button.kcw-shell-btn:hover,
 #kcw-shell-root button.kcw-shell-btn:focus-visible{{
   background:#020617 !important;outline:2px solid #93c5fd;outline-offset:2px}}
@@ -60,7 +68,7 @@ def render_shell_html(
 .kcw-shell-backdrop{{pointer-events:auto;position:fixed;inset:0;background:rgba(15,23,42,.35);
   opacity:0;visibility:hidden;transition:opacity .15s ease;z-index:10050}}
 .kcw-shell-backdrop.open{{opacity:1;visibility:visible}}
-.kcw-shell-panel{{pointer-events:auto;position:fixed;top:max(56px,calc(env(safe-area-inset-top) + 48px));
+.kcw-shell-panel{{pointer-events:auto;position:fixed;top:calc(var(--kcw-shell-h,56px) + 8px);
   right:max(10px,env(safe-area-inset-right));width:min(320px,calc(100vw - 20px));
   background:#fff;color:#0f172a;border-radius:16px;box-shadow:0 18px 50px rgba(15,23,42,.28);
   transform:translateY(-6px) scale(.98);opacity:0;visibility:hidden;z-index:10055;
@@ -166,10 +174,29 @@ def render_shell_html(
   // Pages with a colored sticky header can host the 9-dot in #kcwShellSlot
   // so it is not lost under/against the header paint.
   const slot = document.getElementById("kcwShellSlot");
+  let rooted = false;
   if (slot && btn && bar) {{
     slot.appendChild(btn);
     bar.style.display = "none";
     if (root) root.classList.add("kcw-shell-rooted");
+    rooted = true;
+  }}
+
+  // Reserve a dedicated top strip so the launcher never covers host controls.
+  function syncShellPad(){{
+    if (rooted || !bar) {{
+      document.documentElement.classList.remove("kcw-shell-pad");
+      document.documentElement.style.removeProperty("--kcw-shell-h");
+      return;
+    }}
+    const h = Math.ceil(bar.getBoundingClientRect().height || bar.offsetHeight || 56);
+    document.documentElement.style.setProperty("--kcw-shell-h", h + "px");
+    document.documentElement.classList.add("kcw-shell-pad");
+  }}
+  syncShellPad();
+  window.addEventListener("resize", syncShellPad, {{ passive:true }});
+  if (window.visualViewport) {{
+    window.visualViewport.addEventListener("resize", syncShellPad, {{ passive:true }});
   }}
 
   function setOpen(v){{

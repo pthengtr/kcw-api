@@ -123,9 +123,15 @@ def test_inject_shell_once():
         out, service_id="transfer", api_base="/transfer/_shell", user_name="Ann", branch="HQ"
     )
     assert again.count('data-kcw-shell="1"') == 1
-    assert "Ann" in render_shell_html(
+    shell = render_shell_html(
         service_id="transfer", api_base="/transfer/_shell", user_name="Ann", branch="HQ"
     )
+    assert "Ann" in shell
+    # Dedicated top strip + body pad so host Service controls are not covered.
+    assert "html.kcw-shell-pad" in shell
+    assert "syncShellPad" in shell
+    assert "--kcw-shell-h" in shell
+    assert "padding-top:var(--kcw-shell-h)" in shell
 
 
 def test_online_sale_page_hosts_shell_slot():
@@ -143,6 +149,7 @@ def test_online_sale_page_hosts_shell_slot():
     assert "kcwShellSlot" in html
     assert "button.kcw-shell-btn" in html
     assert "kcw-shell-rooted" in html  # mount script references the class
+    assert "kcw-shell-pad" in html  # pad CSS exists; rooted mount skips applying it
 
 
 def test_services_menu_still_matches_handlers():
