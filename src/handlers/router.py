@@ -46,6 +46,10 @@ from src.handlers.pay_notes_entry import (
     is_pay_notes_command,
     handle_pay_notes_command,
 )
+from src.handlers.receive_notes_entry import (
+    is_receive_notes_command,
+    handle_receive_notes_command,
+)
 from src.handlers.transfer_entry import (
     is_transfer_command,
     handle_transfer_command,
@@ -154,6 +158,16 @@ def route_user_text(
 
     if is_pay_notes_command(text):
         return handle_pay_notes_command(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            display_name=(access or {}).get("display_name")
+            or (access or {}).get("line_display_name")
+            or line_user_id,
+            access=access,
+        )
+
+    if is_receive_notes_command(text):
+        return handle_receive_notes_command(
             engine,
             line_user_id=line_user_id or "unknown",
             display_name=(access or {}).get("display_name")
