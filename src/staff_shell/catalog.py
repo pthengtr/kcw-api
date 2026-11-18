@@ -124,7 +124,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         path="/receive-notes/",
         port=_port("RECEIVE_NOTES_LISTEN_PORT", 8797),
         hosts=frozenset({"HQ"}),
-        icon="notes",
+        icon="ar",
     ),
 )
 

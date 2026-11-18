@@ -8,6 +8,7 @@ from src.online_sale import drafts as draft_store
 from src.online_sale import parts9
 from src.online_sale.config import get_online_sale_settings
 from src.online_sale.errors import OnlineSaleError
+from src.online_sale.bill_sheets import save_bill_sheet
 from src.online_sale.issuers import resolve_print_issuer, save_doc_issuer
 from src.online_sale.sheets.cntad import render_cntad_sheet
 from src.online_sale.sheets.pick import render_pick_sheet
@@ -304,6 +305,10 @@ def save_sale_payload(
             pass
     bill = parts9.load_bill(result["billno"])
     bill["issuer_label"] = issuer_label
+    try:
+        save_bill_sheet(result["billno"], kind="tad", html=render_tad_sheet(bill))
+    except Exception:
+        pass
     return {"ok": True, "result": result, "bill": bill}
 
 
@@ -382,6 +387,11 @@ def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[s
         allow_oversell=bool(body.get("allow_oversell")),
     )
     bill = parts9.load_bill(result["billno"])
+    bill["issuer_label"] = resolve_print_issuer(bill)
+    try:
+        save_bill_sheet(result["billno"], kind="tad", html=render_tad_sheet(bill))
+    except Exception:
+        pass
     return {"ok": True, "result": result, "bill": bill}
 
 
@@ -461,6 +471,14 @@ def save_return_payload(
     cn["reason"] = reason_text
     cn["tad_billno"] = tad
     cn["issuer_label"] = issuer_label
+    try:
+        save_bill_sheet(
+            result["billno"],
+            kind="cntad",
+            html=render_cntad_sheet(cn, original=bill, reason=reason_text),
+        )
+    except Exception:
+        pass
     return {"ok": True, "result": result, "bill": cn, "original": bill}
 
 
@@ -469,7 +487,12 @@ def print_tad_html(billno: str) -> str:
     if bill["kind"] != "tad":
         raise OnlineSaleError("bill", "พิมพ์ใบ TAD ได้จากบิล TAD เท่านั้น")
     bill["issuer_label"] = resolve_print_issuer(bill)
-    return render_tad_sheet(bill)
+    html = render_tad_sheet(bill)
+    try:
+        save_bill_sheet(bill["billno"], kind="tad", html=html)
+    except Exception:
+        pass
+    return html
 
 
 def _attach_pick_photos(bill: dict[str, Any]) -> None:
@@ -562,4 +585,9 @@ def print_cntad_html(billno: str, *, reason: str = "") -> str:
             bill["platform"] = original.get("platform") or ""
     bill["channel"] = channel_label(bill.get("platform"), bill.get("shop_name"))
     bill["issuer_label"] = resolve_print_issuer(bill)
-    return render_cntad_sheet(bill, original=original, reason=reason)
+    html = render_cntad_sheet(bill, original=original, reason=reason)
+    try:
+        save_bill_sheet(bill["billno"], kind="cntad", html=html)
+    except Exception:
+        pass
+    return html
