@@ -33,9 +33,12 @@
       --response: #2f9e7b;
       --webhook: #c4913a;
       --polling: #8b7bb8;
+      --qr-box: #3b82c4;
+      --qr-phone: #6d5a9c;
       --touch: 44px;
       --font: "Prompt", "Noto Sans Thai", "Segoe UI", sans-serif;
       --on-accent: #062218;
+      --on-qr: #f4f8fc;
       --btn-cancel-text: #ffffff;
     }
     html[data-theme="dark"] {
@@ -329,8 +332,8 @@
       cursor: wait;
     }
     .btn-send { background: var(--accent); color: var(--on-accent); }
-    .btn-qr { background: var(--request); color: #f4f8fc; }
-    .btn-cloud-qr { background: #0f6b5c; color: #f4fbf9; }
+    .btn-qr { background: var(--qr-box); color: var(--on-qr); }
+    .btn-cloud-qr { background: var(--qr-phone); color: var(--on-qr); }
     .btn-force { background: var(--ok-bg); color: var(--ok-fg); }
     .btn-cancel { background: var(--danger); color: var(--btn-cancel-text); }
     .btn-refresh, .btn-theme { background: var(--btn-secondary); color: var(--text); min-width: var(--touch); }
@@ -939,7 +942,7 @@
         <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
         KCW Tiger Pay Companion
       </h1>
-      <div class="muted">บิลเงินสด POS → เครื่อง Tiger Pay / QR KBank</div>
+      <div class="muted">บิลเงินสด POS → ตู้ Tiger · QR ตู้ · QR มือถือ</div>
     </div>
     <div class="header-actions">
       <button class="btn-hopper" id="hopperBtn" type="button" aria-label="สถานะเงินทอน" title="สถานะเงินทอน">
@@ -1459,8 +1462,8 @@
         cancel: { full: "กำลังยกเลิก…", short: "ยกเลิก…" },
         force: { full: "กำลังตั้งสำเร็จ…", short: "สำเร็จ…" },
         cash: { full: "กำลังส่ง…", short: "ส่ง…" },
-        qr: { full: "กำลังส่ง QR…", short: "QR…" },
-        cloud_qr: { full: "กำลังสร้าง QR ออนไลน์…", short: "QR…" },
+        qr: { full: "กำลังส่ง QR ตู้…", short: "QR ตู้…" },
+        cloud_qr: { full: "กำลังสร้าง QR มือถือ…", short: "QR มือถือ…" },
         voucher: { full: "กำลังสร้าง…", short: "สร้าง…" },
       };
       const label = map[kind] || { full: "กำลังทำรายการ…", short: "…" };
@@ -1671,14 +1674,14 @@
       const raw = String(qr?.status || bill?.tiger_payment_status || "").toUpperCase();
       if (bill?.tiger_payment_status === "success" || raw === "C") {
         return bill?.payment_type === "cloud_qr"
-          ? "ชำระสำเร็จแล้ว (QR ออนไลน์)"
+          ? "ชำระสำเร็จแล้ว (QR มือถือ)"
           : bill?.tiger_payment_status === "success"
             ? "ชำระสำเร็จแล้ว"
             : "ธนาคารรับชำระแล้ว — กำลังยืนยัน";
       }
       if (raw === "E") return "QR หมดอายุ";
       if (raw === "X") return "ยกเลิกแล้ว";
-      return bill?.payment_type === "cloud_qr" ? "รอสแกน QR ออนไลน์" : "รอสแกนชำระ";
+      return bill?.payment_type === "cloud_qr" ? "รอสแกนด้วยมือถือ" : "รอสแกนที่ตู้ Tiger";
     }
 
     function syncQrDialog() {
@@ -1778,9 +1781,12 @@
           /* keep dialog even if refresh fails */
         }
       }
+      const isPhoneQr = bill.payment_type === "cloud_qr";
       const dialog = document.getElementById("qrDialog");
       document.getElementById("qrDialogIcon").innerHTML = ICONS.qr;
-      document.getElementById("qrDialogTitle").textContent = "สแกน QR เพื่อชำระ";
+      document.getElementById("qrDialogTitle").textContent = isPhoneQr
+        ? "สแกน QR มือถือ"
+        : "สแกน QR ตู้";
       document.getElementById("qrDialogBill").textContent = `บิล ${bill.bill_number}`;
       document.getElementById("qrDialogAmount").textContent = `฿${formatAmount(bill.amount)}`;
       const codeEl = document.getElementById("qrDialogCode");
@@ -1792,11 +1798,15 @@
       if (resolved?.image) {
         img.src = resolved.image;
         wrap.style.display = "";
-        hint.textContent = "ให้ลูกค้าสแกนด้วยแอปธนาคาร (KBank) ระบบจะยืนยันอัตโนมัติเมื่อชำระสำเร็จ";
+        hint.textContent = isPhoneQr
+          ? "ให้ลูกค้าสแกนด้วยแอปธนาคารบนมือถือ — ไม่ผ่านตู้ Tiger"
+          : "ให้ลูกค้าสแกนที่หน้าจอตู้ Tiger หรือด้วยแอปธนาคาร";
       } else {
         img.removeAttribute("src");
         wrap.style.display = "none";
-        hint.textContent = "สร้างรายการ QR แล้ว แต่ยังไม่มีรูป QR — ให้ลูกค้าสแกนที่หน้าเครื่อง Tiger Pay";
+        hint.textContent = isPhoneQr
+          ? "สร้าง QR มือถือแล้ว แต่ยังไม่มีรูป — ลองเปิดดูอีกครั้ง"
+          : "สร้างรายการ QR แล้ว แต่ยังไม่มีรูป — ให้ลูกค้าสแกนที่หน้าเครื่อง Tiger";
       }
       document.getElementById("qrDialogStatus").textContent = qrStatusLabel(resolved, bill);
       state.openQrAttemptId = attemptId;
@@ -1850,9 +1860,9 @@
       const alreadyCompleted = bill.tiger_payment_status === "success"
         || bill.tiger_payment_status === "C";
       const paidMethodLabel = bill.payment_type === "cloud_qr"
-        ? "ชำระแล้ว (QR ออนไลน์)"
+        ? "ชำระแล้ว (QR มือถือ)"
         : bill.payment_type === "qr"
-          ? "ชำระแล้ว (QR)"
+          ? "ชำระแล้ว (QR ตู้)"
           : bill.payment_type === "cash"
             ? "ชำระแล้ว (เงินสด)"
             : "ชำระแล้ว";
@@ -1873,13 +1883,13 @@
       const qrLabel = qrLoading
         ? busyLabel("qr")
         : showQr && bill.payment_attempt_active
-          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR</span><span class="btn-text-short"> ดู QR</span>`
-          : `${ICONS.qr}<span class="btn-text-full"> ส่ง QR</span><span class="btn-text-short"> ส่ง QR</span>`;
+          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR ตู้</span><span class="btn-text-short"> ดู QR ตู้</span>`
+          : `${ICONS.qr}<span class="btn-text-full"> QR ตู้</span><span class="btn-text-short"> QR ตู้</span>`;
       const cloudQrLabel = cloudQrLoading
         ? busyLabel("cloud_qr")
         : showCloudQr && bill.payment_attempt_active
-          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR ออนไลน์</span><span class="btn-text-short"> ดู QR</span>`
-          : `${ICONS.qr}<span class="btn-text-full"> QR ออนไลน์</span><span class="btn-text-short"> QR ออนไลน์</span>`;
+          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR มือถือ</span><span class="btn-text-short"> ดู QR มือถือ</span>`
+          : `${ICONS.qr}<span class="btn-text-full"> QR มือถือ</span><span class="btn-text-short"> QR มือถือ</span>`;
       const qrDisabled = showQr && bill.payment_attempt_active
         ? actionBlocked(false)
         : (sendDisabled || qrLoading);
@@ -1981,9 +1991,9 @@
               renderBills();
               setMessage(
                 paymentType === "cloud_qr"
-                  ? `กำลังสร้าง QR ออนไลน์สำหรับบิล ${bill.bill_number}...`
+                  ? `กำลังสร้าง QR มือถือสำหรับบิล ${bill.bill_number}...`
                   : paymentType === "qr"
-                    ? `กำลังสร้าง QR สำหรับบิล ${bill.bill_number}...`
+                    ? `กำลังส่ง QR ตู้สำหรับบิล ${bill.bill_number}...`
                     : `กำลังส่งบิล ${bill.bill_number} ไปยัง Tiger Pay...`
               );
               const result = await api(`/companion/bills/${bill.id}/pay`, {
@@ -2031,7 +2041,7 @@
               const confirmed = await confirmCancel({
                 title: "ยืนยันยกเลิกการชำระ",
                 message: isCloudQr
-                  ? `บิล ${bill.bill_number}\nยกเลิก QR ออนไลน์ในระบบ KCW (ไม่ผ่านตู้) ถ้าลูกค้ากำลังสแกนอยู่ อย่ายกเลิก`
+                  ? `บิล ${bill.bill_number}\nยกเลิก QR มือถือในระบบ KCW (ไม่ผ่านตู้) ถ้าลูกค้ากำลังสแกนอยู่ อย่ายกเลิก`
                   : `บิล ${bill.bill_number}\nส่งคำขอยกเลิกไปที่ Tiger Pay เมื่อยืนยันเท่านั้น ถ้าลูกค้ากำลังชำระอยู่ อย่ายกเลิก`,
               });
               if (!confirmed) return;
@@ -2044,9 +2054,9 @@
               closeQrDialog();
               showAlertDialog({
                 type: "info",
-                title: isCloudQr ? "ยกเลิก QR ออนไลน์แล้ว" : "ส่งคำขอยกเลิกแล้ว",
+                title: isCloudQr ? "ยกเลิก QR มือถือแล้ว" : "ส่งคำขอยกเลิกแล้ว",
                 message: isCloudQr
-                  ? `ยกเลิก QR ออนไลน์ของบิล ${bill.bill_number} แล้ว`
+                  ? `ยกเลิก QR มือถือของบิล ${bill.bill_number} แล้ว`
                   : `ส่งคำขอยกเลิกบิล ${bill.bill_number} แล้ว\nรอการยืนยันจาก Tiger Pay`,
               });
             }
@@ -2074,7 +2084,7 @@
         state.events = [];
         document.getElementById("timeline").innerHTML = isPayoutBill(bill)
           ? `<li class="empty">ยังไม่มี voucher กด「สร้าง voucher / จ่ายคืน」</li>`
-          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」「ส่ง QR」หรือ「QR ออนไลน์」</li>`;
+          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」「QR ตู้」หรือ「QR มือถือ」</li>`;
       }
     }
 
