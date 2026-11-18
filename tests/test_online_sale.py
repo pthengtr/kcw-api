@@ -102,6 +102,12 @@ def test_ui_page_placeholders():
     assert "printPick" in html
     assert "saveDraft" in html
     assert "qKind" in html
+    # After a successful draft save, clear the form for the next order
+    # instead of staying in edit mode (editDraftId + syncEditBanner).
+    assert "clearSaleForm();" in html
+    draft_save = html.split("$('saveDraft').onclick", 1)[1].split("$('saveSale').onclick", 1)[0]
+    assert "clearSaleForm();" in draft_save
+    assert "state.editDraftId = draft.draft_id" not in draft_save
     # Sale page must not offer pick-sheet after save.
     assert "print/pick/${encodeURIComponent(billno)}" not in html
     # Pick is from drafts only — no TAD checkbox class.
