@@ -1849,30 +1849,36 @@
       // Completed only when companion recorded success — not legacy POS PAID.
       const alreadyCompleted = bill.tiger_payment_status === "success"
         || bill.tiger_payment_status === "C";
+      const paidMethodLabel = bill.payment_type === "cloud_qr"
+        ? "ชำระแล้ว (QR ออนไลน์)"
+        : bill.payment_type === "qr"
+          ? "ชำระแล้ว (QR)"
+          : bill.payment_type === "cash"
+            ? "ชำระแล้ว (เงินสด)"
+            : "ชำระแล้ว";
+      if (alreadyCompleted) {
+        return `
+          <button class="btn-send" type="button" disabled>${ICONS.check}<span class="btn-text-full"> ${paidMethodLabel}</span><span class="btn-text-short"> ชำระแล้ว</span></button>
+        `;
+      }
       const anySendLoading = cashLoading || qrLoading || cloudQrLoading;
-      const sendDisabled = bill.payment_attempt_active || alreadyCompleted
+      const sendDisabled = bill.payment_attempt_active
         || actionBlocked(anySendLoading);
       const cashDisabled = sendDisabled || cashLoading;
       const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
       const showCloudQr = bill.payment_type === "cloud_qr" && bill.payment_attempt_id;
       const cashLabel = cashLoading
         ? busyLabel("cash")
-        : alreadyCompleted
-          ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
         : `${ICONS.send}<span class="btn-text-full"> ส่งเงินสด / บิล VAT</span><span class="btn-text-short"> เงินสด/VAT</span>`;
       const qrLabel = qrLoading
         ? busyLabel("qr")
         : showQr && bill.payment_attempt_active
           ? `${ICONS.qr}<span class="btn-text-full"> ดู QR</span><span class="btn-text-short"> ดู QR</span>`
-          : alreadyCompleted
-            ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
           : `${ICONS.qr}<span class="btn-text-full"> ส่ง QR</span><span class="btn-text-short"> ส่ง QR</span>`;
       const cloudQrLabel = cloudQrLoading
         ? busyLabel("cloud_qr")
         : showCloudQr && bill.payment_attempt_active
           ? `${ICONS.qr}<span class="btn-text-full"> ดู QR ออนไลน์</span><span class="btn-text-short"> ดู QR</span>`
-          : alreadyCompleted
-            ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
           : `${ICONS.qr}<span class="btn-text-full"> QR ออนไลน์</span><span class="btn-text-short"> QR ออนไลน์</span>`;
       const qrDisabled = showQr && bill.payment_attempt_active
         ? actionBlocked(false)
