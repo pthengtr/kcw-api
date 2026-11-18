@@ -27,7 +27,7 @@ from src.tiger_pay.voucher_service import (
     create_voucher_for_bill,
     get_voucher_attempt_detail,
 )
-from src.tiger_pay import repos
+from src.tiger_pay import cloud_qr_repos, repos
 from src.tiger_pay import voucher_repos
 from src.tiger_pay.cash_inventory import cached_or_live_cash
 from src.tiger_pay.force_auth import can_force_complete
@@ -392,7 +392,11 @@ def companion_active_payments(request: Request) -> dict:
     engine = get_engine()
     attempts = repos.list_active_payment_attempts(engine)
     vouchers = voucher_repos.list_active_voucher_attempts(engine)
-    return {"attempts": attempts, "vouchers": vouchers}
+    try:
+        cloud_qr = cloud_qr_repos.list_active_cloud_qr_payments(engine)
+    except Exception:
+        cloud_qr = []
+    return {"attempts": attempts, "vouchers": vouchers, "cloud_qr": cloud_qr}
 
 
 @router.get("/payments/{attempt_id}")

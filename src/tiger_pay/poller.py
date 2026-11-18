@@ -21,6 +21,7 @@ from src.tiger_pay.cash_inventory import (
     maybe_run_eod,
     process_pending_commands,
 )
+from src.tiger_pay.cloud_qr_service import poll_active_cloud_qr_payments
 from src.tiger_pay.status import is_active_status
 
 logger = logging.getLogger("kcw.tiger_pay.poller")
@@ -160,6 +161,10 @@ class PaymentStatusPoller:
                     continue
                 await asyncio.to_thread(poll_attempt_once, engine, attempt)
         await asyncio.to_thread(recover_sending_attempts, engine)
+        try:
+            await asyncio.to_thread(poll_active_cloud_qr_payments, engine)
+        except Exception:
+            logger.exception("Tiger Pay cloud QR poll failed")
         await asyncio.to_thread(self._warn_if_webhooks_stale, engine)
         try:
             await asyncio.to_thread(process_pending_commands, engine)

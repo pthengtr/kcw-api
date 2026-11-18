@@ -330,6 +330,7 @@
     }
     .btn-send { background: var(--accent); color: var(--on-accent); }
     .btn-qr { background: var(--request); color: #f4f8fc; }
+    .btn-cloud-qr { background: #0f6b5c; color: #f4fbf9; }
     .btn-force { background: var(--ok-bg); color: var(--ok-fg); }
     .btn-cancel { background: var(--danger); color: var(--btn-cancel-text); }
     .btn-refresh, .btn-theme { background: var(--btn-secondary); color: var(--text); min-width: var(--touch); }
@@ -441,7 +442,7 @@
       border: 1px solid color-mix(in srgb, var(--fail-fg) 40%, transparent);
     }
     .status-cancelled, .status-expired { background: var(--bad-bg); color: var(--bad-fg); }
-    .status-pending, .status-pendingapproval, .status-paying, .status-sending, .status-cancelling, .status-changing, .status-creating {
+    .status-pending, .status-pendingapproval, .status-paying, .status-sending, .status-cancelling, .status-changing, .status-creating, .status-I {
       background: var(--warn-bg); color: var(--warn-fg);
     }
     .desktop-table { display: block; min-width: 0; }
@@ -1094,14 +1095,19 @@
       "changing",
       "cancelling",
       "creating",
+      "I",
     ]);
     const STATUS_LABEL = {
       success: "สำเร็จ",
+      C: "สำเร็จ",
       used: "จ่ายคืนแล้ว",
       failed: "ล้มเหลว",
       cancelled: "ยกเลิกแล้ว",
+      X: "ยกเลิกแล้ว",
       expired: "หมดอายุ",
+      E: "หมดอายุ",
       pending: "รอดำเนินการ",
+      I: "รอสแกน QR",
       pendingapproval: "รออนุมัติ",
       paying: "กำลังชำระ",
       sending: "กำลังส่ง",
@@ -1454,6 +1460,7 @@
         force: { full: "กำลังตั้งสำเร็จ…", short: "สำเร็จ…" },
         cash: { full: "กำลังส่ง…", short: "ส่ง…" },
         qr: { full: "กำลังส่ง QR…", short: "QR…" },
+        cloud_qr: { full: "กำลังสร้าง QR ออนไลน์…", short: "QR…" },
         voucher: { full: "กำลังสร้าง…", short: "สร้าง…" },
       };
       const label = map[kind] || { full: "กำลังทำรายการ…", short: "…" };
@@ -1571,12 +1578,14 @@
 
     function billStatusBucket(bill) {
       const status = bill.tiger_payment_status;
-      // Tiger payment_attempt only — ignore legacy POS PAID for send state.
+      // Companion payment records only — ignore legacy POS PAID for send state.
       // Failed stays with unsent so staff can retry; distinguished by status pill color.
       if ((!status && !bill.payment_attempt_id) || status === "failed") return "unsent";
       if (isPendingStatus(status)) return "pending";
-      if (status === "success" || status === "used") return "success";
-      if (status === "cancelled" || status === "expired") return "cancelled";
+      if (status === "success" || status === "used" || status === "C") return "success";
+      if (status === "cancelled" || status === "expired" || status === "E" || status === "X") {
+        return "cancelled";
+      }
       return "pending";
     }
 
@@ -1659,10 +1668,17 @@
         if (bill?.tiger_payment_status === "expired") return "voucher หมดอายุ";
         return "รอลูกค้ารับเงินที่ตู้ Tiger";
       }
-      const raw = String(qr?.status || "").toUpperCase();
-      if (bill?.tiger_payment_status === "success") return "ชำระสำเร็จแล้ว";
-      if (raw === "C") return "ธนาคารรับชำระแล้ว — กำลังยืนยัน";
-      return "รอสแกนชำระ";
+      const raw = String(qr?.status || bill?.tiger_payment_status || "").toUpperCase();
+      if (bill?.tiger_payment_status === "success" || raw === "C") {
+        return bill?.payment_type === "cloud_qr"
+          ? "ชำระสำเร็จแล้ว (QR ออนไลน์)"
+          : bill?.tiger_payment_status === "success"
+            ? "ชำระสำเร็จแล้ว"
+            : "ธนาคารรับชำระแล้ว — กำลังยืนยัน";
+      }
+      if (raw === "E") return "QR หมดอายุ";
+      if (raw === "X") return "ยกเลิกแล้ว";
+      return bill?.payment_type === "cloud_qr" ? "รอสแกน QR ออนไลน์" : "รอสแกนชำระ";
     }
 
     function syncQrDialog() {
@@ -1829,12 +1845,16 @@
 
       const cashLoading = isSendLoading(bill.id, "cash");
       const qrLoading = isSendLoading(bill.id, "qr");
-      // Completed only when Tiger companion recorded success — not legacy POS PAID.
-      const alreadyCompleted = bill.tiger_payment_status === "success";
+      const cloudQrLoading = isSendLoading(bill.id, "cloud_qr");
+      // Completed only when companion recorded success — not legacy POS PAID.
+      const alreadyCompleted = bill.tiger_payment_status === "success"
+        || bill.tiger_payment_status === "C";
+      const anySendLoading = cashLoading || qrLoading || cloudQrLoading;
       const sendDisabled = bill.payment_attempt_active || alreadyCompleted
-        || actionBlocked(cashLoading || qrLoading);
+        || actionBlocked(anySendLoading);
       const cashDisabled = sendDisabled || cashLoading;
       const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
+      const showCloudQr = bill.payment_type === "cloud_qr" && bill.payment_attempt_id;
       const cashLabel = cashLoading
         ? busyLabel("cash")
         : alreadyCompleted
@@ -1847,15 +1867,29 @@
           : alreadyCompleted
             ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
           : `${ICONS.qr}<span class="btn-text-full"> ส่ง QR</span><span class="btn-text-short"> ส่ง QR</span>`;
+      const cloudQrLabel = cloudQrLoading
+        ? busyLabel("cloud_qr")
+        : showCloudQr && bill.payment_attempt_active
+          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR ออนไลน์</span><span class="btn-text-short"> ดู QR</span>`
+          : alreadyCompleted
+            ? `${ICONS.check}<span class="btn-text-full"> ชำระแล้ว</span><span class="btn-text-short"> ชำระแล้ว</span>`
+          : `${ICONS.qr}<span class="btn-text-full"> QR ออนไลน์</span><span class="btn-text-short"> QR ออนไลน์</span>`;
       const qrDisabled = showQr && bill.payment_attempt_active
         ? actionBlocked(false)
         : (sendDisabled || qrLoading);
+      const cloudQrDisabled = showCloudQr && bill.payment_attempt_active
+        ? actionBlocked(false)
+        : (sendDisabled || cloudQrLoading);
       const cashBusyAttr = cashLoading ? ` class="btn-send btn-busy" aria-busy="true"` : ` class="btn-send"`;
       const qrBusyAttr = qrLoading ? ` class="btn-qr btn-busy" aria-busy="true"` : ` class="btn-qr"`;
+      const cloudQrBusyAttr = cloudQrLoading
+        ? ` class="btn-cloud-qr btn-busy" aria-busy="true"`
+        : ` class="btn-cloud-qr"`;
       const showForce = state.canForceComplete
         && bill.payment_attempt_active
         && bill.payment_attempt_id
-        && bill.tiger_payment_status === "pendingapproval";
+        && bill.tiger_payment_status === "pendingapproval"
+        && bill.payment_type !== "cloud_qr";
       const forceLoading = isForceLoading(bill.payment_attempt_id);
       const forceDisabled = !showForce || actionBlocked(forceLoading) || forceLoading;
       const forceLabel = forceLoading
@@ -1868,6 +1902,7 @@
       return `
         <button${cashBusyAttr} type="button" data-action="send-cash" data-id="${bill.id}" ${cashDisabled ? "disabled" : ""}>${cashLabel}</button>
         <button${qrBusyAttr} type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
+        <button${cloudQrBusyAttr} type="button" data-action="send-cloud-qr" data-id="${bill.id}" ${cloudQrDisabled ? "disabled" : ""}>${cloudQrLabel}</button>
         ${forceBtn}
         <button${cancelBusyAttr} type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
       `;
@@ -1919,9 +1954,15 @@
                 title: "ยกเลิก voucher แล้ว",
                 message: `ยกเลิก voucher ของบิล ${bill.bill_number} แล้ว`,
               });
-            } else if (action === "send-cash" || action === "send-qr") {
-              const paymentType = action === "send-qr" ? "qr" : "cash";
-              const viewingQr = paymentType === "qr" && bill.payment_type === "qr" && bill.payment_attempt_active;
+            } else if (action === "send-cash" || action === "send-qr" || action === "send-cloud-qr") {
+              const paymentType = action === "send-cloud-qr"
+                ? "cloud_qr"
+                : action === "send-qr"
+                  ? "qr"
+                  : "cash";
+              const viewingQr = (paymentType === "qr" || paymentType === "cloud_qr")
+                && bill.payment_type === paymentType
+                && bill.payment_attempt_active;
               if (viewingQr) {
                 await showQrDialog({
                   bill,
@@ -1933,9 +1974,11 @@
               state.actionInFlight = { type: "send", billId: bill.id, paymentType };
               renderBills();
               setMessage(
-                paymentType === "qr"
-                  ? `กำลังสร้าง QR สำหรับบิล ${bill.bill_number}...`
-                  : `กำลังส่งบิล ${bill.bill_number} ไปยัง Tiger Pay...`
+                paymentType === "cloud_qr"
+                  ? `กำลังสร้าง QR ออนไลน์สำหรับบิล ${bill.bill_number}...`
+                  : paymentType === "qr"
+                    ? `กำลังสร้าง QR สำหรับบิล ${bill.bill_number}...`
+                    : `กำลังส่งบิล ${bill.bill_number} ไปยัง Tiger Pay...`
               );
               const result = await api(`/companion/bills/${bill.id}/pay`, {
                 method: "POST",
@@ -1944,9 +1987,9 @@
               state.selectedBillId = bill.id;
               state.selectedAttemptId = result.attempt && result.attempt.id;
               if (result.qr) cacheQr(state.selectedAttemptId, result.qr);
-              if (paymentType === "qr") {
+              if (paymentType === "qr" || paymentType === "cloud_qr") {
                 await showQrDialog({
-                  bill: { ...bill, payment_attempt_active: true, payment_type: "qr" },
+                  bill: { ...bill, payment_attempt_active: true, payment_type: paymentType },
                   attemptId: state.selectedAttemptId,
                   qr: result.qr,
                 });
@@ -1978,9 +2021,12 @@
               });
             } else if (action === "cancel") {
               const attemptId = btn.getAttribute("data-attempt");
+              const isCloudQr = bill.payment_type === "cloud_qr";
               const confirmed = await confirmCancel({
                 title: "ยืนยันยกเลิกการชำระ",
-                message: `บิล ${bill.bill_number}\nส่งคำขอยกเลิกไปที่ Tiger Pay เมื่อยืนยันเท่านั้น ถ้าลูกค้ากำลังชำระอยู่ อย่ายกเลิก`,
+                message: isCloudQr
+                  ? `บิล ${bill.bill_number}\nยกเลิก QR ออนไลน์ในระบบ KCW (ไม่ผ่านตู้) ถ้าลูกค้ากำลังสแกนอยู่ อย่ายกเลิก`
+                  : `บิล ${bill.bill_number}\nส่งคำขอยกเลิกไปที่ Tiger Pay เมื่อยืนยันเท่านั้น ถ้าลูกค้ากำลังชำระอยู่ อย่ายกเลิก`,
               });
               if (!confirmed) return;
               state.actionInFlight = { type: "cancel", billId: bill.id, attemptId };
@@ -1992,8 +2038,10 @@
               closeQrDialog();
               showAlertDialog({
                 type: "info",
-                title: "ส่งคำขอยกเลิกแล้ว",
-                message: `ส่งคำขอยกเลิกบิล ${bill.bill_number} แล้ว\nรอการยืนยันจาก Tiger Pay`,
+                title: isCloudQr ? "ยกเลิก QR ออนไลน์แล้ว" : "ส่งคำขอยกเลิกแล้ว",
+                message: isCloudQr
+                  ? `ยกเลิก QR ออนไลน์ของบิล ${bill.bill_number} แล้ว`
+                  : `ส่งคำขอยกเลิกบิล ${bill.bill_number} แล้ว\nรอการยืนยันจาก Tiger Pay`,
               });
             }
           } catch (err) {
@@ -2020,7 +2068,7 @@
         state.events = [];
         document.getElementById("timeline").innerHTML = isPayoutBill(bill)
           ? `<li class="empty">ยังไม่มี voucher กด「สร้าง voucher / จ่ายคืน」</li>`
-          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」หรือ「ส่ง QR」</li>`;
+          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」「ส่ง QR」หรือ「QR ออนไลน์」</li>`;
       }
     }
 

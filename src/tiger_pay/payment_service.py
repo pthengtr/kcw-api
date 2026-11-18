@@ -12,8 +12,16 @@ from sqlalchemy.engine import Engine
 
 from src.companion.bill_mapping import BANGKOK_TZ
 from src.companion.bills import get_open_bill, list_cn_bills, list_open_bills
-from src.tiger_pay import repos
+from src.tiger_pay import cloud_qr_repos, repos
 from src.tiger_pay import voucher_repos
+from src.tiger_pay.cloud_qr_service import (
+    CLOUD_QR_PAYMENT_TYPE,
+    CloudQrServiceError,
+    cancel_cloud_qr_payment,
+    companion_qr_from_cloud_row,
+    get_cloud_qr_detail,
+    send_cloud_qr_for_bill,
+)
 from src.tiger_pay.config import get_tiger_pay_settings, parse_payment_id_epoch
 from src.tiger_pay.open_api import TigerPayOpenApiClient, TigerPayOpenApiError, get_open_api_client
 from src.tiger_pay.payload import omit_qr_images
@@ -39,7 +47,7 @@ logger = logging.getLogger("kcw.tiger_pay.payment_service")
 
 # Tiger Open API: RefNo2 max length is 20.
 TIGER_REF_NO2_MAX_LEN = 20
-ALLOWED_PAYMENT_TYPES = frozenset({"cash", "qr"})
+ALLOWED_PAYMENT_TYPES = frozenset({"cash", "qr", CLOUD_QR_PAYMENT_TYPE})
 
 
 def new_payment_attempt_id() -> str:
@@ -163,17 +171,22 @@ def list_bills_with_payment_status(
     payout_bills = list_cn_bills(mode=mode, limit=limit)
     bills = [*collect_bills, *payout_bills]
 
+    collect_ids = [bill.id for bill in collect_bills]
     try:
-        latest_by_bill = repos.list_latest_attempts_by_bill_ids(
-            engine,
-            [bill.id for bill in collect_bills],
-        )
+        latest_by_bill = repos.list_latest_attempts_by_bill_ids(engine, collect_ids)
     except Exception:
         # POS rows still have to list when Supabase session slots are full.
         # A failed attempt lookup used to 500 the whole /companion/bills call,
         # which left the till on "ไม่มีบิลที่แสดง" until someone refreshed.
         logger.exception("Failed loading payment attempts for bill list")
         latest_by_bill = {}
+    try:
+        latest_cloud_qr = cloud_qr_repos.list_latest_cloud_qr_by_bill_ids(
+            engine, collect_ids
+        )
+    except Exception:
+        logger.exception("Failed loading cloud QR payments for bill list")
+        latest_cloud_qr = {}
     try:
         latest_vouchers = voucher_repos.list_latest_vouchers_by_bill_ids(
             engine,
@@ -201,17 +214,32 @@ def list_bills_with_payment_status(
             item["submitted_by_name"] = attempt.get("submitted_by_name") if attempt else None
         else:
             attempt = latest_by_bill.get(bill.id)
-            item["tiger_payment_status"] = attempt["status"] if attempt else None
-            item["tiger_payment_no"] = attempt["tiger_payment_no"] if attempt else None
-            item["tiger_payment_id"] = attempt["tiger_payment_id"] if attempt else None
-            item["payment_attempt_id"] = attempt["id"] if attempt else None
-            item["payment_attempt_active"] = bool(
-                attempt and is_active_status(str(attempt["status"]))
-            )
-            item["payment_type"] = payment_type_from_attempt(attempt) if attempt else None
-            item["voucher"] = None
-            item["submitted_by"] = attempt.get("submitted_by") if attempt else None
-            item["submitted_by_name"] = attempt.get("submitted_by_name") if attempt else None
+            cloud = latest_cloud_qr.get(bill.id)
+            preferred = _prefer_collect_payment_row(attempt, cloud)
+            if preferred and preferred.get("_source") == "cloud_qr":
+                item["tiger_payment_status"] = preferred.get("status")
+                item["tiger_payment_no"] = preferred.get("ref1")
+                item["tiger_payment_id"] = None
+                item["payment_attempt_id"] = preferred.get("id")
+                item["payment_attempt_active"] = cloud_qr_repos.is_cloud_qr_active_status(
+                    str(preferred.get("status"))
+                )
+                item["payment_type"] = CLOUD_QR_PAYMENT_TYPE
+                item["voucher"] = None
+                item["submitted_by"] = preferred.get("submitted_by")
+                item["submitted_by_name"] = preferred.get("submitted_by_name")
+            else:
+                item["tiger_payment_status"] = attempt["status"] if attempt else None
+                item["tiger_payment_no"] = attempt["tiger_payment_no"] if attempt else None
+                item["tiger_payment_id"] = attempt["tiger_payment_id"] if attempt else None
+                item["payment_attempt_id"] = attempt["id"] if attempt else None
+                item["payment_attempt_active"] = bool(
+                    attempt and is_active_status(str(attempt["status"]))
+                )
+                item["payment_type"] = payment_type_from_attempt(attempt) if attempt else None
+                item["voucher"] = None
+                item["submitted_by"] = attempt.get("submitted_by") if attempt else None
+                item["submitted_by_name"] = attempt.get("submitted_by_name") if attempt else None
         results.append(item)
 
     # Paid returns on 6K/8K (and any non-KCN number) drop off the CN query.
@@ -278,6 +306,52 @@ def _orphan_voucher_bill_rows(
     return rows
 
 
+def _row_created_at_key(row: dict[str, Any] | None) -> str:
+    if not row:
+        return ""
+    return str(row.get("created_at") or "")
+
+
+def _prefer_collect_payment_row(
+    attempt: dict[str, Any] | None,
+    cloud: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Pick box attempt vs cloud QR for companion bill display.
+
+    Prefer an active row; else a successful/blocking cloud or box success;
+    else the newest row.
+    """
+    cloud_active = bool(
+        cloud and cloud_qr_repos.is_cloud_qr_active_status(str(cloud.get("status")))
+    )
+    attempt_active = bool(attempt and is_active_status(str(attempt.get("status"))))
+    if cloud_active and not attempt_active:
+        return {**cloud, "_source": "cloud_qr"}
+    if attempt_active and not cloud_active:
+        return {**attempt, "_source": "attempt"}
+    if cloud_active and attempt_active:
+        if _row_created_at_key(cloud) >= _row_created_at_key(attempt):
+            return {**cloud, "_source": "cloud_qr"}
+        return {**attempt, "_source": "attempt"}
+
+    cloud_success = bool(cloud and str(cloud.get("status")) == "C")
+    attempt_success = bool(attempt and str(attempt.get("status")) == "success")
+    if cloud_success and not attempt_success:
+        return {**cloud, "_source": "cloud_qr"}
+    if attempt_success and not cloud_success:
+        return {**attempt, "_source": "attempt"}
+    if cloud_success and attempt_success:
+        if _row_created_at_key(cloud) >= _row_created_at_key(attempt):
+            return {**cloud, "_source": "cloud_qr"}
+        return {**attempt, "_source": "attempt"}
+
+    if cloud and (not attempt or _row_created_at_key(cloud) >= _row_created_at_key(attempt)):
+        return {**cloud, "_source": "cloud_qr"}
+    if attempt:
+        return {**attempt, "_source": "attempt"}
+    return None
+
+
 def _combined_bills_cap(limit: int | str | None) -> int | None:
     """Max rows for the merged companion list, or None when unlimited."""
     if limit is None:
@@ -302,15 +376,20 @@ def _public_attempt(attempt: dict[str, Any]) -> dict[str, Any]:
 
 def get_attempt_detail(engine: Engine, attempt_id: str) -> dict[str, Any]:
     attempt = repos.get_payment_attempt(engine, attempt_id)
-    if not attempt:
-        raise PaymentServiceError("Payment attempt not found", code="not_found")
-    events = repos.list_payment_events(engine, attempt_id)
-    return {
-        "attempt": _public_attempt(attempt),
-        "events": events,
-        "qr": companion_qr_from_attempt(attempt),
-        "payment_type": payment_type_from_attempt(attempt),
-    }
+    if attempt:
+        events = repos.list_payment_events(engine, attempt_id)
+        return {
+            "attempt": _public_attempt(attempt),
+            "events": events,
+            "qr": companion_qr_from_attempt(attempt),
+            "payment_type": payment_type_from_attempt(attempt),
+        }
+    try:
+        return get_cloud_qr_detail(engine, attempt_id)
+    except CloudQrServiceError as exc:
+        if exc.code == "not_found":
+            raise PaymentServiceError("Payment attempt not found", code="not_found") from exc
+        raise PaymentServiceError(exc.message, code=exc.code, details=exc.details) from exc
 
 
 def _attempt_amount(attempt: dict[str, Any]) -> float:
@@ -570,9 +649,22 @@ def send_payment_for_bill(
     cleaned_type = str(payment_type or "cash").strip().lower()
     if cleaned_type not in ALLOWED_PAYMENT_TYPES:
         raise PaymentServiceError(
-            "payment_type must be cash or qr",
+            "payment_type must be cash, qr, or cloud_qr",
             code="invalid_payment_type",
         )
+    if cleaned_type == CLOUD_QR_PAYMENT_TYPE:
+        try:
+            return send_cloud_qr_for_bill(
+                engine,
+                pos_bill_id,
+                submitted_by=submitted_by,
+                submitted_by_name=submitted_by_name,
+            )
+        except CloudQrServiceError as exc:
+            raise PaymentServiceError(
+                exc.message, code=exc.code, details=exc.details
+            ) from exc
+
     submitted_by, submitted_by_name = normalize_submitter(
         line_user_id=submitted_by,
         display_name=submitted_by_name,
@@ -600,11 +692,21 @@ def send_payment_for_bill(
                 "Bill already has a completed payment",
                 code="payment_already_completed",
             )
+        if cloud_qr_repos.get_successful_cloud_qr_for_bill(engine, pos_bill_id):
+            raise PaymentServiceError(
+                "Bill already has a completed cloud QR payment",
+                code="payment_already_completed",
+            )
 
         existing = repos.get_active_attempt_for_bill(engine, pos_bill_id)
         if existing:
             raise PaymentServiceError(
                 "Bill already has an active payment attempt",
+                code="active_attempt_exists",
+            )
+        if cloud_qr_repos.get_active_cloud_qr_for_bill(engine, pos_bill_id):
+            raise PaymentServiceError(
+                "Bill already has an active cloud QR payment",
                 code="active_attempt_exists",
             )
 
@@ -783,6 +885,19 @@ def cancel_payment_attempt(
 ) -> dict[str, Any]:
     attempt = repos.get_payment_attempt(engine, attempt_id)
     if not attempt:
+        cloud = cloud_qr_repos.get_cloud_qr_payment(engine, attempt_id)
+        if cloud:
+            try:
+                return cancel_cloud_qr_payment(
+                    engine,
+                    attempt_id,
+                    submitted_by=submitted_by,
+                    submitted_by_name=submitted_by_name,
+                )
+            except CloudQrServiceError as exc:
+                raise PaymentServiceError(
+                    exc.message, code=exc.code, details=exc.details
+                ) from exc
         raise PaymentServiceError("Payment attempt not found", code="not_found")
 
     if not is_active_status(str(attempt["status"])):
