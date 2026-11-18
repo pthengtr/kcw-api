@@ -122,6 +122,8 @@ def test_pick_sheet_sorted_no_price():
                     "detail": "สินค้า B",
                     "qty": 2,
                     "ui": "ลัง",
+                    "mtp": 10,
+                    "qtyoh2": 50,
                     "location1": "Z-9",
                     "price": 999,
                     "amount": 1998,
@@ -132,6 +134,8 @@ def test_pick_sheet_sorted_no_price():
                     "detail": "สินค้า A",
                     "qty": 1,
                     "ui": "ขวด",
+                    "mtp": 1,
+                    "qtyoh2": 3,
                     "location1": "A-1",
                     "price": 100,
                     "amount": 100,
@@ -148,6 +152,10 @@ def test_pick_sheet_sorted_no_price():
     assert "ผู้จัดสินค้า" in html
     assert "ผู้ตรวจสินค้า" in html
     assert "ที่เก็บ" in html
+    assert "คงเหลือ" in html
+    # B2: qtyoh2 50 / mtp 10 = 5 ลัง; B1: 3 ขวด
+    assert ">5<" in html or ">5</td>" in html
+    assert ">3<" in html or ">3</td>" in html
     assert "☐" in html
     assert html.index("A-1") < html.index("Z-9")
     assert "999" not in html
@@ -262,6 +270,10 @@ def test_staff_roster_and_cntad_signers():
     assert match_staff("เมย์")["full_name"] == "ปิยะนุช นันตาบุตร"
     assert issuer_full_name("Nu") == "อานนท์ ชูสวัสดิ์ (นุ)"
     assert issuer_full_name("Boss") == "สุริยะ โกศัลยกุล (บอส)"
+    # POS SALE stamps on older CNTAD/TAD.
+    assert issuer_full_name("MIAW") == "ธนวรรณ เดชกุญชร (มะเหมี่ยว)"
+    assert issuer_full_name("MIAW ICE") == "ธนวรรณ เดชกุญชร (มะเหมี่ยว)"
+    assert issuer_full_name("AUM SPNT") == "จิตติมา ทิมเทศ (อุ้ม)"
     html = render_cntad_sheet(
         {
             "billno": "CNTAD6911-001",

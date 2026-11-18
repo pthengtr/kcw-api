@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 
-# Full name, nick, LINE display (and loose aliases).
+# Full name, nick, LINE display / POS SALE codes (and loose aliases).
+# POS cashier codes (MIAW, AUM, …) appear on SIMAS.SALE for older TAD/CNTAD.
 _STAFF = (
     ("พรอนันต์ มานะ", "เจี๊ยบ", ("J€@฿", "เจี๊ยบ", "พรอนันต์")),
     ("ปิยะนุช นันตาบุตร", "เมย์", ("🅼🅾🅾🅼🅰🆈", "เมย์", "เมย", "ปิยะนุช", "may")),
@@ -17,7 +18,11 @@ _STAFF = (
     ("ฉัตรชัย สุวรรณกูล", "หนุ่ย", ("หนุ่ย", "ฉัตรชัย")),
     ("จิดาภา กระจาย", "การ์ตูน", ("cartoonnnn", "cartoon", "การ์ตูน", "จิดาภา")),
     ("รณชัย พงษ์ปาน", "อ้น", ("Aon", "อ้น", "รณชัย")),
-    ("ธนวรรณ เดชกุญชร", "มะเหมี่ยว", ("มะ'เหมี่ยว", "มะเหมี่ยว", "ธนวรรณ")),
+    (
+        "ธนวรรณ เดชกุญชร",
+        "มะเหมี่ยว",
+        ("มะ'เหมี่ยว", "มะเหมี่ยว", "ธนวรรณ", "MIAW", "miaw"),
+    ),
     ("ธิติ จันทร์พราหมณ์", "ช๊อปเปอร์", ("CHOPPUIS.1995", "ช๊อปเปอร์", "ธิติ", "chopper")),
     ("ศุภิสรา เดชกุญชร", "เบ้นซ์", ("Benz", "เบ้นซ์", "ศุภิสรา")),
     ("อาทิตยา หมื่นไสยาสน์", "พลอย", ("พลอยยี่", "พลอย", "อาทิตยา")),
@@ -26,7 +31,7 @@ _STAFF = (
     ("กัญญาวีร์ ปิ่นทอง", "กวาง", ("ᴋᴀɴʏᴀᴡᴇᴇ", "กวาง", "กัญญาวีร์", "kanyawee")),
     ("มัญชุนันท์ คำลา", "อ้อน", ("Manchunannnnn", "อ้อน", "มัญชุนันท์", "aon", "manchunan")),
     ("อานนท์ ชูสวัสดิ์", "นุ", ("Nu", "นุ", "อานนท์")),
-    ("จิตติมา ทิมเทศ", "อุ้ม", ("Aum", "อุ้ม", "จิตติมา", "aum")),
+    ("จิตติมา ทิมเทศ", "อุ้ม", ("Aum", "อุ้ม", "จิตติมา", "aum", "AUM")),
     ("ญดาพร นิมวรรณ์", "อุ๋มอิ๋ม", ("อุ๋มอิ๋ม", "ญดาพร")),
     ("นพดล โกศัลยกุล", "บูม", ("Boom", "บูม", "นพดล")),
 )
@@ -50,6 +55,10 @@ def match_staff(actor: str) -> dict | None:
     tokens = _tokens(actor)
     if not tokens:
         return None
+    # POS stamps like "MIAW ICE" / "AUM SPNT" — match the cashier token first.
+    first = _fold((actor or "").strip().split()[0]) if (actor or "").strip() else ""
+    if first:
+        tokens.add(first)
     for full_name, nick, aliases in _STAFF:
         alias_set = {_fold(a) for a in aliases} | {_fold(nick), _fold(full_name)}
         if tokens & alias_set:

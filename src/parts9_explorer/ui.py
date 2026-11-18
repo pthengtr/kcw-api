@@ -860,8 +860,9 @@ function render(data, opts) {
   products.forEach((p,i) => {
     const src = (p.photos && p.photos[0]) || "";
     html += "<button class='card' id='c"+i+"' onclick='showP("+i+")'><img class='thumb' src='"+src+"' onerror='imgErr(this)'/><div><strong>"+esc(p.bcode)+"</strong>"
-      +(p.do_not_restock?" <span class='badge'>ไม่สั่งซ้ำ</span>":"")
-      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")+"</div>"+codeBits(p)+sizeBits(p)+locBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+qty(p.qtyoh2)+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
+      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")
+      +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
+      +"</div>"+codeBits(p)+sizeBits(p)+locBits(p)+"<div class='meta'>"+esc(p.category||"")+" · คงเหลือ "+qty(p.qtyoh2)+" "+esc(p.ui1||"")+"</div><div class='prices'>"+fmtPrices(p.prices)+"</div></div></button>";
   });
   $("list").innerHTML = html || "<div class='empty'>ไม่พบ</div>";
   if (KIND === "iclow" && SUMMARY && !DOCS.length) showSummary();
@@ -1481,16 +1482,18 @@ function showP(i, opts) {
       +stockCard("คงเหลือ สาขา", qtySyp, false)
       +stockCard("รวมบริษัท", qtyTotal, !!p.do_not_restock)
       +"</div>"
-      +(p.do_not_restock ? "<p class='meta' style='margin:.45rem 0 0'>ไม่สั่งซ้ำ</p>" : "");
+      +(p.do_not_restock ? "<p class='meta' style='margin:.45rem 0 0'>ไม่สั่งเพิ่ม (L-1)</p>" : "");
   } else {
     stockHtml = "<div class='stock-kpis'>"
       +stockCard("คงเหลือ QTYOH2", p.qtyoh2, !!p.do_not_restock)
       +"</div>"
-      +(p.do_not_restock ? "<p class='meta' style='margin:.45rem 0 0'>ไม่สั่งซ้ำ</p>" : "");
+      +(p.do_not_restock ? "<p class='meta' style='margin:.45rem 0 0'>ไม่สั่งเพิ่ม (L-1)</p>" : "");
   }
   $("detail").innerHTML = "<div class='detail-overview'>"
     +"<h2>"+esc(p.bcode)+"</h2>"
-    +"<div class='descr'>"+esc(p.descr)+"</div>"
+    +"<div class='descr'>"+esc(p.descr)
+    +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
+    +"</div>"
     +"<div class='meta'>เบอร์แท้ "+esc(p.pcode||"—")+" · เบอร์โรงงาน "+esc(p.mcode||"—")
     +(p.acode ? " · ชื่อย่อ "+esc(p.acode) : "")
     +" · "+esc(p.brand)+" "+esc(p.model)+"</div>"
@@ -2124,13 +2127,13 @@ function fmtSuggestEvidence(p) {
 function peerLine(p, badge) {
   const hq = p.hq_qtyoh2 != null ? qty(p.hq_qtyoh2) : "—";
   const syp = p.syp_qtyoh2 != null ? qty(p.syp_qtyoh2) : "—";
-  const l1 = p.hq_l1 ? " <span class='badge'>L-1</span>" : "";
+  const l1 = p.hq_l1 ? " <span class='badge'>ไม่สั่งเพิ่ม</span>" : "";
   const src = badge || p.source_label || p.source || "";
   const srcHtml = src ? " <span class='badge'>"+esc(src)+"</span>" : "";
   const evid = fmtSuggestEvidence(p);
   const evidHtml = evid ? " · "+esc(evid) : "";
   return "<div class='meta'><button class='linkish' data-jump='product' data-q='"+esc(p.bcode)+"'>"+esc(p.bcode)+"</button>"
-    +srcHtml+" "+esc((p.descr||"").slice(0,40))+evidHtml+" · สนญ "+hq+" / สาขา "+syp+l1+"</div>";
+    +srcHtml+" "+esc((p.descr||"").slice(0,40))+l1+evidHtml+" · สนญ "+hq+" / สาขา "+syp+"</div>";
 }
 function loadSubPanels(bcode) {
   const el = $("subPanel");
@@ -2425,7 +2428,7 @@ function esc(s){ return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;")
 function stockLine(m){
   const hq = m.hq_qtyoh2 != null ? m.hq_qtyoh2 : "—";
   const syp = m.syp_qtyoh2 != null ? m.syp_qtyoh2 : "—";
-  const l1 = m.hq_l1 ? " <span class='badge'>L-1</span>" : "";
+  const l1 = m.hq_l1 ? " · ไม่สั่งเพิ่ม" : "";
   return "สนญ "+hq+" / สาขา "+syp+l1;
 }
 async function loadSuggest(bcode){

@@ -483,6 +483,26 @@ def _attach_pick_photos(bill: dict[str, Any]) -> None:
             ln["photo"] = product_thumb_url(code)
 
 
+def _attach_pick_stock(bill: dict[str, Any]) -> None:
+    """Refresh on-hand qty so the pick sheet คงเหลือ column is current."""
+    for ln in bill.get("lines") or []:
+        code = str(ln.get("bcode") or "").strip()
+        if not code:
+            continue
+        try:
+            product = parts9.lookup_product(code)
+        except Exception:
+            continue
+        if not product:
+            continue
+        try:
+            ln["qtyoh2"] = float(product.get("qtyoh2") or 0)
+        except (TypeError, ValueError):
+            pass
+        if not ln.get("location1") and (product.get("location") or product.get("location1")):
+            ln["location1"] = product.get("location1") or product.get("location") or ""
+
+
 def print_pick_html(
     billno: str = "",
     *,
@@ -501,6 +521,7 @@ def print_pick_html(
     bills = draft_store.drafts_for_pick(ids)
     for bill in bills:
         _attach_pick_photos(bill)
+        _attach_pick_stock(bill)
     try:
         draft_store.mark_drafts_printed(ids)
     except Exception:
