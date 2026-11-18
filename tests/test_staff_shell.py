@@ -161,8 +161,9 @@ def test_services_menu_still_matches_handlers():
     ]
     assert "โอนสินค้า" in labels
     assert "ชำระเจ้าหนี้" in labels
+    assert "รับชำระลูกหนี้" in labels
     matched = services_menu_handlers_match()
-    assert matched["transfer"] and matched["pay_notes"] and matched["image"]
+    assert matched["transfer"] and matched["pay_notes"] and matched["receive_notes"] and matched["image"]
 
 
 def test_shell_routes_switch_and_logout():

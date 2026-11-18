@@ -116,6 +116,16 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         hosts=frozenset({"HQ"}),
         icon="notes",
     ),
+    ServiceDef(
+        id="receive-notes",
+        label="รับชำระลูกหนี้",
+        line_command="รับชำระลูกหนี้",
+        app="receive-notes",
+        path="/receive-notes/",
+        port=_port("RECEIVE_NOTES_LISTEN_PORT", 8797),
+        hosts=frozenset({"HQ"}),
+        icon="notes",
+    ),
 )
 
 # Chat-only / help entries for LINE Flex (not in waffle).

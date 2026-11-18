@@ -6,6 +6,7 @@ from src.handlers.companion_entry import is_companion_command
 from src.handlers.explorer_entry import is_explorer_command
 from src.handlers.image import is_image_command
 from src.handlers.pay_notes_entry import is_pay_notes_command
+from src.handlers.receive_notes_entry import is_receive_notes_command
 from src.handlers.stock_check_entry import is_stock_check_command
 from src.handlers.hq_po_entry import is_hq_po_command
 from src.handlers.hq_receive_entry import is_hq_receive_command
@@ -95,5 +96,6 @@ def services_menu_handlers_match() -> dict[str, bool]:
         "hq_receive": is_hq_receive_command(checks[5]),
         "online_sale": is_online_sale_command(checks[6]),
         "pay_notes": is_pay_notes_command(checks[7]),
-        "image": is_image_command(checks[8]),
+        "receive_notes": is_receive_notes_command(checks[8]),
+        "image": is_image_command(checks[9]),
     }
