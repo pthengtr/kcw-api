@@ -2,6 +2,14 @@
 
 Search / detail UI on `:8788` (`kcw-parts9-explorer`). Product discovery is read-mostly; write surfaces below edit **HQ (KSS)** only so waiting rows show up in hq-po.
 
+## Product detail layout
+
+- Header above tabs: product facts, prices, locations, **สต็อกคงเหลือ** (HQ / SYP / รวมบริษัท), existing photos only
+- Tabs: **Insight** (default) · ประวัติซื้อ · ประวัติขาย · การสั่งซื้อ · ต้นทุน (admin)
+- Insight / buy / sell match hq-po hist UX, including **HQ / SYP** site toggle (kept when switching tabs)
+- **จัดการสินค้า** opens edit + photo upload; L / ล็อต / ใส่รอสั่ง live under การสั่งซื้อ
+- Branch labels are **HQ / SYP** (same as hq-po), not Thai long names
+
 ## Read
 
 - `GET /parts9/` — search UI
@@ -11,7 +19,7 @@ Search / detail UI on `:8788` (`kcw-parts9-explorer`). Product discovery is read
 - `GET /parts9/api/history/bills/{kind}/{billno}` — รายละเอียดบิล
 - Substitutes manage under `/parts9/substitutes`
 
-## Writes (product detail / + สินค้าใหม่)
+## Writes (จัดการสินค้า / + สินค้าใหม่ / tab การสั่งซื้อ)
 
 | Action | Route | Backend | Flag |
 |--------|-------|---------|------|

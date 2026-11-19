@@ -95,8 +95,8 @@ def test_explorer_page_has_code_size_panel():
     assert "mode-code-size" in html
     assert "resetCodeSizeForm" in html
     assert "--field-h" in html
-    assert ">สำนักงานใหญ่</option>" in html
-    assert ">สาขาสี่แยกพัฒนา</option>" in html
+    assert ">HQ</option>" in html
+    assert ">SYP</option>" in html
     assert 'id="searchPanel"' in html
     assert 'id="searchToggle"' in html
     assert "collapseSearchPanelIfMobile" in html
@@ -371,10 +371,24 @@ def test_enrich_with_peer_location_fills_other_site(monkeypatch):
 def test_explorer_page_shows_location_bits():
     html = page(user_name="t", site="hq", probes={"hq": {"ok": True}, "syp": {}})
     assert "function locBits(p)" in html
-    assert "locBits(p)" in html
-    assert "ที่เก็บ สนญ" in html
+    assert 'bits.push("HQ "' in html
+    assert 'bits.push("SYP "' in html
     assert "location_hq" in html
     assert "location_syp" in html
+    assert "จัดการสินค้า" in html
+    assert 'data-hist-tab=\'order\'' in html
+    assert "histSite" in html
+    assert "insightHtml" in html
+    assert "สต็อกคงเหลือ" in html
+
+
+def test_explorer_page_uses_hq_syp_labels():
+    html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {"ok": True}})
+    assert ">HQ</option>" in html
+    assert ">SYP</option>" in html
+    assert "สำนักงานใหญ่" not in html
+    assert "HQ SQL" in html
+    assert "SYP SQL" in html
 
 
 def test_search_products_applies_category_filter(monkeypatch):
@@ -571,8 +585,8 @@ def test_explorer_page_hides_pyodbc_timeout():
             },
         },
     )
-    assert "สำนักงานใหญ่ SQL KSS" in html
-    assert "สาขาสี่แยกพัฒนา SQL down" in html
+    assert "HQ SQL KSS" in html
+    assert "SYP SQL down" in html
     assert "HYT00" not in html
     assert "pyodbc" not in html
 
@@ -613,23 +627,25 @@ def test_explorer_page_uses_thai_headers_and_formats_billamt():
 
 def test_explorer_page_has_insight_v12_layout():
     html = page(user_name="t", site="hq", probes={"hq": {"ok": True, "server": "KSS"}, "syp": {}})
-    assert "insight-wrap" in html
-    assert "pi-grid-main" in html
-    assert "pi-grid-two" in html
-    assert "buildSalesChart" in html
-    assert "สรุปตอนนี้" in html
-    assert "ช่องทางขาย 12 เดือน" in html
-    assert "Price &amp; Margin" in html
-    assert "AI แนะนำ" in html
+    assert "insightHtml" in html
+    assert "hist-rec" in html
+    assert "ibars" in html
+    assert "สต็อกคงเหลือ" in html
+    assert "Safety Stock" in html
+    assert "L ที่ตั้งไว้" in html
+    assert "จุดสั่งแนะนำ" in html
     assert "monthly_sales" in html
     assert "insight-dash" not in html
     assert "hist-tabs" in html
+    assert "histSite" in html
     assert "ประวัติซื้อ" in html
     assert "ประวัติขาย" in html
+    assert "การสั่งซื้อ" in html
     assert "purchaseRowsHtml" in html
     assert "salesRowsHtml" in html
     assert "/parts9/api/history/" in html
     assert "hist-table" in html
+    assert "จัดการสินค้า" in html
 
 
 def test_redact_trade_history_strips_purchase_price_and_sales_cost():
@@ -819,7 +835,7 @@ def test_explorer_page_has_fifo_card():
     assert "function renderFifo" in html
     assert "ต้นทุน FIFO" in html
     assert "FIFO_UNIT" in html
-    assert "สาขาใช้ต้นทุนเฉลี่ยรายปีของสนญ" in html
+    assert "SYP ใช้ต้นทุนเฉลี่ยรายปีของ HQ" in html
     assert "ยังไม่มีต้นทุน FIFO" in html
     assert "COSTAVG" not in html
     assert "ซื้อเฉลี่ย 12 เดือน" in html
