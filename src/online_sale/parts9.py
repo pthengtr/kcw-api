@@ -268,7 +268,11 @@ def load_bill(billno: str) -> dict[str, Any]:
     plat = detect_platform(acctname, acctno)
     return {
         "billno": exact,
-        "kind": "cntad" if exact.startswith("CNTAD") else "tad",
+        "kind": (
+            "cntad"
+            if exact.startswith("CNTAD") or exact.startswith("3CNTAD")
+            else "tad"
+        ),
         "bill_date": _day(h.get("bill_date")),
         "bill_time": str(h.get("bill_time") or "").strip(),
         "acctno": acctno,

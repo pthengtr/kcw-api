@@ -5,12 +5,12 @@ from src.online_sale.sheets.common import (
     COMPANY,
     CSS,
     esc,
-    fmt_money,
     line_rows_html,
-    platform_label,
+    meta_row,
     thai_date,
     totals_block,
 )
+from src.online_sale.shops import channel_label, customer_name_without_shop
 
 
 def render_tad_sheet(bill: dict) -> str:
@@ -19,13 +19,28 @@ def render_tad_sheet(bill: dict) -> str:
     seller_name = (
         str(bill.get("issuer_label") or "").strip() or resolve_print_issuer(bill)
     )
-    meta = (
-        f"<div><b>เลขที่</b> {esc(bill.get('billno'))}</div>"
-        f"<div><b>วันที่</b> {thai_date(bill.get('bill_date'))}</div>"
-        f"<div><b>แพลตฟอร์ม</b> {esc(platform_label(bill.get('platform') or ''))}</div>"
-        f"<div><b>ร้านค้า</b> {esc(bill.get('shop_name') or bill.get('acctname'))}</div>"
-        f"<div><b>เลขคำสั่งซื้อ</b> {esc(bill.get('online_po'))}</div>"
-        f"<div><b>ลูกค้า</b> {esc(bill.get('acctname'))}</div>"
+
+    raw_name = bill.get("customer_name") or bill.get("acctname") or ""
+    customer_name = customer_name_without_shop(str(raw_name))
+    customer_address = bill.get("customer_address") or bill.get("address") or ""
+    customer_tax_id = bill.get("customer_tax_id") or bill.get("tax_id") or ""
+    shop = bill.get("shop_name") or ""
+    channel = bill.get("channel") or channel_label(bill.get("platform"), shop)
+
+    left = (
+        "<div class='side'>"
+        + meta_row("ลูกค้า", esc(customer_name))
+        + meta_row("ที่อยู่", esc(customer_address))
+        + meta_row("เลขประจำตัวผู้เสียภาษี", esc(customer_tax_id))
+        + "</div>"
+    )
+    right = (
+        "<div class='side'>"
+        + meta_row("เลขที่", esc(bill.get("billno")))
+        + meta_row("วันที่", thai_date(bill.get("bill_date")))
+        + meta_row("ช่องทาง", esc(channel))
+        + meta_row("เลขคำสั่งซื้อ", esc(bill.get("online_po")))
+        + "</div>"
     )
     return f"""<!doctype html>
 <html lang="th"><head><meta charset="utf-8">
@@ -35,7 +50,7 @@ def render_tad_sheet(bill: dict) -> str:
   <div class="co">{esc(COMPANY['name'])}</div>
   <div class="addr">{esc(COMPANY['address'])}<br>{esc(COMPANY['phone'])}<br>{esc(COMPANY['tax'])}</div>
   <div class="title">ใบกำกับภาษีอย่างย่อ/ใบส่งสินค้า</div>
-  <div class="meta">{meta}</div>
+  <div class="meta">{left}{right}</div>
   <table>
     <thead><tr>
       <th class="ctr">#</th><th>รหัสสินค้า</th><th>รายการ</th>

@@ -8,7 +8,7 @@ from src.online_sale import drafts as draft_store
 from src.online_sale import parts9
 from src.online_sale.config import get_online_sale_settings
 from src.online_sale.errors import OnlineSaleError
-from src.online_sale.bill_sheets import save_bill_sheet
+from src.online_sale.bill_sheets import get_bill_sheet_reason, save_bill_sheet
 from src.online_sale.issuers import resolve_print_issuer, save_doc_issuer
 from src.online_sale.sheets.cntad import render_cntad_sheet
 from src.online_sale.sheets.pick import render_pick_sheet
@@ -306,7 +306,9 @@ def save_sale_payload(
     bill = parts9.load_bill(result["billno"])
     bill["issuer_label"] = issuer_label
     try:
-        save_bill_sheet(result["billno"], kind="tad", html=render_tad_sheet(bill))
+        save_bill_sheet(
+            result["billno"], kind="tad", html=render_tad_sheet(_enrich_tad_for_print(bill))
+        )
     except Exception:
         pass
     return {"ok": True, "result": result, "bill": bill}
@@ -389,7 +391,9 @@ def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[s
     bill = parts9.load_bill(result["billno"])
     bill["issuer_label"] = resolve_print_issuer(bill)
     try:
-        save_bill_sheet(result["billno"], kind="tad", html=render_tad_sheet(bill))
+        save_bill_sheet(
+            result["billno"], kind="tad", html=render_tad_sheet(_enrich_tad_for_print(bill))
+        )
     except Exception:
         pass
     return {"ok": True, "result": result, "bill": bill}
@@ -468,26 +472,87 @@ def save_return_payload(
     except Exception:
         pass
     cn = parts9.load_bill(result["billno"])
-    cn["reason"] = reason_text
-    cn["tad_billno"] = tad
     cn["issuer_label"] = issuer_label
+    enriched, original = _enrich_cntad_for_print(cn, reason=reason_text)
     try:
         save_bill_sheet(
             result["billno"],
             kind="cntad",
-            html=render_cntad_sheet(cn, original=bill, reason=reason_text),
+            html=render_cntad_sheet(enriched, original=original, reason=reason_text),
+            reason=reason_text,
         )
     except Exception:
         pass
-    return {"ok": True, "result": result, "bill": cn, "original": bill}
+    return {"ok": True, "result": result, "bill": enriched, "original": original}
+
+
+def _enrich_tad_for_print(bill: dict[str, Any]) -> dict[str, Any]:
+    """Buyer block + channel so VAT/online TAD match CNTAD meta layout."""
+    out = dict(bill)
+    party = party_from_armas(str(out.get("acctno") or ""))
+    raw_name = party["customer_name"] or out.get("acctname") or ""
+    out["customer_name"] = customer_name_without_shop(str(raw_name))
+    out["customer_address"] = party["address"] or out.get("customer_address") or ""
+    out["customer_tax_id"] = (
+        tax_id_from_remarks(out.get("remarks"))
+        or party["tax_id"]
+        or out.get("customer_tax_id")
+        or ""
+    )
+    out["channel"] = channel_label(out.get("platform"), out.get("shop_name"))
+    out["issuer_label"] = (
+        str(out.get("issuer_label") or "").strip() or resolve_print_issuer(out)
+    )
+    return out
+
+
+def _enrich_cntad_for_print(
+    bill: dict[str, Any], *, reason: str = ""
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Same enrichment for post snapshot and live/VAT reprint."""
+    out = dict(bill)
+    original = None
+    tad_ref = out.get("tad_billno") or out.get("online_po") or ""
+    if str(tad_ref).upper().startswith("TAD") or str(tad_ref).upper().startswith("3TAD"):
+        try:
+            original = parts9.load_bill(str(tad_ref))
+        except OnlineSaleError:
+            original = None
+    party = party_from_armas(str(out.get("acctno") or ""))
+    raw_name = party["customer_name"] or out.get("acctname") or ""
+    out["customer_name"] = customer_name_without_shop(str(raw_name))
+    out["customer_address"] = party["address"]
+    out["customer_tax_id"] = (
+        tax_id_from_remarks(out.get("remarks"))
+        or party["tax_id"]
+        or tax_id_from_remarks((original or {}).get("remarks") if original else "")
+    )
+    out["tad_billno"] = tad_ref
+    if original:
+        out["tad_bill_date"] = original.get("bill_date")
+        out["order_id"] = original.get("online_po") or ""
+        if not out.get("shop_name"):
+            out["shop_name"] = original.get("shop_name") or ""
+        if not out.get("platform"):
+            out["platform"] = original.get("platform") or ""
+    out["channel"] = channel_label(out.get("platform"), out.get("shop_name"))
+    out["issuer_label"] = (
+        str(out.get("issuer_label") or "").strip() or resolve_print_issuer(out)
+    )
+    reason_text = (
+        (reason or "").strip()
+        or str(out.get("reason") or "").strip()
+        or get_bill_sheet_reason(str(out.get("billno") or ""))
+    )
+    out["reason"] = reason_text
+    return out, original
 
 
 def print_tad_html(billno: str) -> str:
     bill = parts9.load_bill(billno)
     if bill["kind"] != "tad":
         raise OnlineSaleError("bill", "พิมพ์ใบ TAD ได้จากบิล TAD เท่านั้น")
-    bill["issuer_label"] = resolve_print_issuer(bill)
-    html = render_tad_sheet(bill)
+    html = render_tad_sheet(_enrich_tad_for_print(bill))
     try:
         save_bill_sheet(bill["billno"], kind="tad", html=html)
     except Exception:
@@ -558,36 +623,13 @@ def print_cntad_html(billno: str, *, reason: str = "") -> str:
     bill = parts9.load_bill(billno)
     if bill["kind"] != "cntad":
         raise OnlineSaleError("bill", "พิมพ์ใบลดหนี้ได้จาก CNTAD เท่านั้น")
-    original = None
-    tad_ref = bill.get("online_po") or ""
-    if tad_ref.upper().startswith("TAD"):
-        try:
-            original = parts9.load_bill(tad_ref)
-        except OnlineSaleError:
-            original = None
-    party = party_from_armas(str(bill.get("acctno") or ""))
-    raw_name = party["customer_name"] or bill.get("acctname") or ""
-    bill["customer_name"] = customer_name_without_shop(str(raw_name))
-    bill["customer_address"] = party["address"]
-    # Prefer SIMAS REMARKS (## + 13 digits), same source as the VAT books.
-    bill["customer_tax_id"] = (
-        tax_id_from_remarks(bill.get("remarks"))
-        or party["tax_id"]
-        or tax_id_from_remarks((original or {}).get("remarks") if original else "")
-    )
-    bill["tad_billno"] = tad_ref
-    if original:
-        bill["tad_bill_date"] = original.get("bill_date")
-        bill["order_id"] = original.get("online_po") or ""
-        if not bill.get("shop_name"):
-            bill["shop_name"] = original.get("shop_name") or ""
-        if not bill.get("platform"):
-            bill["platform"] = original.get("platform") or ""
-    bill["channel"] = channel_label(bill.get("platform"), bill.get("shop_name"))
-    bill["issuer_label"] = resolve_print_issuer(bill)
-    html = render_cntad_sheet(bill, original=original, reason=reason)
+    enriched, original = _enrich_cntad_for_print(bill, reason=reason)
+    reason_text = str(enriched.get("reason") or "").strip()
+    html = render_cntad_sheet(enriched, original=original, reason=reason_text)
     try:
-        save_bill_sheet(bill["billno"], kind="cntad", html=html)
+        save_bill_sheet(
+            bill["billno"], kind="cntad", html=html, reason=reason_text or None
+        )
     except Exception:
         pass
     return html
