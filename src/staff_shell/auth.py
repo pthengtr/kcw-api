@@ -17,6 +17,45 @@ STAFF_APP = "kcw-staff"
 STAFF_COOKIE = "kcw_staff_session"
 STAFF_COOKIE_PATH = "/"
 SWITCH_HANDOFF_TTL_SECONDS = 300
+# LINE Flex/message links stay reusable; active access still ends with session + idle.
+ENTRY_LINK_TTL_SECONDS = 30 * 86400
+DEFAULT_SESSION_TTL_SECONDS = 86400
+
+
+def session_ttl_seconds(configured: int | None = None) -> int:
+    """TTL for service + staff cookies (sliding on page entry)."""
+    return max(int(configured or 0), DEFAULT_SESSION_TTL_SECONDS)
+
+
+def entry_link_ttl_seconds(configured: int | None = None) -> int:
+    """TTL for LINE-minted ``?t=`` entry links (long-lived, reusable)."""
+    return max(session_ttl_seconds(configured), ENTRY_LINK_TTL_SECONDS)
+
+
+def as_app_identity(identity: StockCheckIdentity, app: str) -> StockCheckIdentity:
+    """Re-tag a staff/session identity for minting a per-service cookie."""
+    return StockCheckIdentity(
+        line_user_id=identity.line_user_id,
+        display_name=identity.display_name,
+        branch=identity.branch,
+        app=app,
+    )
+
+
+def identity_from_staff_cookie_for_app(
+    request_cookies: Any,
+    *,
+    secret: str,
+    app: str,
+    expected_branch: str | None = None,
+) -> StockCheckIdentity | None:
+    """Accept shared staff session so users can reopen a service without LINE."""
+    ident = identity_from_staff_cookie(
+        request_cookies, secret=secret, expected_branch=expected_branch
+    )
+    if ident is None:
+        return None
+    return as_app_identity(ident, app)
 
 
 def mint_staff_token(

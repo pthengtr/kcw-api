@@ -428,7 +428,11 @@ def test_page_defaults_vendor_view():
     assert "function openPhoto" in html
     assert "แบบย่อ" in html
     assert "แบบเต็ม" in html
-    assert "คัดลอกส่งฝ่ายขาย" in html
+    assert "kcw-doc-toolbar" in html
+    assert "kcw-doc-seg" in html
+    assert 'id="sheetPrint" class="kcw-doc-print"' in html
+    assert "คัดลอกส่งฝ่ายขาย" not in html
+    assert "พิมพ์ / คัดลอก" not in html
     assert "/hq-po/api/sheet" in html
     assert "/hq-po/api/suppliers/" in html
     assert "HQ_PO_ICLOW_STAMP_ENABLED" in html

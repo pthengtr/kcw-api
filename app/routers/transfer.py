@@ -115,7 +115,7 @@ from src.transfer.state import (
 )
 from src.transfer.ui import APP, SESSION_COOKIE, page
 from src.pay_notes.net import is_tailscale_cg_nat
-from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
 from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.transfer.writers.syp_iclow_stamp import (
     ICLOWStampError,
@@ -263,6 +263,15 @@ def _identity_from_request(request: Request):
             return _verify_token(token)
         except TokenError:
             continue
+    settings = _settings()
+    staff = identity_from_staff_cookie_for_app(
+        request.cookies,
+        secret=settings.token_secret,
+        app=APP,
+        expected_branch=None,
+    )
+    if staff is not None:
+        return staff
     if is_tailscale_cg_nat(_client_ip(request)):
         return None
     return False
@@ -363,11 +372,9 @@ def home(request: Request, t: str | None = None):
         try:
             ident = _verify_token(t)
             err = None
-        except TokenError as exc:
-            return HTMLResponse(
-                f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>",
-                status_code=401,
-            )
+        except TokenError:
+            # Expired/invalid ?t= — allow staff session / Tailscale to admit.
+            pass
     if err and is_tailscale_cg_nat(_client_ip(request)):
         ident = _tailscale_identity()
         err = None

@@ -9,6 +9,8 @@ from src.handlers.branch_tool_links import (
     elevated_wifi_hint,
     is_elevated_access,
 )
+from src.staff_shell.auth import entry_link_ttl_seconds
+
 from src.jobs.heartbeat import get_all_worker_status
 from src.receive_notes.config import get_receive_notes_settings
 from src.receive_notes.net import rewrite_base_port
@@ -76,7 +78,7 @@ def handle_receive_notes_command(
         line_user_id=line_user_id,
         display_name=display_name,
         secret=secret,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         path="/receive-notes/",
         lan_url_key="receive_notes_public_base_url",
         tailscale_url_key="receive_notes_tailscale_base_url",

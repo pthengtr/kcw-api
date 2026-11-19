@@ -8,6 +8,8 @@ from src.handlers.branch_tool_links import (
     elevated_wifi_hint,
     is_elevated_access,
 )
+from src.staff_shell.auth import entry_link_ttl_seconds
+
 from src.jobs.heartbeat import get_all_worker_status
 from src.stock_check.auth import build_entry_url, mint_access_token
 from src.stock_check.config import get_stock_check_settings
@@ -84,7 +86,7 @@ def handle_stock_check_command(
         line_user_id=line_user_id,
         display_name=display_name,
         secret=settings.stock_check_token_secret,
-        ttl_seconds=settings.stock_check_token_ttl_seconds,
+        ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         path="/stock-check/",
         lan_url_key="public_base_url",
         tailscale_url_key="tailscale_public_base_url",
@@ -99,7 +101,7 @@ def handle_stock_check_command(
             line_user_id=line_user_id,
             display_name=display_name or line_user_id,
             branch=branch,
-            ttl_seconds=settings.stock_check_token_ttl_seconds,
+            ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         )
         url = build_entry_url(settings.resolved_public_base_url, token)
         links.append((branch, url, "local"))

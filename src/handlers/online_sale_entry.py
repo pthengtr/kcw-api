@@ -10,6 +10,8 @@ from src.handlers.branch_tool_links import (
     elevated_wifi_hint,
     is_elevated_access,
 )
+from src.staff_shell.auth import entry_link_ttl_seconds
+
 from src.jobs.hq_worker import filter_worker_status_rows
 from src.jobs.heartbeat import get_all_worker_status
 from src.online_sale.config import get_online_sale_settings
@@ -82,7 +84,7 @@ def handle_online_sale_command(
         line_user_id=line_user_id,
         display_name=display_name,
         secret=secret,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         path=path,
         lan_url_key="online_sale_public_base_url",
         tailscale_url_key="online_sale_tailscale_base_url",

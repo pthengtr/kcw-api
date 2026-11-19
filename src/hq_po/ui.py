@@ -184,11 +184,10 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .peer-sec{margin-top:6px}
 .peer{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;margin-top:4px;font:600 13px Prompt,"Noto Sans Thai",sans-serif;color:var(--text)}
 .peer .meta{display:block;font-weight:500}
-#sheet{position:fixed;inset:0;z-index:20;background:#eef2f7;overflow:auto;padding:12px 12px calc(118px + env(safe-area-inset-bottom))}
+#sheet{position:fixed;inset:0;z-index:20;background:#eef2f7;overflow:auto;padding:0 0 calc(118px + env(safe-area-inset-bottom))}
 #sheet[hidden]{display:none}
-.sheet-top{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.sheet-top button{flex:1 1 40%;min-height:42px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:650;font-size:14px}
-.sheet-top button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+#sheet .kcw-doc-toolbar{margin:0}
+#sheetBody{padding:12px}
 .sheet-preview{overflow:auto;-webkit-overflow-scrolling:touch}
 #printSheet{display:none}
 .doc{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px;margin:0 auto 12px;max-width:640px}
@@ -198,7 +197,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .doc th{text-align:left;font-size:12px;color:var(--muted);font-weight:650;border-bottom:1px solid var(--line);padding:6px 4px}
 .doc td{border-bottom:1px solid var(--line);padding:8px 4px;vertical-align:top;font-size:14px}
 .doc td.num{text-align:right;font-weight:700;white-space:nowrap}
-.sheet-foot{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+.sheet-foot{position:fixed;left:0;right:0;bottom:0;z-index:6;background:#fff;border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
 .sheet-foot p{margin:0 0 8px;font-size:12px;color:var(--muted);text-align:center}
 .sheet-foot button{width:100%;min-height:46px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;font-size:15px}
 input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--blue)}
@@ -295,17 +294,18 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
   </section>
 </main>
 <div id="dock" hidden><button type="button" id="dockConfirm">ดูใบส่งเจ้าหนี้</button></div>
-<div id="sheet" hidden>
-  <div class="sheet-top">
-    <button type="button" id="sheetClose">ปิด</button>
-    <button type="button" id="varSimple" class="on">แบบย่อ</button>
-    <button type="button" id="varFull">แบบเต็ม</button>
-    <button type="button" id="sheetPrint">พิมพ์</button>
-    <button type="button" id="sheetCopy">คัดลอกส่งฝ่ายขาย</button>
+<div id="sheet" class="kcw-doc-overlay" hidden>
+  <div class="kcw-doc-toolbar" role="toolbar" aria-label="เครื่องมือใบสั่งซื้อ">
+    <button type="button" id="sheetClose" class="kcw-doc-x" aria-label="ปิด" title="ปิด">×</button>
+    <div class="kcw-doc-seg" id="sheetVariant" role="group" aria-label="รูปแบบใบ">
+      <button type="button" id="varSimple" class="on">แบบย่อ</button>
+      <button type="button" id="varFull">แบบเต็ม</button>
+    </div>
+    <button type="button" id="sheetPrint" class="kcw-doc-print">พิมพ์</button>
   </div>
   <div id="sheetBody"></div>
   <div class="sheet-foot">
-    <p id="sheetFootNote">ส่งให้ฝ่ายขายก่อน แล้วค่อยบันทึกว่าสั่งแล้ว</p>
+    <p id="sheetFootNote">ตรวจใบแล้วกดบันทึกว่าสั่งแล้ว</p>
     <button type="button" id="sheetCommit">บันทึกว่าสั่งแล้ว</button>
   </div>
 </div>
@@ -1141,8 +1141,8 @@ function setSheetMode(saved){
   state.sheetSaved = !!saved;
   document.getElementById("sheetCommit").hidden = !!saved;
   document.getElementById("sheetFootNote").textContent = saved
-    ? "ใบที่บันทึกแล้ว — พิมพ์หรือคัดลอกส่งฝ่ายขายได้"
-    : "ส่งให้ฝ่ายขายก่อน แล้วค่อยบันทึกว่าสั่งแล้ว";
+    ? "ใบที่บันทึกแล้ว — กดพิมพ์ได้"
+    : "ตรวจใบแล้วกดบันทึกว่าสั่งแล้ว";
 }
 async function loadSheetForms(){
   document.getElementById("sheetBody").innerHTML = spinner("กำลังจัดใบสั่งซื้อ…");
@@ -1274,7 +1274,7 @@ function renderOrders(){
     const anyReceived = (order.lines||[]).some(line => (line.receive||{}).received);
     const cancel = STAMP && !anyReceived && order.receive_label!=="รับแล้ว"
       ? `<button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button>` : "";
-    const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์ / คัดลอก</button>`;
+    const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์</button>`;
     const actions = `<div class="actions">${reprint}${cancel}</div>`;
     const title = order.vendor_name || order.vendor_acctno || "ไม่ระบุเจ้าหนี้";
     const when = orderDateText(order.ordered_at);
@@ -2788,16 +2788,6 @@ document.getElementById("sheetPrint").onclick = () => {
   window.print();
 };
 window.addEventListener("afterprint", () => document.body.removeAttribute("data-print"));
-document.getElementById("sheetCopy").onclick = async () => {
-  const text = currentSheetText();
-  if(!text){ alert("กำลังจัดใบสั่งซื้อ"); return; }
-  try {
-    await navigator.clipboard.writeText(text);
-    alert("คัดลอกแล้ว วางส่งฝ่ายขายได้");
-  } catch (err) {
-    alert(text);
-  }
-};
 document.getElementById("sheetCommit").onclick = () => confirmRows(state.sheet || []);
 function openSavedSheet(id){
   const order = (state.orders || []).find(row => row.order_id === id);

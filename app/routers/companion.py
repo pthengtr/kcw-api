@@ -172,8 +172,9 @@ def companion_ui(request: Request, t: str | None = None) -> HTMLResponse:
     if _line_auth_required() and t:
         try:
             identity = _verify_companion_token(t)
-        except TokenError as exc:
-            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+        except TokenError:
+            # Expired/invalid ?t= — allow staff session / Tailscale to admit.
+            pass
         resp = RedirectResponse(url="/companion/", status_code=303)
         _stamp_companion_session(
             resp, identity, request=request, has_entry_token=True, token=t
