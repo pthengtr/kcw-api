@@ -154,8 +154,16 @@ main { display:grid; grid-template-columns:1fr; max-width:1180px; margin:0 auto;
 .list, .detail { padding:.75rem 1rem 2rem; }
 .card { display:flex; gap:.75rem; padding:.7rem; margin-bottom:.5rem; background:var(--card); border:1px solid var(--line); border-radius:.7rem; text-align:left; width:100%; cursor:pointer; color:inherit; }
 .card.active { outline:2px solid var(--acc); }
+.card .card-body { min-width:0; flex:1; }
+.card .card-name { font-size:.9rem; line-height:1.35; margin:.1rem 0 .2rem; }
+.card .card-line { font-size:.78rem; color:var(--muted); line-height:1.4; margin:.05rem 0; }
+.card .card-line .lbl { color:var(--heading); font-weight:600; }
+.card .card-price { font-size:.84rem; font-weight:700; color:var(--text); margin:.2rem 0 .1rem; font-variant-numeric:tabular-nums; }
+.card .card-stock { font-size:.78rem; color:var(--muted); line-height:1.4; margin:.05rem 0; font-variant-numeric:tabular-nums; }
 .thumb { width:64px; height:64px; object-fit:cover; border-radius:.45rem; background:var(--inset); flex-shrink:0; }
 .meta { font-size:.8rem; color:var(--muted); }
+.kv-line { font-size:.84rem; color:var(--text); line-height:1.45; margin:.12rem 0; }
+.kv-line .lbl { color:var(--muted); font-weight:600; margin-right:.25rem; }
 .prices { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.25rem; }
 .prices span { font-size:.75rem; background:var(--inset); padding:.12rem .35rem; border-radius:.35rem; }
 .photos { display:flex; gap:.4rem; overflow-x:auto; margin:.6rem 0; }
@@ -207,7 +215,10 @@ label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align
 .stock-kpi .n { font-size:1.15rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
 .stock-kpi .l { font-size:.7rem; color:var(--muted); margin-top:.18rem; }
 .stock-kpi .u { font-size:.72rem; font-weight:500; color:var(--muted); margin-left:.2rem; }
+.stock-kpi .loc { font-size:.72rem; color:var(--muted); margin-top:.2rem; line-height:1.3; }
 .stock-kpi.flag { border-color:var(--pend); }
+.badge.oem-y { background:var(--st-ok-bg); color:var(--ok); }
+.badge.oem-n { background:var(--st-wait-bg); color:var(--muted); }
 .photos-view { display:flex; gap:.4rem; overflow-x:auto; margin:.55rem 0 .15rem; }
 .photos-view img { height:120px; border-radius:.5rem; background:var(--inset); }
 /* Product Insight dashboard — aligned to kcw_product_insight_dashboard_v12 reference */
@@ -663,6 +674,64 @@ function locBits(p) {
   }
   return cur ? "<div class='meta'>ที่เก็บ "+esc(cur)+"</div>" : "";
 }
+function kvLine(label, value) {
+  const v = String(value == null ? "" : value).trim();
+  if (!v) return "";
+  return "<div class='kv-line'><span class='lbl'>"+esc(label)+"</span>"+esc(v)+"</div>";
+}
+function cardLine(label, value) {
+  const v = String(value == null ? "" : value).trim();
+  if (!v) return "";
+  return "<div class='card-line'><span class='lbl'>"+esc(label)+"</span> "+esc(v)+"</div>";
+}
+function companyName(p) {
+  return String((p && (p.vendor_name || p.vendor)) || "").trim();
+}
+function oemBadge(p) {
+  const label = String((p && p.oem_label) || "").trim();
+  if (!label) return "";
+  const cls = label === "แท้" ? "oem-y" : (label === "ไม่แท้" ? "oem-n" : "");
+  return " <span class='badge "+cls+"'>"+esc(label)+"</span>";
+}
+function branchStockLocLine(branch, qtyVal, loc, unit) {
+  const hasQty = qtyVal != null && qtyVal !== "";
+  const locText = String(loc || "").trim();
+  if (!hasQty && !locText) return "";
+  const bits = [];
+  if (hasQty) bits.push(qty(qtyVal) + (unit ? " "+unit : ""));
+  if (locText) bits.push(locText);
+  return "<div class='card-stock'><span class='lbl'>"+esc(branch)+"</span> "+esc(bits.join(" · "))+"</div>";
+}
+function productCardHtml(p, i) {
+  const src = (p.photos && p.photos[0]) || "";
+  const thumb = src
+    ? "<img class='thumb' src='"+esc(src)+"' alt='' onerror='imgErr(this)'/>"
+    : "";
+  const price1 = (p.prices && p.prices.PRICE1 != null) ? p.prices.PRICE1 : null;
+  const unit = String(p.ui1 || "").trim();
+  const qtyHq = p.qtyoh2_hq != null ? p.qtyoh2_hq : (String(p.site||"").toUpperCase()==="HQ" ? p.qtyoh2 : null);
+  const qtySyp = p.qtyoh2_syp != null ? p.qtyoh2_syp : (String(p.site||"").toUpperCase()==="SYP" ? p.qtyoh2 : null);
+  const locHq = (p.location_hq || "").trim();
+  const locSyp = (p.location_syp || "").trim();
+  let stockLines = branchStockLocLine("HQ", qtyHq, locHq, unit)
+    + branchStockLocLine("SYP", qtySyp, locSyp, unit);
+  if (!stockLines && p.qtyoh2 != null) {
+    stockLines = "<div class='card-stock'><span class='lbl'>คงเหลือ</span> "+esc(qty(p.qtyoh2)+(unit ? " "+unit : ""))+"</div>";
+  }
+  const brandModel = [p.model, p.brand].filter(Boolean).join(" / ");
+  const codes = [];
+  if (p.pcode) codes.push(p.pcode);
+  if (p.mcode) codes.push(p.mcode);
+  return "<button class='card' id='c"+i+"' onclick='showP("+i+")'>"+thumb
+    +"<div class='card-body'><strong>"+esc(p.bcode)+"</strong>"+oemBadge(p)
+    +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
+    +"<div class='card-name'>"+esc(p.descr||"—")+"</div>"
+    +cardLine("รุ่น / ยี่ห้อ", brandModel)
+    +cardLine("เบอร์แท้ / เบอร์โรงงาน", codes.join(" / "))
+    +(price1 != null ? "<div class='card-price'>ราคาขาย 1 "+Number(price1).toLocaleString("th-TH")+"</div>" : "")
+    +stockLines
+    +"</div></button>";
+}
 function imgErr(el) { el.style.display="none"; }
 const SEARCH_PANEL_KEY = "kcw.parts9.searchPanel";
 function isMobileLayout() { return window.matchMedia("(max-width:879px)").matches; }
@@ -916,18 +985,7 @@ function render(data, opts) {
       +"<div class='meta'>"+esc(extra)+" · "+esc(when)+esc(noteBit)+"</div></div></button>";
   });
   products.forEach((p,i) => {
-    const src = (p.photos && p.photos[0]) || "";
-    const thumb = src
-      ? "<img class='thumb' src='"+esc(src)+"' onerror='imgErr(this)'/>"
-      : "";
-    const price1 = (p.prices && p.prices.PRICE1 != null) ? p.prices.PRICE1 : null;
-    html += "<button class='card' id='c"+i+"' onclick='showP("+i+")'>"+thumb+"<div><strong>"+esc(p.bcode)+"</strong>"
-      +"<div>"+esc(p.descr||p.pcode||p.mcode||"")
-      +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
-      +"</div>"
-      +"<div class='meta'>คงเหลือ "+qty(p.qtyoh2)+" "+esc(p.ui1||"")
-      +(price1 != null ? " · ราคา "+Number(price1).toLocaleString("th-TH") : "")
-      +"</div></div></button>";
+    html += productCardHtml(p, i);
   });
   $("list").innerHTML = html || "<div class='empty'>ไม่พบ</div>";
   if (KIND === "iclow" && SUMMARY && !DOCS.length) showSummary();
@@ -1361,6 +1419,8 @@ function renderOrderPanel(p) {
 function renderEditForm(p) {
   const price1 = (p.prices && p.prices.PRICE1 != null) ? p.prices.PRICE1 : "";
   const cost = (CAN_SEE_COST && p.costlast != null) ? p.costlast : "";
+  const cat = p.category || "";
+  const group = p.code1 ? (p.code1 + (p.code1_label ? " — "+p.code1_label : "")) : (p.code1_label || "");
   return "<div class='edit-panel' id='editPanel'>"
     +"<div class='edit-grid'>"
     +"<div class='span2'><label class='field'><span class='field-lbl'>ชื่อสินค้า</span>"
@@ -1370,7 +1430,9 @@ function renderEditForm(p) {
     +"<label class='field'><span class='field-lbl'>ยี่ห้อ</span><input id='eBrand' value='"+esc(p.brand||"")+"'/></label>"
     +"<label class='field'><span class='field-lbl'>รุ่น</span><input id='eModel' value='"+esc(p.model||"")+"'/></label>"
     +"<label class='field'><span class='field-lbl'>ที่เก็บ</span><input id='eLoc' value='"+esc(p.location1||"")+"'/></label>"
-    +"<label class='field'><span class='field-lbl'>CODE1</span><input id='eCode1' maxlength='1' value='"+esc(p.code1||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>กลุ่มสินค้า (CODE1)</span><input id='eCode1' maxlength='1' value='"+esc(p.code1||"")+"'/></label>"
+    +"<label class='field'><span class='field-lbl'>หมวดสินค้า</span><input value='"+esc(cat)+"' disabled title='ดึงจากรหัสสินค้า'/></label>"
+    +(group ? "<label class='field'><span class='field-lbl'>กลุ่ม (อ่าน)</span><input value='"+esc(group)+"' disabled/></label>" : "")
     +"<label class='field'><span class='field-lbl'>ราคา PRICE1</span><input id='ePrice' type='number' step='any' value='"+esc(price1)+"'/></label>"
     +(CAN_SEE_COST
       ? "<label class='field'><span class='field-lbl'>ต้นทุน</span><input id='eCost' type='number' step='any' value='"+esc(cost)+"'/></label>"
@@ -1557,42 +1619,53 @@ function showP(i, opts) {
   const sizes = p.size_display || "";
   const locHq = (p.location_hq || "").trim();
   const locSyp = (p.location_syp || "").trim();
-  const locCur = (p.location || [p.location1, p.location2].filter(Boolean).join(" / ") || "").trim();
-  let locBody = "";
-  if (locHq || locSyp) {
-    locBody = "<div class='meta'>HQ "+esc(locHq || "—")+"</div><div class='meta'>SYP "+esc(locSyp || "—")+"</div>";
-  } else if (locCur) {
-    locBody = "<div class='meta'>"+esc(locCur)+"</div>";
-  } else {
-    locBody = "<div class='meta'>—</div>";
-  }
   const qtyHq = p.qtyoh2_hq != null ? p.qtyoh2_hq : (String(p.site||"").toUpperCase()==="HQ" ? p.qtyoh2 : null);
   const qtySyp = p.qtyoh2_syp != null ? p.qtyoh2_syp : (String(p.site||"").toUpperCase()==="SYP" ? p.qtyoh2 : null);
   const qtyTotal = (qtyHq != null || qtySyp != null)
     ? (Number(qtyHq || 0) + Number(qtySyp || 0))
     : (p.qtyoh2 != null ? p.qtyoh2 : null);
   const unitLbl = esc(p.ui1 || "");
-  function stockCard(label, val, flag) {
+  function stockCard(label, val, loc, flag) {
     const n = (val == null || val === "") ? "—" : qty(val);
     const u = (val != null && val !== "" && unitLbl) ? "<span class='u'>"+unitLbl+"</span>" : "";
-    return "<div class='stock-kpi"+(flag ? " flag" : "")+"'><div class='n'>"+n+u+"</div><div class='l'>"+esc(label)+"</div></div>";
+    const locText = String(loc || "").trim();
+    return "<div class='stock-kpi"+(flag ? " flag" : "")+"'><div class='l'>"+esc(label)+"</div>"
+      +"<div class='n'>"+n+u+"</div>"
+      +(locText ? "<div class='loc'>ที่เก็บ "+esc(locText)+"</div>" : "")
+      +"</div>";
   }
   let stockHtml = "<h3 style='margin:.55rem 0 .2rem;font-size:.72rem;color:var(--muted)'>สต็อกคงเหลือ</h3>";
-  if (qtyHq != null || qtySyp != null) {
+  if (qtyHq != null || qtySyp != null || locHq || locSyp) {
     stockHtml += "<div class='stock-kpis'>"
-      +stockCard("HQ", qtyHq, false)
-      +stockCard("SYP", qtySyp, false)
-      +stockCard("รวมบริษัท", qtyTotal, !!p.do_not_restock)
+      +stockCard("HQ", qtyHq, locHq, false)
+      +stockCard("SYP", qtySyp, locSyp, false)
+      +stockCard("รวมบริษัท", qtyTotal, "", !!p.do_not_restock)
       +"</div>";
   } else {
     stockHtml += "<div class='stock-kpis'>"
-      +stockCard("QTYOH2", p.qtyoh2, !!p.do_not_restock)
+      +stockCard("QTYOH2", p.qtyoh2, p.location || "", !!p.do_not_restock)
       +"</div>";
   }
   if (p.do_not_restock) stockHtml += "<p class='meta' style='margin:.35rem 0 0'>ไม่สั่งเพิ่ม (L-1)</p>";
   const waitBadge = (p.waiting && p.waiting.iclow_id)
     ? " <span class='badge to_order'>รอสั่ง #"+esc(p.waiting.iclow_id)+"</span>"
     : "";
+  const mtp2 = (p.mtp2 != null && Number(p.mtp2) > 0) ? p.mtp2 : null;
+  const ui2 = String(p.ui2 || "").trim();
+  const packLine = (ui2 && mtp2 != null)
+    ? kvLine("จำนวนบรรจุ", qty(mtp2) + (p.ui1 ? " "+p.ui1 : "") + " / "+ui2)
+    : "";
+  const detailFacts = kvLine("ยี่ห้อ", p.brand)
+    + kvLine("รุ่น", p.model)
+    + kvLine("ชื่อบริษัท", companyName(p))
+    + (p.oem_label ? kvLine("สถานะ", p.oem_label) : "")
+    + kvLine("เบอร์แท้", p.pcode)
+    + kvLine("เบอร์โรงงาน", p.mcode)
+    + kvLine("ชื่อย่อ", p.acode)
+    + kvLine("ขนาด", sizes)
+    + kvLine("หน่วย", p.ui1)
+    + (ui2 ? kvLine("หน่วยใหญ่", ui2) : "")
+    + packLine;
   detailCtx = {
     idx: i,
     product: p,
@@ -1600,21 +1673,15 @@ function showP(i, opts) {
     fifo: opts.skipFetch ? (opts.fifo || null) : null
   };
   $("detail").innerHTML = "<div class='detail-overview'>"
-    +"<h2>"+esc(p.bcode)+waitBadge+"</h2>"
+    +"<h2>"+esc(p.bcode)+waitBadge+oemBadge(p)+"</h2>"
     +"<div class='descr'>"+esc(p.descr)
     +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
     +"</div>"
     +"<div class='overview-grid'>"
     +"<div class='overview-block'><h3>รายละเอียดสินค้า</h3>"
-    +"<div class='meta'>เบอร์แท้ "+esc(p.pcode||"—")+" · เบอร์โรงงาน "+esc(p.mcode||"—")
-    +(p.acode ? " · ชื่อย่อ "+esc(p.acode) : "")+"</div>"
-    +"<div class='meta'>"+esc([p.brand, p.model].filter(Boolean).join(" ") || "—")+"</div>"
-    +"<div class='meta'>"+esc(p.category||"—")+" · "+esc(p.code1 ? (p.code1+" "+(p.code1_label||"")) : (p.code1_label||"—"))
-    +(sizes ? " · "+esc(sizes) : "")+"</div>"
-    +"<div class='meta'>หน่วย "+esc(p.ui1||"—")+(p.ui2 ? " / "+esc(p.ui2) : "")+"</div>"
+    +(detailFacts || "<div class='meta'>—</div>")
     +"</div>"
     +"<div class='overview-block'><h3>ราคาขาย</h3><div class='prices'>"+(fmtPrices(p.prices) || "<span class='meta'>—</span>")+"</div></div>"
-    +"<div class='overview-block'><h3>ที่เก็บ</h3>"+locBody+"</div>"
     +"<div class='overview-block'><h3>จุดสั่ง / ล็อต</h3>"
     +"<div class='meta'>L ที่ตั้งไว้ "+esc(p.qtymin != null ? p.qtymin : "—")
     +" · ล็อตสั่ง "+esc(p.qtyget != null ? p.qtyget : "—")+"</div></div>"
