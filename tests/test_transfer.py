@@ -67,27 +67,36 @@ def test_transfer_page_renders():
         hq_receive_enabled=False,
         syp_receive_enabled=False,
     )
-    assert "โอนสินค้า · สาขา" in html
+    assert "โอนสินค้า · SYP" in html
     assert 'data-site="SYP"' in html
     assert 'html[data-site="SYP"]' in html
     assert 'html[data-site="HQ"]' in html
     assert "--hdr-bar:#0f766e" in html
     assert 'content="#e6f5f2"' in html
     assert "site-badge" in html
-    assert "SYP" in html and "สาขา" in html
-    assert 'OTHER_LABEL = "สำนักงานใหญ่"' in html
+    assert "SYP" in html
+    assert 'OTHER_LABEL = "HQ"' in html
+    assert 'SITE_LABEL = "SYP"' in html
+    assert "สำนักงานใหญ่" not in html
     assert "ใบจัดสินค้า" in html
     assert "ใบรับสินค้า" in html
-    assert "ขอสินค้าจาก" in html
-    assert "ส่งสินค้าไป" in html
-    assert "ของเข้า" in html
-    assert "ของออก" in html
+    assert "ขอสินค้า" in html
+    assert "จัดส่งสินค้า" in html
+    assert "สินค้าเข้า" in html
+    assert "สินค้าออก" in html
     assert "ไม่สต็อก = L -1" in html
     assert "ยังแสดงยอดคงเหลือจริง" in html
     assert "hq_no_stock" in html or "fmtHqStock" in html
     assert 'ไม่สต็อก</span><br>${qtyHtml}' in html or "ไม่สต็อก</span><br>" in html
-    assert "ตรวจสอบสถานะ" in html
-    assert "ติดตาม" in html
+    assert "ติดตามสถานะ" in html
+    assert "top-nav" in html
+    assert 'data-nav="request"' in html
+    assert 'data-nav="receive"' in html
+    assert 'data-nav="prepare"' in html
+    assert 'data-nav="status"' in html
+    assert "defaultOrderDirection" in html
+    assert "เลือกทิศทาง" not in html
+    assert "requestStep=2" in html
     assert "statusSearch" in html
     assert "statusMatchesSearch" in html
     assert "ค้นหาบิล TRF" in html
@@ -109,6 +118,7 @@ def test_transfer_page_renders():
     assert "scope=" in html
     assert 'data-count="receive"' in html
     assert 'data-count="prepare"' in html
+    assert "applyNavCounts" in html
     assert "receiveStepBar" in html or "เลือกคำขอ" in html
     assert "recvSearch" in html
     assert "bindLineSearch" in html
@@ -125,6 +135,7 @@ def test_transfer_page_renders():
     assert "data-product-photo" in html
     assert "bcodeWithThumb" in html
     assert "prod-thumb" in html
+    assert "prod-thumb--empty" in html
     assert "@media (max-width:640px)" in html
     assert "max-width:1200px" in html
     assert "view-table" in html
@@ -159,7 +170,8 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
     assert "ไม่แตะ ICLOW" in html
     assert "เก็บไว้สั่งซื้อจากเจ้าหนี้" in html
     assert "SITE === \"HQ\"" in html
-    assert "ไม่ดึง ICLOW รอสั่งซื้อ" in html
+    assert "ไม่ดึง ICLOW" in html
+    assert "เก็บไว้สั่งเจ้าหนี้" in html
     assert "fmtDescr" in html
     assert "fmtLocation" in html
     assert "fmtBrand" in html
@@ -201,7 +213,7 @@ def test_transfer_hq_page_iclow_not_stamped_on_submit():
 def test_transfer_syp_page_keeps_iclow_suggest_copy():
     html = page(user_name="ทดสอบ", site="SYP")
     assert "รอสั่ง (ICLOW)" in html
-    assert "ตรงกับแท็บรอสั่งซื้อ" in html
+    assert "จำนวนแนะนำรวมทุกแถวต่อรหัส" in html
     assert 'data-suggest-tab="ai"' in html
     assert "AI แนะนำ" in html
 
