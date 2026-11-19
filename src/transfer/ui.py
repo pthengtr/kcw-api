@@ -6,7 +6,7 @@ import re
 
 APP = "kcw-transfer"
 SESSION_COOKIE = "kcw_transfer"
-_BRANCH_LABELS = {"HQ": "สำนักงานใหญ่", "SYP": "สาขา"}
+_BRANCH_LABELS = {"HQ": "HQ", "SYP": "SYP"}
 
 
 def initials(name: str) -> str:
@@ -86,12 +86,20 @@ html[data-site="SYP"]{
 }
 *{box-sizing:border-box}body{margin:0;font-family:Prompt,sans-serif;background:var(--page-bg);color:var(--text)}
 button{font:inherit;color:var(--text);-webkit-appearance:none;appearance:none}
-.hdr{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);border-top:3px solid var(--hdr-bar);padding:.75rem 1rem;box-shadow:var(--shadow);display:flex;align-items:center;gap:.65rem}
+.hdr{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);border-top:3px solid var(--hdr-bar);box-shadow:var(--shadow)}
+.hdr-top{display:flex;align-items:center;gap:.65rem;padding:.55rem 1rem .4rem}
 .hdr-main{flex:1;min-width:0}
 .hdr h1{margin:0;font-size:1.05rem;color:var(--text)}.hdr .sub{font-size:.78rem;color:var(--muted)}
 .site-badge{flex:0 0 auto;display:inline-flex;align-items:center;gap:.25rem;padding:.28rem .55rem;border-radius:999px;background:var(--site-badge-bg);color:#fff;font-size:.72rem;font-weight:700;letter-spacing:.02em;line-height:1.2;white-space:nowrap}
 .site-badge .code{opacity:.9;font-weight:600}
 .back-btn{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;padding:.4rem .7rem;font:inherit;cursor:pointer;white-space:nowrap}
+.top-nav{display:flex;gap:.3rem;padding:0 .65rem .55rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.top-nav::-webkit-scrollbar{display:none}
+.top-nav-btn{flex:1 1 0;min-width:4.5rem;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;padding:.4rem .35rem;font:inherit;font-size:.72rem;font-weight:600;cursor:pointer;text-align:center;line-height:1.25;white-space:nowrap}
+.top-nav-btn .nav-count{display:inline-block;margin-left:.2rem;padding:.05rem .35rem;border-radius:999px;background:var(--acc-soft);color:var(--acc);font-size:.65rem;font-weight:700}
+.top-nav-btn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.top-nav-btn.on .nav-count{background:rgba(255,255,255,.25);color:#fff}
+.top-nav-group{display:contents}
 main{padding:1rem;max-width:1200px;margin:0 auto;width:100%}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem;box-shadow:var(--shadow);margin-bottom:.85rem}
 .card:has(.view-table){overflow:visible}
@@ -217,11 +225,11 @@ body.busy #busy{display:flex}
 .bill-steps li{margin:.35rem 0}
 .bill-when{font-weight:600}
 .bill-none{color:var(--warn);font-weight:500}
-.steps{display:flex;gap:.35rem;margin-bottom:1rem;flex-wrap:wrap}
-.step{flex:1;min-width:5.5rem;text-align:center;padding:.45rem .35rem;border-radius:10px;font-size:.72rem;background:#fff;border:1px solid var(--line);color:var(--muted)}
+.steps{display:flex;gap:.25rem;margin-bottom:.55rem;flex-wrap:nowrap}
+.step{flex:1;min-width:0;text-align:center;padding:.28rem .25rem;border-radius:8px;font-size:.68rem;background:#fff;border:1px solid var(--line);color:var(--muted);line-height:1.2}
 .step.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 .step.done{background:#dcfce7;color:var(--ok);border-color:#bbf7d0}
-.step-label{display:block;font-size:.68rem;opacity:.9;margin-top:.15rem}
+.step-label{display:none}
 .row-clickable{cursor:pointer}
 .row-clickable:hover td{background:#f8fafc}
 .status-tabs{display:flex;gap:.35rem;margin-bottom:.75rem;flex-wrap:wrap}
@@ -285,10 +293,12 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
 }
 @media (max-width:640px){
   main{padding:.75rem .65rem calc(.85rem + env(safe-area-inset-bottom,0px));padding-left:max(.65rem,env(safe-area-inset-left,0px));padding-right:max(.65rem,env(safe-area-inset-right,0px));min-width:0}
-  .hdr{padding:.65rem max(.65rem,env(safe-area-inset-left,0px)) .65rem max(.65rem,env(safe-area-inset-right,0px))}
+  .hdr-top{padding:.5rem max(.65rem,env(safe-area-inset-left,0px)) .3rem max(.65rem,env(safe-area-inset-right,0px))}
   .hdr h1{font-size:.98rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hdr .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .site-badge{font-size:.65rem;padding:.22rem .45rem;max-width:42vw;overflow:hidden;text-overflow:ellipsis}
+  .top-nav{padding:0 max(.5rem,env(safe-area-inset-left,0px)) .5rem max(.5rem,env(safe-area-inset-right,0px));gap:.25rem}
+  .top-nav-btn{font-size:.68rem;padding:.38rem .28rem;min-width:4.1rem}
   .card{padding:.85rem .8rem;border-radius:12px;margin-bottom:.65rem;min-width:0}
   .card:not(:has(.view-table)):not(:has(.view-cards)){overflow:hidden}
   .card:has(.view-table){overflow:visible}
@@ -307,11 +317,9 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
   th,td{padding:.45rem .5rem;vertical-align:top}
   th{white-space:nowrap}
   td code{word-break:break-all}
-  .steps{display:flex;flex-wrap:nowrap;gap:.3rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:.85rem;padding-bottom:.1rem}
-  .steps::-webkit-scrollbar{display:none}
-  .step{flex:0 0 auto;min-width:6.25rem;padding:.4rem .35rem;font-size:.68rem}
-  .step-label{font-size:.6rem}
-  .flow-hint,.info-toggle{font-size:.78rem;padding:.65rem .75rem;margin-bottom:.65rem}
+  .steps{display:flex;flex-wrap:nowrap;gap:.2rem;margin-bottom:.5rem}
+  .step{flex:1;min-width:0;padding:.26rem .2rem;font-size:.65rem}
+  .flow-hint,.info-toggle{font-size:.78rem;padding:.55rem .7rem;margin-bottom:.55rem}
   .info-toggle summary{padding:.55rem .75rem;font-size:.78rem}
   .info-toggle .info-body{padding:.55rem .75rem .65rem}
   .action-card{padding:.9rem .85rem}
@@ -365,10 +373,12 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
 .evidence-remove{position:absolute;top:-6px;right:-6px;z-index:2;width:24px;height:24px;border:0;border-radius:999px;background:#b91c1c;color:#fff;font-weight:700;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .evidence-edit{margin-top:.35rem}
 .prep-photo-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.prod-thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0;vertical-align:middle}
-.prod-thumb{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
-.prod-with-thumb{display:inline-flex;align-items:center;gap:.45rem;max-width:100%}
+.prod-thumb-btn{padding:0;border:0;background:transparent;border-radius:10px;flex:none;cursor:zoom-in;line-height:0;vertical-align:middle}
+.prod-thumb{width:56px;height:56px;object-fit:cover;border-radius:10px;background:#e2e8f0;display:block}
+.prod-thumb--empty{display:inline-block;width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);border:1px dashed #cbd5e1;flex:none;vertical-align:middle}
+.prod-with-thumb{display:inline-flex;align-items:center;gap:.55rem;max-width:100%}
 .prod-with-thumb > span{min-width:0}
+.item-card-head .prod-with-thumb,.item-card-head .prod-thumb-btn,.item-card-head .prod-thumb--empty{align-self:flex-start}
 #printSheet .prod-thumb{width:1.6cm;height:1.6cm}
 #evidenceView{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.78);display:flex;align-items:center;justify-content:center;padding:48px 16px 16px}
 #evidenceView[hidden]{display:none}
@@ -387,12 +397,20 @@ body.request-picking main{padding-bottom:calc(6.25rem + env(safe-area-inset-bott
   <img id="evidenceImg" alt="รูปสินค้าที่จัด">
 </div>
 <header class="hdr">
-  <button id="btnBack" class="back-btn" style="display:none">← กลับ</button>
-  <div class="hdr-main">
-    <h1 id="hdrTitle">โอนสินค้า · __SITE_LABEL__</h1>
-    <div class="sub" id="hdrSub">__USER__</div>
+  <div class="hdr-top">
+    <button id="btnBack" class="back-btn" style="display:none">← กลับ</button>
+    <div class="hdr-main">
+      <h1 id="hdrTitle">โอนสินค้า · __SITE_LABEL__</h1>
+      <div class="sub" id="hdrSub">__USER__</div>
+    </div>
+    <span class="site-badge" title="ไซต์ที่เปิดอยู่ตอนนี้"><span class="code">__SITE__</span></span>
   </div>
-  <span class="site-badge" title="สาขาที่เปิดอยู่ตอนนี้"><span class="code">__SITE__</span> · __SITE_LABEL__</span>
+  <nav class="top-nav" id="topNav" aria-label="เมนูโอนสินค้า">
+    <button type="button" class="top-nav-btn" data-nav="request">ขอสินค้า</button>
+    <button type="button" class="top-nav-btn" data-nav="receive">รับสินค้า<span class="nav-count" data-count="receive" hidden></span></button>
+    <button type="button" class="top-nav-btn" data-nav="prepare">จัดส่งสินค้า<span class="nav-count" data-count="prepare" hidden></span></button>
+    <button type="button" class="top-nav-btn" data-nav="status">ติดตามสถานะ</button>
+  </nav>
 </header>
 <main><div id="content" class="empty">กำลังโหลด…</div></main>
 <script>
@@ -400,7 +418,7 @@ const SITE = "__SITE__";
 const OTHER = "__OTHER__";
 const SITE_LABEL = "__SITE_LABEL__";
 const OTHER_LABEL = "__OTHER_LABEL__";
-const BRANCH_LABEL = {HQ:"สำนักงานใหญ่",SYP:"สาขา"};
+const BRANCH_LABEL = {HQ:"HQ",SYP:"SYP"};
 const SHIP_BILL = "ใบจัดสินค้า";
 const RECV_BILL = "ใบรับสินค้า";
 const SHIP_WRITE = __SHIP_WRITE__ === "true";
@@ -414,7 +432,7 @@ const STICKER_PRINTERS = [
 ];
 
 let view = "home";
-let requestStep = 1;
+let requestStep = 2;
 let orderDirection = SITE === "SYP" ? "to_syp" : "to_hq";
 let statusFilter = "active";
 let statusSearch = "";
@@ -443,11 +461,11 @@ let stickerReturnView = "home";
 let toastTimer = null;
 
 const VIEWS = {
-  home: {title: "โอนสินค้า · " + SITE_LABEL, sub: "เลือกสิ่งที่ต้องการทำ"},
-  request: {title: "ขอสินค้าจาก " + OTHER_LABEL, sub: "ขั้นตอนที่ " + requestStep + " จาก 3"},
-  prepare: {title: "ส่งสินค้า", sub: "รายการที่รอจัดออกจาก " + SITE_LABEL},
+  home: {title: "โอนสินค้า · " + SITE_LABEL, sub: USER},
+  request: {title: "ขอสินค้าจาก " + OTHER_LABEL, sub: OTHER_LABEL + " → " + SITE_LABEL},
+  prepare: {title: "จัดส่งสินค้า", sub: "รายการที่รอจัดออกจาก " + SITE_LABEL},
   receive: {title: "รับสินค้า", sub: "รายการที่รอรับเข้า " + SITE_LABEL},
-  status: {title: "ตรวจสอบสถานะ", sub: "ติดตามคำขอโอนทั้งหมด"},
+  status: {title: "ติดตามสถานะ", sub: "คำขอโอนทั้งหมด"},
 };
 
 function $(id){return document.getElementById(id)}
@@ -486,7 +504,7 @@ function fmtStockDual(smallQty, row){
   if(mtp2 > 1 && ui2) return main + `<div class="meta">${fmtQty(smallQty / mtp2)} ${ui2}</div>`;
   return main;
 }
-/** HQ QTYMIN < 0 (L-1) = สนญ.ไม่เก็บสต็อก */
+/** HQ QTYMIN < 0 (L-1) = HQ ไม่เก็บสต็อก */
 function isHqNoStock(row){
   if(!row) return false;
   if(row.hq_no_stock === true || row.hq_no_stock === 1 || row.hq_no_stock === "1") return true;
@@ -496,19 +514,19 @@ function isHqNoStock(row){
 function fmtHqStock(row){
   const qtyHtml = fmtStockDual(row && row.hq_qtyoh2, row || {});
   if(isHqNoStock(row)){
-    return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span><br>${qtyHtml}`;
+    return `<span class="no-stock" title="L-1 · HQ ไม่เก็บสต็อก">ไม่สต็อก</span><br>${qtyHtml}`;
   }
   return qtyHtml;
 }
 function fmtBranchStock(row, branch){
   const qtyHtml = fmtStockDual(branchQtyoh2(row, branch), row || {});
   if((branch||"").toUpperCase() === "HQ" && isHqNoStock(row)){
-    return `<span class="no-stock" title="L-1 · สนญ.ไม่เก็บสต็อก">ไม่สต็อก</span><br>${qtyHtml}`;
+    return `<span class="no-stock" title="L-1 · HQ ไม่เก็บสต็อก">ไม่สต็อก</span><br>${qtyHtml}`;
   }
   return qtyHtml;
 }
 function hqNoStockNoteHtml(){
-  return `<p class="stock-legend">ไม่สต็อก = L -1 (สนญ.ไม่เก็บสต็อก) — ยังแสดงยอดคงเหลือจริง</p>`;
+  return `<p class="stock-legend">ไม่สต็อก = L -1 (HQ ไม่เก็บสต็อก) — ยังแสดงยอดคงเหลือจริง</p>`;
 }
 function fmtHqStockPlain(row){
   const qty = fmtQty(row && row.hq_qtyoh2);
@@ -537,8 +555,8 @@ function fmtLocation(row){
   const syp = (row && row.location_syp || "").trim();
   if(hq || syp){
     const bits = [];
-    if(hq) bits.push("สนญ "+escText(hq));
-    if(syp) bits.push("สาขา "+escText(syp));
+    if(hq) bits.push("HQ "+escText(hq));
+    if(syp) bits.push("SYP "+escText(syp));
     return `<div class="meta">ที่เก็บ ${bits.join(" · ")}</div>`;
   }
   const cur = (row && row.location || "").trim();
@@ -554,7 +572,7 @@ function fmtSubsHint(row){
     const hq = p.hq_qtyoh2 != null ? p.hq_qtyoh2 : "—";
     const syp = p.syp_qtyoh2 != null ? p.syp_qtyoh2 : "—";
     const l1 = p.hq_l1 ? " L-1" : "";
-    return `${badge}${escText(p.bcode)} ${escText(String(p.descr||"").slice(0,28))} (สนญ ${escText(hq)} / สาขา ${escText(syp)}${l1})`;
+    return `${badge}${escText(p.bcode)} ${escText(String(p.descr||"").slice(0,28))} (HQ ${escText(hq)} / SYP ${escText(syp)}${l1})`;
   });
   return `<div class="meta" style="color:var(--accent,#c9a227)">แนะนำทดแทน: ${bits.join(" · ")}</div>`;
 }
@@ -562,9 +580,9 @@ function fmtDescr(row){
   return `${escText((row && row.descr) || "")}${fmtBrand(row)}${fmtOemCodes(row)}${fmtModel(row)}${fmtLocation(row)}${fmtSubsHint(row)}`;
 }
 function thumbHtml(row){
-  if(!row || !row.photo) return "";
+  if(!row || !row.photo) return `<span class="prod-thumb--empty" aria-hidden="true"></span>`;
   const label = String(row.bcode||"").trim();
-  return `<button type="button" class="prod-thumb-btn" data-product-photo="${escText(row.photo)}" aria-label="ดูรูปสินค้า${label ? " "+escText(label) : ""}"><img class="prod-thumb" alt="" loading="lazy" src="${escText(row.photo)}" onerror="this.closest('button').remove()"/></button>`;
+  return `<button type="button" class="prod-thumb-btn" data-product-photo="${escText(row.photo)}" aria-label="ดูรูปสินค้า${label ? " "+escText(label) : ""}"><img class="prod-thumb" alt="" loading="lazy" src="${escText(row.photo)}" onerror="(function(img){var e=document.createElement('span');e.className='prod-thumb--empty';e.setAttribute('aria-hidden','true');var b=img.closest('button');if(b)b.replaceWith(e);})(this)"/></button>`;
 }
 function bcodeWithThumb(row, extra=""){
   const code = escText((row && row.bcode) || "");
@@ -661,7 +679,7 @@ function receiveBillPrefix(fromBranch, toBranch){
 }
 function parts9Host(branch){
   const u = (branch||"").toUpperCase();
-  return u === "SYP" ? "kss-pc (สาขา)" : "KSS (สำนักงานใหญ่)";
+  return u === "SYP" ? "kss-pc (SYP)" : "KSS (HQ)";
 }
 function iclowStampApplies(fromB, toB){
   const fb = (fromB||"").toUpperCase();
@@ -677,7 +695,7 @@ function billTimelineHtml(fromB, toB){
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
   const submitStep = iclowStampApplies(fb, tb)
-    ? `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW รอสั่งที่สาขา (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>`
+    ? `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> + แสตมป์ ICLOW รอสั่งที่ SYP (<strong>ยังไม่ออกใบ TF</strong> ใน PARTS9)</li>`
     : `<li><span class="bill-when">ส่งคำขอ</span> — บันทึกคำขอ <code>TRF-…</code> เท่านั้น (<strong>ไม่แตะ ICLOW</strong> รอสั่ง — เก็บไว้สั่งซื้อจากเจ้าหนี้)</li>`;
   return infoToggleHtml("ใบ TF ถูกสร้างเมื่อไหร่?", `<ol class="bill-steps">
       ${submitStep}
@@ -691,7 +709,7 @@ function submitBillNoteHtml(fromB, toB){
   const shipP = shipBillPrefix(fb);
   const recvP = receiveBillPrefix(fb, tb);
   const iclowLi = iclowStampApplies(fb, tb)
-    ? `<li>แสตมป์ ICLOW รอสั่งที่สาขา ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>`
+    ? `<li>แสตมป์ ICLOW รอสั่งที่ SYP ว่าสั่งแล้ว (กันสั่งซ้ำในรายการรอสั่ง)</li>`
     : `<li><strong>ไม่แตะ ICLOW</strong> รอสั่ง — เก็บรายการไว้สำหรับสั่งซื้อจากเจ้าหนี้</li>`;
   return infoToggleHtml("ตอนกดยืนยันส่งคำขอ จะเกิดอะไรขึ้น?", `<ul class="bill-steps">
       <li>สร้างคำขอโอน <code>TRF-…</code> (อ้างอิงในระบบ — <strong>ไม่ใช่เลขบิล PARTS9</strong>)</li>
@@ -716,7 +734,7 @@ function receiveBillNoteHtml(fromB, toB, shipBillno){
   const shipP = shipBillPrefix(fb);
   const shipRef = shipBillno ? `<code>${shipBillno}</code>` : `${SHIP_BILL} ${shipP} ที่ ${branchLabel(fb)} จัดไป`;
   const iclowLi = iclowStampApplies(fb, tb)
-    ? `<li>อัปเดต ICLOW รอสั่งที่สาขา ว่ารับแล้ว</li>`
+    ? `<li>อัปเดต ICLOW รอสั่งที่ SYP ว่ารับแล้ว</li>`
     : "";
   return infoToggleHtml("เมื่อยืนยันรับเข้า ระบบจะ:", `<ul class="bill-steps">
       <li>สร้าง<strong>${recvP} ${RECV_BILL}</strong> บน ${parts9Host(tb)} (เพิ่มสต๊อก ${branchLabel(tb)})</li>
@@ -936,8 +954,8 @@ function canCancelRequest(status, toBranch, hasShipments){
 function apCounterpartyLabel(writingBranch, counterpartyBranch){
   const w = (writingBranch||"").toUpperCase();
   const c = (counterpartyBranch||"").toUpperCase();
-  if(w === "HQ" && c === "SYP") return "ACCTNO KCW1 · สาขา (AP)";
-  if(w === "SYP" && c === "HQ") return "ACCTNO KCW · สำนักงานใหญ่ (AP)";
+  if(w === "HQ" && c === "SYP") return "ACCTNO KCW1 · SYP (AP)";
+  if(w === "SYP" && c === "HQ") return "ACCTNO KCW · HQ (AP)";
   return "";
 }
 function stickerPrinterModel(){
@@ -1273,7 +1291,7 @@ function printRequestBill(detail){
   const rows = lines.map((ln,i)=>`<tr>
     <td class="num">${i+1}</td>
     <td>${bcodeWithThumb(ln)}</td>
-    <td>${(ln.descr||"").replace(/</g,"&lt;")}${ln.brand?`<div class="meta">ยี่ห้อ ${String(ln.brand).replace(/</g,"&lt;")}</div>`:""}${(ln.pcode||ln.mcode)?`<div class="meta">${[ln.pcode?`เบอร์แท้ ${String(ln.pcode).replace(/</g,"&lt;")}`:"",ln.mcode?`เบอร์โรงงาน ${String(ln.mcode).replace(/</g,"&lt;")}`:""].filter(Boolean).join(" · ")}</div>`:""}${ln.model?`<div class="meta">รุ่น ${String(ln.model).replace(/</g,"&lt;")}</div>`:""}${ln.location?`<div class="meta">ที่เก็บ ${String(ln.location).replace(/</g,"&lt;")}</div>`:(ln.location_hq||ln.location_syp)?`<div class="meta">ที่เก็บ สนญ ${String(ln.location_hq||"—").replace(/</g,"&lt;")} · สาขา ${String(ln.location_syp||"—").replace(/</g,"&lt;")}</div>`:""}</td>
+    <td>${(ln.descr||"").replace(/</g,"&lt;")}${ln.brand?`<div class="meta">ยี่ห้อ ${String(ln.brand).replace(/</g,"&lt;")}</div>`:""}${(ln.pcode||ln.mcode)?`<div class="meta">${[ln.pcode?`เบอร์แท้ ${String(ln.pcode).replace(/</g,"&lt;")}`:"",ln.mcode?`เบอร์โรงงาน ${String(ln.mcode).replace(/</g,"&lt;")}`:""].filter(Boolean).join(" · ")}</div>`:""}${ln.model?`<div class="meta">รุ่น ${String(ln.model).replace(/</g,"&lt;")}</div>`:""}${ln.location?`<div class="meta">ที่เก็บ ${String(ln.location).replace(/</g,"&lt;")}</div>`:(ln.location_hq||ln.location_syp)?`<div class="meta">ที่เก็บ HQ ${String(ln.location_hq||"—").replace(/</g,"&lt;")} · SYP ${String(ln.location_syp||"—").replace(/</g,"&lt;")}</div>`:""}</td>
     <td class="num">${fmtQty(ln.qty_requested)}</td>
     <td class="num">${fmtQty(ln.qty_prepared)}</td>
     <td class="num">${fmtQty(ln.qty_received)}</td>
@@ -1493,11 +1511,18 @@ async function editDraft(transferId){
   requestStep = 2;
   render();
 }
-function goHome(){ clearStatusSearchTimer(); view="home"; requestStep=1; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestTab="iclow"; suggestInsightLoaded=false; suggestInsightLoading=false; suggestInsightError=""; suggestFilter=""; receiveFilter=""; statusSearch=""; statusItemsCache=null; statusItemsScope=null; render(); }
+function defaultOrderDirection(){
+  return SITE === "SYP" ? "to_syp" : "to_hq";
+}
+function goHome(){ clearStatusSearchTimer(); view="home"; requestStep=2; receiveStep=1; receiveShipment=null; receivePrintJob=null; stickerReturnView="home"; prepareStep=1; prepareRequest=null; editingDraftId=null; suggestPick={}; suggestTab="iclow"; suggestInsightLoaded=false; suggestInsightLoading=false; suggestInsightError=""; suggestFilter=""; receiveFilter=""; statusSearch=""; statusItemsCache=null; statusItemsScope=null; orderDirection=defaultOrderDirection(); render(); }
 function goView(v){
   clearStatusSearchTimer();
   view=v;
-  if(v==="request" && !editingDraftId){ requestStep=1; suggestPick={}; suggestTab="iclow"; suggestInsightLoaded=false; suggestInsightLoading=false; suggestInsightError=""; }
+  if(v==="request" && !editingDraftId){
+    requestStep=2;
+    orderDirection=defaultOrderDirection();
+    suggestPick={}; suggestTab="iclow"; suggestInsightLoaded=false; suggestInsightLoading=false; suggestInsightError="";
+  }
   if(v==="receive"){ receiveStep=1; receiveShipment=null; receiveFilter=""; }
   if(v!=="stickers" && v!=="receive") receivePrintJob=null;
   if(v==="prepare"){ prepareStep=1; prepareRequest=null; }
@@ -1539,41 +1564,46 @@ function pickedCount(){
 
 function updateHeader(){
   const titles = {
-    home: ["โอนสินค้า · " + SITE_LABEL, USER + " · เลือกสิ่งที่ต้องการทำ"],
-    request: ["ขอสินค้าจาก " + OTHER_LABEL, "ขั้นตอนที่ " + requestStep + " จาก 3 · " + orderFlowText()],
-    prepare: ["ส่งสินค้าไป " + OTHER_LABEL, prepareStep===1 ? "เลือกคำขอที่ต้องจัด" : prepareStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนจัด" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันส่งสินค้า"],
-    receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกคำขอที่จัดส่งมาแล้ว" : receiveStep===2 ? "ขั้นตอนที่ 2 จาก 3 · ระบุจำนวนรับ" : "ขั้นตอนที่ 3 จาก 3 · ยืนยันรับเข้า"],
-    status: ["ตรวจสอบสถานะ", "ติดตามคำขอโอนทั้งหมด"],
+    home: ["โอนสินค้า · " + SITE_LABEL, USER],
+    request: ["ขอสินค้าจาก " + OTHER_LABEL, requestStep===3 ? "ตรวจสอบก่อนส่ง · " + orderFlowText() : orderFlowText()],
+    prepare: ["จัดส่งไป " + OTHER_LABEL, prepareStep===1 ? "เลือกรายการรอจัด" : prepareStep===2 ? "ระบุจำนวนจัด" : "ยืนยันจัดส่ง"],
+    receive: ["รับสินค้าจาก " + OTHER_LABEL, receiveStep===1 ? "เลือกรายการรอรับ" : receiveStep===2 ? "ระบุจำนวนรับ" : "ยืนยันรับเข้า"],
+    status: ["ติดตามสถานะ", "คำขอโอนทั้งหมด"],
     stickers: ["พิมพ์สติ๊กเกอร์บาร์โค้ด", "เลือกสินค้าที่ต้องการพิมพ์"],
   };
   const t = titles[view] || titles.home;
   $("hdrTitle").textContent = t[0];
   $("hdrSub").textContent = t[1];
-  $("btnBack").style.display = view === "home" ? "none" : "";
+  $("btnBack").style.display = (view === "home" || view === "request" || view === "prepare" || view === "receive" || view === "status") ? "none" : "";
+  document.querySelectorAll("#topNav [data-nav]").forEach(btn=>{
+    btn.classList.toggle("on", btn.dataset.nav === view);
+  });
 }
 
 function stepBar(current){
-  const labels = ["1. เลือกทิศทาง","2. เลือกสินค้า","3. ยืนยันส่ง"];
+  // Direction is auto from SITE — only pick + confirm remain (legacy steps 2/3).
+  const display = current >= 3 ? 2 : 1;
+  const labels = ["1. เลือกสินค้า","2. ยืนยันส่ง"];
   return `<div class="steps">${labels.map((l,i)=>{
     const n = i+1;
-    const cls = n===current ? "on" : n<current ? "done" : "";
-    return `<div class="step ${cls}">${l}<span class="step-label">${n===1?"ขอจากสาขาไหน":n===2?"เพิ่มรายการ": "ตรวจสอบ"}</span></div>`;
+    const cls = n===display ? "on" : n<display ? "done" : "";
+    return `<div class="step ${cls}">${l}</div>`;
   }).join("")}</div>`;
 }
 function receiveStepBar(current){
-  const labels = ["1. เลือกคำขอ","2. ระบุจำนวน","3. ยืนยันรับ"];
+  const labels = ["1. เลือก","2. จำนวน","3. ยืนยัน"];
   return `<div class="steps">${labels.map((l,i)=>{
     const n = i+1;
     const cls = n===current ? "on" : n<current ? "done" : "";
-    return `<div class="step ${cls}">${l}<span class="step-label">${n===1?"เปิดคำขอ":n===2?"กรอกจำนวน":"ออกใบ TF"}</span></div>`;
+    return `<div class="step ${cls}">${l}</div>`;
   }).join("")}</div>`;
 }
 function prepareStepBar(current){
-  const labels = ["1. เลือกคำขอ","2. ระบุจำนวน","3. ยืนยันจัด"];
+  const labels = ["1. เลือก","2. จำนวน","3. ยืนยัน"];
   return `<div class="steps">${labels.map((l,i)=>{
     const n = i+1;
     const cls = n===current ? "on" : n<current ? "done" : "";
-    return `<div class="step ${cls}">${l}<span class="step-label">${n===1?"เปิดคำขอ":n===2?"กรอกจำนวน":"ออกใบ TF"}</span></div>`;
+    return `<div class="step ${cls}">${l}</div>`;
   }).join("")}</div>`;
 }
 function groupReceiveQueue(items){
@@ -1647,78 +1677,78 @@ async function fetchCounts(){
   }catch(e){ return {prepare:0, receive:0}; }
 }
 
-function applyHomeCounts(el, counts){
-  const recv = el.querySelector("[data-count=receive]");
-  const prep = el.querySelector("[data-count=prepare]");
+function applyNavCounts(counts){
+  const recv = document.querySelector("#topNav [data-count=receive]");
+  const prep = document.querySelector("#topNav [data-count=prepare]");
   if(recv){
-    if(counts.receive) recv.innerHTML = `<span class="count">${counts.receive} รายการรอรับ</span>`;
-    else recv.innerHTML = "";
+    if(counts.receive){
+      recv.hidden = false;
+      recv.textContent = String(counts.receive);
+      recv.title = counts.receive + " รายการรอรับ";
+    } else {
+      recv.hidden = true;
+      recv.textContent = "";
+      recv.removeAttribute("title");
+    }
   }
   if(prep){
-    if(counts.prepare) prep.innerHTML = `<span class="count">${counts.prepare} รายการรอจัด</span>`;
-    else prep.innerHTML = "";
+    if(counts.prepare){
+      prep.hidden = false;
+      prep.textContent = String(counts.prepare);
+      prep.title = counts.prepare + " รายการรอจัด";
+    } else {
+      prep.hidden = true;
+      prep.textContent = "";
+      prep.removeAttribute("title");
+    }
   }
+}
+function refreshNavCounts(){
+  fetchCounts().then(applyNavCounts).catch(()=>{});
 }
 
 async function renderHome(el){
   el.innerHTML = `
-    ${billTimelineHtml(OTHER, SITE)}
     <div class="action-grid">
       <div class="action-group">
-        <p class="action-group-label">ของเข้า</p>
+        <p class="action-group-label">สินค้าเข้า</p>
         <button class="action-card" data-go="request">
-          <p class="title">📥 ขอสินค้าจาก ${OTHER_LABEL}</p>
-          <p class="desc">ฉันอยู่ที่ ${SITE_LABEL} และต้องการให้ ${OTHER_LABEL} ส่งสินค้ามา</p>
+          <p class="title">ขอสินค้า</p>
+          <p class="desc">จาก ${OTHER_LABEL} → ${SITE_LABEL}</p>
         </button>
         <button class="action-card" data-go="receive">
-          <p class="title">📦 รับสินค้าจาก ${OTHER_LABEL}</p>
-          <p class="desc">สินค้าถูกจัดส่งมาแล้ว — เปิดคำขอ กรอกจำนวน แล้วยืนยันรับ<span data-count="receive"></span></p>
+          <p class="title">รับสินค้า</p>
+          <p class="desc">รายการรอรับเข้า ${SITE_LABEL}</p>
         </button>
       </div>
       <div class="action-group">
-        <p class="action-group-label">ของออก</p>
+        <p class="action-group-label">สินค้าออก</p>
         <button class="action-card" data-go="prepare">
-          <p class="title">📤 ส่งสินค้าไป ${OTHER_LABEL}</p>
-          <p class="desc">มีคำขอรอจัด — ${SITE_LABEL} ต้องจัดสินค้าออก<span data-count="prepare"></span></p>
+          <p class="title">จัดส่งสินค้า</p>
+          <p class="desc">รายการรอจัดออกจาก ${SITE_LABEL}</p>
         </button>
       </div>
       <div class="action-group">
         <p class="action-group-label">ติดตาม</p>
         <button class="action-card" data-go="status">
-          <p class="title">📋 ตรวจสอบสถานะ</p>
-          <p class="desc">ดูคำขอที่ขอแล้ว จัดแล้ว หรือรับแล้ว</p>
+          <p class="title">ติดตามสถานะ</p>
+          <p class="desc">คำขอที่ขอแล้ว · จัดแล้ว · รับแล้ว</p>
         </button>
       </div>
-    </div>`;
+    </div>
+    ${billTimelineHtml(OTHER, SITE)}`;
   el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>goView(b.dataset.go));
-  // Badges after first paint — counts API is cheap vs full prepare/receive lists.
-  fetchCounts().then(counts=>{
-    if(view!=="home") return;
-    applyHomeCounts(el, counts);
-  }).catch(()=>{});
+  refreshNavCounts();
 }
 
 async function renderRequest(el, opts){
   const reuseSuggest = !!(opts && opts.reuseSuggest);
-  if(requestStep === 1){
-    if(SITE === "SYP") orderDirection = "to_syp";
-    else orderDirection = "to_hq";
-    el.innerHTML = `${stepBar(1)}
-      <div class="card">
-        <p style="margin:0 0 .5rem"><strong>คุณอยู่ที่ ${SITE_LABEL}</strong></p>
-        <p style="margin:0 0 .75rem">ต้องการขอสินค้าจาก <strong>${OTHER_LABEL}</strong> ให้ส่งมาที่ ${SITE_LABEL}</p>
-        <div class="flow-hint" style="margin-bottom:0">
-          <strong>ขั้นตอนถัดไป:</strong><br>
-          1. เลือกรายการสินค้า → 2. ส่งคำขอ → 3. รอ ${OTHER_LABEL} จัดส่ง → 4. กลับมากดรับสินค้าที่นี่
-        </div>
-        <div class="row-actions" style="margin-top:1rem">
-          <button class="btn btn-ghost" onclick="goHome()">ยกเลิก</button>
-          <button class="btn btn-primary" id="btnReqNext1">ถัดไป → เลือกสินค้า</button>
-        </div>
-      </div>`;
-    el.querySelector("#btnReqNext1").onclick = ()=>setRequestStep(2);
-    return;
+  // SITE already encodes HQ/SYP — skip direction picker; land on product select.
+  if(requestStep < 2){
+    requestStep = 2;
+    orderDirection = defaultOrderDirection();
   }
+  orderDirection = defaultOrderDirection();
 
   if(requestStep === 2){
     let cart;
@@ -1758,15 +1788,14 @@ async function renderRequest(el, opts){
     const nPicked = pickedCount();
 
     let html = stepBar(2) + `<div class="card">
-      <p style="margin:0 0 .75rem"><strong>ทิศทาง:</strong> ${OTHER_LABEL} → ${SITE_LABEL}</p>
-      <p class="meta" style="margin:0 0 .75rem">ติ๊กเลือกรายการ ปรับจำนวน แล้วกด <strong>ถัดไป</strong> — หรือกดเพิ่มที่เลือกเพื่อเก็บไว้ในคำขอก่อน</p>
+      <p class="meta" style="margin:0 0 .55rem">${OTHER_LABEL} → ${SITE_LABEL} · ติ๊กเลือก ปรับจำนวน แล้วกดถัดไป</p>
 
       <div class="search-bar">
-        <input id="suggestSearch" class="text-input" placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / ยี่ห้อ / เบอร์แท้ / เบอร์โรงงาน / รุ่น)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
+        <input id="suggestSearch" class="text-input" placeholder="ค้นหา (รหัส / รายละเอียด / ยี่ห้อ / เบอร์แท้ / รุ่น)" value="${suggestFilter.replace(/"/g,"&quot;")}"/>
       </div>
 
       <div class="tool-section">
-        <p class="tool-title">เพิ่มรหัสเอง (ไม่อยู่ในรายการแนะนำ)</p>
+        <p class="tool-title">เพิ่มรหัสเอง</p>
         <div class="tool-row">
           <div class="field" style="flex:2">
             <label for="manualBcode">รหัสสินค้า (BCODE)</label>
@@ -1788,10 +1817,10 @@ async function renderRequest(el, opts){
         <button type="button" class="seg-tab ${onAiTab?"on":""}" data-suggest-tab="ai">AI ${suggestInsightLoaded ? aiCount : "…"}</button>
       </div>` : ""}
       <p class="meta" style="margin:0">${SITE === "HQ"
-        ? "รายการ <strong>สต๊อกต่ำ (ICMAS)</strong> ที่สนญ. — ไม่ดึง ICLOW รอสั่งซื้อ (เก็บไว้สั่งจากเจ้าหนี้) · เพิ่มรหัสเองได้ด้านบน"
+        ? "สต๊อกต่ำ (ICMAS) ที่ HQ — ไม่ดึง ICLOW (เก็บไว้สั่งเจ้าหนี้)"
         : onAiTab
-          ? "รายการที่ <strong>AI แนะนำ</strong> และยังไม่อยู่ในรอสั่ง (ICLOW) — จำนวนเริ่มจากช่องว่างถึงเป้า · ไม่สร้างแถว ICLOW"
-          : "รายการ <strong>รอสั่ง (ICLOW)</strong> ตรงกับแท็บรอสั่งซื้อใน /po — จำนวนแนะนำรวมทุกแถว ICLOW ต่อรหัส · ถ้าหลังรับเข้าสต๊อกยังไม่เกินจุดต่ำสุด ระบบเดิมจะเปิด ICLOW ใหม่"}</p>`;
+          ? "AI แนะนำนอก ICLOW — จำนวนเริ่มจากช่องว่างถึงเป้า"
+          : "รอสั่ง (ICLOW) · จำนวนแนะนำรวมทุกแถวต่อรหัส"}</p>`;
 
     if(onAiTab && !suggestInsightLoaded){
       html += `<div class="empty">กำลังโหลดรายการ AI…</div>`;
@@ -1840,8 +1869,8 @@ async function renderRequest(el, opts){
           </div>
           <div class="item-card-desc">${fmtDescr(r)}</div>
           <div class="item-card-grid">
-            <div class="item-field num"><span class="lbl">คงเหลือ สำนักงานใหญ่</span><span class="val">${fmtHqStock(r)}</span></div>
-            <div class="item-field num"><span class="lbl">คงเหลือ สาขา</span><span class="val">${fmtStockDual(r.syp_qtyoh2,r)}</span></div>
+            <div class="item-field num"><span class="lbl">คงเหลือ HQ</span><span class="val">${fmtHqStock(r)}</span></div>
+            <div class="item-field num"><span class="lbl">คงเหลือ SYP</span><span class="val">${fmtStockDual(r.syp_qtyoh2,r)}</span></div>
             <div class="item-field num"><span class="lbl">แนะนำ</span><span class="val">${suggestCell}</span></div>
             ${(aiEnabled && !onAiTab) ? `<div class="item-field num"><span class="lbl">AI แนะนำ</span><span class="val">${aiQtyCell(r)}</span></div>` : ""}
           </div>
@@ -1853,7 +1882,7 @@ async function renderRequest(el, opts){
       }).join("");
       html += dualView(
         `<div class="table-wrap table-wrap--tall"><table><thead><tr>
-          <th style="width:2.2rem"></th><th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ สำนักงานใหญ่</th><th class="num">คงเหลือ สาขา</th><th class="num">แนะนำ</th>${(aiEnabled && !onAiTab) ? `<th class="num">AI แนะนำ</th>` : ""}<th>หน่วย</th><th class="num">จำนวน</th>
+          <th style="width:2.2rem"></th><th>รหัส</th><th>แหล่ง</th><th>รายละเอียด</th><th class="num">คงเหลือ HQ</th><th class="num">คงเหลือ SYP</th><th class="num">แนะนำ</th>${(aiEnabled && !onAiTab) ? `<th class="num">AI แนะนำ</th>` : ""}<th>หน่วย</th><th class="num">จำนวน</th>
         </tr></thead><tbody>${suggestTableRows}</tbody></table></div>`,
         itemCards(suggestCardRows)
       );
@@ -1883,7 +1912,6 @@ async function renderRequest(el, opts){
         <div class="commit-meta">เลือกแล้ว <strong id="pickCountLabel">${nPicked}</strong> · ในคำขอ <strong id="cartCountLabel">${cartItems.length}</strong></div>
         <button class="btn btn-ghost" id="btnClearPick" ${nPicked?"":"disabled"}>ล้างที่เลือก</button>
         <button class="btn btn-ghost" id="btnCommitPick" ${nPicked?"":"disabled"}>เพิ่มที่เลือก (${nPicked})</button>
-        <button class="btn btn-ghost" id="btnReqBack2">← ย้อนกลับ</button>
         <button class="btn btn-primary" id="btnReqNext2" ${nPicked||cartItems.length?"":"disabled"}>ถัดไป → ตรวจสอบ</button>
       </div>
     </div>`;
@@ -2179,7 +2207,7 @@ async function renderRequest(el, opts){
       try{
         const p = await api("/transfer/api/product?bcode="+encodeURIComponent(b),{quiet:true});
         manualPreviewEl.style.display = "block";
-        manualPreviewEl.innerHTML = `<div class="prod-with-thumb" style="align-items:flex-start">${thumbHtml(p)}<span><strong>${escText(p.descr||"—")}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · สำนักงานใหญ่ ${fmtHqStockPlain(p)} · สาขา ${fmtQty(p.syp_qtyoh2)}</span></div>`;
+        manualPreviewEl.innerHTML = `<div class="prod-with-thumb" style="align-items:flex-start">${thumbHtml(p)}<span><strong>${escText(p.descr||"—")}</strong>${fmtBrand(p)}${fmtOemCodes(p)}${fmtModel(p)}${fmtLocation(p)} · HQ ${fmtHqStockPlain(p)} · SYP ${fmtQty(p.syp_qtyoh2)}</span></div>`;
         setManualAddEnabled(true);
       }catch(e){
         manualPreviewEl.style.display = "block";
@@ -2199,8 +2227,6 @@ async function renderRequest(el, opts){
       await api("/transfer/api/need-list/"+btn.dataset.del,{method:"DELETE"});
       await withScrollPreserved(()=>renderRequest(el));
     });
-    const btnReqBack2 = el.querySelector("#btnReqBack2");
-    if(btnReqBack2) btnReqBack2.onclick = ()=>setRequestStep(1);
     const btnReqNext2 = el.querySelector("#btnReqNext2");
     if(btnReqNext2) btnReqNext2.onclick = async()=>{
       const result = await commitPicked();
@@ -2221,8 +2247,7 @@ async function renderRequest(el, opts){
     const cartItems = cart.items || [];
     el.innerHTML = `${stepBar(3)}
       <div class="card">
-        <p><strong>ทิศทาง:</strong> ${OTHER_LABEL} จัดส่ง → ${SITE_LABEL} รับเข้า</p>
-        <p class="meta">ตรวจสอบรายการก่อนส่งคำขอ — ${OTHER_LABEL} จะเห็นในรายการรอจัด</p>
+        <p class="meta" style="margin:0 0 .5rem">${OTHER_LABEL} → ${SITE_LABEL} · ตรวจรายการก่อนส่ง — ${OTHER_LABEL} จะเห็นในรอจัด</p>
         ${submitBillNoteHtml(OTHER, SITE)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">จำนวน (หน่วยเล็ก)</th></tr></thead><tbody>
@@ -2498,15 +2523,12 @@ async function renderReceive(el){
   const data = await api("/transfer/api/receive-lines");
   const queue = groupReceiveQueue(data.items||[]);
   if(!queue.length){
-    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">จะแสดงเมื่อ ${OTHER_LABEL} จัดส่งและออกใบ TF แล้วเท่านั้น</span></div>
-      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอรับ<br><span class="meta">จะแสดงเมื่อ ${OTHER_LABEL} จัดส่งและออกใบ TF แล้ว</span></div></div>`;
     return;
   }
 
   if(receiveStep === 1){
     el.innerHTML = `${receiveStepBar(1)}
-      <div class="flow-hint">เลือกคำขอที่ ${OTHER_LABEL} จัดส่งแล้ว (มี${SHIP_BILL} TF) → กรอกจำนวนรับ → ยืนยันเพื่อออก${RECV_BILL} TF</div>
-      ${billTimelineHtml(OTHER, SITE)}
       <div class="card">${dualView(
         `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>ใบจัด</th><th class="num">รายการค้างรับ</th><th>วันที่</th><th></th></tr></thead><tbody>
           ${queue.map((g,i)=>`<tr class="row-clickable" data-recv-idx="${i}">
@@ -2526,8 +2548,7 @@ async function renderReceive(el){
           </div>
           <div class="item-card-actions"><button class="btn btn-primary" data-recv-open="${i}">เปิดรับสินค้า</button></div>
         </div>`).join(""))
-      )}
-      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+      )}</div>`;
     window._receiveGroups = queue;
     el.querySelectorAll("[data-recv-open]").forEach(b=>b.onclick=e=>{
       e.stopPropagation();
@@ -2596,12 +2617,11 @@ async function renderReceive(el){
     const filterVal = escapeAttr(receiveFilter);
     el.innerHTML = `${receiveStepBar(2)}
       <div class="card">
-        <p><strong>${ship.short_id}</strong> · ${dirLabel(ship.from_branch, ship.to_branch)}</p>
-        <p class="meta">ใบจัด <code>${ship.ship_billno||"-"}</code> — ค้นหารหัสที่แกะกล่องแล้วกรอกจำนวนรับ (รายการที่ซ่อนยังคงจำนวนเดิม)</p>
+        <p><strong>${ship.short_id}</strong> · ${dirLabel(ship.from_branch, ship.to_branch)} · ใบจัด <code>${ship.ship_billno||"-"}</code></p>
         ${receiveBillNoteHtml(ship.from_branch, ship.to_branch, ship.ship_billno)}
         <div class="search-bar" style="margin-top:.75rem">
           <input id="recvSearch" class="text-input" type="search" autocomplete="off"
-            placeholder="ค้นหาในรายการ (รหัส / รายละเอียด / ยี่ห้อ / เบอร์แท้ / เบอร์โรงงาน / รุ่น / ที่เก็บ)" value="${filterVal}"/>
+            placeholder="ค้นหา (รหัส / รายละเอียด / ยี่ห้อ / รุ่น)" value="${filterVal}"/>
         </div>
         <p id="recvFilterMeta" class="meta" style="margin:.35rem 0 0" hidden></p>
         ${dualView(
@@ -2707,15 +2727,12 @@ async function renderPrepare(el){
   const data = await api("/transfer/api/requests?role=prepare");
   const items = data.items||[];
   if(!items.length){
-    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอจัด<br><span class="meta">เมื่อสาขาอื่นส่งคำขอมา จะแสดงที่นี่</span></div>
-      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+    el.innerHTML = `<div class="card"><div class="empty">ไม่มีรายการรอจัด<br><span class="meta">เมื่ออีกฝั่งส่งคำขอมา จะแสดงที่นี่</span></div></div>`;
     return;
   }
 
   if(prepareStep === 1){
     el.innerHTML = `${prepareStepBar(1)}
-      <div class="flow-hint">เลือกคำขอ → กรอกจำนวนที่จัด → ยืนยันเพื่อออก${SHIP_BILL} TF</div>
-      ${billTimelineHtml(SITE, OTHER)}
       <div class="card">${dualView(
         `<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>ทิศทาง</th><th>สถานะ</th><th>วันที่</th><th class="num">รายการ</th><th></th></tr></thead><tbody>
           ${items.map((r,i)=>`<tr class="row-clickable" data-prep-idx="${i}">
@@ -2736,8 +2753,7 @@ async function renderPrepare(el){
           </div>
           <div class="item-card-actions"><button class="btn btn-primary" data-prep-open="${i}">เปิดจัดสินค้า</button></div>
         </div>`).join(""))
-      )}
-      <div class="row-actions"><button class="btn btn-ghost" onclick="goHome()">กลับหน้าหลัก</button></div></div>`;
+      )}</div>`;
     window._prepareList = items;
     el.querySelectorAll("[data-prep-open]").forEach(b=>b.onclick=e=>{
       e.stopPropagation();
@@ -2803,9 +2819,8 @@ async function renderPrepare(el){
     }).join("");
     el.innerHTML = `${prepareStepBar(2)}
       <div class="card">
-        <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
-        <p class="meta">ระบุจำนวนที่จัดแต่ละรายการในครั้งนี้ · คงเหลือ ${shipBranchLabel} อ่านจาก PARTS9 สด</p>
-        <p class="meta">รหัสส่งแทน (ถ้ามี) — ถ้ายังไม่ได้อยู่กลุ่มทดแทน ระบบจะถามยืนยันเพื่อเพิ่มเข้า catalog แล้วจัดส่ง</p>
+        <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)} · คงเหลือ ${shipBranchLabel} จาก PARTS9</p>
+        <p class="meta">รหัสส่งแทน (ถ้ามี) — ถ้านอกกลุ่มทดแทน ระบบจะถามก่อนเพิ่ม catalog</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th><th>รหัสส่งแทน</th></tr></thead><tbody>${rows}</tbody></table></div>`,
@@ -2851,8 +2866,7 @@ async function renderPrepare(el){
     </div>`).join("");
     el.innerHTML = `${prepareStepBar(3)}
       <div class="card">
-        <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)}</p>
-        <p class="meta">ตรวจสอบจำนวนก่อนยืนยัน — ระบบจะออก${SHIP_BILL} TF ทันที</p>
+        <p><strong>${req.short_id}</strong> · ${dirLabel(req.from_branch, req.to_branch)} · ตรวจก่อนยืนยัน (ออก${SHIP_BILL} TF)</p>
         ${prepareBillNoteHtml(req.from_branch, req.to_branch)}
         ${dualView(
           `<div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>รหัส</th><th>รายละเอียด</th><th class="num">คงเหลือ ${shipBranchLabel}</th><th class="num">ขอ</th><th class="num">จัดแล้ว</th><th class="num">จัดครั้งนี้</th></tr></thead><tbody>${confirmRows}</tbody></table></div>`,
@@ -2868,7 +2882,7 @@ async function renderPrepare(el){
         <div class="row-actions">
           <button class="btn btn-ghost" onclick="setPrepareStep(2)">← แก้ไขจำนวน</button>
           <button class="btn btn-ghost" id="btnPrepPrint3" type="button">พิมพ์ใบจัด</button>
-          <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันส่งสินค้า (ออกใบ TF)</button>
+          <button class="btn btn-primary" id="btnConfirmPrepare">ยืนยันจัดส่ง (ออกใบ TF)</button>
         </div>
       </div>`;
     bindPreparePhotos(el, req);
@@ -3163,10 +3177,26 @@ async function render(){
       }
       renderStickerComposer(el, receivePrintJob);
     }
+    if(view !== "home") refreshNavCounts();
   }catch(e){el.innerHTML='<div class="card empty">'+String(e.message||e)+'</div>';}
 }
 
 $("btnBack").onclick = ()=> view==="stickers" ? leaveStickerPrint() : goHome();
+document.querySelectorAll("#topNav [data-nav]").forEach(btn=>{
+  btn.onclick = ()=>{
+    const target = btn.dataset.nav;
+    if(!target) return;
+    if(target === "request") editingDraftId = null;
+    if(target === view){
+      if(target === "request" && requestStep !== 2){ requestStep = 2; suggestPick = {}; render(); }
+      else if(target === "prepare" && prepareStep !== 1){ prepareStep = 1; prepareRequest = null; render(); }
+      else if(target === "receive" && receiveStep !== 1){ receiveStep = 1; receiveShipment = null; render(); }
+      return;
+    }
+    goView(target);
+  };
+});
+refreshNavCounts();
 render();
 </script>
 </body>
