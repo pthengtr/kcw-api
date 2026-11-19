@@ -52,6 +52,7 @@ PRODUCT_COLS = """
   PRICEM1, PRICEM2, PRICEM3, PRICEM4, PRICEM5,
   COSTLAST, COSTNET,
   LTRIM(RTRIM(COALESCE(VENDOR,''))) AS VENDOR,
+  UPPER(LTRIM(RTRIM(COALESCE(OEM,'')))) AS OEM,
   LTRIM(RTRIM(COALESCE(LOCATION1,''))) AS LOCATION1,
   LTRIM(RTRIM(COALESCE(LOCATION2,''))) AS LOCATION2,
   LTRIM(RTRIM(COALESCE(CANCELED,''))) AS CANCELED
@@ -197,6 +198,16 @@ def _qty_keep_zero(value: Any) -> float:
         return 0.0
 
 
+def _oem_label(raw: Any) -> str | None:
+    """ICMAS.OEM Y/N → แท้ / ไม่แท้. Ignore dirty values."""
+    flag = str(raw or "").strip().upper()
+    if flag == "Y":
+        return "แท้"
+    if flag == "N":
+        return "ไม่แท้"
+    return None
+
+
 def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
     bcode = str(row.get("BCODE") or "").strip()
     code1 = str(row.get("CODE1") or "").strip().upper() or None
@@ -210,6 +221,7 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
     cost = _num(row.get("COSTLAST"))
     if cost is None:
         cost = _num(row.get("COSTNET"))
+    oem = str(row.get("OEM") or "").strip().upper()
     return {
         "site": site_key.upper(),
         "bcode": bcode,
@@ -220,6 +232,9 @@ def _serialize_product(row: dict, *, site: str) -> dict[str, Any]:
         "model": str(row.get("MODEL") or "").strip(),
         "acode": str(row.get("ACODE") or "").strip(),
         "vendor": str(row.get("VENDOR") or "").strip(),
+        "vendor_name": "",
+        "oem": oem,
+        "oem_label": _oem_label(oem),
         "code1": code1,
         "code1_label": code1_label(code1),
         "category": category_label(bcode),
@@ -307,6 +322,30 @@ def _enrich_with_peer_location(products: list[dict[str, Any]], *, site: str) -> 
             product["location_hq"] = peer_loc
             product["qtyoh2_syp"] = product.get("qtyoh2")
             product["qtyoh2_hq"] = peer_info.get("qtyoh2")
+    return _enrich_with_vendor_names(products)
+
+
+def _enrich_with_vendor_names(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Resolve ICMAS.VENDOR (AP acctno) → APMAS company name on HQ."""
+    if not products:
+        return products
+    try:
+        from src.hq_po.iclow_read import fetch_vendor_names
+    except Exception:
+        return products
+    vendors = [str(p.get("vendor") or "").strip() for p in products]
+    try:
+        names = fetch_vendor_names(vendors)
+    except Exception:
+        return products
+    for product in products:
+        code = str(product.get("vendor") or "").strip()
+        if not code:
+            continue
+        name = str(names.get(code) or "").strip()
+        # APMAS names sometimes carry trailing junk markers like "#&".
+        if name:
+            product["vendor_name"] = name.split("#", 1)[0].strip() or name
     return products
 
 

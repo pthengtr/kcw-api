@@ -304,6 +304,7 @@ def test_product_search_includes_acode_column():
     from src.parts9_explorer.search import PRODUCT_COLS
 
     assert "ACODE" in PRODUCT_COLS
+    assert "OEM" in PRODUCT_COLS
 
 
 def test_serialize_product_includes_acode():
@@ -329,14 +330,28 @@ def test_serialize_product_includes_acode():
         "LOCATION1": "13P-4-13",
         "LOCATION2": "B",
         "CANCELED": "N",
+        "OEM": "Y",
+        "VENDOR": "PA",
     }
     out = _serialize_product(row, site="hq")
     assert out["acode"] == "ลป"
+    assert out["oem"] == "Y"
+    assert out["oem_label"] == "แท้"
+    assert out["vendor"] == "PA"
     assert out["location1"] == "13P-4-13"
     assert out["location2"] == "B"
     assert out["location"] == "13P-4-13 / B"
     assert out["location_hq"] == "13P-4-13 / B"
     assert out["location_syp"] == ""
+
+
+def test_oem_label_only_for_y_n():
+    from src.parts9_explorer.search import _oem_label
+
+    assert _oem_label("Y") == "แท้"
+    assert _oem_label("n") == "ไม่แท้"
+    assert _oem_label("") is None
+    assert _oem_label("YY") is None
 
 
 def test_enrich_with_peer_location_fills_other_site(monkeypatch):
@@ -380,6 +395,11 @@ def test_explorer_page_shows_location_bits():
     assert "histSite" in html
     assert "insightHtml" in html
     assert "สต็อกคงเหลือ" in html
+    assert "productCardHtml" in html
+    assert "ราคาขาย 1" in html
+    assert "ชื่อบริษัท" in html
+    assert "หน่วยใหญ่" in html
+    assert "กลุ่มสินค้า (CODE1)" in html
 
 
 def test_explorer_page_uses_hq_syp_labels():

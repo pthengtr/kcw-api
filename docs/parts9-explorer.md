@@ -4,7 +4,8 @@ Search / detail UI on `:8788` (`kcw-parts9-explorer`). Product discovery is read
 
 ## Product detail layout
 
-- Header above tabs: product facts, prices, locations, **สต็อกคงเหลือ** (HQ / SYP / รวมบริษัท), existing photos only
+- Search cards: photo, code, name, model/brand, PCODE/MCODE, PRICE1, HQ·SYP stock+bin on one line (omit empty fields)
+- Header above tabs: labeled facts (brand/model/company/OEM แท้|ไม่แท้), prices, **สต็อกคงเหลือ** with bin under HQ/SYP, existing photos only — category/CODE1 live in **จัดการสินค้า**
 - Tabs: **Insight** (default) · ประวัติซื้อ · ประวัติขาย · การสั่งซื้อ · ต้นทุน (admin)
 - Insight / buy / sell match hq-po hist UX, including **HQ / SYP** site toggle (kept when switching tabs)
 - **จัดการสินค้า** opens edit + photo upload; L / ล็อต / ใส่รอสั่ง live under การสั่งซื้อ
