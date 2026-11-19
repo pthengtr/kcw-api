@@ -125,3 +125,11 @@ def platform_label(platform: str) -> str:
         "tiktok": "TikTok",
         "line": "Line Shopping",
     }.get((platform or "").lower(), platform or "")
+
+
+def meta_row(label: str, value: str) -> str:
+    """One labeled row inside a `.meta .side` column (TAD / CNTAD)."""
+    return (
+        f"<div class='row'><span class='k'>{esc(label)}:</span> "
+        f"<span class='v'>{value}</span></div>"
+    )

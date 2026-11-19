@@ -272,6 +272,51 @@ def test_line_mtp_resolves_large_unit():
     assert _stock_units(2, 20) == 40
 
 
+def test_tad_sheet_matches_cntad_meta_layout():
+    from src.online_sale.sheets.tad import render_tad_sheet
+
+    html = render_tad_sheet(
+        {
+            "billno": "TAD6911-001",
+            "bill_date": "2026-11-02",
+            "acctname": "คุณลูกค้าทั่วไป TIKTOK (ICE TIKTOK SHOP)",
+            "customer_name": "คุณลูกค้าทั่วไป TIKTOK (ICE TIKTOK SHOP)",
+            "customer_address": "305 หมู่1 ต.ชุมแสง อ.วังจันทร์ จ.ระยอง 21210",
+            "customer_tax_id": "0000000000002",
+            "platform": "tiktok",
+            "shop_name": "ICE TIKTOK SHOP",
+            "online_po": "913101322028564",
+            "issuer_label": "ปิยะนุช นันตาบุตร (เมย์)",
+            "lines": [
+                {
+                    "bcode": "30050024",
+                    "detail": "สีส้ม",
+                    "price": 360,
+                    "qty": 1,
+                    "ui": "หน่วย",
+                    "amount": 360,
+                }
+            ],
+        }
+    )
+    assert "ใบกำกับภาษีอย่างย่อ/ใบส่งสินค้า" in html
+    assert "class='side'" in html
+    assert "ลูกค้า:" in html
+    assert "คุณลูกค้าทั่วไป TIKTOK" in html
+    assert "ICE TIKTOK SHOP)" not in html.split("ลูกค้า:")[1].split("</div>")[0]
+    assert "ที่อยู่:" in html
+    assert "เลขประจำตัวผู้เสียภาษี:" in html
+    assert "0000000000002" in html
+    assert "ช่องทาง:" in html
+    assert "TikTok (ICE TIKTOK SHOP)" in html
+    assert "เลขคำสั่งซื้อ:" in html
+    assert "913101322028564" in html
+    assert "แพลตฟอร์ม" not in html
+    assert "ชื่อร้านค้า" not in html
+    assert "ยอดก่อน VAT" in html
+    assert "พนักงานขาย:" in html
+
+
 def test_staff_roster_and_cntad_signers():
     assert match_staff("เมย์")["full_name"] == "ปิยะนุช นันตาบุตร"
     assert issuer_full_name("Nu") == "อานนท์ ชูสวัสดิ์ (นุ)"

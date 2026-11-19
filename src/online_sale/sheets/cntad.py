@@ -8,6 +8,7 @@ from src.online_sale.sheets.common import (
     esc,
     fmt_money,
     line_rows_html,
+    meta_row,
     thai_date,
 )
 from src.online_sale.shops import channel_label, customer_name_without_shop
@@ -28,13 +29,6 @@ def _signature(title: str, *, name: str = "", signed_on: str = "") -> str:
         <span>วันที่</span><span class="line">{date_cell}</span>
       </div>
     </section>"""
-
-
-def _meta_row(label: str, value: str) -> str:
-    return (
-        f"<div class='row'><span class='k'>{esc(label)}:</span> "
-        f"<span class='v'>{value}</span></div>"
-    )
 
 
 def credit_note_summary(bill: dict, original: dict | None = None) -> dict[str, Decimal]:
@@ -104,19 +98,19 @@ def render_cntad_sheet(bill: dict, *, original: dict | None = None, reason: str 
 
     left = (
         "<div class='side'>"
-        + _meta_row("ลูกค้า", esc(customer_name))
-        + _meta_row("ที่อยู่", esc(customer_address))
-        + _meta_row("เลขประจำตัวผู้เสียภาษี", esc(customer_tax_id))
+        + meta_row("ลูกค้า", esc(customer_name))
+        + meta_row("ที่อยู่", esc(customer_address))
+        + meta_row("เลขประจำตัวผู้เสียภาษี", esc(customer_tax_id))
         + "</div>"
     )
     right = (
         "<div class='side'>"
-        + _meta_row("เลขที่", esc(bill.get("billno")))
-        + _meta_row("วันที่", thai_date(bill.get("bill_date")))
-        + _meta_row("อ้างอิง", esc(tad_billno))
-        + _meta_row("วันที่บิลอ้างอิง", thai_date(tad_date))
-        + _meta_row("ช่องทาง", esc(channel))
-        + _meta_row("เลขคำสั่งซื้อ", esc(order_id))
+        + meta_row("เลขที่", esc(bill.get("billno")))
+        + meta_row("วันที่", thai_date(bill.get("bill_date")))
+        + meta_row("อ้างอิง", esc(tad_billno))
+        + meta_row("วันที่บิลอ้างอิง", thai_date(tad_date))
+        + meta_row("ช่องทาง", esc(channel))
+        + meta_row("เลขคำสั่งซื้อ", esc(order_id))
         + "</div>"
     )
     cn_box = (
