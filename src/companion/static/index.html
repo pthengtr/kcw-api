@@ -942,7 +942,7 @@
         <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
         KCW Tiger Pay Companion
       </h1>
-      <div class="muted">บิลเงินสด POS → ตู้ Tiger · QR หน้าตู้ · QR ออนไลน์</div>
+      <div class="muted">บิลเงินสด POS → ตู้ Tiger · QR หน้าตู้</div>
     </div>
     <div class="header-actions">
       <button class="btn-hopper" id="hopperBtn" type="button" aria-label="สถานะเงินทอน" title="สถานะเงินทอน">
@@ -1040,6 +1040,12 @@
   </main>
   <script>
     const STORAGE_KEY = "kcw.companion.ui.v7";
+    /**
+     * Cloud QR (QR ออนไลน์) companion button — off while the process is redesigned.
+     * Keep send-cloud-qr handlers, dialog copy, CSS, and backend cloud_qr_* as reference;
+     * flip to true to restore the third button.
+     */
+    const CLOUD_QR_UI_ENABLED = false;
     const STATUS_FILTER_KEYS = ["all", "unsent", "pending", "success", "cancelled"];
     const STATUS_TAB_LABELS = {
       all: "ทั้งหมด",
@@ -1915,10 +1921,14 @@
       const forceBtn = showForce
         ? `<button${forceBusyAttr} type="button" data-action="force-success" data-attempt="${bill.payment_attempt_id || ""}" ${forceDisabled ? "disabled" : ""}>${forceLabel}</button>`
         : "";
+      // Cloud QR button gated — implementation kept below / in handlers for redesign.
+      const cloudQrBtn = CLOUD_QR_UI_ENABLED
+        ? `<button${cloudQrBusyAttr} type="button" data-action="send-cloud-qr" data-id="${bill.id}" ${cloudQrDisabled ? "disabled" : ""}>${cloudQrLabel}</button>`
+        : "";
       return `
         <button${cashBusyAttr} type="button" data-action="send-cash" data-id="${bill.id}" ${cashDisabled ? "disabled" : ""}>${cashLabel}</button>
         <button${qrBusyAttr} type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
-        <button${cloudQrBusyAttr} type="button" data-action="send-cloud-qr" data-id="${bill.id}" ${cloudQrDisabled ? "disabled" : ""}>${cloudQrLabel}</button>
+        ${cloudQrBtn}
         ${forceBtn}
         <button${cancelBusyAttr} type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
       `;
@@ -2084,7 +2094,7 @@
         state.events = [];
         document.getElementById("timeline").innerHTML = isPayoutBill(bill)
           ? `<li class="empty">ยังไม่มี voucher กด「สร้าง voucher / จ่ายคืน」</li>`
-          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」「QR หน้าตู้」หรือ「QR ออนไลน์」</li>`;
+          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」หรือ「QR หน้าตู้」</li>`;
       }
     }
 
