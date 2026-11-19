@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from html import escape
 
-# Idle timeout before warn+logout (ms). 45 minutes.
-IDLE_TIMEOUT_MS = 45 * 60 * 1000
+# Idle timeout before warn+logout (ms). 4 hours — session cookie still caps overall life.
+IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000
 IDLE_WARN_MS = 60 * 1000
+RETURN_PATH_KEY = "kcw_return_path"
 
 
 def render_shell_html(
@@ -35,6 +36,27 @@ html.kcw-shell-pad body{{padding-top:var(--kcw-shell-h) !important}}
 html.kcw-shell-pad header,
 html.kcw-shell-pad .hdr,
 html.kcw-shell-pad .appbar{{top:var(--kcw-shell-h) !important}}
+/* Full-screen document viewers sit below the launcher strip so 9-dot never covers toolbar. */
+html.kcw-shell-pad #sheet,
+html.kcw-shell-pad #catalog,
+html.kcw-shell-pad #hist,
+html.kcw-shell-pad #poBox,
+html.kcw-shell-pad #photo,
+html.kcw-shell-pad .kcw-doc-overlay{{top:var(--kcw-shell-h) !important}}
+/* Shared document chrome — compact toolbar under the shell strip. */
+.kcw-doc-toolbar{{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;
+  padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;
+  position:sticky;top:0;z-index:5}}
+.kcw-doc-toolbar .kcw-doc-x{{flex:none;width:40px;min-width:40px;min-height:40px;padding:0;
+  border:1px solid #e2e8f0;border-radius:10px;background:#fff;color:#0f172a;
+  font-size:22px;line-height:1;font-weight:600;cursor:pointer}}
+.kcw-doc-toolbar .kcw-doc-seg{{display:inline-flex;flex:1;min-width:0;gap:2px;padding:3px;
+  border-radius:10px;background:#f1f5f9;border:1px solid #e2e8f0}}
+.kcw-doc-toolbar .kcw-doc-seg button{{flex:1;min-height:36px;border:0;border-radius:8px;
+  background:transparent;color:#64748b;font:inherit;font-weight:650;font-size:13px;cursor:pointer;padding:6px 8px}}
+.kcw-doc-toolbar .kcw-doc-seg button.on{{background:#1d4ed8;color:#fff}}
+.kcw-doc-toolbar .kcw-doc-print{{flex:none;min-height:40px;padding:0 16px;border:0;border-radius:10px;
+  background:#1d4ed8;color:#fff;font:inherit;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap}}
 #kcw-shell-root{{position:fixed;top:0;left:0;right:0;z-index:10050;pointer-events:none;
   font-family:Prompt,"Noto Sans Thai",system-ui,sans-serif}}
 #kcw-shell-root.kcw-shell-rooted{{position:static;z-index:auto;left:auto;right:auto}}
@@ -251,14 +273,35 @@ html.kcw-shell-pad .appbar{{top:var(--kcw-shell-h) !important}}
     }}
   }}
 
+  const RETURN_KEY = "kcw_return_path";
+  function rememberReturn(){{
+    try {{
+      sessionStorage.setItem(RETURN_KEY, location.pathname + location.search + location.hash);
+    }} catch (e) {{ /* private mode */ }}
+  }}
+  function consumeReturn(){{
+    try {{
+      const v = sessionStorage.getItem(RETURN_KEY);
+      if (!v || v.charAt(0) !== "/" || v.indexOf("//") === 0) return;
+      sessionStorage.removeItem(RETURN_KEY);
+      const here = location.pathname + location.search + location.hash;
+      if (v === here) return;
+      const base = (CFG.apiBase || "").replace(/\\/_shell\\/?$/, "");
+      if (base && !(v === base || v.indexOf(base + "/") === 0)) return;
+      window.location.replace(v);
+    }} catch (e) {{ /* ignore */ }}
+  }}
+
   async function doLogout(){{
     if (!confirmLeave("มีงานที่ยังไม่ได้บันทึก ต้องการออกจากระบบหรือไม่?")) return;
+    rememberReturn();
     try {{
       await apiFetch("/logout", {{ method:"POST" }});
     }} catch (e) {{ /* still leave */ }}
     setOpen(false);
-    document.body.innerHTML = "<main style='font-family:system-ui;padding:24px'><h1>ออกจากระบบแล้ว</h1><p>พิมพ์ชื่อบริการใน LINE เพื่อเข้าใหม่</p></main>";
+    document.body.innerHTML = "<main style='font-family:system-ui;padding:24px'><h1>ออกจากระบบแล้ว</h1><p>พิมพ์ชื่อบริการใน LINE แล้วเปิดลิงก์เดิมได้ — ระบบจะพากลับหน้าที่ค้างไว้ให้</p><p style='color:#64748b;font-size:13px'>ลิงก์จาก LINE ใช้ซ้ำได้จนกว่าจะออกจากระบบครบรอบ session</p></main>";
   }}
+  consumeReturn();
 
   btn.addEventListener("click", async function(){{
     if (state.open) {{ setOpen(false); return; }}

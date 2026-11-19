@@ -99,6 +99,17 @@ def _identity_from_request(request: Request):
             return _verify_token(token)
         except TokenError:
             continue
+    settings = _settings()
+    from src.staff_shell.auth import identity_from_staff_cookie_for_app
+
+    staff = identity_from_staff_cookie_for_app(
+        request.cookies,
+        secret=settings.token_secret,
+        app=APP,
+        expected_branch="HQ",
+    )
+    if staff is not None:
+        return staff
     ip = _client_ip(request)
     if is_tailscale_cg_nat(ip):
         return _named("tailscale", "tailnet")
@@ -185,8 +196,9 @@ def home(request: Request, t: str | None = None, tad: str | None = None, kind: s
         try:
             ident = _verify_token(t)
             err = None
-        except TokenError as exc:
-            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+        except TokenError:
+            # Expired/invalid ?t= — allow staff session / Tailscale to admit.
+            pass
     if err:
         return err
     # Prefer an explicit ?t= identity over a stale LAN cookie from an iframe race.

@@ -28,7 +28,7 @@ from src.online_sale.service import (
     update_sale_payload,
 )
 from src.online_sale.ui import APP, SESSION_COOKIE, page
-from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
 from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 from src.stock_check.net import is_tailscale_cg_nat
@@ -112,12 +112,22 @@ def _identity_from_request(request: Request):
             return _verify_token(token)
         except TokenError:
             continue
+    settings = _settings()
+    staff = identity_from_staff_cookie_for_app(
+        request.cookies,
+        secret=settings.token_secret,
+        app=APP,
+        expected_branch="HQ",
+    )
+    if staff is not None:
+        return staff
     ip = _client_ip(request)
     if is_tailscale_cg_nat(ip):
         return _named("tailscale", "tailnet")
     if is_private_lan(ip):
         return _named("lan", "LAN")
     return None
+
 
 
 def _set_session(resp, identity, *, request: Request | None = None, has_entry_token: bool = False) -> None:

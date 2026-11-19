@@ -152,8 +152,9 @@ def home(request: Request, t: str | None = None):
                 secret=settings.stock_check_token_secret,
                 expected_branch=settings.stock_check_branch,
             )
-        except TokenError as exc:
-            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+        except TokenError:
+            # Expired/invalid ?t= — allow staff session / Tailscale to admit.
+            pass
         session_id = service.store.create_session(
             line_user_id=identity.line_user_id,
             display_name=identity.display_name,

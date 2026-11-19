@@ -113,8 +113,9 @@ def home(request: Request, t: str | None = None, site: str | None = None):
         try:
             ident = _verify_token(t)
             err = None
-        except TokenError as exc:
-            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+        except TokenError:
+            # Expired/invalid ?t= — allow staff session / Tailscale to admit.
+            pass
     if err and is_tailscale_cg_nat(_client_ip(request)):
         ident = _tailscale_identity()
         err = None

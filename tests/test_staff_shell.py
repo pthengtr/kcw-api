@@ -75,6 +75,45 @@ def test_staff_token_roundtrip():
     assert ident.app == STAFF_APP
 
 
+def test_entry_link_ttl_longer_than_session():
+    from src.staff_shell.auth import (
+        ENTRY_LINK_TTL_SECONDS,
+        entry_link_ttl_seconds,
+        identity_from_staff_cookie_for_app,
+        session_ttl_seconds,
+        set_staff_session_cookie,
+    )
+    from fastapi.responses import Response
+
+    assert session_ttl_seconds(900) == 86400
+    assert entry_link_ttl_seconds(900) == ENTRY_LINK_TTL_SECONDS
+    assert entry_link_ttl_seconds(900) > session_ttl_seconds(900)
+
+    resp = Response()
+    set_staff_session_cookie(
+        resp,
+        StockCheckIdentity(line_user_id="U1", display_name="Ann", branch="HQ"),
+        secret=SECRET,
+        ttl_seconds=3600,
+    )
+    cookie = resp.headers.get("set-cookie") or ""
+    # Fake cookie jar
+    class _C(dict):
+        pass
+
+    jar = _C()
+    # extract token value from Set-Cookie
+    assert STAFF_COOKIE in cookie
+    raw = cookie.split(";", 1)[0].split("=", 1)[1]
+    jar[STAFF_COOKIE] = raw
+    adapted = identity_from_staff_cookie_for_app(
+        jar, secret=SECRET, app="kcw-hq-po", expected_branch="HQ"
+    )
+    assert adapted is not None
+    assert adapted.line_user_id == "U1"
+    assert adapted.app == "kcw-hq-po"
+
+
 def test_entry_source_helpers():
     assert entry_source(had_staff_cookie=False, has_entry_token=True) == ("line", True)
     assert entry_source(had_staff_cookie=True, has_entry_token=True) == ("launcher", True)

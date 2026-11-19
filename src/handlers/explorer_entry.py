@@ -8,6 +8,8 @@ from src.handlers.branch_tool_links import (
     elevated_wifi_hint,
     is_elevated_access,
 )
+from src.staff_shell.auth import entry_link_ttl_seconds
+
 from src.jobs.heartbeat import get_all_worker_status
 from src.parts9_explorer.config import get_explorer_settings
 from src.parts9_explorer.ui import APP
@@ -46,7 +48,7 @@ def handle_explorer_command(
         line_user_id=line_user_id,
         display_name=display_name,
         secret=secret,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         path="/parts9/",
         lan_url_key="explorer_public_base_url",
         tailscale_url_key="explorer_tailscale_base_url",

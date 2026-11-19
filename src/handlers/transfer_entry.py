@@ -10,6 +10,8 @@ from src.handlers.branch_tool_links import (
     elevated_wifi_hint,
     is_elevated_access,
 )
+from src.staff_shell.auth import entry_link_ttl_seconds
+
 from src.jobs.hq_worker import filter_worker_status_rows
 from src.jobs.heartbeat import get_all_worker_status
 from src.transfer.config import get_transfer_settings
@@ -87,7 +89,7 @@ def handle_transfer_command(
         line_user_id=line_user_id,
         display_name=display_name,
         secret=secret,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         path="/transfer/",
         lan_url_key="transfer_public_base_url",
         tailscale_url_key="transfer_tailscale_base_url",

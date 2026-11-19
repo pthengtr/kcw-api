@@ -10,6 +10,8 @@ from src.handlers.branch_tool_links import (
     elevated_wifi_hint,
     is_elevated_access,
 )
+from src.staff_shell.auth import entry_link_ttl_seconds
+
 from src.hq_po.config import get_hq_po_settings
 from src.hq_po.ui import APP
 from src.jobs.hq_worker import filter_worker_status_rows
@@ -81,7 +83,7 @@ def handle_hq_po_command(
         line_user_id=line_user_id,
         display_name=display_name,
         secret=secret,
-        ttl_seconds=max(settings.stock_check_token_ttl_seconds, 86400),
+        ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         path="/hq-po/",
         lan_url_key="hq_po_public_base_url",
         tailscale_url_key="hq_po_tailscale_base_url",

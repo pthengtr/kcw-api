@@ -36,7 +36,7 @@ from src.hq_po.service import (
 from src.parts9_explorer.fifo import fifo_for_product, insight_avg_buy
 from src.parts9_explorer.insights import lookup_insight
 from src.parts9_explorer.ui import APP, SESSION_COOKIE, page
-from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
 from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.parts9_explorer.writes import (
     ExplorerWriteError,
@@ -128,9 +128,18 @@ def _identity_from_request(request: Request):
             )
         except TokenError:
             pass
+    staff = identity_from_staff_cookie_for_app(
+        request.cookies,
+        secret=settings.token_secret,
+        app=APP,
+        expected_branch=settings.site,
+    )
+    if staff is not None:
+        return staff
     if is_tailscale_cg_nat(_client_ip(request)):
         return None
     return False
+
 
 
 def _tailscale_identity():
@@ -243,8 +252,9 @@ def home(request: Request, t: str | None = None, site: str | None = None):
                 t, secret=settings.token_secret, expected_branch=settings.site, expected_app=APP
             )
             err = None
-        except TokenError as exc:
-            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+        except TokenError:
+            # Expired/invalid ?t= — allow staff session / Tailscale to admit.
+            pass
     if err and is_tailscale_cg_nat(_client_ip(request)):
         ident = _tailscale_identity()
         err = None

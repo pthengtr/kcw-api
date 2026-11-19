@@ -38,7 +38,7 @@ from src.hq_po.service import (
 )
 from src.hq_po.sheet import build_sheet_forms
 from src.hq_po.ui import APP, SESSION_COOKIE, page
-from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
 from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 from src.stock_check.net import is_tailscale_cg_nat
@@ -130,6 +130,15 @@ def _identity_from_request(request: Request):
             return _verify_token(token)
         except TokenError:
             continue
+    settings = _settings()
+    staff = identity_from_staff_cookie_for_app(
+        request.cookies,
+        secret=settings.token_secret,
+        app=APP,
+        expected_branch="HQ",
+    )
+    if staff is not None:
+        return staff
     if is_tailscale_cg_nat(_client_ip(request)):
         return None
     return False
@@ -223,8 +232,9 @@ def home(request: Request, t: str | None = None):
         try:
             ident = _verify_token(t)
             err = None
-        except TokenError as exc:
-            return HTMLResponse(f"<h1>ลิงก์ไม่ถูกต้อง</h1><p>{exc}</p>", status_code=401)
+        except TokenError:
+            # Expired/invalid ?t= — keep going so staff session / Tailscale can still admit.
+            pass
     if err and is_tailscale_cg_nat(_client_ip(request)):
         ident = _tailscale_identity()
         err = None

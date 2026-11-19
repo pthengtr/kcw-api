@@ -50,7 +50,7 @@ from src.receive_notes.storage import (
 from src.receive_notes.tiger import get_ar_attempt, list_ar_attempts_for_day
 from src.receive_notes.ui import APP, SESSION_COOKIE, page
 from src.receive_notes.writer import ReceiveNoteWriteError
-from src.staff_shell.auth import STAFF_COOKIE
+from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
 from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
@@ -93,9 +93,19 @@ def _identity_from_request(request: Request):
             return _verify_token(token)
         except TokenError:
             pass
+    settings = _settings()
+    staff = identity_from_staff_cookie_for_app(
+        request.cookies,
+        secret=settings.token_secret,
+        app=APP,
+        expected_branch=settings.site,
+    )
+    if staff is not None:
+        return staff
     if is_tailscale_cg_nat(_client_ip(request)):
         return None
     return False
+
 
 
 def _tailscale_identity():

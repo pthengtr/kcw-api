@@ -8,6 +8,8 @@ from src.handlers.branch_tool_links import (
     elevated_wifi_hint,
     is_elevated_access,
 )
+from src.staff_shell.auth import entry_link_ttl_seconds
+
 from src.jobs.heartbeat import get_all_worker_status
 from src.stock_check.config import get_stock_check_settings
 
@@ -60,7 +62,7 @@ def handle_companion_command(
         line_user_id=line_user_id,
         display_name=display_name,
         secret=settings.stock_check_token_secret,
-        ttl_seconds=settings.stock_check_token_ttl_seconds,
+        ttl_seconds=entry_link_ttl_seconds(settings.stock_check_token_ttl_seconds),
         path="/companion/",
         lan_url_key="companion_public_base_url",
         tailscale_url_key="companion_tailscale_base_url",
