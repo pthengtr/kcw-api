@@ -1,60 +1,69 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from src.pay_notes.baht_text import baht_text
+from src.pay_notes.noteno import noteno_meta
+from src.pay_notes.remark import resolve_remark_fields
 from src.receive_notes.company_banks import (
     DEFAULT_RECEIVE_BANK_KEY,
+    brdet_line_from_payment,
     list_company_receive_accounts,
+    resolve_company_receive_account,
 )
 from src.receive_notes.config import get_receive_notes_settings
 from src.receive_notes.db import (
-    daily_channel_totals,
-    get_receipt,
+    delete_note,
+    get_note,
     get_receive_notes_supabase_client,
-    list_notes,
-    list_receipts,
-    list_review_queue,
-    patch_receipt,
+    insert_note,
+    list_all_service_notes,
+    list_open_notes,
+    patch_note,
 )
 from src.receive_notes.net import is_tailscale_cg_nat
 from src.receive_notes.parts9 import (
     debtor_summary,
     get_note_header,
+    infer_settle_method,
+    list_bills_for_edit,
     list_brdet,
     list_note_bills,
     list_pending_notes,
     list_pickable_bills,
-    list_vouchered,
+    list_vouchered_notes,
     search_debtors,
-)
-from src.receive_notes.service import (
-    ReceiveServiceError,
-    complete_tiger_receipt,
-    create_note,
-    prepare_receive,
-    resync_receipt,
 )
 from src.receive_notes.storage import (
     list_folder,
     payment_image_prefix,
     public_url,
-    receipt_image_prefix,
+    remove_paths,
     safe_storage_filename,
     upload_bytes,
 )
-from src.receive_notes.tiger import get_ar_attempt, list_ar_attempts_for_day
 from src.receive_notes.ui import APP, SESSION_COOKIE, page
-from src.receive_notes.writer import ReceiveNoteWriteError
+from src.receive_notes.writer import (
+    ReceiveNoteWriteError,
+    cancel_unvouchered_receive_note,
+    create_receipt_voucher,
+    create_receive_note,
+    update_receive_note,
+)
 from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
 from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session, wire_shell
 from src.stock_check.auth import TokenError, mint_access_token, verify_access_token
 
 router = APIRouter(prefix="/receive-notes", tags=["receive-notes"])
+_BKK = ZoneInfo("Asia/Bangkok")
+
+NOTE_PAY_METHODS = ("transfer", "cheque")
 
 
 def _settings():
@@ -105,7 +114,6 @@ def _identity_from_request(request: Request):
     if is_tailscale_cg_nat(_client_ip(request)):
         return None
     return False
-
 
 
 def _tailscale_identity():
@@ -162,67 +170,257 @@ def _shell_identity(request: Request):
     return ident
 
 
-def _require_identity(request: Request):
-    return _shell_identity(request)
+def _require(request: Request):
+    settings = _settings()
+    if not settings.receive_notes_enabled:
+        return None, HTMLResponse("receive-notes disabled", status_code=404)
+    if not settings.token_secret:
+        return None, HTMLResponse("token secret missing", status_code=500)
+    ident = _identity_from_request(request)
+    if ident is False:
+        return None, HTMLResponse(
+            "<h1>ต้องเปิดลิงก์จาก LINE</h1><p>พิมพ์ รับชำระลูกหนี้ ในแชท</p>",
+            status_code=401,
+        )
+    if ident is None:
+        ident = _tailscale_identity()
+    return ident, None
 
 
-def _err(exc: Exception, status: int = 400) -> JSONResponse:
-    code = getattr(exc, "code", "error")
-    return JSONResponse({"ok": False, "error": str(exc), "code": code}, status_code=status)
+def _require_api(request: Request):
+    ident, err = _require(request)
+    if err:
+        return None, JSONResponse({"error": "unauthorized"}, status_code=401)
+    return ident, None
 
 
-class NoteCreateBody(BaseModel):
+class NoteCreate(BaseModel):
     acctno: str
-    acctname: str = ""
+    acctname: str
+    billnos: list[str] = Field(default_factory=list)
+    discount_mode: str = "amount"  # amount | percent
+    discount_input: float = 0.0
+    remark: str = ""
+    bill_month: str | None = None
+    remark_extra: str | None = None
+    settle_method: str = "transfer"  # transfer | cheque
+    due_date: str
+    confirm_unmapped: bool = False
+
+
+class NoteUpdate(BaseModel):
     billnos: list[str] = Field(default_factory=list)
     due_date: str | None = None
     remark: str | None = None
+    bill_month: str | None = None
+    remark_extra: str | None = None
+    discount_mode: str | None = None
+    discount_input: float | None = None
+    settle_method: str | None = None
 
 
-class ChannelBody(BaseModel):
-    settle_method: str
-    amount: float
-    chkno: str | None = None
-    chkdate: str | None = None
-    receive_bank_key: str | None = None
-    bankname: str | None = None
-
-
-class AllocBody(BaseModel):
-    billno: str
-    allocate_amt: float | None = None
-
-
-class ReceiveBody(BaseModel):
-    acctno: str
-    acctname: str = ""
-    allocations: list[AllocBody]
-    channels: list[ChannelBody]
-    discount: float = 0.0
-    noteno: str | None = None
+class ReminderPatch(BaseModel):
+    due_date: str | None = None
     remark: str | None = None
-    money_confirmed: bool = False
-    cash_mode: str | None = "tiger"
-    cash_manual_reason: str | None = None
+    bill_month: str | None = None
+    remark_extra: str | None = None
+    discount_mode: str | None = None
+    discount_input: float | None = None
+    settle_method: str | None = None
+
+
+class VoucherCreate(BaseModel):
+    acctno: str
+    noteno: str
+    # transfer | cheque | cash — drives CHKNO defaults; discount stays on overlay
+    settle_method: str = "transfer"
+    chkno: str = ""
+    chkamt: float
+    chkdate: str | None = None
+    pay_bank: str = DEFAULT_RECEIVE_BANK_KEY
+    receive_bank_key: str | None = None  # alias for pay_bank
+
+
+def _parse_due(raw: str) -> str:
+    """Calendar due date as YYYY-MM-DD (no timezone)."""
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("due_date required")
+    if "T" in text:
+        text = text.split("T", 1)[0]
+    return datetime.strptime(text[:10], "%Y-%m-%d").date().isoformat()
+
+
+def _normalize_note_pay_method(raw: str | None, *, default: str = "transfer") -> str:
+    """Intended settlement on a billing note: transfer | cheque (cash is voucher-only)."""
+    text = (raw if raw is not None else default) or default
+    method = text.strip().lower()
+    if method not in NOTE_PAY_METHODS:
+        raise ValueError("settle_method must be transfer or cheque")
+    return method
+
+
+def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str, float, float]:
+    m = (mode or "amount").strip().lower()
+    if m not in ("amount", "percent"):
+        m = "amount"
+    # Negative discount is allowed (acts as a surcharge, e.g. -0.01).
+    val = float(raw_input or 0)
+    bill = float(billamt or 0)
+    if m == "percent":
+        if val > 100:
+            raise ValueError("discount percent cannot exceed 100")
+        amount = round(bill * val / 100.0, 2)
+    else:
+        amount = round(val, 2)
+    if amount - bill > 1e-9:
+        raise ValueError("discount exceeds bill total")
+    return m, val, amount
+
+
+def _workflow_meta(*, voucno: str = "", has_proof: bool = False) -> dict[str, Any]:
+    vo = (voucno or "").strip()
+    if not vo:
+        return {
+            "stage": "pending",
+            "workflow_status": "รอรับชำระ",
+            "is_editable": True,
+        }
+    if not has_proof:
+        return {
+            "stage": "await_proof",
+            "workflow_status": "รอแนบหลักฐาน",
+            "is_editable": False,
+        }
+    return {
+        "stage": "voucher",
+        "workflow_status": "ใบสำคัญรับเงิน",
+        "is_editable": False,
+    }
+
+
+def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str, Any]:
+    voucno = (row.get("voucno") or row.get("VOUCNO") or "").strip()
+    stored = (row.get("noteno") or row.get("NOTENO") or "").strip()
+    return {**row, **_workflow_meta(voucno=voucno, has_proof=has_proof), **noteno_meta(stored)}
+
+
+def _issuer_label_for_identity(ident, *, confirm_unmapped: bool = False) -> str | JSONResponse:
+    """Resolve printable preparer name; 409 when staff profile is missing."""
+    from src.staff.errors import StaffMappingError
+    from src.staff.profiles import issuer_label_for_actor, require_staff_mapping
+
+    line_uid = (ident.line_user_id if ident else "") or ""
+    display = (ident.display_name if ident else "") or ""
+    try:
+        mapped = require_staff_mapping(line_uid, display)
+        if mapped.get("issuer_label"):
+            return str(mapped["issuer_label"])
+    except StaffMappingError as exc:
+        if not confirm_unmapped:
+            return JSONResponse(
+                {"error": exc.message, "code": exc.code},
+                status_code=exc.status,
+            )
+    return issuer_label_for_actor(line_user_id=line_uid, display_name=display)
+
+
+def _enrich_note_issuer(rem: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Prefer snapshotted issuer_label; fall back via created_by LINE user id."""
+    if not rem:
+        return rem
+    out = dict(rem)
+    if str(out.get("issuer_label") or "").strip():
+        return out
+    from src.staff.profiles import issuer_label_for_actor
+
+    label = issuer_label_for_actor(line_user_id=str(out.get("created_by") or ""))
+    if label:
+        out["issuer_label"] = label
+    return out
+
+
+def _note_totals(header: dict[str, Any], reminder: dict[str, Any] | None) -> dict[str, Any]:
+    billamt = float(header.get("BILLAMT") or 0)
+    voucno = (header.get("voucno") or header.get("VOUCNO") or "").strip()
+    rem = reminder or {}
+    if voucno:
+        disc = float(header.get("DISCOUNT") or rem.get("discount_amount") or 0)
+        net = float(header.get("NETAMT") or 0) or round(billamt - disc, 2)
+    else:
+        disc = float(rem.get("discount_amount") or 0)
+        net = round(billamt - disc, 2)
+    return {
+        "billcnt": int(header.get("BILLCNT") or 0),
+        "billamt": billamt,
+        "discount": disc,
+        "netamt": net,
+        "net_text": baht_text(net),
+    }
+
+
+def _list_voucher_payments(site: str, voucno: str) -> list[dict[str, Any]]:
+    rows = list_brdet(site, voucno)
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["settle_method"] = infer_settle_method(item.get("CHKNO"))
+        out.append(item)
+    return out
+
+
+def _note_detail_response(settings, acctno: str, noteno: str):
+    header = get_note_header(settings.site, acctno, noteno)
+    if not header:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    client = get_receive_notes_supabase_client()
+    rem = get_note(client, acctno, noteno)
+    rem = _enrich_note_issuer(rem)
+    proofs: list[dict[str, Any]] = []
+    voucno = (header.get("voucno") or "").strip()
+    if voucno:
+        proofs = list_folder(client, payment_image_prefix(voucno))
+    try:
+        bills = list_note_bills(settings.site, acctno, noteno)
+        payments = _list_voucher_payments(settings.site, voucno) if voucno else []
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    totals = _note_totals(header, rem)
+    return {
+        "header": header,
+        "bills": bills,
+        "payments": payments,
+        "reminder": rem,
+        "totals": totals,
+        "bill_images": [],
+        "payment_images": proofs,
+        "banks": [],
+        **noteno_meta(noteno),
+    }
 
 
 @router.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def home(request: Request, t: str | None = None):
     settings = _settings()
-    if not settings.receive_notes_enabled:
-        return HTMLResponse("receive-notes disabled", status_code=503)
-    ident = _identity_from_request(request)
-    has_token = bool(request.query_params.get("t"))
-    if ident is False:
-        return HTMLResponse("unauthorized — open from LINE or Tailscale", status_code=401)
-    if ident is None:
+    ident, err = _require(request)
+    if err and t:
+        try:
+            ident = _verify_token(t)
+            err = None
+        except TokenError:
+            pass
+    if err and is_tailscale_cg_nat(_client_ip(request)):
         ident = _tailscale_identity()
-    name = ident.display_name or ident.line_user_id
+        err = None
+    if err:
+        return err
+    name = ident.display_name if ident else "operator"
     html = shell_page(
         page(
             user_name=name,
             site=settings.site,
             write_enabled=settings.receive_notes_write_enabled,
+            ai_enabled=False,
         ),
         service_id="receive-notes",
         api_base="/receive-notes/_shell",
@@ -230,8 +428,8 @@ def index(request: Request):
         branch=settings.site,
     )
     resp = HTMLResponse(html)
-    if ident.line_user_id != "tailscale":
-        _set_session(resp, ident, request=request, has_entry_token=has_token)
+    if ident and ident.line_user_id != "tailscale":
+        _set_session(resp, ident, request=request, has_entry_token=bool(t))
     return resp
 
 
@@ -258,295 +456,687 @@ def api_health():
     }
 
 
-@router.get("/api/company-receive-accounts")
-def api_company_banks(request: Request):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    return {
-        "ok": True,
-        "accounts": list_company_receive_accounts(),
-        "default": DEFAULT_RECEIVE_BANK_KEY,
-    }
-
-
+@router.get("/api/vendors")
 @router.get("/api/debtors")
 def api_debtors(request: Request, q: str = ""):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
+    _, err = _require_api(request)
+    if err:
+        return err
     settings = _settings()
     try:
         rows = search_debtors(settings.site, q)
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, "debtors": rows}
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    return rows
 
 
 @router.get("/api/bills")
-def api_bills(request: Request, acctno: str = ""):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
+def api_bills(request: Request, acctno: str = "", noteno: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
     settings = _settings()
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct:
+        return []
     try:
-        rows = list_pickable_bills(settings.site, acctno)
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, "bills": rows}
+        if note:
+            rows = list_bills_for_edit(settings.site, acct, note)
+        else:
+            rows = list_pickable_bills(settings.site, acct, include_noted=False)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    return rows
+
+
+@router.get("/api/company-receive-accounts")
+@router.get("/api/company-pay-accounts")
+def api_company_receive_accounts(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    return list_company_receive_accounts()
+
+
+@router.get("/api/banks")
+def api_banks(request: Request, acctno: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
+    _ = acctno
+    return []
 
 
 @router.get("/api/debtor-summary")
 def api_debtor_summary(request: Request, acctno: str = ""):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
+    _, err = _require_api(request)
+    if err:
+        return err
     settings = _settings()
     try:
         data = debtor_summary(settings.site, acctno)
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, **data}
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    return data
 
 
-@router.get("/api/pending-notes")
-def api_pending_notes(request: Request):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
+@router.get("/api/pending")
+def api_pending(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
     settings = _settings()
+    client = get_receive_notes_supabase_client()
+    overlays = list_open_notes(client)
     try:
-        rows = list_pending_notes(settings.site)
-        overlay = {f"{n['acctno']}|{n['noteno']}": n for n in list_notes(get_receive_notes_supabase_client())}
-        for row in rows:
-            key = f"{row['acctno']}|{row['noteno']}"
-            row["overlay"] = overlay.get(key)
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, "notes": rows}
+        rows = list_pending_notes(settings.site, overlays)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    out = []
+    for row in rows:
+        out.append(_with_workflow({**row, "stage": "pending"}))
+    return out
 
 
-@router.get("/api/notes/detail")
-def api_note_detail(request: Request, acctno: str = "", noteno: str = ""):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    settings = _settings()
-    try:
+@router.patch("/api/reminder")
+def api_reminder_patch(request: Request, acctno: str, noteno: str, body: ReminderPatch):
+    _, err = _require_api(request)
+    if err:
+        return err
+    client = get_receive_notes_supabase_client()
+    existing = get_note(client, acctno, noteno) or {}
+    if not existing:
+        return JSONResponse({"error": "note overlay not found"}, status_code=404)
+    patch: dict[str, Any] = {}
+    if body.due_date:
+        try:
+            patch["due_date"] = _parse_due(body.due_date)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+    if body.remark is not None or body.bill_month is not None or body.remark_extra is not None:
+        rem_fields = resolve_remark_fields(
+            acctno,
+            bill_month=body.bill_month,
+            remark_extra=body.remark_extra,
+            remark=body.remark,
+            existing=existing,
+        )
+        patch.update(rem_fields)
+    if body.settle_method is not None:
+        try:
+            method = _normalize_note_pay_method(body.settle_method)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        patch["settle_method"] = method
+    if body.discount_mode is not None or body.discount_input is not None:
+        settings = _settings()
         header = get_note_header(settings.site, acctno, noteno)
-        bills = list_note_bills(settings.site, acctno, noteno)
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, "header": header, "bills": bills}
+        billamt = float((header or {}).get("BILLAMT") or 0)
+        mode = body.discount_mode if body.discount_mode is not None else existing.get("discount_mode", "amount")
+        raw = body.discount_input if body.discount_input is not None else existing.get("discount_input", 0)
+        try:
+            discount_mode, discount_input, discount_amount = _resolve_discount(
+                billamt, mode, float(raw or 0)
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+        patch["discount_mode"] = discount_mode
+        patch["discount_input"] = discount_input
+        patch["discount_amount"] = discount_amount
+    if not patch:
+        return existing
+    return patch_note(client, acctno, noteno, patch)
 
 
 @router.post("/api/notes")
-def api_create_note(request: Request, body: NoteCreateBody):
-    ident = _require_identity(request)
-    if not ident:
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    try:
-        result = create_note(
-            acctno=body.acctno,
-            acctname=body.acctname,
-            billnos=body.billnos,
-            due_date=body.due_date,
-            remark=body.remark,
-            operator=ident.display_name or ident.line_user_id,
-        )
-    except (ReceiveNoteWriteError, ReceiveServiceError) as exc:
-        return _err(exc)
-    return {"ok": True, **result}
-
-
-@router.post("/api/receive")
-def api_receive(request: Request, body: ReceiveBody):
-    ident = _require_identity(request)
-    if not ident:
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    try:
-        result = prepare_receive(
-            acctno=body.acctno,
-            acctname=body.acctname,
-            allocations=[a.model_dump() for a in body.allocations],
-            channels=[c.model_dump() for c in body.channels],
-            discount=body.discount,
-            noteno=body.noteno,
-            remark=body.remark,
-            money_confirmed=body.money_confirmed,
-            cash_mode=body.cash_mode,
-            cash_manual_reason=body.cash_manual_reason,
-            operator=ident.display_name or ident.line_user_id,
-        )
-    except (ReceiveServiceError, ReceiveNoteWriteError, ValueError) as exc:
-        return _err(exc)
-    return {"ok": True, **result}
-
-
-@router.get("/api/review")
-def api_review(request: Request):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    try:
-        rows = list_review_queue(get_receive_notes_supabase_client())
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, "items": rows}
-
-
-@router.get("/api/receipts")
-def api_receipts(
-    request: Request,
-    received_at: str | None = None,
-    acctno: str | None = None,
-    workflow_status: str | None = None,
-):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    try:
-        rows = list_receipts(
-            get_receive_notes_supabase_client(),
-            received_at=received_at,
-            acctno=acctno,
-            workflow_status=workflow_status,
-        )
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, "receipts": rows}
-
-
-@router.get("/api/receipts/{receipt_id}")
-def api_receipt_detail(request: Request, receipt_id: str):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    row = get_receipt(get_receive_notes_supabase_client(), receipt_id)
-    if not row:
-        return _err(ReceiveServiceError("not found", code="not_found"), 404)
+def api_create_note(request: Request, body: NoteCreate):
+    ident, err = _require_api(request)
+    if err:
+        return err
     settings = _settings()
-    brdet = list_brdet(settings.site, row.get("voucno") or "") if row.get("voucno") else []
-    tiger = get_ar_attempt(receipt_id)
-    return {"ok": True, "receipt": row, "brdet": brdet, "tiger": tiger}
-
-
-@router.get("/api/receipts/{receipt_id}/tiger")
-def api_receipt_tiger(request: Request, receipt_id: str):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    return {"ok": True, "attempt": get_ar_attempt(receipt_id)}
-
-
-@router.post("/api/receipts/{receipt_id}/complete-tiger")
-def api_complete_tiger(request: Request, receipt_id: str):
-    ident = _require_identity(request)
-    if not ident:
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
+    acct = body.acctno.strip()
+    if not body.billnos:
+        return JSONResponse({"error": "select at least one bill"}, status_code=400)
     try:
-        result = complete_tiger_receipt(
-            receipt_id=receipt_id,
-            operator=ident.display_name or ident.line_user_id,
-        )
-    except ReceiveServiceError as exc:
-        return _err(exc)
-    return {"ok": True, **result}
+        settle_method = _normalize_note_pay_method(body.settle_method)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
 
+    issuer_label = _issuer_label_for_identity(
+        ident, confirm_unmapped=bool(body.confirm_unmapped)
+    )
+    if isinstance(issuer_label, JSONResponse):
+        return issuer_label
 
-@router.post("/api/receipts/{receipt_id}/resync")
-def api_resync(request: Request, receipt_id: str):
-    ident = _require_identity(request)
-    if not ident:
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
     try:
-        result = resync_receipt(
-            receipt_id=receipt_id,
-            operator=ident.display_name or ident.line_user_id,
+        due = _parse_due(body.due_date)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+
+    # KSS + Supabase cannot share one ACID tx. Write KSS first, then overlay;
+    # if overlay fails, compensate by canceling the unvouchered KSS note.
+    try:
+        kss = create_receive_note(
+            settings=settings,
+            acctno=acct,
+            acctname=body.acctname.strip(),
+            billnos=body.billnos,
+            operator=ident.display_name if ident else None,
         )
-    except ReceiveServiceError as exc:
-        return _err(exc)
-    return {"ok": True, **result}
+    except ReceiveNoteWriteError as exc:
+        status = 403 if exc.code == "write_disabled" else 400
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
 
+    note = str(kss.get("noteno") or "").strip()
+    billamt = float(kss.get("billamt") or 0)
+    try:
+        discount_mode, discount_input, discount_amount = _resolve_discount(
+            billamt, body.discount_mode, body.discount_input
+        )
+    except ValueError as exc:
+        try:
+            cancel_unvouchered_receive_note(settings=settings, acctno=acct, noteno=note)
+        except Exception:
+            pass
+        return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
 
-@router.post("/api/receipts/{receipt_id}/confirm-money")
-def api_confirm_money(request: Request, receipt_id: str):
-    ident = _require_identity(request)
-    if not ident:
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
+    rem_fields = resolve_remark_fields(
+        acct,
+        bill_month=body.bill_month,
+        remark_extra=body.remark_extra,
+        remark=body.remark,
+    )
+    rem_row: dict[str, Any] = {
+        "acctno": acct,
+        "noteno": note,
+        "jourmode": str(kss.get("jourmode") or "1"),
+        "due_date": due,
+        "discount_mode": discount_mode,
+        "discount_input": discount_input,
+        "discount_amount": discount_amount,
+        "settle_method": settle_method,
+        "status": "open",
+        **rem_fields,
+        "created_by": ident.line_user_id if ident else None,
+        "issuer_label": issuer_label or None,
+    }
     client = get_receive_notes_supabase_client()
-    receipt = get_receipt(client, receipt_id)
-    if not receipt:
-        return _err(ReceiveServiceError("not found", code="not_found"), 404)
-    patch_receipt(client, receipt_id, {"money_confirmed": True, "proof_status": "awaiting", "workflow_status": "awaiting_proof"})
     try:
-        result = resync_receipt(
-            receipt_id=receipt_id,
-            operator=ident.display_name or ident.line_user_id,
+        rem = insert_note(client, rem_row)
+    except Exception as exc:
+        rolled_back = False
+        rollback_error = None
+        try:
+            cancel_unvouchered_receive_note(settings=settings, acctno=acct, noteno=note)
+            rolled_back = True
+        except Exception as cancel_exc:
+            rollback_error = str(cancel_exc)
+        payload = {
+            "error": f"overlay failed: {exc}",
+            "code": "reminder_failed",
+            "noteno": note,
+            "kss_rolled_back": rolled_back,
+        }
+        if rollback_error:
+            payload["kss_rollback_error"] = rollback_error
+        return JSONResponse(payload, status_code=500)
+    return {**kss, "reminder": rem, **noteno_meta(note)}
+
+
+@router.get("/api/notes")
+def api_list_notes(request: Request, acctno: str = "", noteno: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
+    if (noteno or "").strip():
+        acct = (acctno or "").strip()
+        if not acct:
+            return JSONResponse({"error": "acctno required with noteno"}, status_code=400)
+        settings = _settings()
+        return _note_detail_response(settings, acct, noteno.strip())
+    settings = _settings()
+    client = get_receive_notes_supabase_client()
+    overlays = list_all_service_notes(client)
+    if acctno.strip():
+        acct = acctno.strip()
+        overlays = [r for r in overlays if (r.get("acctno") or "").strip() == acct]
+    open_overlays = [r for r in overlays if str(r.get("status") or "open") == "open"]
+    try:
+        pending = list_pending_notes(settings.site, open_overlays)
+        vouchered = list_vouchered_notes(settings.site, overlays)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in pending:
+        key = (row.get("acctno", "").strip(), row.get("noteno", "").strip())
+        seen.add(key)
+        out.append(_with_workflow(row))
+    for row in vouchered:
+        key = (row.get("acctno", "").strip(), row.get("noteno", "").strip())
+        if key in seen:
+            continue
+        voucno = (row.get("voucno") or "").strip()
+        proofs = list_folder(client, payment_image_prefix(voucno)) if voucno else []
+        has_proof = bool(proofs)
+        out.append(
+            _with_workflow(
+                {**row, "has_proof": has_proof, "payment_images": proofs},
+                has_proof=has_proof,
+            )
         )
-    except ReceiveServiceError as exc:
-        return _err(exc)
-    return {"ok": True, **result}
+    out.sort(
+        key=lambda x: (
+            (x.get("reminder") or {}).get("due_date") or "",
+            x.get("noteno") or "",
+        )
+    )
+    return out
+
+
+@router.patch("/api/notes")
+def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    acct = acctno.strip()
+    note = noteno.strip()
+    if not body.billnos:
+        return JSONResponse({"error": "select at least one bill"}, status_code=400)
+
+    client = get_receive_notes_supabase_client()
+    rem = get_note(client, acct, note)
+    if not rem:
+        return JSONResponse({"error": "reminder not found"}, status_code=404)
+
+    header = get_note_header(settings.site, acct, note)
+    if not header:
+        return JSONResponse({"error": "note not found in KSS"}, status_code=404)
+    if (header.get("voucno") or "").strip() or str(header.get("VOUCED") or "N").strip().upper() == "Y":
+        return JSONResponse({"error": "note is not editable", "code": "not_editable"}, status_code=409)
+
+    try:
+        kss = update_receive_note(
+            settings=settings,
+            acctno=acct,
+            noteno=note,
+            billnos=body.billnos,
+            operator=ident.display_name if ident else None,
+        )
+    except ReceiveNoteWriteError as exc:
+        status = 409 if exc.code == "not_editable" else 400
+        if exc.code == "write_disabled":
+            status = 403
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+    billamt = float(kss.get("billamt") or 0)
+    patch: dict[str, Any] = {}
+    if body.due_date:
+        try:
+            patch["due_date"] = _parse_due(body.due_date)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+    if body.remark is not None or body.bill_month is not None or body.remark_extra is not None:
+        rem_fields = resolve_remark_fields(
+            acct,
+            bill_month=body.bill_month,
+            remark_extra=body.remark_extra,
+            remark=body.remark,
+            existing=rem,
+        )
+        patch.update(rem_fields)
+    if body.settle_method is not None:
+        try:
+            method = _normalize_note_pay_method(body.settle_method)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+        patch["settle_method"] = method
+    if body.discount_mode is not None or body.discount_input is not None:
+        mode = body.discount_mode if body.discount_mode is not None else rem.get("discount_mode", "amount")
+        raw = body.discount_input if body.discount_input is not None else rem.get("discount_input", 0)
+        try:
+            discount_mode, discount_input, discount_amount = _resolve_discount(
+                billamt, mode, float(raw or 0)
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+        patch["discount_mode"] = discount_mode
+        patch["discount_input"] = discount_input
+        patch["discount_amount"] = discount_amount
+
+    updated = patch_note(client, acct, note, patch) if patch else rem
+    return {**kss, "reminder": updated, **_workflow_meta()}
+
+
+@router.delete("/api/notes")
+def api_cancel_note(request: Request, acctno: str = "", noteno: str = ""):
+    """Soft-cancel an unpaid (unvouchered) note: CANCELED='Y' + free bills + drop overlay."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return JSONResponse({"error": "acctno and noteno required"}, status_code=400)
+
+    client = get_receive_notes_supabase_client()
+    rem = get_note(client, acct, note)
+    header = get_note_header(settings.site, acct, note)
+
+    if header:
+        if (header.get("voucno") or "").strip() or str(header.get("VOUCED") or "N").strip().upper() == "Y":
+            return JSONResponse(
+                {"error": "cannot cancel vouchered note", "code": "already_vouchered"},
+                status_code=409,
+            )
+    elif not rem:
+        return JSONResponse({"error": "note not found"}, status_code=404)
+
+    kss_result: dict[str, Any] = {"canceled": False, "reason": "not_in_kss"}
+    if header:
+        try:
+            kss_result = cancel_unvouchered_receive_note(
+                settings=settings, acctno=acct, noteno=note
+            )
+        except ReceiveNoteWriteError as exc:
+            status = 409 if exc.code in ("already_vouchered", "not_editable") else 400
+            if exc.code == "write_disabled":
+                status = 403
+            return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+    reminder_deleted = False
+    try:
+        if rem:
+            delete_note(client, acct, note)
+            reminder_deleted = True
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "error": f"KSS canceled but overlay delete failed: {exc}",
+                "code": "reminder_delete_failed",
+                "acctno": acct,
+                "noteno": note,
+                "kss": kss_result,
+            },
+            status_code=500,
+        )
+
+    return {
+        "acctno": acct,
+        "noteno": note,
+        "canceled": bool(kss_result.get("canceled")) or not header,
+        "kss": kss_result,
+        "reminder_deleted": reminder_deleted,
+        "images_removed": 0,
+    }
+
+
+@router.post("/api/vouchers")
+def api_create_voucher(request: Request, body: VoucherCreate):
+    """Record receipt voucher: discount from overlay; operator enters CHKNO/CHKAMT."""
+    ident, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    acct = body.acctno.strip()
+    note = body.noteno.strip()
+    client = get_receive_notes_supabase_client()
+    rem = get_note(client, acct, note)
+    if not rem:
+        return JSONResponse({"error": "reminder not found for this note"}, status_code=404)
+
+    header = get_note_header(settings.site, acct, note)
+    if not header:
+        return JSONResponse({"error": "note not found in KSS"}, status_code=404)
+    if (header.get("voucno") or "").strip() or str(header.get("VOUCED") or "N").strip().upper() == "Y":
+        return JSONResponse(
+            {"error": "note already vouchered", "code": "already_vouchered"},
+            status_code=409,
+        )
+
+    billamt = float(header.get("BILLAMT") or 0)
+    disc = float(rem.get("discount_amount") or 0)
+    if disc - billamt > 1e-9:
+        return JSONResponse({"error": "stored discount invalid"}, status_code=400)
+    net = round(billamt - disc, 2)
+
+    method = (body.settle_method or "transfer").strip().lower()
+    if method not in ("transfer", "cheque", "cash"):
+        method = "transfer"
+    chkno = (body.chkno or "").strip()
+    if method == "transfer" and not chkno:
+        chkno = "โอน"
+    if method == "cheque" and not chkno:
+        return JSONResponse({"error": "cheque number (CHKNO) required"}, status_code=400)
+
+    try:
+        chkamt = float(body.chkamt)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "CHKAMT required"}, status_code=400)
+    if chkamt <= 0 and net > 1e-9:
+        return JSONResponse({"error": "CHKAMT must be > 0"}, status_code=400)
+    if chkamt - net > 0.01:
+        return JSONResponse(
+            {"error": f"CHKAMT ({chkamt}) exceeds net payable ({net})"},
+            status_code=400,
+        )
+
+    pay_bank_key = (
+        (body.pay_bank or "").strip()
+        or (body.receive_bank_key or "").strip()
+        or DEFAULT_RECEIVE_BANK_KEY
+    )
+    chkdate = (body.chkdate or "").strip() or datetime.now(_BKK).date().isoformat()
+
+    try:
+        bills = list_note_bills(settings.site, acct, note)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    if not bills:
+        return JSONResponse({"error": "no bills on note"}, status_code=400)
+    bill_allocations = [
+        {
+            "billno": str(b.get("BILLNO") or "").strip(),
+            "allocate_amt": float(b.get("AFTERTAX") or 0),
+        }
+        for b in bills
+        if str(b.get("BILLNO") or "").strip()
+    ]
+
+    brdet_lines: list[dict[str, Any]] = []
+    if chkamt > 1e-9:
+        try:
+            brdet_lines = [
+                brdet_line_from_payment(
+                    settle_method=method,
+                    chkno=chkno,
+                    chkamt=chkamt,
+                    chkdate=chkdate,
+                    receive_bank_key=pay_bank_key,
+                )
+            ]
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    acctname = str(header.get("acctname") or header.get("ACCTNAME") or "").strip()
+    try:
+        result = create_receipt_voucher(
+            settings=settings,
+            acctno=acct,
+            acctname=acctname,
+            bill_allocations=bill_allocations,
+            brdet_lines=brdet_lines,
+            discount=disc,
+            noteno=note,
+            operator=ident.display_name if ident else None,
+        )
+    except ReceiveNoteWriteError as exc:
+        status = 409 if exc.code == "already_vouchered" else 400
+        if exc.code == "write_disabled":
+            status = 403
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+    recv_acct = resolve_company_receive_account(pay_bank_key)
+    rem = patch_note(
+        client,
+        acct,
+        note,
+        {
+            "status": "received",
+            "settle_method": method,
+        },
+    )
+    return {
+        **result,
+        "reminder": rem,
+        "settle_method": method,
+        "pay_bank": recv_acct["key"],
+        "receive_bank_key": recv_acct["key"],
+    }
+
+
+@router.get("/api/vouchered")
+def api_vouchered(request: Request, proof: str = "all"):
+    """Vouchered notes from this service. proof=awaiting|done|all."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    client = get_receive_notes_supabase_client()
+    overlays = list_all_service_notes(client)
+    try:
+        rows = list_vouchered_notes(settings.site, overlays)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    mode = (proof or "all").strip().lower()
+    if mode not in ("all", "awaiting", "done"):
+        mode = "all"
+    out = []
+    for row in rows:
+        voucno = (row.get("voucno") or "").strip()
+        proofs = list_folder(client, payment_image_prefix(voucno)) if voucno else []
+        has_proof = bool(proofs)
+        if mode == "awaiting" and has_proof:
+            continue
+        if mode == "done" and not has_proof:
+            continue
+        out.append(
+            _with_workflow(
+                {**row, "payment_images": proofs, "has_proof": has_proof},
+                has_proof=has_proof,
+            )
+        )
+    return out
 
 
 @router.post("/api/images/payment")
-async def api_upload_payment(
+async def api_upload_payment_image(
     request: Request,
-    voucno: str = Form(""),
-    receipt_id: str = Form(""),
+    voucno: str = Form(...),
     file: UploadFile = File(...),
 ):
-    ident = _require_identity(request)
-    if not ident:
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    client = get_receive_notes_supabase_client()
+    _, err = _require_api(request)
+    if err:
+        return err
     data = await file.read()
-    name = safe_storage_filename(file.filename)
-    if voucno.strip():
-        prefix = payment_image_prefix(voucno.strip())
-    elif receipt_id.strip():
-        prefix = receipt_image_prefix(receipt_id.strip())
-    else:
-        return _err(ReceiveServiceError("voucno or receipt_id required", code="validation"))
+    if not data:
+        return JSONResponse({"error": "empty file"}, status_code=400)
+    vo = voucno.strip()
+    if not vo:
+        return JSONResponse({"error": "voucno required"}, status_code=400)
+    prefix = payment_image_prefix(vo)
+    name = safe_storage_filename(file.filename, default="proof.jpg")
     path = f"{prefix}/{name}"
-    upload_bytes(client, path=path, data=data, content_type=file.content_type)
-    if receipt_id.strip():
-        patch_receipt(
+    client = get_receive_notes_supabase_client()
+    try:
+        upload_bytes(
             client,
-            receipt_id.strip(),
-            {"proof_status": "attached", "workflow_status": "done"},
+            path=path,
+            data=data,
+            content_type=file.content_type or "image/jpeg",
         )
-    elif voucno.strip():
-        # match by voucno
-        from src.receive_notes.db import get_receipt_by_voucno
-
-        row = get_receipt_by_voucno(client, voucno.strip())
-        if row:
-            patch_receipt(client, row["id"], {"proof_status": "attached", "workflow_status": "done"})
-    return {"ok": True, "path": path, "url": public_url(path)}
+    except Exception as exc:
+        return JSONResponse({"error": "upload failed", "detail": str(exc)}, status_code=400)
+    return {"path": path, "url": public_url(path)}
 
 
 @router.get("/api/images/payment")
-def api_list_payment_images(request: Request, voucno: str = "", receipt_id: str = ""):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
+def api_list_payment_images(request: Request, voucno: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
     client = get_receive_notes_supabase_client()
-    if voucno.strip():
-        prefix = payment_image_prefix(voucno.strip())
-    elif receipt_id.strip():
-        prefix = receipt_image_prefix(receipt_id.strip())
-    else:
-        return _err(ReceiveServiceError("voucno or receipt_id required", code="validation"))
-    items = list_folder(client, prefix)
-    for item in items:
-        item["url"] = public_url(item.get("path") or "")
-    return {"ok": True, "images": items}
+    return list_folder(client, payment_image_prefix(voucno))
 
 
-@router.get("/api/reports/daily")
-def api_daily_report(request: Request, received_at: str | None = None):
-    if not _require_identity(request):
-        return _err(ReceiveServiceError("unauthorized", code="unauthorized"), 401)
-    day = (received_at or date.today().isoformat()).strip()
+@router.delete("/api/images/payment")
+def api_delete_payment_image(request: Request, voucno: str = "", path: str = ""):
+    """Remove one payment proof image. Refuses if it would leave the voucher with no image."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    vo = (voucno or "").strip()
+    rel = (path or "").strip().lstrip("/")
+    if not vo:
+        return JSONResponse({"error": "voucno required"}, status_code=400)
+    if not rel:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    prefix = payment_image_prefix(vo).strip("/")
+    if not (rel == prefix or rel.startswith(prefix + "/")):
+        return JSONResponse({"error": "path not under this voucher"}, status_code=400)
     client = get_receive_notes_supabase_client()
-    try:
-        totals = daily_channel_totals(client, day)
-        tiger = list_ar_attempts_for_day(day)
-        kss = [
-            v
-            for v in list_vouchered(_settings().site, limit=300, days=3)
-            if str(v.get("VOUCDATE") or v.get("voucdate") or "")[:10] == day
-        ]
-    except Exception as exc:
-        return _err(exc, 500)
-    return {"ok": True, "totals": totals, "tiger_attempts": tiger, "kss_vouchers": kss}
+    existing = list_folder(client, prefix)
+    if not any((item.get("path") or "").lstrip("/") == rel for item in existing):
+        return JSONResponse({"error": "image not found"}, status_code=404)
+    if len(existing) <= 1:
+        return JSONResponse(
+            {"error": "cannot remove last payment image", "code": "last_image"},
+            status_code=400,
+        )
+    remove_paths(client, [rel])
+    remaining = list_folder(client, prefix)
+    return {"deleted": rel, "remaining": remaining, "has_proof": bool(remaining)}
+
+
+@router.delete("/api/images/bill")
+def api_delete_bill_image(
+    request: Request,
+    acctno: str = "",
+    noteno: str = "",
+    path: str = "",
+):
+    """AR create does not use bill images — no-op for forked UI."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    _ = (acctno, noteno, path)
+    return {"deleted": path or "", "remaining": []}
+
+
+@router.get("/api/images/bill")
+def api_list_bill_images(request: Request, acctno: str = "", noteno: str = ""):
+    _, err = _require_api(request)
+    if err:
+        return err
+    _ = (acctno, noteno)
+    return []
+
+
+@router.post("/api/ai/verify-payment")
+async def api_ai_verify_payment(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    return JSONResponse({"error": "ai_disabled", "code": "ai_disabled"}, status_code=503)
+
+
+@router.post("/api/ai/scan-bills")
+async def api_ai_scan_bills(request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    return JSONResponse({"error": "ai_disabled", "code": "ai_disabled"}, status_code=503)

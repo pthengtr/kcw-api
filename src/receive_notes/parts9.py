@@ -204,9 +204,14 @@ def get_note_header(
     sql = text(
         """
         SELECT TOP 1
-          ID, JOURMODE, JOURTYPE, NOTED, NOTEDATE, NOTENO,
-          VOUCED, VOUCDATE, VOUCNO, RCPTNO,
-          ACCTNO, ACCTNAME, BILLCNT, BILLAMT, DISCOUNT, NETAMT, PAYAMT,
+          ID, JOURMODE, JOURTYPE, NOTED, NOTEDATE,
+          LTRIM(RTRIM(NOTENO)) AS noteno,
+          VOUCED, VOUCDATE,
+          LTRIM(RTRIM(COALESCE(VOUCNO, ''))) AS voucno,
+          RCPTNO,
+          LTRIM(RTRIM(ACCTNO)) AS acctno,
+          LTRIM(RTRIM(ACCTNAME)) AS acctname,
+          BILLCNT, BILLAMT, DISCOUNT, NETAMT, PAYAMT,
           CHKAMT, CASHAMT, PAID, CANCELED
         FROM dbo.RVMAS
         WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
@@ -260,7 +265,8 @@ def get_voucher_header(
     return item
 
 
-def list_pending_notes(site: str, *, limit: int = 200) -> list[dict[str, Any]]:
+def list_pending_notes_raw(site: str, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Unvouchered RVMAS notes (no overlay merge)."""
     eng = get_site_engine(_site_key(site))
     sql = text(
         """
@@ -288,6 +294,72 @@ def list_pending_notes(site: str, *, limit: int = 200) -> list[dict[str, Any]]:
         item["BILLAMT"] = _to_float(item.get("BILLAMT"))
         out.append(item)
     return out
+
+
+def list_pending_notes(site: str, overlays: list[dict[str, Any]] | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Inner join KSS RVMAS with receive_note.note overlay rows (AP-style).
+
+    When overlays is None, returns raw KSS pending (legacy).
+    """
+    if overlays is None:
+        return list_pending_notes_raw(site, limit=limit)
+    if not overlays:
+        return []
+    eng = get_site_engine(_site_key(site))
+    keys = [
+        (r["acctno"].strip(), r["noteno"].strip())
+        for r in overlays
+        if r.get("acctno") and r.get("noteno") and str(r.get("status") or "open") == "open"
+    ]
+    if not keys:
+        return []
+    clauses = []
+    params: dict[str, Any] = {}
+    for i, (acct, note) in enumerate(keys):
+        clauses.append(f"(LTRIM(RTRIM(ACCTNO)) = :a{i} AND LTRIM(RTRIM(NOTENO)) = :n{i})")
+        params[f"a{i}"] = acct
+        params[f"n{i}"] = note
+    where = " OR ".join(clauses)
+    sql = text(
+        f"""
+        SELECT LTRIM(RTRIM(ACCTNO)) AS acctno,
+               LTRIM(RTRIM(ACCTNAME)) AS acctname,
+               LTRIM(RTRIM(NOTENO)) AS noteno,
+               NOTEDATE, BILLCNT, BILLAMT, VOUCED, VOUCNO, JOURMODE
+        FROM dbo.RVMAS
+        WHERE NOTED = 'Y'
+          AND ISNULL(VOUCED, 'N') = 'N'
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+          AND ({where})
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception as exc:
+        raise RuntimeError(format_sql_error(exc, site=site)) from exc
+    by_key = {(r["acctno"], r["noteno"]): dict(r) for r in rows}
+    out: list[dict[str, Any]] = []
+    for rem in overlays:
+        if str(rem.get("status") or "open") != "open":
+            continue
+        acct = rem.get("acctno", "").strip()
+        note = rem.get("noteno", "").strip()
+        rvmas = by_key.get((acct, note))
+        if not rvmas:
+            continue
+        merged = {**rvmas, "reminder": rem}
+        method = (rem.get("settle_method") or "").strip().lower()
+        merged["settle_method"] = method if method in ("transfer", "cheque", "cash") else "transfer"
+        nd = rvmas.get("NOTEDATE")
+        if isinstance(nd, datetime):
+            merged["NOTEDATE"] = nd.date().isoformat()
+        elif isinstance(nd, date):
+            merged["NOTEDATE"] = nd.isoformat()
+        merged["BILLAMT"] = _to_float(merged.get("BILLAMT"))
+        out.append(merged)
+    out.sort(key=lambda x: (x.get("reminder") or {}).get("due_date") or "")
+    return out[:limit]
 
 
 def list_vouchered(
@@ -327,6 +399,88 @@ def list_vouchered(
     return out
 
 
+def list_vouchered_notes(site: str, overlays: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Notes from this service that are vouchered in KSS (for proof queue)."""
+    if not overlays:
+        return []
+    eng = get_site_engine(_site_key(site))
+    keys = [
+        (r["acctno"].strip(), r["noteno"].strip())
+        for r in overlays
+        if r.get("acctno") and r.get("noteno")
+    ]
+    if not keys:
+        return []
+    clauses = []
+    params: dict[str, Any] = {}
+    for i, (acct, note) in enumerate(keys):
+        clauses.append(f"(LTRIM(RTRIM(ACCTNO)) = :a{i} AND LTRIM(RTRIM(NOTENO)) = :n{i})")
+        params[f"a{i}"] = acct
+        params[f"n{i}"] = note
+    where = " OR ".join(clauses)
+    sql = text(
+        f"""
+        SELECT LTRIM(RTRIM(ACCTNO)) AS acctno,
+               LTRIM(RTRIM(ACCTNAME)) AS acctname,
+               LTRIM(RTRIM(NOTENO)) AS noteno,
+               LTRIM(RTRIM(VOUCNO)) AS voucno,
+               VOUCDATE, BILLAMT, NETAMT, PAYAMT, CHKAMT, DISCOUNT, JOURMODE
+        FROM dbo.RVMAS
+        WHERE VOUCED = 'Y'
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+          AND ({where})
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception as exc:
+        raise RuntimeError(format_sql_error(exc, site=site)) from exc
+    by_key = {(r["acctno"], r["noteno"]): dict(r) for r in rows}
+    out: list[dict[str, Any]] = []
+    for rem in overlays:
+        acct = rem.get("acctno", "").strip()
+        note = rem.get("noteno", "").strip()
+        rvmas = by_key.get((acct, note))
+        if not rvmas:
+            continue
+        item = {**rvmas, "reminder": rem}
+        item["VOUCDATE"] = _iso_date(item.get("VOUCDATE"))
+        for key in ("BILLAMT", "DISCOUNT", "NETAMT", "PAYAMT", "CHKAMT"):
+            item[key] = _to_float(item.get(key)) if item.get(key) is not None else None
+        out.append(item)
+    return out
+
+
+def list_bills_for_edit(site: str, acctno: str, noteno: str) -> list[dict[str, Any]]:
+    """Attached bills (attached=true) plus pickable unnoted bills for edit UI."""
+    attached = list_note_bills(site, acctno, noteno)
+    attached_nos = {str(b.get("BILLNO") or "").strip() for b in attached}
+    pickable = list_pickable_bills(site, acctno, include_noted=False, limit=200)
+    out: list[dict[str, Any]] = []
+    for bill in attached:
+        item = dict(bill)
+        item["attached"] = True
+        out.append(item)
+    for bill in pickable:
+        bno = str(bill.get("BILLNO") or "").strip()
+        if bno in attached_nos:
+            continue
+        item = dict(bill)
+        item["attached"] = False
+        out.append(item)
+    return out
+
+
+def infer_settle_method(chkno: str | None) -> str:
+    text_v = (chkno or "").strip()
+    if not text_v:
+        return "cash"
+    if text_v == "โอน":
+        return "transfer"
+    return "cheque"
+
+
 def list_brdet(site: str, voucno: str) -> list[dict[str, Any]]:
     vno = (voucno or "").strip()
     if not vno:
@@ -359,7 +513,7 @@ def debtor_summary(site: str, acctno: str) -> dict[str, Any]:
     open_amt = sum(_to_float(b.get("AFTERTAX")) for b in bills)
     notes = [
         n
-        for n in list_pending_notes(site, limit=500)
+        for n in list_pending_notes_raw(site, limit=500)
         if str(n.get("acctno") or "").strip() == acct
     ]
     vouchers = [

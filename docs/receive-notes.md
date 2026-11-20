@@ -1,24 +1,48 @@
 # Receive notes / รับชำระลูกหนี้ (**HQ only**)
 
-LAN + Tailscale UI for AR receipt notes/vouchers on **HQ PARTS9 (`KSS`)**. Port **8797**, routes under `/receive-notes/`.
+LAN + Tailscale UI for AR billing notes / receipt vouchers on **HQ PARTS9 (`KSS`)**. Port **8797**, routes under `/receive-notes/`.
 
 **This service is HQ-only.** Do **not** run it on SYP. `RECEIVE_NOTES_SITE` must stay `HQ`.
 
 LINE command: `รับชำระลูกหนี้` (aliases: `รับชำระ`, `receivenote`, `receive note`).
 
-Template: [`pay-notes.md`](./pay-notes.md) — same auth/shell pattern, **receive-first** tabs (no cancel).
+Template: [`pay-notes.md`](./pay-notes.md) — same Layout / Process / Function as ชำระเจ้าหนี้ (AP), adapted for AR.
 
 ## Scope — workflow tabs
 
-| Tab | What you do |
-|-----|-------------|
-| 1. รับชำระ | Pick AR + open credit bills; multi-channel receive **without** a prior note |
-| 2. ใบวางบิล | Create / edit / print / track notes (`RVMAS` NR); receive from a note |
-| 3. รอตรวจสอบ | Awaiting proof, transfer/cheque confirm, or Tiger problems |
-| 4. ใบสำคัญรับเงิน | History, attach proof later, print, daily channel totals, Tiger reconcile, KSS resync |
-| 5. ข้อมูลลูกหนี้ | One-page debt / open bills / notes / receipt history |
+| Tab | What you do | Editable? | KSS / Supabase |
+|-----|-------------|-----------|----------------|
+| 1. สร้าง | Create note (debtor → bills → discount → save) | yes (new) | `RVMAS` INSERT + `SIMAS` stamp; `receive_note.note` |
+| 2. รอรับชำระ | Pending board; edit note; cancel mistaken note; record receive | yes while unvouchered | unvouchered `RVMAS` + overlay |
+| 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `RVMAS`; `payment/{VOUCNO}/` images |
+| 4. ใบสำคัญรับเงิน | Complete vouchers (proof attached) | proof images only | vouchered `RVMAS` with proof |
+| 5. ค้นหาตามลูกหนี้ | Browse notes/vouchers per AR debtor | edit when รอรับชำระ | `GET /api/notes?acctno=` |
 
-Manual cash is an **exception** (overflow menu + required reason). Default cash path = Tiger.
+### Tab 1 — create (differs from AP)
+
+- No กรอกเอง / ช่วยอ่านเอกสาร
+- No manual เลขที่ใบวางบิล (system allocates)
+- No เอกสารแนบ on create (we issue the note ourselves)
+- Flow: เลือกลูกหนี้ → เลือกบิล → ส่วนลด (ถ้ามี) → บันทึก
+
+### Number series
+
+| Doc | JOURMODE | Stem | Example |
+|-----|----------|------|---------|
+| Note `NOTENO` | 2 Non-VAT | `BNN{YYMM}-` | `BNN6911-001` |
+| Note `NOTENO` | 1 VAT | `BN{YYMM}-` | `BN6911-001` |
+| Voucher `VOUCNO` | 2 Non-VAT | `RCN{YYMM}-` | `RCN6911-001` |
+| Voucher `VOUCNO` | 1 VAT | `RC{YYMM}-` | `RC6911-001` |
+
+Mixed VAT/Non-VAT bills → reject (`mixed_jourmode`). Voucher is **note-first only**; duplicate cut blocked (`already_vouchered`).
+
+### Tab 2 — รอรับชำระ
+
+- Column: ยอดที่ต้องรับ (bill − overlay discount)
+- No KBIZ reminder
+- Button / modal: **รับชำระ** (AP pay modal labels flipped)
+- Shows ส่วนลดจากใบวางบิล (read-only) to prevent double discount
+- Receive accounts: กรุงไทย 248-0-44244-6, 248-6-00138-7, 248-0-42113-9 · กสิกร 064-8-91723-6, 064-8-92039-3
 
 ## KSS mapping
 
@@ -29,26 +53,11 @@ Manual cash is an **exception** (overflow menu + required reason). Default cash 
 | Instruments | `BRDET` |
 | Debtor master | `ARMAS` |
 
-Write rules: [kcw-docs §10](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md).
+Write rules: [kcw-docs §10](https://github.com/pthengtr/kcw-docs/blob/main/dictionaries/kcw-pvmas-rvmas-notes-vouchers-data-dictionary.md) (update stems when deploying this series).
 
-| Series | Format |
-|--------|--------|
-| Non-VAT `VOUCNO` | `{YYMM}-###` e.g. `6911-001` |
-| VAT `VOUCNO` | `RC{YYMM}-###` e.g. `RC6911-001` |
-| Note `NOTENO` | `BN{YYMM}-###` |
+## APIs (AP-shaped)
 
-Mixed VAT/Non-VAT in one receive → **split into two vouchers**.
-
-Partial pay: overlay tracks allocations; stamp `SIMAS` only when a bill is fully covered.
-
-## Tiger cash-in
-
-Reuse Companion Open API / webhook / poller. Attempt key:
-
-- `pos_bill_id` = `ar:{receipt_id}` (≤ fits unique indexes)
-- Send **cash portion only** (floor baht)
-- On `success` → finish KSS voucher + proof auto
-- Busy / prior success / active attempt → block duplicate receive
+Same path names as pay-notes where possible (`/api/notes`, `/api/pending`, `/api/vouchers`, `/api/vouchered`, …). Aliases: `/api/vendors` → debtors; `/api/company-pay-accounts` → receive accounts. `/api/banks` returns `[]`.
 
 ## Enable (HQ Linux)
 
@@ -68,18 +77,16 @@ curl -s http://127.0.0.1:8797/health
 ```
 
 SQL grants: `scripts/sql/grant_receive_notes_writer.sql`  
-Supabase: schema `receive_note` (migrations `*_receive_note_*.sql`).
+Supabase: schema `receive_note` (migrations `*_receive_note_*.sql`, including `20261120120000_receive_note_note_reminder_fields.sql` for discount/settle/remark).
 
 ## Consistency
 
-PARTS9 + Supabase are not one ACID transaction:
-
 1. Write KSS (`RVMAS` / `SIMAS` / `BRDET`)
-2. Upsert overlay (`receive_note.receipt` / note / channels)
-3. On overlay failure after KSS success → mark `kss_sync_status=orphan_overlay` for operator resync UI (idempotent — existing `VOUCNO` is reused, never double-insert)
+2. Upsert overlay (`receive_note.note`)
+3. If overlay fails after create → compensate: soft-cancel KSS note (`CANCELED='Y'`, clear `SIMAS` stamps)
 
-## Out of scope
+## Deferred (after main process test)
 
-- Cancel / void / reverse AR receipts
-- SYP deploy
-- AI bill scan (pay-notes only for now)
+- Tiger cash-in / multi-channel receive-first
+- AI scan
+- Daily channel reports / review queue extras
