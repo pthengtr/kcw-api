@@ -41,10 +41,11 @@ def _map_write_exc(exc: Exception) -> ReceiveNoteWriteError:
 
 
 def voucher_stem(jourmode: str, when: datetime | None = None) -> str:
+    """VAT (JOURMODE=1) → RC… ; Non-VAT (JOURMODE=2) → RCN…"""
     yymm = buddhist_yymm(when)
     mode = (jourmode or "1").strip() or "1"
     if mode == "2":
-        return f"{yymm}-"
+        return f"RCN{yymm}-"
     return f"RC{yymm}-"
 
 
@@ -113,7 +114,7 @@ def create_receive_note(
         notedate = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
 
         with write_eng.begin() as conn:
-            noteno = next_noteno(conn, notedate)
+            noteno = next_noteno(conn, jourmode=jourmode, when=notedate)
             conn.execute(
                 text(
                     """
@@ -176,6 +177,231 @@ def create_receive_note(
         "notedate": notedate.date().isoformat(),
         "jourmode": jourmode,
     }
+
+
+def update_receive_note(
+    *,
+    settings: ReceiveNotesSettings,
+    acctno: str,
+    noteno: str,
+    billnos: list[str],
+    operator: str | None = None,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    """Update bill membership on an unvouchered receive note."""
+    if not settings.receive_notes_write_enabled:
+        raise ReceiveNoteWriteError("RECEIVE_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    from src.receive_notes.parts9 import fetch_bills_for_receive, list_note_bills
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise ReceiveNoteWriteError("acctno and noteno required", code="validation")
+
+    requested = [b.strip() for b in billnos if (b or "").strip()]
+    if not requested:
+        raise ReceiveNoteWriteError("select at least one bill", code="validation")
+    if len(requested) != len(set(requested)):
+        raise ReceiveNoteWriteError("duplicate bill numbers", code="validation")
+
+    site = settings.site
+    write_eng = engine or _writer_engine(settings)
+    billcnt = 0
+    billamt = 0.0
+    try:
+        with write_eng.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 ID, JOURMODE, VOUCED, VOUCNO, NOTEDATE
+                    FROM dbo.RVMAS
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND NOTED = 'Y'
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            ).mappings().first()
+            if not header:
+                raise ReceiveNoteWriteError("note not found in KSS", code="not_found")
+            if str(header.get("VOUCED") or "N").strip().upper() == "Y" or (header.get("VOUCNO") or "").strip():
+                raise ReceiveNoteWriteError("note already vouchered", code="not_editable")
+
+            current_rows = list_note_bills(site, acct, note, engine=write_eng)
+            current_nos = {str(b.get("BILLNO") or "").strip() for b in current_rows}
+            requested_set = set(requested)
+            to_remove = current_nos - requested_set
+            to_add = requested_set - current_nos
+
+            if to_add:
+                new_bills = fetch_bills_for_receive(
+                    site, acct, sorted(to_add), engine=write_eng, noteno=note
+                )
+                if len(new_bills) != len(to_add):
+                    raise ReceiveNoteWriteError("one or more bills unavailable for note", code="bill_invalid")
+            else:
+                new_bills = []
+
+            all_bills = fetch_bills_for_receive(
+                site, acct, requested, engine=write_eng, noteno=note
+            )
+            if len(all_bills) != len(requested):
+                raise ReceiveNoteWriteError("one or more bills unavailable for note", code="bill_invalid")
+
+            jourmodes = {str(b.get("JOURMODE") or "1").strip() or "1" for b in all_bills}
+            if len(jourmodes) > 1:
+                raise ReceiveNoteWriteError(
+                    "mixed VAT/non-VAT bills — split note per JOURMODE",
+                    code="mixed_jourmode",
+                )
+
+            notedate = header.get("NOTEDATE")
+            if isinstance(notedate, datetime):
+                pass
+            elif notedate:
+                notedate = datetime.strptime(str(notedate)[:10], "%Y-%m-%d")
+            else:
+                notedate = datetime.now(_BKK).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            for bno in to_remove:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE dbo.SIMAS
+                        SET NOTENO = '', NOTEDATE = NULL
+                        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                          AND LTRIM(RTRIM(BILLNO)) = :billno
+                          AND LTRIM(RTRIM(NOTENO)) = :noteno
+                          AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+                          AND ISNULL(PAID, 'N') = 'N'
+                        """
+                    ),
+                    {"acctno": acct, "billno": bno, "noteno": note},
+                )
+
+            for bill in new_bills:
+                bno = str(bill.get("BILLNO") or "").strip()
+                conn.execute(
+                    text(
+                        """
+                        UPDATE dbo.SIMAS
+                        SET NOTENO = :noteno, NOTEDATE = :notedate
+                        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                          AND LTRIM(RTRIM(BILLNO)) = :billno
+                          AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+                          AND ISNULL(PAID, 'N') = 'N'
+                          AND (
+                            ISNULL(LTRIM(RTRIM(NOTENO)), '') = ''
+                            OR LTRIM(RTRIM(NOTENO)) = :noteno
+                          )
+                        """
+                    ),
+                    {
+                        "noteno": note,
+                        "notedate": notedate,
+                        "acctno": acct,
+                        "billno": bno,
+                    },
+                )
+
+            billamt = sum(float(b.get("AFTERTAX") or 0) for b in all_bills)
+            billcnt = len(all_bills)
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.RVMAS
+                    SET BILLCNT = :billcnt, BILLAMT = :billamt
+                    WHERE ID = :id
+                      AND ISNULL(VOUCED, 'N') <> 'Y'
+                    """
+                ),
+                {"billcnt": billcnt, "billamt": billamt, "id": header["ID"]},
+            )
+    except ReceiveNoteWriteError:
+        raise
+    except Exception as exc:
+        raise _map_write_exc(exc) from exc
+
+    _ = operator
+    return {
+        "acctno": acct,
+        "noteno": note,
+        "billcnt": billcnt,
+        "billamt": billamt,
+    }
+
+
+def cancel_unvouchered_receive_note(
+    *,
+    settings: ReceiveNotesSettings,
+    acctno: str,
+    noteno: str,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    """Soft-cancel an unvouchered receive note in KSS (no hard DELETE)."""
+    if not settings.receive_notes_write_enabled:
+        raise ReceiveNoteWriteError("RECEIVE_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise ReceiveNoteWriteError("acctno and noteno required", code="validation")
+
+    write_eng = engine or _writer_engine(settings)
+    try:
+        with write_eng.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 ID, VOUCED, CANCELED
+                    FROM dbo.RVMAS
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            ).mappings().first()
+            if not header:
+                return {"acctno": acct, "noteno": note, "canceled": False, "reason": "not_found"}
+            if str(header.get("VOUCED") or "N").strip().upper() == "Y":
+                raise ReceiveNoteWriteError(
+                    "cannot cancel vouchered note",
+                    code="already_vouchered",
+                )
+            if str(header.get("CANCELED") or "N").strip().upper() == "Y":
+                return {"acctno": acct, "noteno": note, "canceled": False, "reason": "already_canceled"}
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.SIMAS
+                    SET NOTENO = '', NOTEDATE = NULL
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.RVMAS
+                    SET CANCELED = 'Y'
+                    WHERE ID = :id
+                      AND ISNULL(VOUCED, 'N') <> 'Y'
+                    """
+                ),
+                {"id": header["ID"]},
+            )
+    except ReceiveNoteWriteError:
+        raise
+    except Exception as exc:
+        raise _map_write_exc(exc) from exc
+
+    return {"acctno": acct, "noteno": note, "canceled": True}
 
 
 def _stamp_simas_paid(conn, *, acctno: str, billno: str, voucno: str, voucd: datetime) -> None:
@@ -266,6 +492,11 @@ def create_receipt_voucher(
     note = (noteno or "").strip() or None
     if not acct:
         raise ReceiveNoteWriteError("acctno required", code="validation")
+    if not note:
+        raise ReceiveNoteWriteError(
+            "noteno required — receive voucher must start from a ใบวางบิล",
+            code="note_required",
+        )
     if not bill_allocations:
         raise ReceiveNoteWriteError("select at least one bill", code="validation")
 
@@ -402,6 +633,8 @@ def create_receipt_voucher(
                             BILLAMT = :billamt,
                             BILLCNT = :billcnt
                         WHERE ID = :id
+                          AND ISNULL(VOUCED, 'N') <> 'Y'
+                          AND ISNULL(LTRIM(RTRIM(VOUCNO)), '') = ''
                         """
                     ),
                     {
@@ -415,37 +648,19 @@ def create_receipt_voucher(
                         "id": header["ID"],
                     },
                 )
-            else:
-                conn.execute(
+                if conn.execute(
                     text(
                         """
-                        INSERT INTO dbo.RVMAS (
-                          JOURMODE, JOURTYPE, NOTED, VOUCED, VOUCDATE, VOUCNO, RCPTNO,
-                          ACCTNO, ACCTNAME, BILLCNT, BILLAMT,
-                          DISCOUNT, NETAMT, PAYAMT, CHKAMT, CASHAMT, PAID,
-                          DEPTNO, BOOKNO, POSTED1, POSTED2, DONE, CANCELED
-                        )
-                        VALUES (
-                          :jourmode, 'CR', 'N', 'Y', :voucd, :voucno, :voucno,
-                          :acctno, :acctname, :billcnt, :billamt,
-                          :discount, :netamt, :netamt, :netamt, :cashamt, 'Y',
-                          '1', '1', 'N', 'N', 'N', 'N'
-                        )
+                        SELECT TOP 1 ID FROM dbo.RVMAS
+                        WHERE ID = :id AND LTRIM(RTRIM(VOUCNO)) = :voucno
                         """
                     ),
-                    {
-                        "jourmode": jourmode,
-                        "voucd": voucd,
-                        "voucno": voucno,
-                        "acctno": acct,
-                        "acctname": name[:60],
-                        "billcnt": len(alloc_rows),
-                        "billamt": billamt,
-                        "discount": disc if disc else None,
-                        "netamt": netamt,
-                        "cashamt": cash_amt if cash_amt > 0 else None,
-                    },
-                )
+                    {"id": header["ID"], "voucno": voucno},
+                ).first() is None:
+                    raise ReceiveNoteWriteError(
+                        "note already vouchered (concurrent)",
+                        code="already_vouchered",
+                    )
 
             for row in alloc_rows:
                 if row["fully_paid"]:

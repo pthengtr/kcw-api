@@ -65,11 +65,31 @@ def get_note(client: Client, acctno: str, noteno: str) -> dict[str, Any] | None:
 
 
 def list_notes(client: Client, *, status: str | None = None) -> list[dict[str, Any]]:
-    q = _table(client, "note").select("*").order("created_at", desc=True)
+    q = _table(client, "note").select("*").order("due_date").order("created_at", desc=True)
     if status:
         q = q.eq("status", status)
     resp = q.execute()
     return list(resp.data or [])
+
+
+def delete_note(client: Client, acctno: str, noteno: str) -> None:
+    (
+        _table(client, "note")
+        .delete()
+        .eq("acctno", acctno.strip())
+        .eq("noteno", noteno.strip())
+        .execute()
+    )
+
+
+def list_open_notes(client: Client) -> list[dict[str, Any]]:
+    """Overlay rows for pending board (status=open)."""
+    return list_notes(client, status="open")
+
+
+def list_all_service_notes(client: Client) -> list[dict[str, Any]]:
+    """All overlay notes including received/canceled — for vouchered merge."""
+    return list_notes(client, status=None)
 
 
 def insert_receipt(client: Client, row: dict[str, Any]) -> dict[str, Any]:

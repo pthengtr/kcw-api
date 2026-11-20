@@ -3,32 +3,51 @@ from __future__ import annotations
 from typing import Any
 
 # HQ company accounts that receive customer transfers (BRDET.ACCTNO = GL).
-# Names/GLs mined from recent CR BRDET rows (2026-11).
+# Labels locked by ops; GLs from prior BRDET mining + AP payout map for shared accounts.
 COMPANY_RECEIVE_ACCOUNTS: dict[str, dict[str, str]] = {
-    "kbank_91723": {
-        "key": "kbank_91723",
-        "label": "กสิกร 064-8-91723-6",
-        "bank_name": "KBANK 064-8-91723-6",
-        "account_no": "064-8-91723-6",
-        "gl": "2101.1",
-    },
-    "ktb_04211": {
-        "key": "ktb_04211",
-        "label": "กรุงไทย 248-0-42113-9",
-        "bank_name": "KBTK 2480421139",
-        "account_no": "248-0-42113-9",
-        "gl": "2101.3",
+    "ktb_44244": {
+        "key": "ktb_44244",
+        "label": "กรุงไทย 248-0-44244-6",
+        "bank_name": "กรุงไทย 248-0-44244-6",
+        "account_no": "248-0-44244-6",
+        "gl": "2101.7",
     },
     "ktb_00138": {
         "key": "ktb_00138",
         "label": "กรุงไทย 248-6-00138-7",
-        "bank_name": "กรุงไทย 2486001387",
+        "bank_name": "กรุงไทย 248-6-00138-7",
         "account_no": "248-6-00138-7",
         "gl": "2101.4",
     },
+    "ktb_42113": {
+        "key": "ktb_42113",
+        "label": "กรุงไทย 248-0-42113-9",
+        "bank_name": "กรุงไทย 248-0-42113-9",
+        "account_no": "248-0-42113-9",
+        "gl": "2101.3",
+    },
+    "kbank_91723": {
+        "key": "kbank_91723",
+        "label": "กสิกร 064-8-91723-6",
+        "bank_name": "กสิกร 064-8-91723-6",
+        "account_no": "064-8-91723-6",
+        "gl": "2101.1",
+    },
+    "kbank_92039": {
+        "key": "kbank_92039",
+        "label": "กสิกร 064-8-92039-3",
+        "bank_name": "กสิกร 064-8-92039-3",
+        "account_no": "064-8-92039-3",
+        "gl": "2101.6",
+    },
 }
 
-DEFAULT_RECEIVE_BANK_KEY = "kbank_91723"
+DEFAULT_RECEIVE_BANK_KEY = "ktb_44244"
+
+# Backward-compatible aliases for older keys in overlay / tests
+_ALIASES = {
+    "ktb_04211": "ktb_42113",
+}
 
 
 def list_company_receive_accounts() -> list[dict[str, str]]:
@@ -36,7 +55,8 @@ def list_company_receive_accounts() -> list[dict[str, str]]:
 
 
 def resolve_company_receive_account(key: str | None) -> dict[str, str]:
-    k = (key or DEFAULT_RECEIVE_BANK_KEY).strip()
+    raw = (key or DEFAULT_RECEIVE_BANK_KEY).strip()
+    k = _ALIASES.get(raw, raw)
     acct = COMPANY_RECEIVE_ACCOUNTS.get(k)
     if acct:
         return dict(acct)

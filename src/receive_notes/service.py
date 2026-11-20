@@ -76,9 +76,14 @@ def create_note(
     billnos: list[str],
     due_date: str | None = None,
     remark: str | None = None,
+    discount_mode: str = "amount",
+    discount_input: float = 0.0,
+    discount_amount: float = 0.0,
+    settle_method: str = "transfer",
     operator: str | None = None,
     settings: ReceiveNotesSettings | None = None,
 ) -> dict[str, Any]:
+    """Legacy helper — prefer router POST /api/notes for full AP-shaped create."""
     settings = settings or get_receive_notes_settings()
     result = create_receive_note(
         settings=settings,
@@ -97,6 +102,10 @@ def create_note(
                 "jourmode": result["jourmode"],
                 "due_date": due_date,
                 "remark": remark,
+                "discount_mode": discount_mode or "amount",
+                "discount_input": discount_input,
+                "discount_amount": discount_amount,
+                "settle_method": settle_method or "transfer",
                 "status": "open",
                 "created_by": operator,
             },

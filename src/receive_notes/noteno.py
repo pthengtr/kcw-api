@@ -15,12 +15,17 @@ def buddhist_yymm(when: datetime | None = None) -> str:
     return f"{yy:02d}{dt.month:02d}"
 
 
-def note_stem(when: datetime | None = None) -> str:
-    return f"BN{buddhist_yymm(when)}-"
+def note_stem(jourmode: str, when: datetime | None = None) -> str:
+    """VAT (JOURMODE=1) → BN… ; Non-VAT (JOURMODE=2) → BNN…"""
+    yymm = buddhist_yymm(when)
+    mode = (jourmode or "1").strip() or "1"
+    if mode == "2":
+        return f"BNN{yymm}-"
+    return f"BN{yymm}-"
 
 
-def next_noteno(conn, when: datetime | None = None) -> str:
-    stem = note_stem(when)
+def next_noteno(conn, *, jourmode: str, when: datetime | None = None) -> str:
+    stem = note_stem(jourmode, when)
     row = conn.execute(
         text("SELECT MAX(NOTENO) AS max_no FROM dbo.RVMAS WHERE NOTENO LIKE :pat"),
         {"pat": stem + "%"},
