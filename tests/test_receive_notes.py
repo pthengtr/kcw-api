@@ -10,6 +10,7 @@ from src.receive_notes.company_banks import (
     resolve_company_receive_account,
 )
 from src.receive_notes.noteno import buddhist_yymm, note_stem
+from src.receive_notes.parts9 import infer_settle_method
 from src.receive_notes.tiger import ar_pos_bill_id, is_ar_pos_bill_id, receipt_id_from_pos_bill_id
 from src.receive_notes.writer import voucher_stem
 from src.staff_shell.catalog import get_service
@@ -101,7 +102,9 @@ def test_ui_exports_and_tabs():
     html = rn_ui.page(user_name="Test", site="HQ", write_enabled=False)
     assert "รับชำระลูกหนี้" in html
     assert "รอรับชำระ" in html
-    assert "ใบสำคัญรับเงิน" in html
+    assert "ใบเสร็จรับเงิน" in html
+    assert "ใบสำคัญรับเงิน" not in html
+    assert "บัญชีสำหรับรับชำระ" in html
     assert "ค้นหาตามลูกหนี้" in html
     assert "กรอกเอง" not in html
     assert "ช่วยอ่านเอกสาร" not in html
@@ -109,3 +112,20 @@ def test_ui_exports_and_tabs():
     assert "จำนวนเงินที่รับ" in html
     assert "บัญชีที่รับเงิน" in html
     assert "รับชำระ" in html
+    # pending board no longer filters/columns by settle method
+    assert "pfMethod" not in html
+
+
+def test_infer_settle_method_prefers_bank_gl():
+    assert infer_settle_method("", bankname="", acctno="") == "cash"
+    assert infer_settle_method("โอน", bankname="กสิกร", acctno="2101.1") == "transfer"
+    assert infer_settle_method("PA2601", bankname="", acctno="") == "cash"
+    assert infer_settle_method("123456", bankname="กรุงไทย", acctno="") == "cheque"
+
+
+def test_optional_receive_account():
+    from src.receive_notes.company_banks import resolve_optional_receive_account
+
+    assert resolve_optional_receive_account("") is None
+    assert resolve_optional_receive_account(None) is None
+    assert resolve_optional_receive_account("kbank_91723")["key"] == "kbank_91723"

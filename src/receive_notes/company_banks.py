@@ -63,6 +63,16 @@ def resolve_company_receive_account(key: str | None) -> dict[str, str]:
     return dict(COMPANY_RECEIVE_ACCOUNTS[DEFAULT_RECEIVE_BANK_KEY])
 
 
+def resolve_optional_receive_account(key: str | None) -> dict[str, str] | None:
+    """Resolve receive bank for billing-note print; empty key → None (optional)."""
+    raw = (key or "").strip()
+    if not raw:
+        return None
+    k = _ALIASES.get(raw, raw)
+    acct = COMPANY_RECEIVE_ACCOUNTS.get(k)
+    return dict(acct) if acct else None
+
+
 def brdet_line_from_payment(
     *,
     settle_method: str,

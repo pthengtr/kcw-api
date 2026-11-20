@@ -15,7 +15,7 @@ Template: [`pay-notes.md`](./pay-notes.md) — same Layout / Process / Function 
 | 1. สร้าง | Create note (debtor → bills → discount → save) | yes (new) | `RVMAS` INSERT + `SIMAS` stamp; `receive_note.note` |
 | 2. รอรับชำระ | Pending board; edit note; cancel mistaken note; record receive | yes while unvouchered | unvouchered `RVMAS` + overlay |
 | 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `RVMAS`; `payment/{VOUCNO}/` images |
-| 4. ใบสำคัญรับเงิน | Complete vouchers (proof attached) | proof images only | vouchered `RVMAS` with proof |
+| 4. ใบเสร็จรับเงิน | Complete vouchers (proof attached); issued after receive confirm | proof images only | vouchered `RVMAS` with proof |
 | 5. ค้นหาตามลูกหนี้ | Browse notes/vouchers per AR debtor | edit when รอรับชำระ | `GET /api/notes?acctno=` |
 
 ### Tab 1 — create (differs from AP)
@@ -23,7 +23,8 @@ Template: [`pay-notes.md`](./pay-notes.md) — same Layout / Process / Function 
 - No กรอกเอง / ช่วยอ่านเอกสาร
 - No manual เลขที่ใบวางบิล (system allocates)
 - No เอกสารแนบ on create (we issue the note ourselves)
-- Flow: เลือกลูกหนี้ → เลือกบิล → ส่วนลด (ถ้ามี) → บันทึก
+- Optional **บัญชีสำหรับรับชำระ** (company bank shown on billing note; not required)
+- Flow: เลือกลูกหนี้ → เลือกบิล → ส่วนลด (ถ้ามี) → บัญชีรับชำระ (optional) → บันทึก
 
 ### Number series
 
@@ -38,11 +39,19 @@ Mixed VAT/Non-VAT bills → reject (`mixed_jourmode`). Voucher is **note-first o
 
 ### Tab 2 — รอรับชำระ
 
-- Column: ยอดที่ต้องรับ (bill − overlay discount)
+- Column: ยอดที่ต้องรับ (bill − overlay discount); no วิธีรับชำระ filter/column
+- Cancel mistaken note → soft cancel **both** systems (`RVMAS.CANCELED='Y'` + overlay `status=canceled`); keep document no.; red **ยกเลิก**; blocked if already vouchered
 - No KBIZ reminder
-- Button / modal: **รับชำระ** (AP pay modal labels flipped)
+- Button / modal: **รับชำระ** (actual settle method chosen here)
 - Shows ส่วนลดจากใบวางบิล (read-only) to prevent double discount
 - Receive accounts: กรุงไทย 248-0-44244-6, 248-6-00138-7, 248-0-42113-9 · กสิกร 064-8-91723-6, 064-8-92039-3
+
+### Print format
+
+- Company header matches ใบ TO (logo / name / address / phone / tax id)
+- Left: customer code, name, address, tax id; Right: doc no, date, ref note (receipt), bill month
+- `@page { margin: 0 }` to avoid browser print header/footer chrome
+- Receipt title **ใบเสร็จรับเงิน** (prefix `RC` / `RCN` unchanged); checkboxes show actual BRDET settle only
 
 ## KSS mapping
 

@@ -87,6 +87,11 @@ def list_open_notes(client: Client) -> list[dict[str, Any]]:
     return list_notes(client, status="open")
 
 
+def list_canceled_service_notes(client: Client) -> list[dict[str, Any]]:
+    """Soft-canceled billing notes kept for audit / red status display."""
+    return list_notes(client, status="canceled")
+
+
 def list_all_service_notes(client: Client) -> list[dict[str, Any]]:
     """All overlay notes including received/canceled — for vouchered merge."""
     return list_notes(client, status=None)
