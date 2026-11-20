@@ -325,6 +325,9 @@ def test_staff_roster_and_cntad_signers():
     assert issuer_full_name("MIAW") == "ธนวรรณ เดชกุญชร (มะเหมี่ยว)"
     assert issuer_full_name("MIAW ICE") == "ธนวรรณ เดชกุญชร (มะเหมี่ยว)"
     assert issuer_full_name("AUM SPNT") == "จิตติมา ทิมเทศ (อุ้ม)"
+    assert issuer_full_name("peung") == "นฤมล วิทยผโลทัย (ผึ้ง)"
+    assert issuer_full_name("PHU Nattapon W.") == "ณัฐพล วิทยผโลทัย (ภู่)"
+    assert issuer_full_name("January Ice") == "มกรา มณีกุล (ไอซ์)"
     html = render_cntad_sheet(
         {
             "billno": "CNTAD6911-001",

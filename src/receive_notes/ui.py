@@ -602,56 +602,64 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   .tabs button { font-size:.68rem; }
 }
 @media print {
-  @page { size: A4 portrait; margin: 10mm 9mm; }
-  html, body { background:#fff !important; }
+  /* margin:0 reduces browser print header/footer chrome; sheet pads itself */
+  @page { size: A4 portrait; margin: 0; }
+  html, body { background:#fff !important; margin:0 !important; }
   body > *:not(#printSheet) { display:none !important; }
   #printSheet {
     display:block !important; position:static; width:100%;
-    color:#111; background:#fff; font-family: "Prompt", "TH Sarabun New", sans-serif;
+    color:#111; background:#fff; font-family: Prompt, "Noto Sans Thai", "TH Sarabun New", sans-serif;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  .pv { max-width:none; margin:0; padding:12mm 12mm 10mm; box-sizing:border-box; }
 }
-.pv { font-size:11pt; color:#111; }
-.pv-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.pv { font-family: Prompt, "Noto Sans Thai", sans-serif; font-size:11pt; color:#111; background:#fff;
+  padding:18px 16px 22px; max-width:860px; margin:0 auto; position:relative; line-height:1.45; }
+.pv-top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
+.pv-brand { min-width:0; flex:1; }
 .pv-logo {
-  font-weight:800; font-size:28pt; color:#c41e3a; letter-spacing:-.03em; line-height:1;
-  font-family: Impact, "Arial Black", Prompt, sans-serif;
+  font-weight:800; font-size:34px; color:#9b1c2c; letter-spacing:-.03em; line-height:.9;
 }
-.pv-co { font-size:9.5pt; line-height:1.35; }
-.pv-co-name { font-weight:700; font-size:12pt; margin:.15rem 0 .1rem; }
-.pv-title-wrap { text-align:right; min-width:14rem; }
+.pv-co-name { font-weight:700; font-size:15px; margin-top:2px; }
+.pv-co-addr { font-size:12px; line-height:1.45; }
+.pv-doc { text-align:right; flex:0 0 auto; }
 .pv-title {
-  display:inline-block; background:#f5d76e; font-weight:800; font-size:13pt;
-  padding:.28rem .7rem; border:1px solid #111; letter-spacing:.01em;
+  margin:0; color:#9b1c2c; font-size:17px; line-height:1.25; font-weight:800; white-space:nowrap;
 }
-.pv-month { margin-top:.45rem; font-size:10.5pt; }
-.pv-meta {
-  display:grid; grid-template-columns:1fr 1fr; gap:.2rem 1.2rem;
-  margin:.7rem 0 .5rem; font-size:11pt; border-top:1px solid #111; padding-top:.45rem;
-}
-.pv-meta .span2 { grid-column:1 / -1; }
+.pv-rule { height:3px; background:#9b1c2c; margin:8px 0 12px; }
+.pv-boxes { display:grid; grid-template-columns:1.2fr .8fr; gap:10px 12px; align-items:start; margin-bottom:.55rem; }
+.pv-box { border:1px solid #d0d5dd; border-radius:8px; padding:8px 10px; min-height:7rem; font-size:13px; }
+.pv-fields { display:grid; grid-template-columns:max-content minmax(0,1fr); column-gap:12px; row-gap:4px; align-items:baseline; }
+.pv-k { color:#344054; font-weight:650; white-space:nowrap; }
+.pv-name { font-weight:800; }
+.pv-pre { white-space:pre-line; }
+.pv-docno { font-weight:800; }
 .pv-table { width:100%; border-collapse:collapse; margin-top:.15rem; font-size:10pt; }
-.pv-table th, .pv-table td { border:1px solid #111; padding:.22rem .35rem; vertical-align:top; }
-.pv-table th { font-weight:700; text-align:center; background:#f7f7f7; font-size:9.5pt; }
+.pv-table th, .pv-table td { border-bottom:1px solid #eadfe3; padding:.28rem .4rem; vertical-align:top; }
+.pv-table th { font-weight:700; text-align:left; background:#7a1f33; color:#fff; font-size:9.5pt; }
 .pv-table .num { text-align:right; font-variant-numeric:tabular-nums; }
-.pv-table .item { font-size:9pt; }
-.pv-table .bill td { font-weight:600; background:#f3f3f3; }
 .pv-foot { display:flex; justify-content:space-between; gap:1rem; margin-top:.55rem; align-items:flex-start; }
 .pv-words { flex:1; font-size:10.5pt; padding-top:.35rem; }
 .pv-tot { min-width:16rem; font-size:11pt; }
 .pv-tot .row { display:flex; justify-content:space-between; gap:1rem; padding:.12rem 0; }
 .pv-tot .n { font-variant-numeric:tabular-nums; }
-.pv-tot .pv-net { font-weight:800; border-top:1px solid #111; margin-top:.12rem; padding-top:.28rem; }
-.pv-tot .pv-net .n { color:#c41e3a; }
+.pv-tot .pv-net { font-weight:800; background:#f2f4f7; margin-top:.12rem; padding:.28rem .35rem; }
+.pv-tot .pv-net .n { color:#9b1c2c; }
 .pv-pay { margin-top:.7rem; display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
 .pv-checks { font-size:11pt; }
-.pv-amt-red { color:#c41e3a; font-weight:800; font-size:13pt; font-variant-numeric:tabular-nums; }
+.pv-bank-hint { margin-top:.55rem; font-size:11pt; border:1px dashed #d0d5dd; border-radius:8px; padding:.45rem .6rem; }
+.pv-amt-red { color:#9b1c2c; font-weight:800; font-size:13pt; font-variant-numeric:tabular-nums; }
 .pv-paytbl { border-collapse:collapse; font-size:10pt; min-width:22rem; }
-.pv-paytbl th, .pv-paytbl td { border:1px solid #111; padding:.2rem .4rem; vertical-align:top; }
+.pv-paytbl th, .pv-paytbl td { border:1px solid #d0d5dd; padding:.2rem .4rem; vertical-align:top; }
 .pv-paytbl td.pv-bank { white-space:pre-line; }
 .pv-sign { display:flex; justify-content:space-between; margin-top:1.6rem; font-size:10.5pt; }
 .pv-sign .col { width:48%; }
 .pv-sign .line { border-bottom:1px dotted #333; min-height:1.6rem; margin:.15rem 0 .35rem; }
+.pv-void {
+  position:absolute; inset:30% 8% auto; text-align:center; font-size:64px;
+  color:rgba(180,35,24,.28); font-weight:800; transform:rotate(-12deg); pointer-events:none;
+}
+.badge.b-canceled { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; font-weight:700; }
 </style>
 </head>
 <body>
@@ -667,7 +675,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     <button type="button" id="tabCreate" class="on"><span class="t-full">1. สร้าง</span><span class="t-short">1. สร้าง</span></button>
     <button type="button" id="tabPending"><span class="t-full">2. รอรับชำระ</span><span class="t-short">2. รอรับ</span></button>
     <button type="button" id="tabAwaitProof"><span class="t-full">3. รอแนบหลักฐาน</span><span class="t-short">3. หลักฐาน</span></button>
-    <button type="button" id="tabVoucher"><span class="t-full">4. ใบสำคัญรับเงิน</span><span class="t-short">4. สำคัญรับ</span></button>
+    <button type="button" id="tabVoucher"><span class="t-full">4. ใบเสร็จรับเงิน</span><span class="t-short">4. ใบเสร็จ</span></button>
     <button type="button" id="tabByAp"><span class="t-full">ค้นหาตามลูกหนี้</span><span class="t-short">ค้นหาลูกหนี้</span></button>
   </nav>
 </header>
@@ -752,12 +760,11 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <p class="date-hint">ว่างไว้ = ใช้วันนี้ · แตะวันที่เพื่อเปิดปฏิทิน · ปี ค.ศ.</p>
             </div>
             <div style="margin:.55rem 0 .15rem">
-              <label class="lbl">วิธีรับชำระ</label>
-              <div class="methods methods-2" role="group" aria-label="วิธีรับชำระ">
-                <button type="button" class="method on" id="notePayTransfer" data-pay-method="transfer">🏦<span>โอนเงิน</span></button>
-                <button type="button" class="method" id="notePayCheque" data-pay-method="cheque">✎<span>เช็ค</span></button>
-              </div>
-              <p class="date-hint">บางลูกหนี้ชำระเฉพาะเช็ค ไม่โอน</p>
+              <label class="lbl" for="noteReceiveBank">บัญชีสำหรับรับชำระ (optional)</label>
+              <select class="inp" id="noteReceiveBank" aria-label="บัญชีสำหรับรับชำระ">
+                <option value="">— ไม่ระบุ —</option>
+              </select>
+              <p class="date-hint">เลือกบัญชีธนาคารที่จะแจ้งลูกค้า · แสดงบนใบวางบิล · ไม่บังคับ</p>
             </div>
             <div class="remark-form" id="noteRemarkWrap" style="margin-top:.65rem">
               <label class="lbl">หมายเหตุ (optional)</label>
@@ -808,11 +815,10 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
       <div class="grid-2" style="margin-bottom:.85rem">
         <div>
-          <label class="lbl">วิธีรับชำระ</label>
-          <div class="methods methods-2" role="group" aria-label="วิธีรับชำระ">
-            <button type="button" class="method on" id="editPayTransfer" data-pay-method="transfer">🏦<span>โอนเงิน</span></button>
-            <button type="button" class="method" id="editPayCheque" data-pay-method="cheque">✎<span>เช็ค</span></button>
-          </div>
+          <label class="lbl" for="editReceiveBank">บัญชีสำหรับรับชำระ (optional)</label>
+          <select class="inp" id="editReceiveBank" aria-label="บัญชีสำหรับรับชำระ">
+            <option value="">— ไม่ระบุ —</option>
+          </select>
         </div>
         <div class="remark-form" id="editRemarkWrap">
           <label class="lbl">หมายเหตุ</label>
@@ -887,13 +893,6 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <div class="field" style="min-width:9.5rem">
         <input id="pfBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
       </div>
-      <div class="field" style="min-width:9.5rem">
-        <select id="pfMethod" aria-label="วิธีรับชำระ">
-          <option value="">วิธีรับชำระ: ทั้งหมด</option>
-          <option value="transfer">โอนเงิน</option>
-          <option value="cheque">เช็ค</option>
-        </select>
-      </div>
       <div class="field" style="min-width:13rem">
         <select id="pfSort" aria-label="เรียงลำดับ">
           <option value="due">เรียงตามกำหนดชำระ</option>
@@ -928,7 +927,6 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>เลขใบวางบิล</th>
               <th class="num">ยอดที่ต้องรับ</th>
               <th>กำหนดชำระ</th>
-              <th>วิธีรับชำระ</th>
               <th>หมายเหตุ</th>
               <th>สถานะ</th>
               <th></th>
@@ -954,7 +952,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
-        <input id="afQ" placeholder="ค้นหาเลขใบสำคัญรับเงิน / ลูกหนี้ / เลขใบวางบิล" autocomplete="off"/>
+        <input id="afQ" placeholder="ค้นหาเลขใบเสร็จรับเงิน / ลูกหนี้ / เลขใบวางบิล" autocomplete="off"/>
       </div>
       <button type="button" class="btn soft" id="btnRefreshAwaitProof">↻ รีเฟรช</button>
       <div class="field" style="min-width:9.5rem">
@@ -966,7 +964,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <table>
           <thead>
             <tr>
-              <th>เลขใบสำคัญรับเงิน</th>
+              <th>เลขใบเสร็จรับเงิน</th>
               <th>รหัสลูกหนี้</th>
               <th>เลขใบวางบิล</th>
               <th>วันที่รับเงิน</th>
@@ -994,7 +992,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
-        <input id="vfQ" placeholder="เลขใบสำคัญรับเงิน / รหัสลูกหนี้ / เลขใบวางบิล" autocomplete="off"/>
+        <input id="vfQ" placeholder="เลขใบเสร็จรับเงิน / รหัสลูกหนี้ / เลขใบวางบิล" autocomplete="off"/>
       </div>
       <div class="field" style="min-width:12rem">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
@@ -1020,7 +1018,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
         <table>
           <thead>
             <tr>
-              <th>เลขใบสำคัญรับเงิน</th>
+              <th>เลขใบเสร็จรับเงิน</th>
               <th>รหัสลูกหนี้</th>
               <th>เลขใบวางบิล</th>
               <th>วันที่รับเงิน</th>
@@ -1033,7 +1031,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <tbody id="voucherBody"></tbody>
         </table>
       </div>
-      <div id="voucherEmpty" class="empty hidden">ยังไม่มีใบสำคัญรับเงิน</div>
+      <div id="voucherEmpty" class="empty hidden">ยังไม่มีใบเสร็จรับเงิน</div>
       <div class="table-foot">
         <div class="table-foot-meta">
           <span id="voucherCount">แสดง 0 รายการ</span>
@@ -1054,7 +1052,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </section>
 
   <section id="panelByAp" class="panel">
-    <p class="panel-intro">ค้นหารายการใบวางบิล / ใบสำคัญรับเงินตามลูกหนี้</p>
+    <p class="panel-intro">ค้นหารายการใบวางบิล / ใบเสร็จรับเงินตามลูกหนี้</p>
     <div class="card toolbar">
       <div class="combo grow">
         <div class="field">
@@ -1075,7 +1073,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <thead>
             <tr>
               <th>เลขใบวางบิล</th>
-              <th>เลขใบสำคัญรับเงิน</th>
+              <th>เลขใบเสร็จรับเงิน</th>
               <th class="num">ยอดสุทธิ</th>
               <th>กำหนดชำระ</th>
               <th>หมายเหตุ</th>
@@ -1163,7 +1161,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       </div>
     </div>
     <div id="detPayMethodWrap" style="margin-top:.55rem">
-      <label class="lbl">วิธีรับชำระ</label>
+      <label class="lbl" id="detPayMethodLabel">บัญชีสำหรับรับชำระ</label>
       <div id="detPayMethodView">—</div>
     </div>
     <div id="detBills"></div>
@@ -1216,8 +1214,8 @@ let payTarget = null;
 let discMode = 'amount';
 let editDiscMode = 'amount';
 let settleMethod = 'transfer';
-let notePayMethod = 'transfer';
-let editPayMethod = 'transfer';
+let noteReceiveBankKey = '';
+let editReceiveBankKey = '';
 let pendingRows = [];
 let awaitProofRows = [];
 let voucherRows = [];
@@ -1326,18 +1324,36 @@ function dueBucket(due) {
   return 'later';
 }
 function workflowBadge(r) {
+  if (r.canceled || r.stage === 'canceled' || r.workflow_status === 'ยกเลิก') {
+    return `<span class="badge b-canceled">ยกเลิก</span>`;
+  }
   const st = r.workflow_status || '—';
   if (r.stage === 'await_proof') return `<span class="badge b-wait">${esc(st)}</span>`;
   if (r.stage === 'voucher') return `<span class="badge b-done">${esc(st)}</span>`;
   const ps = pendingStatus(r);
   return `<span class="badge ${ps.cls}">${esc(st || ps.label)}</span>`;
 }
+function isCanceledRow(r) {
+  return !!(r && (r.canceled || r.stage === 'canceled' || r.workflow_status === 'ยกเลิก'
+    || String((r.reminder || {}).status || '').toLowerCase() === 'canceled'));
+}
 function pendingStatus(r) {
+  if (isCanceledRow(r)) return {cls:'b-canceled', label:'ยกเลิก', bucket:'canceled'};
   const b = dueBucket(remDue(r));
   if (b === 'overdue') return {cls:'b-overdue', label:'เกินกำหนด', bucket:'overdue'};
   if (b === 'today') return {cls:'b-today', label:'ครบกำหนดวันนี้', bucket:'today'};
   if (b === 'soon') return {cls:'b-soon', label:'ใกล้ครบกำหนด', bucket:'soon'};
   return {cls:'b-pending', label:'รอรับชำระ', bucket:'later'};
+}
+function receiveBankLabel(key) {
+  const k = String(key || '').trim();
+  if (!k) return '';
+  const acct = (COMPANY_PAY_ACCOUNTS || []).find(a => a.key === k);
+  return acct ? (acct.label || acct.bank_name || k) : k;
+}
+function noteReceiveBankKeyOf(r) {
+  const rem = (r && r.reminder) || {};
+  return String((r && r.receive_bank_key) || rem.receive_bank_key || '').trim();
 }
 function settleLabel(m) {
   return m === 'cheque' ? 'เช็ค' : (m === 'cash' ? 'เงินสด' : (m === 'transfer' ? 'โอนเงิน' : '—'));
@@ -1463,13 +1479,13 @@ $('themeBtn').onclick = () => {
 applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
 
 function setCrumb(tab, extra) {
-  const flow = 'สร้าง → รอรับชำระ → รอแนบหลักฐาน → ใบสำคัญรับเงิน';
+  const flow = 'สร้าง → รอรับชำระ → รอแนบหลักฐาน → ใบเสร็จรับเงิน';
   const base = `${USER_NAME} · HQ only · ${flow}`;
   const labels = {
     create: 'สร้างใบวางบิล',
     pending: 'รอรับชำระ',
     awaitproof: 'รอแนบหลักฐาน',
-    voucher: 'ใบสำคัญรับเงิน',
+    voucher: 'ใบเสร็จรับเงิน',
     byap: 'ค้นหาตามลูกหนี้',
     edit: 'แก้ไขใบวางบิล',
   };
@@ -1553,12 +1569,12 @@ function slicePage(rows, page, size) {
 }
 
 async function loadPending() {
-  $('pendingBody').innerHTML = `<tr><td colspan="9" class="empty">กำลังโหลด…</td></tr>`;
+  $('pendingBody').innerHTML = `<tr><td colspan="7" class="empty">กำลังโหลด…</td></tr>`;
   try {
     pendingRows = await api('/pending');
     renderPending();
   } catch (e) {
-    $('pendingBody').innerHTML = `<tr><td colspan="9" class="err">${esc(e.message)}</td></tr>`;
+    $('pendingBody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function pendingNet(r) {
@@ -1568,15 +1584,20 @@ function filteredPending() {
   const q = ($('pfQ').value || '').trim().toLowerCase();
   const due = ($('pfDue').value || '').trim();
   const billMonth = ($('pfBillMonth').value || '').trim();
-  const method = ($('pfMethod') && $('pfMethod').value) || '';
   let rows = pendingRows.filter(r => {
     const st = pendingStatus(r);
-    if (pendingBucket !== 'all' && st.bucket !== pendingBucket) return false;
+    const canceled = st.bucket === 'canceled';
+    if (pendingBucket === 'all') {
+      // keep canceled visible in "all" so cancel does not look like delete
+    } else if (canceled) {
+      return false;
+    } else if (st.bucket !== pendingBucket) {
+      return false;
+    }
     if (due && remDue(r) !== due) return false;
     if (billMonth && remBillMonth(r) !== billMonth) return false;
-    if (method && noteSettleMethod(r) !== method) return false;
     if (q) {
-      const hay = [r.acctno, r.acctname, r.noteno, remDue(r), remarkSearchHay(r), settleLabel(noteSettleMethod(r))].map(x => String(x||'').toLowerCase()).join(' ');
+      const hay = [r.acctno, r.acctname, r.noteno, remDue(r), remarkSearchHay(r), receiveBankLabel(noteReceiveBankKeyOf(r))].map(x => String(x||'').toLowerCase()).join(' ');
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1585,8 +1606,9 @@ function filteredPending() {
   return rows;
 }
 function renderKpis() {
-  const groups = {all: pendingRows, overdue: [], today: [], soon: []};
-  pendingRows.forEach(r => {
+  const active = pendingRows.filter(r => !isCanceledRow(r));
+  const groups = {all: active, overdue: [], today: [], soon: []};
+  active.forEach(r => {
     const b = pendingStatus(r).bucket;
     if (groups[b]) groups[b].push(r);
   });
@@ -1607,22 +1629,24 @@ function renderPending() {
   $('pendingEmpty').classList.toggle('hidden', pg.total !== 0);
   $('pendingBody').innerHTML = pg.rows.map(r => {
     const st = pendingStatus(r);
+    const canceled = st.bucket === 'canceled';
+    const actions = canceled
+      ? `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
+         <button type="button" class="btn sm outline" data-print-pending="${esc(keyOf(r))}">พิมพ์</button>`
+      : `<button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
+        <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
+        ${WRITE_ENABLED ? `<button type="button" class="btn sm danger" data-cancel="${esc(keyOf(r))}">ยกเลิก</button>` : ''}
+        <button type="button" class="btn sm primary"
+          data-pay-acct="${esc(r.acctno)}" data-pay-note="${esc(r.noteno)}"
+          data-pay-amt="${Number(r.BILLAMT||0)}" data-pay-disc="${Number((r.reminder||{}).discount_amount||0)}">รับชำระ</button>`;
     return `<tr>
       <td data-label="รหัสลูกหนี้">${esc(r.acctno)}</td>
       <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
       <td class="num" data-label="ยอดที่ต้องรับ">${fmtMoney(pendingNet(r))} บาท</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r))}</td>
-      <td data-label="วิธีรับชำระ">${settleBadge(noteSettleMethod(r))}</td>
       <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
-      <td class="td-actions" data-label=""><div class="row-actions">
-        <button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
-        <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
-        ${WRITE_ENABLED ? `<button type="button" class="btn sm danger" data-cancel="${esc(keyOf(r))}">ยกเลิก</button>` : ''}
-        <button type="button" class="btn sm primary"
-          data-pay-acct="${esc(r.acctno)}" data-pay-note="${esc(r.noteno)}"
-          data-pay-amt="${Number(r.BILLAMT||0)}" data-pay-disc="${Number((r.reminder||{}).discount_amount||0)}">รับชำระ</button>
-      </div></td>
+      <td class="td-actions" data-label=""><div class="row-actions">${actions}</div></td>
     </tr>`;
   }).join('');
   renderPager($('pendingPager'), pg.page, pg.pages, p => { pendingPage = p; renderPending(); });
@@ -1631,7 +1655,7 @@ document.querySelectorAll('.kpi[data-bucket]').forEach(btn => {
   btn.onclick = () => { pendingBucket = btn.dataset.bucket; pendingPage = 1; renderPending(); };
 });
 $('btnRefreshPending').onclick = loadPending;
-['pfQ','pfDue','pfBillMonth','pfMethod','pfSort'].forEach(id => {
+['pfQ','pfDue','pfBillMonth','pfSort'].forEach(id => {
   const el = $(id);
   if (!el) return;
   const ev = (el.type === 'date' || el.type === 'month' || el.tagName === 'SELECT') ? 'change' : 'input';
@@ -1647,6 +1671,8 @@ $('pendingBody').addEventListener('click', (e) => {
     openPay(pay.dataset.payAcct, pay.dataset.payNote, pay.dataset.payAmt, pay.dataset.payDisc);
     return;
   }
+  const printPending = e.target.closest('[data-print-pending]');
+  if (printPending) { openDetailByKey(printPending.dataset.printPending, {print: true}); return; }
   const open = e.target.closest('[data-open]');
   if (open) openDetailByKey(open.dataset.open, {canPay: true});
 });
@@ -1677,7 +1703,7 @@ function renderAwaitProof() {
   $('awaitProofEmpty').classList.toggle('hidden', pg.total !== 0);
   $('awaitProofCount').textContent = pg.total ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ` : 'แสดง 0 รายการ';
   $('awaitProofBody').innerHTML = pg.rows.map(r => `<tr>
-    <td data-label="เลขใบสำคัญรับเงิน"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
+    <td data-label="เลขใบเสร็จรับเงิน"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสลูกหนี้">${esc(r.acctno)}</td>
     <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
     <td data-label="วันที่รับเงิน">${fmtDate(voucDate(r))}</td>
@@ -1737,7 +1763,7 @@ function renderVouchers() {
     ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ`
     : 'แสดง 0 รายการ';
   $('voucherBody').innerHTML = pg.rows.map(r => `<tr>
-    <td data-label="เลขใบสำคัญรับเงิน"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
+    <td data-label="เลขใบเสร็จรับเงิน"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสลูกหนี้">${esc(r.acctno)}</td>
     <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
     <td data-label="วันที่รับเงิน">${fmtDate(voucDate(r))}</td>
@@ -1799,14 +1825,15 @@ function renderByAp() {
   $('byApEmpty').classList.toggle('hidden', pg.total !== 0);
   $('byApCount').textContent = pg.total ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ` : 'แสดง 0 รายการ';
   $('byApBody').innerHTML = pg.rows.map(r => {
-    const actions = r.is_editable
+    const canceled = isCanceledRow(r);
+    const actions = (r.is_editable && !canceled)
       ? `<button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
          ${WRITE_ENABLED ? `<button type="button" class="btn sm danger" data-cancel="${esc(keyOf(r))}">ยกเลิก</button>` : ''}
          <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`
       : `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>`;
     return `<tr>
       <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
-      <td data-label="เลขใบสำคัญรับเงิน">${esc(r.voucno || '—')}</td>
+      <td data-label="เลขใบเสร็จรับเงิน">${esc(r.voucno || '—')}</td>
       <td class="num" data-label="ยอดสุทธิ">${fmtMoney(netAmt(r))}</td>
       <td data-label="กำหนดชำระ">${fmtDate(remDue(r), true)}</td>
       <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
@@ -2053,21 +2080,28 @@ function fillPrintSheet(det, row) {
   const rem = (det && det.reminder) || (row && row.reminder) || {};
   const totals = (det && det.totals) || {};
   const payments = (det && det.payments) || [];
+  const debtor = (det && det.debtor) || {};
+  const receiveBank = (det && det.receive_bank)
+    || resolveOptionalReceiveBank(noteReceiveBankKeyOf(row) || rem.receive_bank_key);
   const voucno = String((row && row.voucno) || header.voucno || '').trim();
   const noteno = String((row && row.noteno) || header.noteno || '').trim();
-  const acctno = String((row && row.acctno) || header.acctno || '').trim();
-  const acctname = String((row && row.acctname) || header.acctname || '').trim();
+  const acctno = String((row && row.acctno) || header.acctno || debtor.acctno || '').trim();
+  const acctname = String((row && row.acctname) || header.acctname || debtor.acctname || '').trim();
+  const address = String(debtor.address || '').trim();
+  const taxId = String(debtor.tax_id || '').trim();
   const due = String(rem.due_date || remDue(row || {}) || '').slice(0, 10);
   const docDate = String(voucno ? (header.VOUCDATE || (row && row.VOUCDATE) || header.NOTEDATE) : (header.NOTEDATE || todayISO())).slice(0, 10);
-  const title = voucno ? 'ใบสำคัญรับเงิน / RECEIPT VOUCHER' : 'ใบวางบิล / BILLING NOTE';
-  const docno = voucno || noteno;
-  const month = billMonthLabel(bills);
+  const title = voucno ? 'ใบเสร็จรับเงิน' : 'ใบวางบิล';
+  const docno = voucno || displayNoteno(noteno);
+  const monthRaw = rem.bill_month || billMonthLabel(bills);
+  const month = monthRaw ? String(monthRaw).slice(0, 7) : '';
   const disc = Number(totals.discount || 0);
   const billamt = Number(totals.billamt != null ? totals.billamt : 0);
   const net = Number(totals.netamt != null ? totals.netamt : Math.max(0, billamt - disc));
   const billcnt = totals.billcnt || bills.length;
   const words = totals.net_text || '';
   const remarkNote = String(rem.remark || '').trim();
+  const canceled = !!(det && det.canceled) || isCanceledRow(row) || !!(header && header.canceled);
   const bodyRows = bills.map(b => {
     const billRemark = String(b.REMARKS || '').trim() || remarkNote;
     return `<tr>
@@ -2079,28 +2113,20 @@ function fillPrintSheet(det, row) {
     </tr>`;
   });
   if (!bodyRows.length) {
-    bodyRows.push('<tr><td colspan="5" style="text-align:center;color:#666">ไม่พบบิลซื้อ</td></tr>');
+    bodyRows.push('<tr><td colspan="5" style="text-align:center;color:#666">ไม่พบบิล</td></tr>');
   }
-  const settle = (row && row.settle_method)
-    || ((row && row.reminder) || {}).settle_method
-    || (payments[0] && payments[0].settle_method)
-    || rem.settle_method
-    || '';
+  // Actual payment method from BRDET only (never fall back to note intent).
+  const settle = payments.length
+    ? String(payments[0].settle_method || '').trim().toLowerCase()
+    : '';
   const isCash = settle === 'cash';
-  const isChequeOrTransfer = settle === 'cheque' || settle === 'transfer' || (!isCash && !!voucno);
-  const payLines = payments.length ? payments : (voucno ? [{
-    CHKNO: settle === 'transfer' ? 'โอน' : (settle === 'cash' ? 'เงินสด' : ''),
-    CHKDATE: docDate,
-    BANKNAME: (() => {
-      const bank = rem.vendor_bank || {};
-      return [bank.bank_name, bank.bank_account_name, bank.bank_account_number ? ('# ' + bank.bank_account_number) : '']
-        .filter(Boolean).join(' ');
-    })(),
-    CHKAMT: net,
-    settle_method: settle,
-  }] : []);
-  const payRows = payLines.map(p => {
-    const kind = p.settle_method === 'cash' ? 'เงินสด' : (String(p.CHKNO || '').trim() || 'โอน');
+  const isTransfer = settle === 'transfer';
+  const isCheque = settle === 'cheque';
+  const payRows = payments.map(p => {
+    const method = String(p.settle_method || '').trim().toLowerCase();
+    const kind = method === 'cash' ? 'เงินสด'
+      : (method === 'transfer' ? (String(p.CHKNO || '').trim() || 'โอน')
+        : (String(p.CHKNO || '').trim() || 'เช็ค'));
     return `<tr>
       <td>${esc(kind)}</td>
       <td class="pv-amt-red">${esc(fmtDate(p.CHKDATE || docDate))}</td>
@@ -2108,33 +2134,67 @@ function fillPrintSheet(det, row) {
       <td class="num pv-amt-red">${fmtMoney(p.CHKAMT != null ? p.CHKAMT : net)}</td>
     </tr>`;
   }).join('');
+  const rightFields = [
+    `<div class="pv-k">เลขที่เอกสาร</div><div class="pv-docno">${esc(docno)}</div>`,
+    `<div class="pv-k">วันที่</div><div>${esc(fmtDate(docDate))}</div>`,
+  ];
+  if (voucno) {
+    rightFields.push(`<div class="pv-k">เลขที่ใบวางบิลอ้างอิง</div><div>${esc(displayNoteno(noteno))}</div>`);
+  }
+  if (month) {
+    rightFields.push(`<div class="pv-k">บิลเดือน</div><div>${esc(month)}</div>`);
+  }
+  const bankHint = (!voucno && receiveBank)
+    ? `<div class="pv-bank-hint"><b>บัญชีสำหรับรับชำระ</b><br/>${esc(receiveBank.label || receiveBank.bank_name || '')}</div>`
+    : '';
+  const payBlock = voucno ? `
+      <div class="pv-pay">
+        <div class="pv-checks">
+          <div>${isCash ? '☑' : '☐'} เงินสด</div>
+          <div style="margin-top:.35rem">${isCheque ? '☑' : '☐'} เช็ค</div>
+          <div style="margin-top:.35rem">${isTransfer ? '☑' : '☐'} โอน
+            <span class="pv-amt-red" style="margin-left:.6rem">${fmtMoney(net)}</span>
+          </div>
+        </div>
+        ${payRows ? `<table class="pv-paytbl">
+          <thead><tr><th>วิธีรับชำระ</th><th>ลงวันที่</th><th>ธนาคาร</th><th>จำนวนเงิน</th></tr></thead>
+          <tbody>${payRows}</tbody>
+        </table>` : ''}
+      </div>` : bankHint;
   $('printSheet').innerHTML = `
     <div class="pv">
+      ${canceled ? '<div class="pv-void">ยกเลิก</div>' : ''}
       <div class="pv-top">
-        <div class="pv-co">
+        <div class="pv-brand">
           <div class="pv-logo">KCW</div>
           <div class="pv-co-name">บริษัท เกียรติชัยอะไหล่ยนต์ 2007 จำกัด</div>
-          <div>305 ม.1 ต.ชุมแสง อ.วังจันทร์ จ.ระยอง 21210</div>
-          <div>โทร. 038-666078</div>
+          <div class="pv-co-addr">305 ม.1 ต.ชุมแสง อ.วังจันทร์ จ.ระยอง 21210<br/>โทร 038-666-078, 093-399-6490 · สำนักงานใหญ่</div>
+          <div class="pv-co-addr">เลขประจำตัวผู้เสียภาษี 0215560000262</div>
         </div>
-        <div class="pv-title-wrap">
-          <div class="pv-title">${esc(title)}</div>
-          <div class="pv-month">บิลเดือน ${esc(month || '…………………………')}</div>
+        <div class="pv-doc">
+          <h1 class="pv-title">${esc(title)}</h1>
         </div>
       </div>
-      <div class="pv-meta">
-        <div>รหัสบัญชี &nbsp; <b>${esc(acctno)}</b></div>
-        <div>ชื่อบัญชี &nbsp; <b>${esc(acctname)}</b></div>
-        <div>วันที่ &nbsp; <b>${esc(fmtDate(docDate))}</b></div>
-        <div>เลขที่ &nbsp; <b>${esc(docno)}</b></div>
-        <div class="span2">เลขที่ใบวางบิล &nbsp; <b>${esc(displayNoteno(noteno))}</b></div>
+      <div class="pv-rule"></div>
+      <div class="pv-boxes">
+        <div class="pv-box">
+          <div class="pv-fields">
+            <div class="pv-k">รหัสลูกค้า</div><div class="pv-docno">${esc(acctno)}</div>
+            <div class="pv-k">ชื่อลูกค้า</div><div class="pv-name">${esc(acctname || '—')}</div>
+            <div class="pv-k">ที่อยู่</div><div class="pv-pre">${esc(address || '—')}</div>
+            ${taxId ? `<div class="pv-k">เลขประจำตัวผู้เสียภาษี</div><div>${esc(taxId)}</div>` : ''}
+          </div>
+        </div>
+        <div class="pv-box">
+          <div class="pv-fields">${rightFields.join('')}</div>
+        </div>
       </div>
       <table class="pv-table">
         <thead>
           <tr>
             <th>วันที่บิล</th>
             <th>เลขที่บิล</th>
-            <th>จำนวนเงิน</th>
+            <th class="num">จำนวนเงิน</th>
             <th>วันที่ครบกำหนด</th>
             <th>หมายเหตุ</th>
           </tr>
@@ -2149,20 +2209,9 @@ function fillPrintSheet(det, row) {
           <div class="row pv-net"><span>ยอดสุทธิ</span><span class="n">${fmtMoney(net)}</span></div>
         </div>
       </div>
-      <div class="pv-pay">
-        <div class="pv-checks">
-          <div>${isCash ? '☑' : '☐'} เงินสด</div>
-          <div style="margin-top:.35rem">${isChequeOrTransfer ? '☑' : '☐'} เช็ค / โอน
-            ${voucno ? `<span class="pv-amt-red" style="margin-left:.6rem">${fmtMoney(net)}</span>` : ''}
-          </div>
-        </div>
-        ${voucno && payRows ? `<table class="pv-paytbl">
-          <thead><tr><th>โอน/เช็ค</th><th>ลงวันที่</th><th>ธนาคาร</th><th>จำนวนเงิน</th></tr></thead>
-          <tbody>${payRows}</tbody>
-        </table>` : ''}
-      </div>
+      ${payBlock}
       <div class="pv-sign">
-        <div class="col">ผู้รับเงิน / เช็ค<div class="line"></div>วันที่<div class="line"></div></div>
+        <div class="col">${voucno ? 'ผู้รับเงิน' : 'ผู้รับเอกสาร'}<div class="line"></div>วันที่<div class="line"></div></div>
         <div class="col" style="text-align:right">ผู้จัดทำ<div class="line">${esc((rem.issuer_label || '').trim() || USER_NAME || '')}</div></div>
       </div>
     </div>`;
@@ -2180,20 +2229,32 @@ async function openDetailByKey(key, opts) {
   detailRow = row;
   detailPayload = null;
   const rem = row.reminder || {};
-  $('detTitle').textContent = row.voucno ? `ใบสำคัญรับเงิน ${row.voucno}` : `ใบวางบิล ${notenoReuseMeta(row).display}`;
+  const canceled = isCanceledRow(row);
+  $('detTitle').textContent = row.voucno
+    ? `ใบเสร็จรับเงิน ${row.voucno}`
+    : `ใบวางบิล ${notenoReuseMeta(row).display}${canceled ? ' · ยกเลิก' : ''}`;
   $('detMeta').textContent = `${row.acctno} · ${row.acctname || ''} · ${notenoReuseMeta(row).display}`;
   renderNotenoReuseHint($('detReuseWrap'), row);
   const remark = String(rem.remark || '').trim();
   $('detRemark').innerHTML = remark ? `<div class="remark">${esc(remark)}</div>` : '';
-  const canEditDue = row.is_editable === true;
+  const canEditDue = row.is_editable === true && !canceled;
   $('detDueWrap').classList.toggle('hidden', !remDue(row));
   $('detDueView').textContent = remDue(row) || '—';
   $('detDueEdit').classList.add('hidden');
   $('detDueInput').classList.add('hidden');
   $('detDueSave').classList.add('hidden');
   $('detDueCancel').classList.add('hidden');
-  const payMethod = noteSettleMethod(row);
-  if ($('detPayMethodView')) $('detPayMethodView').innerHTML = settleBadge(payMethod);
+  if ($('detPayMethodLabel')) {
+    $('detPayMethodLabel').textContent = row.voucno ? 'วิธีรับชำระ' : 'บัญชีสำหรับรับชำระ';
+  }
+  if ($('detPayMethodView')) {
+    if (row.voucno) {
+      $('detPayMethodView').innerHTML = settleBadge(noteSettleMethod(row));
+    } else {
+      const bankLbl = receiveBankLabel(noteReceiveBankKeyOf(row));
+      $('detPayMethodView').textContent = bankLbl || '— ไม่ระบุ —';
+    }
+  }
   if ($('detPayMethodWrap')) $('detPayMethodWrap').classList.remove('hidden');
   $('detPayBtn').classList.toggle('hidden', !(opts.canPay && canEditDue && WRITE_ENABLED));
   $('detCancelNoteBtn')?.classList.toggle('hidden', !(canEditDue && WRITE_ENABLED));
@@ -2229,6 +2290,29 @@ async function openDetailByKey(key, opts) {
     detailPayload = det;
     renderDetBills(det);
     renderNotenoReuseHint($('detReuseWrap'), {...row, ...det});
+    if (det.canceled || det.workflow_status === 'ยกเลิก') {
+      row.canceled = true;
+      row.stage = 'canceled';
+      row.workflow_status = 'ยกเลิก';
+      row.is_editable = false;
+      $('detTitle').textContent = `ใบวางบิล ${notenoReuseMeta(row).display} · ยกเลิก`;
+      $('detPayBtn').classList.add('hidden');
+      $('detCancelNoteBtn')?.classList.add('hidden');
+    }
+    if ($('detPayMethodView')) {
+      const pay0 = (det.payments || [])[0];
+      if (row.voucno || pay0) {
+        const paySettle = (pay0 && pay0.settle_method) || '';
+        if ($('detPayMethodLabel')) $('detPayMethodLabel').textContent = 'วิธีรับชำระ';
+        $('detPayMethodView').innerHTML = settleBadge(paySettle);
+      } else if (det.receive_bank) {
+        if ($('detPayMethodLabel')) $('detPayMethodLabel').textContent = 'บัญชีสำหรับรับชำระ';
+        $('detPayMethodView').textContent = det.receive_bank.label || det.receive_bank.bank_name || '—';
+      } else {
+        if ($('detPayMethodLabel')) $('detPayMethodLabel').textContent = 'บัญชีสำหรับรับชำระ';
+        $('detPayMethodView').textContent = receiveBankLabel((det.reminder || {}).receive_bank_key) || '— ไม่ระบุ —';
+      }
+    }
     const canEditBills = WRITE_ENABLED && row.is_editable === true;
     $('detBillThumbs').innerHTML = thumbsHtml(det.bill_images || [], {
       canDelete: canEditBills,
@@ -2403,25 +2487,43 @@ $('detProofThumbs').addEventListener('click', (e) => {
 });
 
 
-const COMPANY_PAY_ACCOUNTS = __COMPANY_PAY_JSON__;
+let COMPANY_PAY_ACCOUNTS = __COMPANY_PAY_JSON__;
 const DEFAULT_PAY_BANK = __DEFAULT_PAY_BANK__;
 
+function resolveOptionalReceiveBank(key) {
+  const k = String(key || '').trim();
+  if (!k) return null;
+  return (COMPANY_PAY_ACCOUNTS || []).find(a => a.key === k) || null;
+}
+function fillReceiveBankSelect(sel, selected) {
+  if (!sel) return;
+  const accounts = COMPANY_PAY_ACCOUNTS || [];
+  sel.innerHTML = `<option value="">— ไม่ระบุ —</option>` + accounts.map(a =>
+    `<option value="${esc(a.key)}">${esc(a.label)}</option>`
+  ).join('');
+  sel.value = selected || '';
+}
 async function initPayBankSelect() {
   const sel = $('payBankSelect');
-  if (!sel) return;
   let accounts = COMPANY_PAY_ACCOUNTS || [];
   let defKey = DEFAULT_PAY_BANK || '';
   try {
     const j = await fetch('/receive-notes/api/company-receive-accounts').then(r => r.json());
-    if (j && Array.isArray(j.accounts) && j.accounts.length) {
+    if (Array.isArray(j) && j.length) accounts = j;
+    else if (j && Array.isArray(j.accounts) && j.accounts.length) {
       accounts = j.accounts;
       if (j.default) defKey = j.default;
     }
   } catch (e) {}
-  sel.innerHTML = accounts.map(a =>
-    `<option value="${esc(a.key)}">${esc(a.label)}</option>`
-  ).join('');
-  sel.value = defKey || (accounts[0] && accounts[0].key) || '';
+  COMPANY_PAY_ACCOUNTS = accounts;
+  if (sel) {
+    sel.innerHTML = accounts.map(a =>
+      `<option value="${esc(a.key)}">${esc(a.label)}</option>`
+    ).join('');
+    sel.value = defKey || (accounts[0] && accounts[0].key) || '';
+  }
+  fillReceiveBankSelect($('noteReceiveBank'), noteReceiveBankKey);
+  fillReceiveBankSelect($('editReceiveBank'), editReceiveBankKey);
 }
 
 function setSettleMethod(method) {
@@ -2447,22 +2549,6 @@ $('settleCheque').onclick = () => setSettleMethod('cheque');
 $('settleCash').onclick = () => setSettleMethod('cash');
 $('payChkno').addEventListener('input', () => { $('payChkno').dataset.auto = '0'; });
 
-function setNotePayMethod(method, which) {
-  const target = which === 'edit' ? 'edit' : 'note';
-  const value = method === 'cheque' ? 'cheque' : 'transfer';
-  if (target === 'edit') editPayMethod = value;
-  else notePayMethod = value;
-  const prefix = target === 'edit' ? 'editPay' : 'notePay';
-  ['Transfer', 'Cheque'].forEach(name => {
-    const el = $(prefix + name);
-    if (el) el.classList.toggle('on', (name === 'Cheque' ? 'cheque' : 'transfer') === value);
-  });
-}
-$('notePayTransfer')?.addEventListener('click', () => setNotePayMethod('transfer', 'note'));
-$('notePayCheque')?.addEventListener('click', () => setNotePayMethod('cheque', 'note'));
-$('editPayTransfer')?.addEventListener('click', () => setNotePayMethod('transfer', 'edit'));
-$('editPayCheque')?.addEventListener('click', () => setNotePayMethod('cheque', 'edit'));
-
 function openPay(acct, note, billamt, discount) {
   const bill = Number(billamt || 0);
   const disc = Number(discount || 0);
@@ -2475,13 +2561,14 @@ function openPay(acct, note, billamt, discount) {
   $('payNetAmt').textContent = fmtMoney(net);
   $('payChkamt').value = net.toFixed(2);
   $('payChkdate').value = todayISO();
-  if ($('payBankSelect') && DEFAULT_PAY_BANK) $('payBankSelect').value = DEFAULT_PAY_BANK;
-  $('payMsg').innerHTML = '';
-  $('payChkno').dataset.auto = '1';
   const row = pendingRows.find(r => r.acctno === acct && r.noteno === note)
     || findRow(`${acct}|${note}`);
-  const intended = row ? noteSettleMethod(row) : 'transfer';
-  setSettleMethod(intended === 'cheque' ? 'cheque' : (intended === 'cash' ? 'cash' : 'transfer'));
+  const preferBank = noteReceiveBankKeyOf(row) || DEFAULT_PAY_BANK || '';
+  if ($('payBankSelect') && preferBank) $('payBankSelect').value = preferBank;
+  $('payMsg').innerHTML = '';
+  $('payChkno').dataset.auto = '1';
+  // Actual settle chosen at receive time (default transfer).
+  setSettleMethod('transfer');
   wireDatePickers($('dlgPay'));
   $('dlgPay').showModal();
 }
@@ -2702,7 +2789,7 @@ $('btnCreateNote').onclick = async () => {
             billnos,
             discount_mode: discMode,
             discount_input: Number($('discInput').value || 0),
-            settle_method: notePayMethod,
+            receive_bank_key: ($('noteReceiveBank') && $('noteReceiveBank').value) || '',
             due_date: due,
             ...readRemarkForm('note'),
             confirm_unmapped: confirmUnmapped
@@ -2724,7 +2811,8 @@ $('btnCreateNote').onclick = async () => {
     $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel} · รับ ${fmtMoney(netShow)}${reuseNote}</p>`;
     $('discInput').value = '0.00';
     resetRemarkForm('note', picked?.acctno || '');
-    setNotePayMethod('transfer', 'note');
+    noteReceiveBankKey = '';
+    fillReceiveBankSelect($('noteReceiveBank'), '');
     setDiscMode('amount');
     await loadBills();
     setTimeout(() => { showTab('pending'); }, 600);
@@ -2748,7 +2836,8 @@ async function openEditNote(key, returnTab) {
   const rem = row.reminder || {};
   $('editDueDate').value = remDue(row);
   fillRemarkForm('edit', rem, row.acctno);
-  setNotePayMethod(noteSettleMethod(row), 'edit');
+  editReceiveBankKey = noteReceiveBankKeyOf(row);
+  fillReceiveBankSelect($('editReceiveBank'), editReceiveBankKey);
   editDiscMode = rem.discount_mode === 'percent' ? 'percent' : 'amount';
   $('editDiscInput').value = rem.discount_input != null ? rem.discount_input : (rem.discount_amount || 0);
   setEditDiscMode(editDiscMode);
@@ -2828,7 +2917,7 @@ $('btnSaveEdit').onclick = async () => {
         billnos,
         due_date: $('editDueDate').value,
         ...readRemarkForm('edit'),
-        settle_method: editPayMethod,
+        receive_bank_key: ($('editReceiveBank') && $('editReceiveBank').value) || '',
         discount_mode: editDiscMode,
         discount_input: Number($('editDiscInput').value || 0),
       })
@@ -2844,13 +2933,17 @@ async function cancelNoteByKey(key, returnTab, opts) {
   if (!WRITE_ENABLED) { alert('KSS write ปิดอยู่'); return; }
   const row = findRow(key) || pendingRows.find(r => keyOf(r) === key) || (editTarget && keyOf(editTarget) === key ? editTarget : null);
   if (!row) { alert('ไม่พบใบวางบิล'); return; }
+  if (isCanceledRow(row)) {
+    alert('ใบวางบิลนี้ยกเลิกแล้ว');
+    return;
+  }
   if (row.is_editable === false || (row.voucno || '').trim()) {
-    alert('ยกเลิกได้เฉพาะใบวางบิลที่ยังไม่รับชำระ');
+    alert('ไม่สามารถยกเลิกใบวางบิลที่มีการรับชำระแล้ว');
     return;
   }
   const label = notenoReuseMeta(row).display || row.noteno;
   const ok = confirm(
-    `ยกเลิกใบวางบิล ${label} ของ ${row.acctno}?\n\nบิลที่ผูกไว้จะกลับมาเลือกได้ใหม่ · ใบวางบิลจะถูกทำเครื่องหมายยกเลิกใน KSS (ไม่ลบแถว)`
+    `ยกเลิกใบวางบิล ${label} ของ ${row.acctno}?\n\nคงเลขเอกสารเดิม · สถานะเป็น "ยกเลิก" ทั้งระบบใหม่และ KSS · บิลที่ผูกไว้จะกลับมาเลือกได้ใหม่`
   );
   if (!ok) return;
   try {
@@ -2878,7 +2971,7 @@ $('btnCancelNote')?.addEventListener('click', () => {
 
 wireDatePickers(document);
 setDiscMode('amount');
-setNotePayMethod('transfer', 'note');
+noteReceiveBankKey = '';
 $('billList').innerHTML = `<tr><td colspan="4" class="empty">เลือกลูกหนี้ก่อน</td></tr>`;
 initPayBankSelect();
 (function boot() {

@@ -16,24 +16,27 @@ from src.receive_notes.company_banks import (
     brdet_line_from_payment,
     list_company_receive_accounts,
     resolve_company_receive_account,
+    resolve_optional_receive_account,
 )
 from src.receive_notes.config import get_receive_notes_settings
 from src.receive_notes.db import (
-    delete_note,
     get_note,
     get_receive_notes_supabase_client,
     insert_note,
     list_all_service_notes,
+    list_canceled_service_notes,
     list_open_notes,
     patch_note,
 )
 from src.receive_notes.net import is_tailscale_cg_nat
 from src.receive_notes.parts9 import (
     debtor_summary,
+    get_debtor,
     get_note_header,
     infer_settle_method,
     list_bills_for_edit,
     list_brdet,
+    list_canceled_notes,
     list_note_bills,
     list_pending_notes,
     list_pickable_bills,
@@ -203,7 +206,8 @@ class NoteCreate(BaseModel):
     remark: str = ""
     bill_month: str | None = None
     remark_extra: str | None = None
-    settle_method: str = "transfer"  # transfer | cheque
+    settle_method: str | None = None  # legacy; ignored for new create UX
+    receive_bank_key: str | None = None  # optional company bank on billing note
     due_date: str
     confirm_unmapped: bool = False
 
@@ -216,7 +220,8 @@ class NoteUpdate(BaseModel):
     remark_extra: str | None = None
     discount_mode: str | None = None
     discount_input: float | None = None
-    settle_method: str | None = None
+    settle_method: str | None = None  # legacy
+    receive_bank_key: str | None = None
 
 
 class ReminderPatch(BaseModel):
@@ -227,6 +232,7 @@ class ReminderPatch(BaseModel):
     discount_mode: str | None = None
     discount_input: float | None = None
     settle_method: str | None = None
+    receive_bank_key: str | None = None
 
 
 class VoucherCreate(BaseModel):
@@ -252,12 +258,23 @@ def _parse_due(raw: str) -> str:
 
 
 def _normalize_note_pay_method(raw: str | None, *, default: str = "transfer") -> str:
-    """Intended settlement on a billing note: transfer | cheque (cash is voucher-only)."""
+    """Legacy intended settlement on a billing note: transfer | cheque."""
     text = (raw if raw is not None else default) or default
     method = text.strip().lower()
     if method not in NOTE_PAY_METHODS:
         raise ValueError("settle_method must be transfer or cheque")
     return method
+
+
+def _normalize_receive_bank_key(raw: str | None) -> str | None:
+    """Optional company bank on billing note; empty clears."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    acct = resolve_optional_receive_account(text)
+    if not acct:
+        raise ValueError("unknown receive_bank_key")
+    return acct["key"]
 
 
 def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str, float, float]:
@@ -278,31 +295,52 @@ def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str,
     return m, val, amount
 
 
-def _workflow_meta(*, voucno: str = "", has_proof: bool = False) -> dict[str, Any]:
+def _workflow_meta(
+    *,
+    voucno: str = "",
+    has_proof: bool = False,
+    canceled: bool = False,
+) -> dict[str, Any]:
+    if canceled:
+        return {
+            "stage": "canceled",
+            "workflow_status": "ยกเลิก",
+            "is_editable": False,
+            "canceled": True,
+        }
     vo = (voucno or "").strip()
     if not vo:
         return {
             "stage": "pending",
             "workflow_status": "รอรับชำระ",
             "is_editable": True,
+            "canceled": False,
         }
     if not has_proof:
         return {
             "stage": "await_proof",
             "workflow_status": "รอแนบหลักฐาน",
             "is_editable": False,
+            "canceled": False,
         }
     return {
         "stage": "voucher",
-        "workflow_status": "ใบสำคัญรับเงิน",
+        "workflow_status": "ใบเสร็จรับเงิน",
         "is_editable": False,
+        "canceled": False,
     }
 
 
 def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str, Any]:
     voucno = (row.get("voucno") or row.get("VOUCNO") or "").strip()
     stored = (row.get("noteno") or row.get("NOTENO") or "").strip()
-    return {**row, **_workflow_meta(voucno=voucno, has_proof=has_proof), **noteno_meta(stored)}
+    rem = row.get("reminder") or {}
+    canceled = bool(row.get("canceled")) or str(rem.get("status") or "").lower() == "canceled"
+    return {
+        **row,
+        **_workflow_meta(voucno=voucno, has_proof=has_proof, canceled=canceled),
+        **noteno_meta(stored),
+    }
 
 
 def _issuer_label_for_identity(ident, *, confirm_unmapped: bool = False) -> str | JSONResponse:
@@ -364,28 +402,47 @@ def _list_voucher_payments(site: str, voucno: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
-        item["settle_method"] = infer_settle_method(item.get("CHKNO"))
+        item["settle_method"] = infer_settle_method(
+            item.get("CHKNO"),
+            bankname=item.get("BANKNAME"),
+            acctno=item.get("ACCTNO"),
+        )
         out.append(item)
     return out
 
 
 def _note_detail_response(settings, acctno: str, noteno: str):
-    header = get_note_header(settings.site, acctno, noteno)
-    if not header:
-        return JSONResponse({"error": "not found"}, status_code=404)
     client = get_receive_notes_supabase_client()
     rem = get_note(client, acctno, noteno)
     rem = _enrich_note_issuer(rem)
+    include_canceled = bool(rem and str(rem.get("status") or "").lower() == "canceled")
+    header = get_note_header(
+        settings.site, acctno, noteno, include_canceled=include_canceled
+    )
+    if not header and rem and include_canceled:
+        header = get_note_header(settings.site, acctno, noteno, include_canceled=True)
+    if not header:
+        return JSONResponse({"error": "not found"}, status_code=404)
     proofs: list[dict[str, Any]] = []
     voucno = (header.get("voucno") or "").strip()
     if voucno:
         proofs = list_folder(client, payment_image_prefix(voucno))
     try:
-        bills = list_note_bills(settings.site, acctno, noteno)
+        try:
+            bills = list_note_bills(settings.site, acctno, noteno)
+        except RuntimeError:
+            bills = []
         payments = _list_voucher_payments(settings.site, voucno) if voucno else []
+        debtor = get_debtor(settings.site, acctno)
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
     totals = _note_totals(header, rem)
+    receive_bank = resolve_optional_receive_account(
+        (rem or {}).get("receive_bank_key") if rem else None
+    )
+    canceled = bool(header.get("canceled")) or (
+        str((rem or {}).get("status") or "").lower() == "canceled"
+    )
     return {
         "header": header,
         "bills": bills,
@@ -395,6 +452,14 @@ def _note_detail_response(settings, acctno: str, noteno: str):
         "bill_images": [],
         "payment_images": proofs,
         "banks": [],
+        "debtor": debtor,
+        "receive_bank": receive_bank,
+        "canceled": canceled,
+        **_workflow_meta(
+            voucno=voucno,
+            has_proof=bool(proofs),
+            canceled=canceled,
+        ),
         **noteno_meta(noteno),
     }
 
@@ -529,13 +594,17 @@ def api_pending(request: Request):
     settings = _settings()
     client = get_receive_notes_supabase_client()
     overlays = list_open_notes(client)
+    canceled_overlays = list_canceled_service_notes(client)
     try:
         rows = list_pending_notes(settings.site, overlays)
+        canceled_rows = list_canceled_notes(settings.site, canceled_overlays)
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
     out = []
     for row in rows:
         out.append(_with_workflow({**row, "stage": "pending"}))
+    for row in canceled_rows:
+        out.append(_with_workflow({**row, "canceled": True}))
     return out
 
 
@@ -569,6 +638,11 @@ def api_reminder_patch(request: Request, acctno: str, noteno: str, body: Reminde
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         patch["settle_method"] = method
+    if body.receive_bank_key is not None:
+        try:
+            patch["receive_bank_key"] = _normalize_receive_bank_key(body.receive_bank_key)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
     if body.discount_mode is not None or body.discount_input is not None:
         settings = _settings()
         header = get_note_header(settings.site, acctno, noteno)
@@ -599,9 +673,15 @@ def api_create_note(request: Request, body: NoteCreate):
     if not body.billnos:
         return JSONResponse({"error": "select at least one bill"}, status_code=400)
     try:
-        settle_method = _normalize_note_pay_method(body.settle_method)
+        receive_bank_key = _normalize_receive_bank_key(body.receive_bank_key)
     except ValueError as exc:
         return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
+    settle_method = None
+    if body.settle_method:
+        try:
+            settle_method = _normalize_note_pay_method(body.settle_method)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
 
     issuer_label = _issuer_label_for_identity(
         ident, confirm_unmapped=bool(body.confirm_unmapped)
@@ -656,6 +736,7 @@ def api_create_note(request: Request, body: NoteCreate):
         "discount_input": discount_input,
         "discount_amount": discount_amount,
         "settle_method": settle_method,
+        "receive_bank_key": receive_bank_key,
         "status": "open",
         **rem_fields,
         "created_by": ident.line_user_id if ident else None,
@@ -702,9 +783,11 @@ def api_list_notes(request: Request, acctno: str = "", noteno: str = ""):
         acct = acctno.strip()
         overlays = [r for r in overlays if (r.get("acctno") or "").strip() == acct]
     open_overlays = [r for r in overlays if str(r.get("status") or "open") == "open"]
+    canceled_overlays = [r for r in overlays if str(r.get("status") or "") == "canceled"]
     try:
         pending = list_pending_notes(settings.site, open_overlays)
         vouchered = list_vouchered_notes(settings.site, overlays)
+        canceled = list_canceled_notes(settings.site, canceled_overlays)
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
 
@@ -718,6 +801,8 @@ def api_list_notes(request: Request, acctno: str = "", noteno: str = ""):
         key = (row.get("acctno", "").strip(), row.get("noteno", "").strip())
         if key in seen:
             continue
+        if str((row.get("reminder") or {}).get("status") or "") == "canceled":
+            continue
         voucno = (row.get("voucno") or "").strip()
         proofs = list_folder(client, payment_image_prefix(voucno)) if voucno else []
         has_proof = bool(proofs)
@@ -727,6 +812,12 @@ def api_list_notes(request: Request, acctno: str = "", noteno: str = ""):
                 has_proof=has_proof,
             )
         )
+    for row in canceled:
+        key = (row.get("acctno", "").strip(), row.get("noteno", "").strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(_with_workflow({**row, "canceled": True}))
     out.sort(
         key=lambda x: (
             (x.get("reminder") or {}).get("due_date") or "",
@@ -794,6 +885,11 @@ def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate
         except ValueError as exc:
             return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
         patch["settle_method"] = method
+    if body.receive_bank_key is not None:
+        try:
+            patch["receive_bank_key"] = _normalize_receive_bank_key(body.receive_bank_key)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "code": "validation"}, status_code=400)
     if body.discount_mode is not None or body.discount_input is not None:
         mode = body.discount_mode if body.discount_mode is not None else rem.get("discount_mode", "amount")
         raw = body.discount_input if body.discount_input is not None else rem.get("discount_input", 0)
@@ -813,7 +909,7 @@ def api_update_note(request: Request, acctno: str, noteno: str, body: NoteUpdate
 
 @router.delete("/api/notes")
 def api_cancel_note(request: Request, acctno: str = "", noteno: str = ""):
-    """Soft-cancel an unpaid (unvouchered) note: CANCELED='Y' + free bills + drop overlay."""
+    """Soft-cancel unpaid note in both systems: KSS CANCELED='Y' + overlay status=canceled."""
     _, err = _require_api(request)
     if err:
         return err
@@ -825,19 +921,36 @@ def api_cancel_note(request: Request, acctno: str = "", noteno: str = ""):
 
     client = get_receive_notes_supabase_client()
     rem = get_note(client, acct, note)
-    header = get_note_header(settings.site, acct, note)
+    header = get_note_header(settings.site, acct, note, include_canceled=True)
+
+    if rem and str(rem.get("status") or "").lower() == "canceled":
+        return {
+            "acctno": acct,
+            "noteno": note,
+            "canceled": True,
+            "already_canceled": True,
+            "reminder": rem,
+            **_workflow_meta(canceled=True),
+        }
 
     if header:
         if (header.get("voucno") or "").strip() or str(header.get("VOUCED") or "N").strip().upper() == "Y":
             return JSONResponse(
-                {"error": "cannot cancel vouchered note", "code": "already_vouchered"},
+                {
+                    "error": "ไม่สามารถยกเลิกใบวางบิลที่มีการรับชำระแล้ว",
+                    "code": "already_vouchered",
+                },
                 status_code=409,
             )
+        if header.get("canceled"):
+            # KSS already canceled — still mark overlay if needed
+            pass
     elif not rem:
         return JSONResponse({"error": "note not found"}, status_code=404)
 
     kss_result: dict[str, Any] = {"canceled": False, "reason": "not_in_kss"}
-    if header:
+    # Always attempt KSS cancel when note may exist (do not rely on non-canceled-only lookup).
+    if header and not header.get("canceled"):
         try:
             kss_result = cancel_unvouchered_receive_note(
                 settings=settings, acctno=acct, noteno=note
@@ -846,18 +959,59 @@ def api_cancel_note(request: Request, acctno: str = "", noteno: str = ""):
             status = 409 if exc.code in ("already_vouchered", "not_editable") else 400
             if exc.code == "write_disabled":
                 status = 403
+            if exc.code == "already_vouchered":
+                return JSONResponse(
+                    {
+                        "error": "ไม่สามารถยกเลิกใบวางบิลที่มีการรับชำระแล้ว",
+                        "code": exc.code,
+                    },
+                    status_code=409,
+                )
             return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+    elif header and header.get("canceled"):
+        kss_result = {"acctno": acct, "noteno": note, "canceled": True, "reason": "already_canceled"}
+    else:
+        # Overlay-only orphan: still try writer (may find KSS when active-header lookup missed).
+        try:
+            kss_result = cancel_unvouchered_receive_note(
+                settings=settings, acctno=acct, noteno=note
+            )
+        except ReceiveNoteWriteError as exc:
+            if exc.code == "write_disabled":
+                return JSONResponse({"error": str(exc), "code": exc.code}, status_code=403)
+            if exc.code == "already_vouchered":
+                return JSONResponse(
+                    {
+                        "error": "ไม่สามารถยกเลิกใบวางบิลที่มีการรับชำระแล้ว",
+                        "code": exc.code,
+                    },
+                    status_code=409,
+                )
+            # not_found → keep going to mark overlay canceled
+            kss_result = {"acctno": acct, "noteno": note, "canceled": False, "reason": exc.code}
 
-    reminder_deleted = False
+    reminder = rem
     try:
         if rem:
-            delete_note(client, acct, note)
-            reminder_deleted = True
+            reminder = patch_note(client, acct, note, {"status": "canceled"})
+        elif kss_result.get("canceled") or (header and header.get("canceled")):
+            # Recreate overlay so new system keeps doc no. with red ยกเลิก
+            # (covers prior bug that deleted overlay while KSS stayed open).
+            reminder = insert_note(
+                client,
+                {
+                    "acctno": acct,
+                    "noteno": note,
+                    "jourmode": str((header or {}).get("JOURMODE") or "1"),
+                    "status": "canceled",
+                    "due_date": None,
+                },
+            )
     except Exception as exc:
         return JSONResponse(
             {
-                "error": f"KSS canceled but overlay delete failed: {exc}",
-                "code": "reminder_delete_failed",
+                "error": f"KSS canceled but overlay status update failed: {exc}",
+                "code": "reminder_cancel_failed",
                 "acctno": acct,
                 "noteno": note,
                 "kss": kss_result,
@@ -865,13 +1019,18 @@ def api_cancel_note(request: Request, acctno: str = "", noteno: str = ""):
             status_code=500,
         )
 
+    canceled_ok = bool(kss_result.get("canceled")) or (
+        reminder is not None and str(reminder.get("status") or "").lower() == "canceled"
+    )
     return {
         "acctno": acct,
         "noteno": note,
-        "canceled": bool(kss_result.get("canceled")) or not header,
+        "canceled": canceled_ok,
         "kss": kss_result,
-        "reminder_deleted": reminder_deleted,
+        "reminder": reminder,
+        "reminder_deleted": False,
         "images_removed": 0,
+        **_workflow_meta(canceled=True),
     }
 
 

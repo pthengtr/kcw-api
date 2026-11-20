@@ -80,6 +80,38 @@ def search_debtors(site: str, q: str, *, limit: int = 30) -> list[dict[str, Any]
     return [dict(r) for r in rows]
 
 
+def get_debtor(site: str, acctno: str) -> dict[str, Any] | None:
+    """ARMAS row for printable bill header (address + tax id)."""
+    acct = (acctno or "").strip()
+    if not acct:
+        return None
+    eng = get_site_engine(_site_key(site))
+    sql = text(
+        """
+        SELECT TOP 1
+          LTRIM(RTRIM(ACCTNO)) AS acctno,
+          LTRIM(RTRIM(ACCTNAME)) AS acctname,
+          LTRIM(RTRIM(COALESCE(ADDR1, ''))) AS addr1,
+          LTRIM(RTRIM(COALESCE(ADDR2, ''))) AS addr2,
+          LTRIM(RTRIM(COALESCE(MOBILE, ''))) AS tax_id
+        FROM dbo.ARMAS
+        WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            row = conn.execute(sql, {"acctno": acct}).mappings().first()
+    except Exception as exc:
+        raise RuntimeError(format_sql_error(exc, site=site)) from exc
+    if not row:
+        return None
+    item = dict(row)
+    parts = [str(item.get("addr1") or "").strip(), str(item.get("addr2") or "").strip()]
+    item["address"] = "\n".join(p for p in parts if p)
+    return item
+
+
 def list_pickable_bills(
     site: str,
     acctno: str,
@@ -195,14 +227,16 @@ def get_note_header(
     noteno: str,
     *,
     engine: Engine | None = None,
+    include_canceled: bool = False,
 ) -> dict[str, Any] | None:
     acct = (acctno or "").strip()
     note = (noteno or "").strip()
     if not acct or not note:
         return None
     eng = engine or get_site_engine(_site_key(site))
+    cancel_clause = "" if include_canceled else "AND ISNULL(CANCELED, 'N') <> 'Y'"
     sql = text(
-        """
+        f"""
         SELECT TOP 1
           ID, JOURMODE, JOURTYPE, NOTED, NOTEDATE,
           LTRIM(RTRIM(NOTENO)) AS noteno,
@@ -216,7 +250,7 @@ def get_note_header(
         FROM dbo.RVMAS
         WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
           AND LTRIM(RTRIM(NOTENO)) = :noteno
-          AND ISNULL(CANCELED, 'N') <> 'Y'
+          {cancel_clause}
         ORDER BY NOTEDATE DESC
         """
     )
@@ -227,6 +261,7 @@ def get_note_header(
     item = dict(row)
     item["NOTEDATE"] = _iso_date(item.get("NOTEDATE"))
     item["VOUCDATE"] = _iso_date(item.get("VOUCDATE"))
+    item["canceled"] = str(item.get("CANCELED") or "N").strip().upper() == "Y"
     for key in ("BILLAMT", "DISCOUNT", "NETAMT", "PAYAMT", "CHKAMT", "CASHAMT"):
         if key in item:
             item[key] = _to_float(item.get(key)) if item.get(key) is not None else None
@@ -362,6 +397,73 @@ def list_pending_notes(site: str, overlays: list[dict[str, Any]] | None = None, 
     return out[:limit]
 
 
+def list_canceled_notes(site: str, overlays: list[dict[str, Any]], *, limit: int = 200) -> list[dict[str, Any]]:
+    """Canceled billing notes (overlay status=canceled) joined to KSS RVMAS including CANCELED='Y'."""
+    if not overlays:
+        return []
+    eng = get_site_engine(_site_key(site))
+    keys = [
+        (r["acctno"].strip(), r["noteno"].strip())
+        for r in overlays
+        if r.get("acctno")
+        and r.get("noteno")
+        and str(r.get("status") or "").strip().lower() == "canceled"
+    ]
+    if not keys:
+        return []
+    clauses = []
+    params: dict[str, Any] = {}
+    for i, (acct, note) in enumerate(keys):
+        clauses.append(f"(LTRIM(RTRIM(ACCTNO)) = :a{i} AND LTRIM(RTRIM(NOTENO)) = :n{i})")
+        params[f"a{i}"] = acct
+        params[f"n{i}"] = note
+    where = " OR ".join(clauses)
+    sql = text(
+        f"""
+        SELECT LTRIM(RTRIM(ACCTNO)) AS acctno,
+               LTRIM(RTRIM(ACCTNAME)) AS acctname,
+               LTRIM(RTRIM(NOTENO)) AS noteno,
+               NOTEDATE, BILLCNT, BILLAMT, VOUCED, VOUCNO, JOURMODE, CANCELED
+        FROM dbo.RVMAS
+        WHERE NOTED = 'Y'
+          AND ({where})
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception as exc:
+        raise RuntimeError(format_sql_error(exc, site=site)) from exc
+    by_key = {(r["acctno"], r["noteno"]): dict(r) for r in rows}
+    out: list[dict[str, Any]] = []
+    for rem in overlays:
+        if str(rem.get("status") or "").strip().lower() != "canceled":
+            continue
+        acct = rem.get("acctno", "").strip()
+        note = rem.get("noteno", "").strip()
+        rvmas = by_key.get((acct, note)) or {
+            "acctno": acct,
+            "acctname": "",
+            "noteno": note,
+            "NOTEDATE": rem.get("created_at"),
+            "BILLCNT": 0,
+            "BILLAMT": 0,
+            "VOUCED": "N",
+            "VOUCNO": "",
+            "CANCELED": "Y",
+        }
+        merged = {**rvmas, "reminder": rem, "canceled": True, "settle_method": rem.get("settle_method")}
+        nd = merged.get("NOTEDATE")
+        if isinstance(nd, datetime):
+            merged["NOTEDATE"] = nd.date().isoformat()
+        elif isinstance(nd, date):
+            merged["NOTEDATE"] = nd.isoformat()
+        merged["BILLAMT"] = _to_float(merged.get("BILLAMT"))
+        out.append(merged)
+    out.sort(key=lambda x: (x.get("reminder") or {}).get("due_date") or x.get("NOTEDATE") or "", reverse=True)
+    return out[:limit]
+
+
 def list_vouchered(
     site: str,
     *,
@@ -472,11 +574,19 @@ def list_bills_for_edit(site: str, acctno: str, noteno: str) -> list[dict[str, A
     return out
 
 
-def infer_settle_method(chkno: str | None) -> str:
+def infer_settle_method(
+    chkno: str | None,
+    *,
+    bankname: str | None = None,
+    acctno: str | None = None,
+) -> str:
+    """Infer actual receive channel from BRDET (prefer bank/GL over CHKNO text)."""
+    bank = (bankname or "").strip()
+    gl = (acctno or "").strip()
     text_v = (chkno or "").strip()
-    if not text_v:
+    if not bank and not gl:
         return "cash"
-    if text_v == "โอน":
+    if gl or text_v == "โอน":
         return "transfer"
     return "cheque"
 
