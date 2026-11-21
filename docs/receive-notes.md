@@ -28,14 +28,17 @@ Template: [`pay-notes.md`](./pay-notes.md) — same Layout / Process / Function 
 
 ### Number series
 
-| Doc | JOURMODE | Stem | Example |
-|-----|----------|------|---------|
+| Doc | JOURMODE / rule | Stem | Example |
+|-----|-----------------|------|---------|
 | Note `NOTENO` | 2 Non-VAT | `BNN{YYMM}-` | `BNN6911-001` |
 | Note `NOTENO` | 1 VAT | `BN{YYMM}-` | `BN6911-001` |
 | Voucher `VOUCNO` | 2 Non-VAT | `RCN{YYMM}-` | `RCN6911-001` |
 | Voucher `VOUCNO` | 1 VAT | `RC{YYMM}-` | `RC6911-001` |
+| Voucher `VOUCNO` | Marketplace TAD debtors (`7LAZ1` `7LAZ2` `7LPNT` `7LICE` `7IAPL` `7SP` `7SPNT` `7SICE` `7IAPS` `7ICE`) | `RVI{YYMM}-` | `RVI6911-001` |
 
 Mixed VAT/Non-VAT bills → reject (`mixed_jourmode`). Voucher is **note-first only**; duplicate cut blocked (`already_vouchered`).
+
+**Proof skip:** `RVI…` vouchers and cash settles skip tab 3 (รอแนบหลักฐาน) and land on tab 4 (ใบเสร็จรับเงิน) immediately.
 
 ### Tab 2 — รอรับชำระ
 
@@ -51,7 +54,8 @@ Mixed VAT/Non-VAT bills → reject (`mixed_jourmode`). Voucher is **note-first o
 - Company header matches ใบ TO (logo / name / address / phone / tax id)
 - Left: customer code, name, address, tax id; Right: doc no, date, ref note (receipt), bill month
 - `@page { margin: 0 }` to avoid browser print header/footer chrome
-- Receipt title **ใบเสร็จรับเงิน** (prefix `RC` / `RCN` unchanged); checkboxes show actual BRDET settle only
+- Receipt title **ใบเสร็จรับเงิน** (prefix `RC` / `RCN`, or `RVI` for marketplace TAD); checkboxes show actual BRDET settle only
+- Bill pick / note bill lists: `BILLDATE DESC` (newest first)
 
 ## KSS mapping
 

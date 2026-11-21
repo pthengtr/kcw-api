@@ -138,7 +138,7 @@ def list_pickable_bills(
           AND ISNULL(CANCELED, 'N') <> 'Y'
           AND JOURMODE IN ('1', '2')
           {note_clause}
-        ORDER BY BILLDATE ASC
+        ORDER BY BILLDATE DESC, BILLNO DESC
         """
     )
     try:
@@ -213,7 +213,7 @@ def list_note_bills(
         WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
           AND LTRIM(RTRIM(NOTENO)) = :noteno
           AND ISNULL(CANCELED, 'N') <> 'Y'
-        ORDER BY BILLDATE ASC
+        ORDER BY BILLDATE DESC, BILLNO DESC
         """
     )
     with eng.connect() as conn:

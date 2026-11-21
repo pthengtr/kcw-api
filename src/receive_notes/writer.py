@@ -13,11 +13,31 @@ from src.stock_check.parts9 import get_parts9_engine
 
 _BKK = ZoneInfo("Asia/Bangkok")
 
+# Marketplace / TAD debtor codes → RVI receipt series (online settlement).
+RVI_ACCTNOS = frozenset(
+    {
+        "7LAZ1",
+        "7LAZ2",
+        "7LPNT",
+        "7LICE",
+        "7IAPL",
+        "7SP",
+        "7SPNT",
+        "7SICE",
+        "7IAPS",
+        "7ICE",
+    }
+)
+
 
 class ReceiveNoteWriteError(RuntimeError):
     def __init__(self, message: str, *, code: str = "write_failed"):
         super().__init__(message)
         self.code = code
+
+
+def uses_rvi_voucher(acctno: str | None) -> bool:
+    return (acctno or "").strip().upper() in RVI_ACCTNOS
 
 
 def _writer_engine(settings: ReceiveNotesSettings) -> Engine:
@@ -40,17 +60,30 @@ def _map_write_exc(exc: Exception) -> ReceiveNoteWriteError:
     return ReceiveNoteWriteError(str(exc), code="write_failed")
 
 
-def voucher_stem(jourmode: str, when: datetime | None = None) -> str:
-    """VAT (JOURMODE=1) → RC… ; Non-VAT (JOURMODE=2) → RCN…"""
+def voucher_stem(
+    jourmode: str,
+    when: datetime | None = None,
+    *,
+    acctno: str | None = None,
+) -> str:
+    """VAT → RC… ; Non-VAT → RCN… ; marketplace TAD debtors → RVI…"""
     yymm = buddhist_yymm(when)
+    if uses_rvi_voucher(acctno):
+        return f"RVI{yymm}-"
     mode = (jourmode or "1").strip() or "1"
     if mode == "2":
         return f"RCN{yymm}-"
     return f"RC{yymm}-"
 
 
-def next_voucno(conn, *, jourmode: str, when: datetime | None = None) -> str:
-    stem = voucher_stem(jourmode, when)
+def next_voucno(
+    conn,
+    *,
+    jourmode: str,
+    when: datetime | None = None,
+    acctno: str | None = None,
+) -> str:
+    stem = voucher_stem(jourmode, when, acctno=acctno)
     row = conn.execute(
         text("SELECT MAX(VOUCNO) AS max_no FROM dbo.RVMAS WHERE VOUCNO LIKE :pat"),
         {"pat": stem + "%"},
@@ -66,6 +99,17 @@ def next_voucno(conn, *, jourmode: str, when: datetime | None = None) -> str:
     if len(candidate) > 15:
         raise ReceiveNoteWriteError("generated VOUCNO exceeds 15 chars", code="voucno_overflow")
     return candidate
+
+
+def proof_required(*, voucno: str = "", settle_method: str = "") -> bool:
+    """RVI marketplace receipts and cash settles skip the proof tab."""
+    method = (settle_method or "").strip().lower()
+    if method == "cash":
+        return False
+    vo = (voucno or "").strip().upper()
+    if vo.startswith("RVI"):
+        return False
+    return True
 
 
 def _parse_day(raw: str | None, fallback: datetime) -> datetime:
@@ -594,7 +638,7 @@ def create_receipt_voucher(
 
     try:
         with write_eng.begin() as conn:
-            voucno = next_voucno(conn, jourmode=jourmode, when=voucd)
+            voucno = next_voucno(conn, jourmode=jourmode, when=voucd, acctno=acct)
             if note:
                 header = conn.execute(
                     text(

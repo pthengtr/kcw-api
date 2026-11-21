@@ -192,9 +192,10 @@ def test_pending_list_sorts_kbiz_reminders_soonest_first():
 def test_print_sheet_includes_numeric_net_amount():
     html = page(user_name="ทดสอบ", site="HQ", write_enabled=False)
     assert '<div class="row"><span>จำนวนเงินรวม</span><span class="n">${fmtMoney(billamt)}</span></div>' in html
-    assert '<div class="row"><span>ส่วนลด</span><span class="n">${fmtMoney(disc)}</span></div>' in html
+    assert '<div class="row"><span>ส่วนลด</span><span class="n">${esc(formatDiscountLabel(rem, disc))}</span></div>' in html
     assert '<div class="row pv-net"><span>ยอดสุทธิ</span><span class="n">${fmtMoney(net)}</span></div>' in html
     assert ".pv-tot .pv-net" in html
+    assert "function formatDiscountLabel" in html
 
 
 def test_recorded_payment_puts_account_number_on_its_own_line():

@@ -66,7 +66,8 @@ _HTML = r"""<!doctype html>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root {
-  --acc:#2f6bff; --acc-soft:#e8f0ff; --on-acc:#fff;
+  /* AP (ชำระเจ้าหนี้) brand accent — Header / Active Tab / primary buttons */
+  --acc:#64748B; --acc-soft:#eef1f4; --on-acc:#fff;
   --ok:#15803d; --ok-bg:#dcfce7;
   --warn:#c2410c; --warn-bg:#ffedd5;
   --down:#dc2626; --down-bg:#fee2e2;
@@ -81,7 +82,7 @@ _HTML = r"""<!doctype html>
 html[data-theme="dark"] {
   color-scheme: dark;
   --bg:#0c1014; --card:#161d26; --line:#2a3542; --text:#e8eef4; --muted:#8b9aab;
-  --chip:#243040; --inset:#0a0e12; --acc-soft:#1a2744;
+  --chip:#243040; --inset:#0a0e12; --acc-soft:#2a323c;
   --ok-bg:#163024; --warn-bg:#3a2718; --down-bg:#3a1c1c; --soon-bg:#163024; --proof-bg:#3a3018;
   --shadow:none; --head:#0c1014;
 }
@@ -98,17 +99,17 @@ a { color:var(--acc); }
 .hidden { display:none !important; }
 header {
   position:sticky; top:0; z-index:5; background:var(--head);
-  border-bottom:1px solid var(--line); padding:.85rem var(--space-page-x) 0;
+  border-bottom:2px solid var(--acc); padding:.85rem var(--space-page-x) 0;
 }
 .topbar { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
-h1 { margin:0; font-size:1.2rem; font-weight:700; letter-spacing:-.01em; }
+h1 { margin:0; font-size:1.2rem; font-weight:700; letter-spacing:-.01em; color:var(--acc); }
 .crumb { font-size:.78rem; color:var(--muted); margin-top:.15rem; }
 .avatar {
   width:2.15rem; height:2.15rem; border-radius:50%; border:0;
-  background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:.78rem;
+  background:var(--acc-soft); color:var(--acc); font-weight:700; font-size:.78rem;
   flex:0 0 auto;
 }
-html[data-theme="dark"] .avatar { background:#1e3a5f; color:#93c5fd; }
+html[data-theme="dark"] .avatar { background:var(--acc-soft); color:#a8b0bc; }
 .tabs {
   display:flex; gap:.5rem; margin-top:.7rem; width:100%;
   overflow-x:visible; scroll-snap-type:none;
@@ -1408,6 +1409,18 @@ function esc(s) {
 function fmtMoney(n) {
   return Number(n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
+/** When discount_mode is percent, show both % and baht; amount mode stays baht-only. */
+function formatDiscountLabel(rem, amount, opts) {
+  const disc = Number(amount != null ? amount : ((rem || {}).discount_amount || 0));
+  const mode = String((rem || {}).discount_mode || 'amount').toLowerCase();
+  if (mode === 'percent') {
+    const pct = Number((rem || {}).discount_input || 0);
+    const pctTxt = Number.isInteger(pct) ? String(pct) : String(pct);
+    const body = `${pctTxt}% (${fmtMoney(disc)} บาท)`;
+    return (opts && opts.withPrefix) ? (`ส่วนลด ${body}`) : body;
+  }
+  return fmtMoney(disc);
+}
 function formatBankDisplay(text) {
   const s = String(text || '').replace(/\s+#\s*$/, '').trim();
   if (!s || s.includes('\n')) return s;
@@ -2239,12 +2252,13 @@ function renderDetBills(det) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+  const rem = (det && det.reminder) || (detailRow && detailRow.reminder) || {};
   const disc = Number(totals.discount || 0);
   const net = Number(totals.netamt != null ? totals.netamt : 0);
   $('detBillSum').innerHTML = `<div class="det-sum">
     <div class="pay-line"><span>จำนวนบิล</span><strong>${totals.billcnt || bills.length} ฉบับ</strong></div>
     <div class="pay-line"><span>จำนวนเงินรวม</span><strong>${fmtMoney(totals.billamt)}</strong></div>
-    <div class="pay-line"><span>ส่วนลด</span><strong>${fmtMoney(disc)}</strong></div>
+    <div class="pay-line"><span>ส่วนลด</span><strong>${esc(formatDiscountLabel(rem, disc))}</strong></div>
     <div class="pay-line pay-net"><span>ยอดสุทธิ</span><strong>${fmtMoney(net)}</strong></div>
     ${totals.net_text ? `<div class="muted" style="margin-top:.35rem">${esc(totals.net_text)}</div>` : ''}
   </div>`;
@@ -2347,7 +2361,7 @@ function fillPrintSheet(det, row) {
         <div class="pv-words">${esc(billcnt)} ฉบับ<br/>${esc(words)}</div>
         <div class="pv-tot">
           <div class="row"><span>จำนวนเงินรวม</span><span class="n">${fmtMoney(billamt)}</span></div>
-          <div class="row"><span>ส่วนลด</span><span class="n">${fmtMoney(disc)}</span></div>
+          <div class="row"><span>ส่วนลด</span><span class="n">${esc(formatDiscountLabel(rem, disc))}</span></div>
           <div class="row pv-net"><span>ยอดสุทธิ</span><span class="n">${fmtMoney(net)}</span></div>
         </div>
       </div>
@@ -2672,10 +2686,12 @@ function openPay(acct, note, billamt, discount, bankname) {
   const disc = Number(discount || 0);
   const net = Math.max(0, bill - disc);
   payTarget = {acctno: acct, noteno: note, billamt: bill, discount: disc, netamt: net};
+  const row = pendingRows.find(r => r.acctno === acct && r.noteno === note)
+    || findRow(`${acct}|${note}`);
   $('payAcct').textContent = acct;
   $('payNote').textContent = displayNoteno(note);
   $('payBillAmt').textContent = fmtMoney(bill);
-  $('payDiscountAmt').textContent = fmtMoney(disc);
+  $('payDiscountAmt').textContent = formatDiscountLabel((row || {}).reminder || {}, disc);
   $('payNetAmt').textContent = fmtMoney(net);
   $('payBankLine').textContent = formatBankDisplay(bankname) || '— ไม่พบบัญชีธนาคาร —';
   $('payChkamt').value = net.toFixed(2);
@@ -2683,8 +2699,6 @@ function openPay(acct, note, billamt, discount, bankname) {
   $('payBankSelect').value = DEFAULT_PAY_BANK;
   $('payMsg').innerHTML = '';
   $('payChkno').dataset.auto = '1';
-  const row = pendingRows.find(r => r.acctno === acct && r.noteno === note)
-    || findRow(`${acct}|${note}`);
   const intended = row ? noteSettleMethod(row) : 'transfer';
   setSettleMethod(intended === 'cheque' ? 'cheque' : (intended === 'cash' ? 'cash' : 'transfer'));
   wireDatePickers($('dlgPay'));
@@ -3393,10 +3407,12 @@ $('btnCreateNote').onclick = async () => {
     const discShow = Number(rem.discount_amount != null ? rem.discount_amount : resolveDiscAmount(total));
     const netShow = Math.max(0, Number(res.billamt || total) - discShow);
     const noteLabel = esc(res.noteno_display || displayNoteno(res.noteno));
+    const discLabel = esc(formatDiscountLabel(rem, discShow, {withPrefix: true}));
     const reuseNote = res.is_reused_label && res.reuse_hint
       ? `<br/><span class="note-reuse-hint" style="display:inline-block;margin-top:.45rem">${esc(res.reuse_hint)}</span>`
       : '';
-    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel} · จ่าย ${fmtMoney(netShow)}${reuseNote}</p>`;
+    const discBit = discShow ? ` · ${discLabel}` : '';
+    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel}${discBit} · จ่าย ${fmtMoney(netShow)}${reuseNote}</p>`;
     uploadedPaths = [];
     createBillImages = [];
     scanRefFiles = [];
