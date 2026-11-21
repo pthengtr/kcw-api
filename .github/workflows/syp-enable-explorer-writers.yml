@@ -1,0 +1,43 @@
+name: SYP enable explorer writers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  enable:
+    runs-on: [self-hosted, linux, syp]
+    steps:
+      - name: Enable Explorer ICMAS / ICLOW write flags on SYP
+        run: |
+          set -euo pipefail
+          ENV="$HOME/projects/kcw-api/.env"
+          test -f "$ENV"
+
+          enable_var() {
+            local key="$1"
+            if grep -q "^${key}=" "$ENV"; then
+              sed -i "s/^${key}=.*/${key}=true/" "$ENV"
+            else
+              echo "${key}=true" >> "$ENV"
+            fi
+          }
+
+          for key in \
+            HQ_RECEIVE_ENABLED \
+            HQ_RECEIVE_PIMAS_WRITE_ENABLED \
+            HQ_PO_ENABLED \
+            HQ_PO_ICLOW_STAMP_ENABLED; do
+            enable_var "$key"
+          done
+
+          echo "=== flags in .env ==="
+          grep -E '^(HQ_RECEIVE_ENABLED|HQ_RECEIVE_PIMAS_WRITE_ENABLED|HQ_PO_ENABLED|HQ_PO_ICLOW_STAMP_ENABLED)=' "$ENV"
+
+          systemctl --user restart kcw-parts9-explorer.service
+          sleep 2
+          systemctl --user is-active kcw-parts9-explorer.service
+          curl -sf "http://127.0.0.1:8788/health" || curl -sf "http://127.0.0.1:8788/parts9/" -o /dev/null
+
+          PID="$(systemctl --user show kcw-parts9-explorer -p MainPID --value)"
+          echo "=== process env ==="
+          tr '\0' '\n' < "/proc/${PID}/environ" | grep -E '^(HQ_RECEIVE_ENABLED|HQ_RECEIVE_PIMAS_WRITE_ENABLED|HQ_PO_ENABLED|HQ_PO_ICLOW_STAMP_ENABLED)=' | sort
