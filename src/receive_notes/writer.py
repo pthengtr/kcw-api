@@ -186,9 +186,12 @@ def create_receive_note(
                     "billamt": billamt,
                 },
             )
+            stamped = 0
             for bill in bills:
                 bno = str(bill.get("BILLNO") or "").strip()
-                conn.execute(
+                # Require empty NOTENO so a concurrent create cannot steal stamps
+                # from another note (double-submit race).
+                result = conn.execute(
                     text(
                         """
                         UPDATE dbo.SIMAS
@@ -198,6 +201,7 @@ def create_receive_note(
                           AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
                           AND ISNULL(PAID, 'N') = 'N'
                           AND ISNULL(CANCELED, 'N') <> 'Y'
+                          AND ISNULL(LTRIM(RTRIM(NOTENO)), '') = ''
                         """
                     ),
                     {
@@ -206,6 +210,17 @@ def create_receive_note(
                         "acctno": acct,
                         "billno": bno,
                     },
+                )
+                if int(result.rowcount or 0) != 1:
+                    raise ReceiveNoteWriteError(
+                        f"bill already on another note or unavailable: {bno}",
+                        code="bill_conflict",
+                    )
+                stamped += 1
+            if stamped != billcnt:
+                raise ReceiveNoteWriteError(
+                    "SIMAS stamp count mismatch",
+                    code="stamp_mismatch",
                 )
     except ReceiveNoteWriteError:
         raise

@@ -750,7 +750,12 @@ def api_create_note(request: Request, body: NoteCreate):
             operator=ident.display_name if ident else None,
         )
     except ReceiveNoteWriteError as exc:
-        status = 403 if exc.code == "write_disabled" else 400
+        if exc.code == "write_disabled":
+            status = 403
+        elif exc.code in ("bill_conflict", "stamp_mismatch", "already_vouchered"):
+            status = 409
+        else:
+            status = 400
         return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
 
     note = str(kss.get("noteno") or "").strip()

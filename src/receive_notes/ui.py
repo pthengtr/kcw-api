@@ -2807,6 +2807,8 @@ $('btnProofDone')?.addEventListener('click', () => {
 $('btnRefreshBills').onclick = () => loadBills();
 
 $('btnCreateNote').onclick = async () => {
+  const btn = $('btnCreateNote');
+  if (btn && btn.dataset.busy === '1') return;
   const due = $('dueDate').value || todayISO();
   const billnos = [...$('billList').querySelectorAll('input:checked')].map(x => x.value);
   $('createMsg').innerHTML = '';
@@ -2817,6 +2819,7 @@ $('btnCreateNote').onclick = async () => {
   if (resolveDiscAmount(total) - total > 1e-9) {
     $('createMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
   }
+  if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
   let confirmUnmapped = false;
   try {
     let res;
@@ -2862,6 +2865,8 @@ $('btnCreateNote').onclick = async () => {
   } catch (e) {
     $('createMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
     await loadBills();
+  } finally {
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
   }
 };
 
