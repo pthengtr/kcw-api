@@ -70,7 +70,7 @@ _HTML = r"""<!doctype html>
 <style>
 :root {
   /* AR (รับชำระลูกหนี้) brand accent — Header / Active Tab / primary buttons */
-  --acc:#628778; --acc-soft:#e8f1ed; --on-acc:#fff;
+  --acc:#247B74; --acc-soft:#e5f2f1; --on-acc:#fff;
   --ok:#15803d; --ok-bg:#dcfce7;
   --warn:#c2410c; --warn-bg:#ffedd5;
   --down:#dc2626; --down-bg:#fee2e2;
@@ -85,7 +85,7 @@ _HTML = r"""<!doctype html>
 html[data-theme="dark"] {
   color-scheme: dark;
   --bg:#0c1014; --card:#161d26; --line:#2a3542; --text:#e8eef4; --muted:#8b9aab;
-  --chip:#243040; --inset:#0a0e12; --acc-soft:#243530;
+  --chip:#243040; --inset:#0a0e12; --acc-soft:#1a3331;
   --ok-bg:#163024; --warn-bg:#3a2718; --down-bg:#3a1c1c; --soon-bg:#163024; --proof-bg:#3a3018;
   --shadow:none; --head:#0c1014;
 }
@@ -112,7 +112,7 @@ h1 { margin:0; font-size:1.2rem; font-weight:700; letter-spacing:-.01em; color:v
   background:var(--acc-soft); color:var(--acc); font-weight:700; font-size:.78rem;
   flex:0 0 auto;
 }
-html[data-theme="dark"] .avatar { background:var(--acc-soft); color:#a8c4b6; }
+html[data-theme="dark"] .avatar { background:var(--acc-soft); color:#7dbdb6; }
 .tabs {
   display:flex; gap:.5rem; margin-top:.7rem; width:100%;
   overflow-x:visible; scroll-snap-type:none;
@@ -163,12 +163,18 @@ main { max-width:1120px; margin:0 auto; padding:var(--space-page-y) var(--space-
 .btn.ghost { background:var(--chip); }
 .btn.soft { background:var(--acc-soft); border-color:transparent; color:var(--acc); }
 .btn.sm { min-height:2.05rem; padding:.3rem .7rem; font-size:.82rem; border-radius:.5rem; }
-.btn.outline { color:var(--acc); border-color:#bfdbfe; background:var(--card); }
+.btn.outline { color:var(--acc); border-color:#9bc4c0; background:var(--card); }
 .btn.danger {
   color:var(--down); border-color:#fecaca; background:var(--card);
 }
 .btn.danger:hover { background:var(--down-bg); }
 .btn.block { width:100%; }
+/* Gray only for disabled / secondary — clear clickable vs not */
+.btn:disabled, .btn[disabled],
+.pager button:disabled, .pager button[disabled] {
+  background:var(--chip) !important; border-color:var(--line) !important;
+  color:var(--muted) !important; cursor:not-allowed; opacity:1;
+}
 .edit-actions {
   display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.85rem;
 }
@@ -186,7 +192,7 @@ main { max-width:1120px; margin:0 auto; padding:var(--space-page-y) var(--space-
 .kpi b { display:block; font-size:.9rem; font-weight:600; }
 .kpi span { display:block; font-size:.75rem; color:var(--muted); margin-top:.15rem; }
 .kpi-all { background:var(--acc-soft); border-color:transparent; }
-.kpi-all .mark { background:#dbeafe; color:var(--acc); }
+.kpi-all .mark { background:var(--acc-soft); color:var(--acc); }
 .kpi-overdue { background:var(--down-bg); border-color:transparent; }
 .kpi-overdue .mark { background:#fecaca; color:var(--down); }
 .kpi-today { background:var(--warn-bg); border-color:transparent; }
