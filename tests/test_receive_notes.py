@@ -128,8 +128,8 @@ def test_ui_exports_and_tabs():
     assert "จำนวนเงินที่รับ" in html
     assert "บัญชีที่รับเงิน" in html
     assert "รับชำระ" in html
-    # AR brand accent
-    assert "#628778" in html
+    # AR brand accent (Deep Teal)
+    assert "#247B74" in html
     assert "formatDiscountLabel" in html
     # pending board no longer filters/columns by settle method
     assert "pfMethod" not in html
@@ -139,7 +139,8 @@ def test_pay_notes_ui_ap_accent_and_discount_label():
     from src.pay_notes import ui as pn_ui
 
     html = pn_ui.page(user_name="Test", site="HQ", write_enabled=False)
-    assert "#64748B" in html
+    # AP brand accent (Deep Blue)
+    assert "#315C83" in html
     assert "formatDiscountLabel" in html
 
 
