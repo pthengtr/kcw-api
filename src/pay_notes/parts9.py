@@ -65,7 +65,7 @@ def list_pickable_bills(site: str, acctno: str, *, limit: int = 200) -> list[dic
           AND ISNULL(LTRIM(RTRIM(VOUCNO2)), '') = ''
           AND ISNULL(PAID, 'N') = 'N'
           AND ISNULL(CANCELED, 'N') <> 'Y'
-        ORDER BY BILLDATE ASC
+        ORDER BY BILLDATE DESC, BILLNO DESC
         """
     )
     try:
@@ -232,7 +232,7 @@ def _list_pimas_for_note(
           AND LTRIM(RTRIM(NOTENO)) = :noteno
           {extra}
           AND ISNULL(CANCELED, 'N') <> 'Y'
-        ORDER BY BILLDATE ASC
+        ORDER BY BILLDATE DESC, BILLNO DESC
         """
     )
     try:

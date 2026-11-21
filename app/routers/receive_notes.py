@@ -57,6 +57,7 @@ from src.receive_notes.writer import (
     cancel_unvouchered_receive_note,
     create_receipt_voucher,
     create_receive_note,
+    proof_required,
     update_receive_note,
 )
 from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
@@ -295,11 +296,34 @@ def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str,
     return m, val, amount
 
 
+def _settle_method_of(row: dict[str, Any] | None = None, *, settle_method: str = "") -> str:
+    if settle_method:
+        return (settle_method or "").strip().lower()
+    rem = (row or {}).get("reminder") or {}
+    return str(
+        (row or {}).get("settle_method")
+        or rem.get("settle_method")
+        or ""
+    ).strip().lower()
+
+
+def _proof_done(
+    *,
+    voucno: str = "",
+    has_proof: bool = False,
+    settle_method: str = "",
+) -> bool:
+    if has_proof:
+        return True
+    return not proof_required(voucno=voucno, settle_method=settle_method)
+
+
 def _workflow_meta(
     *,
     voucno: str = "",
     has_proof: bool = False,
     canceled: bool = False,
+    settle_method: str = "",
 ) -> dict[str, Any]:
     if canceled:
         return {
@@ -316,18 +340,22 @@ def _workflow_meta(
             "is_editable": True,
             "canceled": False,
         }
-    if not has_proof:
+    done = _proof_done(voucno=vo, has_proof=has_proof, settle_method=settle_method)
+    needs_proof = proof_required(voucno=vo, settle_method=settle_method)
+    if not done:
         return {
             "stage": "await_proof",
             "workflow_status": "รอแนบหลักฐาน",
             "is_editable": False,
             "canceled": False,
+            "proof_required": True,
         }
     return {
         "stage": "voucher",
         "workflow_status": "ใบเสร็จรับเงิน",
         "is_editable": False,
         "canceled": False,
+        "proof_required": needs_proof,
     }
 
 
@@ -336,9 +364,15 @@ def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str,
     stored = (row.get("noteno") or row.get("NOTENO") or "").strip()
     rem = row.get("reminder") or {}
     canceled = bool(row.get("canceled")) or str(rem.get("status") or "").lower() == "canceled"
+    settle = _settle_method_of(row)
     return {
         **row,
-        **_workflow_meta(voucno=voucno, has_proof=has_proof, canceled=canceled),
+        **_workflow_meta(
+            voucno=voucno,
+            has_proof=has_proof,
+            canceled=canceled,
+            settle_method=settle,
+        ),
         **noteno_meta(stored),
     }
 
@@ -443,6 +477,14 @@ def _note_detail_response(settings, acctno: str, noteno: str):
     canceled = bool(header.get("canceled")) or (
         str((rem or {}).get("status") or "").lower() == "canceled"
     )
+    settle = _settle_method_of(
+        {
+            "reminder": rem,
+            "settle_method": (rem or {}).get("settle_method")
+            or (payments[0].get("settle_method") if payments else ""),
+        }
+    )
+    done = _proof_done(voucno=voucno, has_proof=bool(proofs), settle_method=settle)
     return {
         "header": header,
         "bills": bills,
@@ -455,10 +497,13 @@ def _note_detail_response(settings, acctno: str, noteno: str):
         "debtor": debtor,
         "receive_bank": receive_bank,
         "canceled": canceled,
+        "has_proof": done,
+        "settle_method": settle,
         **_workflow_meta(
             voucno=voucno,
             has_proof=bool(proofs),
             canceled=canceled,
+            settle_method=settle,
         ),
         **noteno_meta(noteno),
     }
@@ -806,9 +851,16 @@ def api_list_notes(request: Request, acctno: str = "", noteno: str = ""):
         voucno = (row.get("voucno") or "").strip()
         proofs = list_folder(client, payment_image_prefix(voucno)) if voucno else []
         has_proof = bool(proofs)
+        settle = _settle_method_of(row)
         out.append(
             _with_workflow(
-                {**row, "has_proof": has_proof, "payment_images": proofs},
+                {
+                    **row,
+                    "has_proof": has_proof or _proof_done(
+                        voucno=voucno, has_proof=has_proof, settle_method=settle
+                    ),
+                    "payment_images": proofs,
+                },
                 has_proof=has_proof,
             )
         )
@@ -1149,12 +1201,20 @@ def api_create_voucher(request: Request, body: VoucherCreate):
             "settle_method": method,
         },
     )
+    voucno = str(result.get("voucno") or "").strip()
+    needs_proof = proof_required(voucno=voucno, settle_method=method)
     return {
         **result,
         "reminder": rem,
         "settle_method": method,
         "pay_bank": recv_acct["key"],
         "receive_bank_key": recv_acct["key"],
+        "proof_required": needs_proof,
+        **_workflow_meta(
+            voucno=voucno,
+            has_proof=False,
+            settle_method=method,
+        ),
     }
 
 
@@ -1179,13 +1239,19 @@ def api_vouchered(request: Request, proof: str = "all"):
         voucno = (row.get("voucno") or "").strip()
         proofs = list_folder(client, payment_image_prefix(voucno)) if voucno else []
         has_proof = bool(proofs)
-        if mode == "awaiting" and has_proof:
+        settle = _settle_method_of(row)
+        done = _proof_done(voucno=voucno, has_proof=has_proof, settle_method=settle)
+        if mode == "awaiting" and done:
             continue
-        if mode == "done" and not has_proof:
+        if mode == "done" and not done:
             continue
         out.append(
             _with_workflow(
-                {**row, "payment_images": proofs, "has_proof": has_proof},
+                {
+                    **row,
+                    "payment_images": proofs,
+                    "has_proof": done,
+                },
                 has_proof=has_proof,
             )
         )

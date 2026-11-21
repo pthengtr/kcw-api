@@ -42,6 +42,22 @@ def test_number_stems_match_product_series():
     # Non-VAT
     assert note_stem("2", when) == "BNN6911-"
     assert voucher_stem("2", when) == "RCN6911-"
+    # Marketplace TAD → RVI
+    assert voucher_stem("1", when, acctno="7LAZ1") == "RVI6911-"
+    assert voucher_stem("2", when, acctno="7SP") == "RVI6911-"
+    assert voucher_stem("1", when, acctno="7ICE") == "RVI6911-"
+
+
+def test_proof_required_skips_cash_and_rvi():
+    from src.receive_notes.writer import proof_required, uses_rvi_voucher
+
+    assert uses_rvi_voucher("7LAZ1")
+    assert uses_rvi_voucher("7iaps")
+    assert not uses_rvi_voucher("C001")
+    assert proof_required(voucno="RC6911-001", settle_method="transfer") is True
+    assert proof_required(voucno="RC6911-001", settle_method="cash") is False
+    assert proof_required(voucno="RVI6911-001", settle_method="transfer") is False
+    assert proof_required(voucno="RVI6911-001", settle_method="cash") is False
 
 
 def test_brdet_transfer_line():
@@ -112,8 +128,19 @@ def test_ui_exports_and_tabs():
     assert "จำนวนเงินที่รับ" in html
     assert "บัญชีที่รับเงิน" in html
     assert "รับชำระ" in html
+    # AR brand accent
+    assert "#628778" in html
+    assert "formatDiscountLabel" in html
     # pending board no longer filters/columns by settle method
     assert "pfMethod" not in html
+
+
+def test_pay_notes_ui_ap_accent_and_discount_label():
+    from src.pay_notes import ui as pn_ui
+
+    html = pn_ui.page(user_name="Test", site="HQ", write_enabled=False)
+    assert "#64748B" in html
+    assert "formatDiscountLabel" in html
 
 
 def test_infer_settle_method_prefers_bank_gl():
