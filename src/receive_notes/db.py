@@ -140,6 +140,24 @@ def get_receipt_by_voucno(client: Client, voucno: str) -> dict[str, Any] | None:
     return dict(resp.data)
 
 
+def get_pending_tiger_receipt_for_note(
+    client: Client, acctno: str, noteno: str
+) -> dict[str, Any] | None:
+    """Latest overlay receipt awaiting Tiger for this billing note (if any)."""
+    resp = (
+        _table(client, "receipt")
+        .select("*, receipt_bill(*), receipt_channel(*)")
+        .eq("acctno", acctno.strip())
+        .eq("noteno", noteno.strip())
+        .eq("workflow_status", "awaiting_tiger")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = list(resp.data or [])
+    return dict(rows[0]) if rows else None
+
+
 def list_receipts(
     client: Client,
     *,
@@ -198,7 +216,10 @@ def prior_allocations_for_bills(client: Client, billnos: list[str]) -> dict[str,
         return {}
     resp = (
         _table(client, "receipt_bill")
-        .select("billno, allocate_amt, receipt:receipt_id(workflow_status)")
+        .select(
+            "billno, allocate_amt, "
+            "receipt:receipt_id(workflow_status, money_confirmed)"
+        )
         .in_("billno", nums)
         .execute()
     )
@@ -206,7 +227,10 @@ def prior_allocations_for_bills(client: Client, billnos: list[str]) -> dict[str,
     for row in resp.data or []:
         receipt = row.get("receipt") or {}
         status = str(receipt.get("workflow_status") or "")
-        if status in ("failed",):
+        # Skip failed / unconfirmed Tiger so a cancelled cash attempt can retry.
+        if status in ("failed", "awaiting_tiger"):
+            continue
+        if status == "review" and not receipt.get("money_confirmed"):
             continue
         bno = str(row.get("billno") or "").strip()
         totals[bno] = round(totals.get(bno, 0.0) + float(row.get("allocate_amt") or 0), 2)

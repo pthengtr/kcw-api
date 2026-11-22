@@ -98,8 +98,12 @@ Supabase: schema `receive_note` (migrations `*_receive_note_*.sql`, including `2
 2. Upsert overlay (`receive_note.note`)
 3. If overlay fails after create → compensate: soft-cancel KSS note (`CANCELED='Y'`, clear `SIMAS` stamps)
 
+## Tiger cash (เงินสด)
+
+On **รับชำระ** with settle method **เงินสด**, the service sends the note net to Tiger using the BN/BNN `NOTENO` as `ref_no_1`. Overlay receipt stays `awaiting_tiger` until Tiger confirms; only then does KSS get the RC/RCN/RVI voucher (proof skipped / `tiger_auto`). Each overlay receipt keeps its own `tiger_attempt_id` so retries and multi-pay do not collide. Transfer / cheque still voucher immediately and may need proof.
+
 ## Deferred (after main process test)
 
-- Tiger cash-in / multi-channel receive-first
+- Multi-channel receive-first (cash + transfer on one receive)
 - AI scan
 - Daily channel reports / review queue extras

@@ -28,6 +28,11 @@ from src.receive_notes.db import (
     patch_note,
 )
 from src.receive_notes.net import is_tailscale_cg_nat
+from src.receive_notes.service import (
+    ReceiveServiceError,
+    start_note_cash_via_tiger,
+    sync_tiger_receipt,
+)
 from src.receive_notes.parts9 import (
     debtor_summary,
     get_debtor,
@@ -1087,9 +1092,69 @@ def api_cancel_note(request: Request, acctno: str = "", noteno: str = ""):
     }
 
 
+def _voucher_response_from_kss(
+    *,
+    result: dict[str, Any],
+    rem: dict[str, Any] | None,
+    method: str,
+    pay_bank_key: str,
+) -> dict[str, Any]:
+    recv_acct = resolve_company_receive_account(pay_bank_key)
+    voucno = str(result.get("voucno") or "").strip()
+    needs_proof = proof_required(voucno=voucno, settle_method=method)
+    return {
+        **result,
+        "reminder": rem,
+        "settle_method": method,
+        "pay_bank": recv_acct["key"],
+        "receive_bank_key": recv_acct["key"],
+        "proof_required": needs_proof,
+        "awaiting_tiger": False,
+        **_workflow_meta(
+            voucno=voucno,
+            has_proof=False,
+            settle_method=method,
+        ),
+    }
+
+
+def _tiger_pending_response(
+    *,
+    started: dict[str, Any],
+    rem: dict[str, Any] | None,
+    method: str = "cash",
+) -> dict[str, Any]:
+    receipt = started.get("receipt") or {}
+    attempt = started.get("tiger_attempt") or {}
+    return {
+        "awaiting_tiger": True,
+        "receipt_id": receipt.get("id"),
+        "noteno": receipt.get("noteno"),
+        "tiger_attempt_id": attempt.get("id") or receipt.get("tiger_attempt_id"),
+        "tiger_payment_id": attempt.get("tiger_payment_id")
+        or receipt.get("tiger_payment_id"),
+        "tiger_payment_no": attempt.get("tiger_payment_no")
+        or receipt.get("tiger_payment_no"),
+        "tiger_status": attempt.get("status"),
+        "reminder": rem,
+        "settle_method": method,
+        "proof_required": False,
+        "stage": "awaiting_tiger",
+        "workflow_status": "รอ Tiger",
+        "is_editable": False,
+        "canceled": False,
+        "receipt": receipt,
+        "tiger_attempt": attempt,
+    }
+
+
 @router.post("/api/vouchers")
 def api_create_voucher(request: Request, body: VoucherCreate):
-    """Record receipt voucher: discount from overlay; operator enters CHKNO/CHKAMT."""
+    """Record receipt voucher: discount from overlay; operator enters CHKNO/CHKAMT.
+
+    Cash settle routes through Tiger first (BN/BNN as ref). KSS voucher is written
+    only after Tiger confirms success.
+    """
     ident, err = _require_api(request)
     if err:
         return err
@@ -1159,6 +1224,44 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         if str(b.get("BILLNO") or "").strip()
     ]
 
+    acctname = str(header.get("acctname") or header.get("ACCTNAME") or "").strip()
+    operator = ident.display_name if ident else None
+
+    if method == "cash":
+        try:
+            started = start_note_cash_via_tiger(
+                acctno=acct,
+                acctname=acctname,
+                noteno=note,
+                bill_allocations=bill_allocations,
+                chkamt=chkamt,
+                discount=disc,
+                chkdate=chkdate,
+                operator=operator,
+                settings=settings,
+            )
+        except ReceiveServiceError as exc:
+            status = 409 if exc.code in ("already_paid", "tiger_busy", "active_attempt") else 400
+            if exc.code == "write_disabled":
+                status = 403
+            return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+        # Rare race: Tiger already succeeded between create and return.
+        if not started.get("awaiting_tiger") and started.get("kss"):
+            rem = patch_note(
+                client,
+                acct,
+                note,
+                {"status": "received", "settle_method": "cash"},
+            )
+            return _voucher_response_from_kss(
+                result=started["kss"],
+                rem=rem,
+                method="cash",
+                pay_bank_key=pay_bank_key,
+            )
+        return _tiger_pending_response(started=started, rem=rem, method="cash")
+
     brdet_lines: list[dict[str, Any]] = []
     if chkamt > 1e-9:
         try:
@@ -1174,7 +1277,6 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
-    acctname = str(header.get("acctname") or header.get("ACCTNAME") or "").strip()
     try:
         result = create_receipt_voucher(
             settings=settings,
@@ -1184,7 +1286,7 @@ def api_create_voucher(request: Request, body: VoucherCreate):
             brdet_lines=brdet_lines,
             discount=disc,
             noteno=note,
-            operator=ident.display_name if ident else None,
+            operator=operator,
         )
     except ReceiveNoteWriteError as exc:
         status = 409 if exc.code == "already_vouchered" else 400
@@ -1192,7 +1294,6 @@ def api_create_voucher(request: Request, body: VoucherCreate):
             status = 403
         return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
 
-    recv_acct = resolve_company_receive_account(pay_bank_key)
     rem = patch_note(
         client,
         acct,
@@ -1202,21 +1303,92 @@ def api_create_voucher(request: Request, body: VoucherCreate):
             "settle_method": method,
         },
     )
-    voucno = str(result.get("voucno") or "").strip()
-    needs_proof = proof_required(voucno=voucno, settle_method=method)
-    return {
-        **result,
-        "reminder": rem,
-        "settle_method": method,
-        "pay_bank": recv_acct["key"],
-        "receive_bank_key": recv_acct["key"],
-        "proof_required": needs_proof,
-        **_workflow_meta(
-            voucno=voucno,
-            has_proof=False,
-            settle_method=method,
-        ),
-    }
+    return _voucher_response_from_kss(
+        result=result,
+        rem=rem,
+        method=method,
+        pay_bank_key=pay_bank_key,
+    )
+
+
+@router.get("/api/vouchers/tiger-status")
+def api_tiger_voucher_status(request: Request, receipt_id: str = ""):
+    """Poll Tiger cash attempt; writes KSS receipt only after success."""
+    ident, err = _require_api(request)
+    if err:
+        return err
+    rid = (receipt_id or "").strip()
+    if not rid:
+        return JSONResponse({"error": "receipt_id required"}, status_code=400)
+    try:
+        synced = sync_tiger_receipt(
+            receipt_id=rid,
+            operator=ident.display_name if ident else None,
+        )
+    except ReceiveServiceError as exc:
+        status = 404 if exc.code == "not_found" else 409
+        if exc.code == "tiger_pending":
+            status = 202
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+    receipt = synced.get("receipt") or {}
+    if synced.get("awaiting_tiger"):
+        return {
+            "awaiting_tiger": True,
+            "done": False,
+            "receipt_id": rid,
+            "tiger_status": synced.get("tiger_status"),
+            "tiger_attempt_id": (synced.get("tiger_attempt") or {}).get("id")
+            or receipt.get("tiger_attempt_id"),
+            "tiger_payment_no": (synced.get("tiger_attempt") or {}).get("tiger_payment_no")
+            or receipt.get("tiger_payment_no"),
+            "settle_method": "cash",
+            "proof_required": False,
+            "stage": "awaiting_tiger",
+            "workflow_status": "รอ Tiger",
+            "receipt": receipt,
+            "tiger_attempt": synced.get("tiger_attempt"),
+        }
+
+    if synced.get("failed"):
+        return JSONResponse(
+            {
+                "awaiting_tiger": False,
+                "done": False,
+                "failed": True,
+                "error": f"Tiger {synced.get('tiger_status') or 'failed'}",
+                "code": "tiger_failed",
+                "receipt_id": rid,
+                "tiger_status": synced.get("tiger_status"),
+                "receipt": receipt,
+            },
+            status_code=409,
+        )
+
+    kss = synced.get("kss") or {}
+    voucno = str(kss.get("voucno") or receipt.get("voucno") or "").strip()
+    client = get_receive_notes_supabase_client()
+    acct = str(receipt.get("acctno") or "").strip()
+    note = str(receipt.get("noteno") or "").strip()
+    rem = None
+    if acct and note:
+        rem = patch_note(
+            client,
+            acct,
+            note,
+            {"status": "received", "settle_method": "cash"},
+        )
+    return _voucher_response_from_kss(
+        result={
+            "voucno": voucno,
+            "noteno": note,
+            "acctno": acct,
+            **{k: v for k, v in kss.items() if k not in ("voucno", "noteno", "acctno")},
+        },
+        rem=rem,
+        method="cash",
+        pay_bank_key=DEFAULT_RECEIVE_BANK_KEY,
+    )
 
 
 @router.get("/api/vouchered")

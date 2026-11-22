@@ -2614,16 +2614,52 @@ function openPay(acct, note, billamt, discount) {
   if (confirmBtn) { confirmBtn.dataset.busy = '0'; confirmBtn.disabled = false; }
   // Actual settle chosen at receive time (default transfer).
   setSettleMethod('transfer');
+  stopTigerPoll();
   wireDatePickers($('dlgPay'));
   $('dlgPay').showModal();
 }
-$('btnClosePay').onclick = () => $('dlgPay').close();
-$('btnCancelPay').onclick = () => $('dlgPay').close();
+let tigerPollTimer = null;
+function stopTigerPoll() {
+  if (tigerPollTimer) { clearTimeout(tigerPollTimer); tigerPollTimer = null; }
+}
+async function finishPaySuccess(res, method) {
+  const vouc = esc(res.voucno || '');
+  $('payMsg').innerHTML = `<p class="ok">บันทึกแล้ว · ${vouc}</p>`;
+  const skipProof = res.proof_required === false
+    || method === 'cash'
+    || String(res.voucno || '').toUpperCase().startsWith('RVI');
+  setTimeout(() => { $('dlgPay').close(); showTab(skipProof ? 'voucher' : 'awaitproof'); }, 700);
+}
+async function pollTigerVoucher(receiptId, method) {
+  const rid = String(receiptId || '').trim();
+  if (!rid) return;
+  try {
+    const res = await api('/vouchers/tiger-status?receipt_id=' + encodeURIComponent(rid));
+    if (res.awaiting_tiger) {
+      const st = esc(res.tiger_status || 'pending');
+      const tno = esc(res.tiger_payment_no || res.tiger_attempt_id || '');
+      $('payMsg').innerHTML =
+        `<p class="ok">รอ Tiger ยืนยันรับเงินสด… (${st}` +
+        (tno ? ` · ${tno}` : '') +
+        `)</p>`;
+      tigerPollTimer = setTimeout(() => pollTigerVoucher(rid, method), 1500);
+      return;
+    }
+    stopTigerPoll();
+    await finishPaySuccess(res, method);
+  } catch (e) {
+    stopTigerPoll();
+    $('payMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
+    const btn = $('btnConfirmPay');
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+  }
+}
 $('btnConfirmPay').onclick = async () => {
   const btn = $('btnConfirmPay');
   if (btn && btn.dataset.busy === '1') return;
   if (!WRITE_ENABLED) { $('payMsg').innerHTML = '<p class="err">KSS write ปิดอยู่</p>'; return; }
   if (!payTarget) return;
+  stopTigerPoll();
   const chkno = settleMethod === 'transfer' ? ($('payChkno').value.trim() || 'โอน')
     : settleMethod === 'cash' ? $('payChkno').value.trim()
     : $('payChkno').value.trim();
@@ -2645,16 +2681,24 @@ $('btnConfirmPay').onclick = async () => {
         pay_bank: $('payBankSelect').value.trim()
       })
     });
-    $('payMsg').innerHTML = `<p class="ok">บันทึกแล้ว · ${esc(res.voucno)}</p>`;
-    const skipProof = res.proof_required === false
-      || settleMethod === 'cash'
-      || String(res.voucno || '').toUpperCase().startsWith('RVI');
-    setTimeout(() => { $('dlgPay').close(); showTab(skipProof ? 'voucher' : 'awaitproof'); }, 700);
+    if (res.awaiting_tiger && res.receipt_id) {
+      const tno = esc(res.tiger_payment_no || res.tiger_attempt_id || '');
+      $('payMsg').innerHTML =
+        `<p class="ok">ส่งยอดไป Tiger แล้ว รอรับเงินสด…` +
+        (tno ? ` (${tno})` : '') +
+        `</p>`;
+      pollTigerVoucher(res.receipt_id, settleMethod);
+      return;
+    }
+    await finishPaySuccess(res, settleMethod);
   } catch (e) {
+    stopTigerPoll();
     $('payMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
     if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
   }
 };
+$('btnClosePay').onclick = () => { stopTigerPoll(); $('dlgPay').close(); };
+$('btnCancelPay').onclick = () => { stopTigerPoll(); $('dlgPay').close(); };
 
 let vendorTimer = null;
 async function searchVendors() {

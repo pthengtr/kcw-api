@@ -110,6 +110,13 @@ def test_tiger_ar_source_key():
     assert not is_ar_pos_bill_id("pos-bill-1")
 
 
+def test_tiger_cash_skips_non_ar_pos_bill():
+    from src.receive_notes.service import complete_tiger_receipt_for_pos_bill
+
+    assert complete_tiger_receipt_for_pos_bill(pos_bill_id="sale-123") is None
+    assert complete_tiger_receipt_for_pos_bill(pos_bill_id="") is None
+
+
 def test_ui_exports_and_tabs():
     from src.receive_notes import ui as rn_ui
 
@@ -131,6 +138,10 @@ def test_ui_exports_and_tabs():
     assert "บันทึกและรับชำระ" in html
     assert "btnCreateAndPay" in html
     assert "createNote({ openPayAfter: true })" in html
+    # Tiger cash poll on existing pay dialog (no new page)
+    assert "pollTigerVoucher" in html
+    assert "/vouchers/tiger-status" in html
+    assert "รอ Tiger ยืนยันรับเงินสด" in html
     # AR brand accent (Deep Teal)
     assert "#247B74" in html
     assert "formatDiscountLabel" in html
