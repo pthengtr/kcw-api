@@ -371,7 +371,7 @@ def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str,
     rem = row.get("reminder") or {}
     canceled = bool(row.get("canceled")) or str(rem.get("status") or "").lower() == "canceled"
     settle = _settle_method_of(row)
-    return {
+    out = {
         **row,
         **_workflow_meta(
             voucno=voucno,
@@ -381,6 +381,10 @@ def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str,
         ),
         **noteno_meta(stored),
     }
+    # Tab 3/4 list columns read top-level settle_method (not reminder.*).
+    if settle:
+        out["settle_method"] = settle
+    return out
 
 
 def _issuer_label_for_identity(ident, *, confirm_unmapped: bool = False) -> str | JSONResponse:

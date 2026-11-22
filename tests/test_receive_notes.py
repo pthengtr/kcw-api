@@ -239,6 +239,156 @@ def test_infer_settle_method_prefers_bank_gl():
     assert infer_settle_method("123456", bankname="กรุงไทย", acctno="") == "cheque"
 
 
+def test_list_vouchered_notes_sets_settle_method_from_brdet(monkeypatch):
+    """Tab 4 column วิธีรับชำระ reads top-level settle_method from /vouchered."""
+    from datetime import date
+
+    from src.receive_notes import parts9 as rn_parts9
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self._rows
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def execute(self, sql, params=None):
+            text_sql = str(sql)
+            if "FROM dbo.RVMAS" in text_sql:
+                return _Result(
+                    [
+                        {
+                            "acctno": "C001",
+                            "acctname": "ลูกค้า",
+                            "noteno": "BNN6911-001",
+                            "voucno": "RCN6911-001",
+                            "VOUCDATE": date(2026, 11, 18),
+                            "BILLAMT": 100.0,
+                            "NETAMT": 100.0,
+                            "PAYAMT": 100.0,
+                            "CHKAMT": 100.0,
+                            "DISCOUNT": 0.0,
+                            "JOURMODE": "2",
+                        },
+                        {
+                            "acctno": "7LAZ1",
+                            "acctname": "Lazada",
+                            "noteno": "BN6911-002",
+                            "voucno": "RVI6911-001",
+                            "VOUCDATE": date(2026, 11, 18),
+                            "BILLAMT": 50.0,
+                            "NETAMT": 50.0,
+                            "PAYAMT": 50.0,
+                            "CHKAMT": 50.0,
+                            "DISCOUNT": 0.0,
+                            "JOURMODE": "1",
+                        },
+                    ]
+                )
+            if "FROM dbo.BRDET" in text_sql:
+                return _Result(
+                    [
+                        {
+                            "voucno": "RCN6911-001",
+                            "chkno": "โอน",
+                            "bankname": "กสิกร",
+                            "acctno": "2101.1",
+                        },
+                        {
+                            "voucno": "RVI6911-001",
+                            "chkno": "PA2601",
+                            "bankname": "",
+                            "acctno": "",
+                        },
+                    ]
+                )
+            raise AssertionError(f"unexpected sql: {text_sql}")
+
+    class _Eng:
+        def connect(self):
+            return _Conn()
+
+    monkeypatch.setattr(rn_parts9, "get_site_engine", lambda *_a, **_k: _Eng())
+
+    overlays = [
+        {"acctno": "C001", "noteno": "BNN6911-001", "settle_method": "transfer", "status": "received"},
+        {"acctno": "7LAZ1", "noteno": "BN6911-002", "settle_method": "cash", "status": "received"},
+    ]
+    rows = rn_parts9.list_vouchered_notes("HQ", overlays)
+    by_vo = {r["voucno"]: r for r in rows}
+    assert by_vo["RCN6911-001"]["settle_method"] == "transfer"
+    assert by_vo["RVI6911-001"]["settle_method"] == "cash"
+
+
+def test_list_vouchered_notes_falls_back_to_overlay_when_brdet_missing(monkeypatch):
+    from datetime import date
+
+    from src.receive_notes import parts9 as rn_parts9
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self._rows
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def execute(self, sql, params=None):
+            text_sql = str(sql)
+            if "FROM dbo.RVMAS" in text_sql:
+                return _Result(
+                    [
+                        {
+                            "acctno": "C001",
+                            "acctname": "ลูกค้า",
+                            "noteno": "BNN6911-001",
+                            "voucno": "RCN6911-002",
+                            "VOUCDATE": date(2026, 11, 18),
+                            "BILLAMT": 100.0,
+                            "NETAMT": 100.0,
+                            "PAYAMT": None,
+                            "CHKAMT": None,
+                            "DISCOUNT": 0.0,
+                            "JOURMODE": "2",
+                        }
+                    ]
+                )
+            if "FROM dbo.BRDET" in text_sql:
+                return _Result([])
+            raise AssertionError(f"unexpected sql: {text_sql}")
+
+    class _Eng:
+        def connect(self):
+            return _Conn()
+
+    monkeypatch.setattr(rn_parts9, "get_site_engine", lambda *_a, **_k: _Eng())
+    rows = rn_parts9.list_vouchered_notes(
+        "HQ",
+        [{"acctno": "C001", "noteno": "BNN6911-001", "settle_method": "cheque", "status": "received"}],
+    )
+    assert len(rows) == 1
+    assert rows[0]["settle_method"] == "cheque"
+
+
 def test_optional_receive_account():
     from src.receive_notes.company_banks import resolve_optional_receive_account
 
