@@ -17,6 +17,7 @@ from src.support.attachments import (
     get_supabase_client,
 )
 from src.support.git_pr import (
+    base_branch,
     commit_all,
     has_changes,
     prepare_worktree,
@@ -277,8 +278,9 @@ def process_ticket(engine, ticket: dict) -> None:
 
         from src.support.git_pr import _run
 
+        base = base_branch()
         log = _run(
-            ["git", "rev-list", "--count", "origin/main..HEAD"],
+            ["git", "rev-list", "--count", f"origin/{base}..HEAD"],
             cwd=worktree,
             check=False,
         )

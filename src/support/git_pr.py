@@ -6,6 +6,11 @@ import subprocess
 from pathlib import Path
 
 
+def base_branch() -> str:
+    """Both kcw-api and kcw-v2 use `master` (not `main`)."""
+    return (os.getenv("SUPPORT_BASE_BRANCH") or "master").strip() or "master"
+
+
 def _run(
     args: list[str],
     *,
@@ -16,14 +21,21 @@ def _run(
     merged = os.environ.copy()
     if env:
         merged.update(env)
-    return subprocess.run(
+    proc = subprocess.run(
         args,
         cwd=str(cwd),
-        check=check,
+        check=False,
         text=True,
         capture_output=True,
         env=merged,
     )
+    if check and proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        raise RuntimeError(
+            f"Command {args!r} failed ({proc.returncode})"
+            + (f": {detail}" if detail else "")
+        )
+    return proc
 
 
 def repo_root_for(target_source: str) -> Path:
@@ -50,8 +62,9 @@ def worktrees_root() -> Path:
 
 
 def prepare_worktree(ticket_id: str, target_source: str) -> tuple[Path, str]:
-    """Fetch main and create a dedicated worktree + branch. Returns (cwd, branch)."""
+    """Fetch base branch and create a dedicated worktree. Returns (cwd, branch)."""
     main_repo = repo_root_for(target_source)
+    base = base_branch()
     short = ticket_id.replace("-", "")[:10]
     branch = f"support/{short}"
     worktree = worktrees_root() / f"{target_source}-{short}"
@@ -59,7 +72,7 @@ def prepare_worktree(ticket_id: str, target_source: str) -> tuple[Path, str]:
     if worktree.exists():
         shutil.rmtree(worktree)
 
-    _run(["git", "fetch", "origin", "main"], cwd=main_repo)
+    _run(["git", "fetch", "origin", base], cwd=main_repo)
     # Drop stale remote branch tip if we re-run the same short id.
     _run(
         ["git", "worktree", "prune"],
@@ -74,7 +87,7 @@ def prepare_worktree(ticket_id: str, target_source: str) -> tuple[Path, str]:
             "-B",
             branch,
             str(worktree),
-            "origin/main",
+            f"origin/{base}",
         ],
         cwd=main_repo,
     )
@@ -123,7 +136,7 @@ def push_and_pr_merge(
             "pr",
             "create",
             "--base",
-            "main",
+            base_branch(),
             "--head",
             branch,
             "--title",
