@@ -39,14 +39,21 @@ def start_ar_cash_attempt(
     *,
     receipt_id: str,
     amount: float,
+    noteno: str | None = None,
     submitted_by: str | None = None,
     submitted_by_name: str | None = None,
     note: str | None = None,
 ) -> dict[str, Any]:
-    """Send cash portion to Tiger machine. Returns attempt dict."""
+    """Send cash portion to Tiger machine. Returns attempt dict.
+
+    ``pos_bill_id`` is ``ar:{receipt_id}`` (unique per overlay receipt / txn).
+    Tiger ``ref_no_1`` / ``pos_bill_number`` use the BN/BNN billing-note number
+    when provided so the cashbox shows the same reference as ใบวางบิล.
+    """
     engine = get_engine()
     pos_bill_id = ar_pos_bill_id(receipt_id)
-    bill_number = f"AR{(receipt_id or '').replace('-', '')[:12]}"
+    note_ref = (noteno or "").strip()
+    bill_number = (note_ref or f"AR{(receipt_id or '').replace('-', '')[:12]}")[:40]
 
     completed = repos.get_successful_attempt_for_bill(engine, pos_bill_id)
     if completed:
@@ -81,7 +88,7 @@ def start_ar_cash_attempt(
         engine,
         attempt_id=attempt_id,
         pos_bill_id=pos_bill_id,
-        pos_bill_number=bill_number[:40],
+        pos_bill_number=bill_number,
         amount=Decimal(str(floored)),
         status="sending",
         submitted_by=submitted_by,
@@ -92,8 +99,8 @@ def start_ar_cash_attempt(
         created = client.create_payment(
             payment_type="cash",
             amount=floored,
-            note=(note or f"AR receipt {receipt_id}")[:100],
-            ref_no_1=bill_number[:40],
+            note=(note or f"AR {bill_number} {receipt_id}")[:100],
+            ref_no_1=bill_number,
             ref_no_2=attempt_id,
         )
     except Exception as exc:

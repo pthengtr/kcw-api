@@ -1014,7 +1014,7 @@ def apply_status_update(
         event_key=event_key,
     )
     # Duplicate event_key: still refresh status from source of truth.
-    return repos.update_payment_attempt(
+    updated = repos.update_payment_attempt(
         engine,
         attempt_id,
         status=status,
@@ -1025,6 +1025,31 @@ def apply_status_update(
         clear_error=True,
         recover_failed_success=recover_failed_success,
     )
+    if status == "success":
+        _maybe_finalize_ar_receive_note(updated)
+    return updated
+
+
+def _maybe_finalize_ar_receive_note(attempt: dict[str, Any] | None) -> None:
+    """When an ``ar:`` Tiger attempt succeeds, cut AR + issue receipt (no proof)."""
+    if not attempt:
+        return
+    pos_bill_id = str(attempt.get("pos_bill_id") or "")
+    if not pos_bill_id.startswith("ar:"):
+        return
+    try:
+        from src.receive_notes.service import complete_tiger_receipt_for_pos_bill
+
+        complete_tiger_receipt_for_pos_bill(
+            pos_bill_id=pos_bill_id,
+            operator=attempt.get("submitted_by_name") or attempt.get("submitted_by"),
+        )
+    except Exception:
+        logger.exception(
+            "AR receive-note finalize after Tiger success failed attempt_id=%s pos=%s",
+            attempt.get("id"),
+            pos_bill_id,
+        )
 
 
 def reconcile_from_tiger_payment(

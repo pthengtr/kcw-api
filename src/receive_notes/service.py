@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from src.receive_notes.company_banks import brdet_line_from_payment
 from src.receive_notes.config import ReceiveNotesSettings, get_receive_notes_settings
 from src.receive_notes.db import (
+    get_pending_tiger_receipt_for_note,
     get_receipt,
     get_receive_notes_supabase_client,
     insert_note,
@@ -18,7 +19,13 @@ from src.receive_notes.db import (
     prior_allocations_for_bills,
 )
 from src.receive_notes.parts9 import fetch_bills_for_receive
-from src.receive_notes.tiger import ReceiveTigerError, get_ar_attempt, start_ar_cash_attempt
+from src.receive_notes.tiger import (
+    ReceiveTigerError,
+    get_ar_attempt,
+    is_ar_pos_bill_id,
+    receipt_id_from_pos_bill_id,
+    start_ar_cash_attempt,
+)
 from src.receive_notes.writer import ReceiveNoteWriteError, create_receive_note, create_receipt_voucher
 
 _BKK = ZoneInfo("Asia/Bangkok")
@@ -283,9 +290,10 @@ def prepare_receive(
                 attempt = start_ar_cash_attempt(
                     receipt_id=receipt_id,
                     amount=g_cash,
+                    noteno=note,
                     submitted_by=operator,
                     submitted_by_name=operator,
-                    note=f"AR {acct} {receipt_id}",
+                    note=f"AR {note or acct} {receipt_id}",
                 )
                 patch_receipt(
                     client,
@@ -303,7 +311,7 @@ def prepare_receive(
                     client,
                     receipt_id,
                     {
-                        "workflow_status": "review",
+                        "workflow_status": "failed",
                         "kss_sync_error": str(exc),
                     },
                 )
@@ -450,7 +458,7 @@ def complete_tiger_receipt(
             patch_receipt(
                 client,
                 receipt_id,
-                {"workflow_status": "review", "kss_sync_error": f"tiger_{status}"},
+                {"workflow_status": "failed", "kss_sync_error": f"tiger_{status}"},
             )
             raise ReceiveServiceError(f"Tiger status={status}", code="tiger_failed")
         raise ReceiveServiceError(f"Tiger still {status}", code="tiger_pending")
@@ -472,6 +480,182 @@ def complete_tiger_receipt(
         tiger_payment_no=attempt.get("tiger_payment_no"),
     )
     return {"attempt": attempt, "kss": kss, "receipt": get_receipt(client, receipt_id)}
+
+
+def start_note_cash_via_tiger(
+    *,
+    acctno: str,
+    acctname: str,
+    noteno: str,
+    bill_allocations: list[dict[str, Any]],
+    chkamt: float,
+    discount: float = 0.0,
+    chkdate: str | None = None,
+    operator: str | None = None,
+    settings: ReceiveNotesSettings | None = None,
+) -> dict[str, Any]:
+    """Note-first cash receive: start Tiger with BN/BNN ref; do not write KSS yet.
+
+    Reuses an in-flight ``awaiting_tiger`` overlay for the same note (dedupe).
+    Each overlay receipt keeps its own Tiger attempt id for multi-pay / retry.
+    """
+    settings = settings or get_receive_notes_settings()
+    client = get_receive_notes_supabase_client()
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise ReceiveServiceError("acctno and noteno required", code="validation")
+
+    existing = get_pending_tiger_receipt_for_note(client, acct, note)
+    if existing:
+        receipt_id = str(existing.get("id") or "")
+        attempt = get_ar_attempt(receipt_id) if receipt_id else None
+        status = str((attempt or {}).get("status") or "").lower()
+        if attempt and status == "success":
+            return complete_tiger_receipt(
+                receipt_id=receipt_id,
+                operator=operator,
+                settings=settings,
+            )
+        if attempt and status not in ("failed", "cancelled", "canceled"):
+            return {
+                "awaiting_tiger": True,
+                "receipt": existing,
+                "tiger_attempt": attempt,
+            }
+        # Prior attempt died — fall through to a fresh overlay + Tiger send.
+
+    billamt = round(sum(float(a.get("allocate_amt") or 0) for a in bill_allocations), 2)
+    disc = round(float(discount or 0), 2)
+    net = round(billamt - disc, 2)
+    cash = round(float(chkamt), 2)
+    if abs(cash - net) > 0.05:
+        raise ReceiveServiceError(
+            f"cash amount ({cash}) must match note net ({net}) for Tiger",
+            code="validation",
+        )
+
+    channels = [
+        {
+            "settle_method": "cash",
+            "amount": net,
+            "chkdate": (chkdate or date.today().isoformat()),
+        }
+    ]
+    prepared = prepare_receive(
+        acctno=acct,
+        acctname=acctname,
+        allocations=bill_allocations,
+        channels=channels,
+        discount=disc,
+        noteno=note,
+        money_confirmed=True,
+        cash_mode="tiger",
+        operator=operator,
+        settings=settings,
+    )
+    rows = prepared.get("receipts") or []
+    if not rows:
+        raise ReceiveServiceError("failed to create cash receipt", code="service_error")
+    row = rows[0]
+    if row.get("tiger_error"):
+        err = row["tiger_error"]
+        raise ReceiveServiceError(
+            str(err.get("message") or "Tiger error"),
+            code=str(err.get("code") or "tiger_error"),
+        )
+    receipt = row.get("receipt") or {}
+    return {
+        "awaiting_tiger": True,
+        "receipt": receipt,
+        "tiger_attempt": row.get("tiger_attempt"),
+    }
+
+
+def sync_tiger_receipt(
+    *,
+    receipt_id: str,
+    operator: str | None = None,
+    settings: ReceiveNotesSettings | None = None,
+) -> dict[str, Any]:
+    """Poll Tiger attempt for an overlay receipt; finalize KSS only on success."""
+    settings = settings or get_receive_notes_settings()
+    client = get_receive_notes_supabase_client()
+    receipt = get_receipt(client, receipt_id)
+    if not receipt:
+        raise ReceiveServiceError("receipt not found", code="not_found")
+
+    if receipt.get("voucno") and receipt.get("kss_sync_status") == "synced":
+        return {
+            "awaiting_tiger": False,
+            "done": True,
+            "receipt": receipt,
+            "kss": {
+                "voucno": receipt.get("voucno"),
+                "noteno": receipt.get("noteno"),
+            },
+        }
+
+    attempt = get_ar_attempt(receipt_id)
+    if not attempt:
+        raise ReceiveServiceError("no Tiger attempt for receipt", code="tiger_missing")
+
+    status = str(attempt.get("status") or "").lower()
+    if status == "success":
+        done = complete_tiger_receipt(
+            receipt_id=receipt_id,
+            operator=operator,
+            settings=settings,
+        )
+        return {
+            "awaiting_tiger": False,
+            "done": True,
+            "receipt": done.get("receipt"),
+            "tiger_attempt": done.get("attempt"),
+            "kss": done.get("kss"),
+        }
+    if status in ("failed", "cancelled", "canceled"):
+        patch_receipt(
+            client,
+            receipt_id,
+            {"workflow_status": "failed", "kss_sync_error": f"tiger_{status}"},
+        )
+        return {
+            "awaiting_tiger": False,
+            "done": False,
+            "failed": True,
+            "tiger_status": status,
+            "receipt": get_receipt(client, receipt_id),
+            "tiger_attempt": attempt,
+        }
+    return {
+        "awaiting_tiger": True,
+        "done": False,
+        "tiger_status": status,
+        "receipt": receipt,
+        "tiger_attempt": attempt,
+    }
+
+
+def complete_tiger_receipt_for_pos_bill(
+    *,
+    pos_bill_id: str,
+    operator: str | None = None,
+) -> dict[str, Any] | None:
+    """Webhook/poller hook: finalize AR overlay when Tiger marks ar: attempt success."""
+    if not is_ar_pos_bill_id(pos_bill_id):
+        return None
+    receipt_id = receipt_id_from_pos_bill_id(pos_bill_id)
+    if not receipt_id:
+        return None
+    try:
+        return complete_tiger_receipt(receipt_id=receipt_id, operator=operator)
+    except ReceiveServiceError as exc:
+        if exc.code == "tiger_pending":
+            return None
+        if exc.code in ("tiger_failed", "tiger_missing", "not_found"):
+            return {"error": str(exc), "code": exc.code, "receipt_id": receipt_id}
+        raise
 
 
 def resync_receipt(
