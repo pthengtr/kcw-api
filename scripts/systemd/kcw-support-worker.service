@@ -1,0 +1,25 @@
+[Unit]
+Description=KCW support ticket worker (local agent on hq-ubuntu-server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/kcw-api
+EnvironmentFile=%h/projects/kcw-api/.env
+Environment=HOME=%h
+Environment=TZ=Asia/Bangkok
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=SUPPORT_WORKER_NAME=hq-ubuntu-server
+ExecStart=%h/projects/kcw-api/.venv/bin/python -m src.support.worker
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kcw-support-worker
+
+[Install]
+WantedBy=default.target
