@@ -501,6 +501,68 @@ def list_vouchered(
     return out
 
 
+def infer_settle_method(
+    chkno: str | None,
+    *,
+    bankname: str | None = None,
+    acctno: str | None = None,
+) -> str:
+    """Infer actual receive channel from BRDET (prefer bank/GL over CHKNO text)."""
+    bank = (bankname or "").strip()
+    gl = (acctno or "").strip()
+    text_v = (chkno or "").strip()
+    if not bank and not gl:
+        return "cash"
+    if gl or text_v == "โอน":
+        return "transfer"
+    return "cheque"
+
+
+def _overlay_settle_method(rem: dict[str, Any] | None) -> str:
+    method = str((rem or {}).get("settle_method") or "").strip().lower()
+    return method if method in ("transfer", "cheque", "cash") else ""
+
+
+def _brdet_settle_map(eng: Engine, voucnums: list[str]) -> dict[str, str] | None:
+    """Map VOUCNO → actual settle_method from first active BRDET line.
+
+    Returns None when the BRDET query itself fails (caller may fall back to overlay).
+    """
+    nums = sorted({(v or "").strip() for v in voucnums if (v or "").strip()})
+    if not nums:
+        return {}
+    placeholders = ", ".join(f":v{i}" for i in range(len(nums)))
+    params = {f"v{i}": n for i, n in enumerate(nums)}
+    sql = text(
+        f"""
+        SELECT LTRIM(RTRIM(VOUCNO)) AS voucno,
+               LTRIM(RTRIM(COALESCE(CHKNO, ''))) AS chkno,
+               LTRIM(RTRIM(COALESCE(BANKNAME, ''))) AS bankname,
+               LTRIM(RTRIM(COALESCE(ACCTNO, ''))) AS acctno
+        FROM dbo.BRDET
+        WHERE LTRIM(RTRIM(VOUCNO)) IN ({placeholders})
+          AND ISNULL(CANCELED, 'N') <> 'Y'
+        ORDER BY VOUCNO, CHKDATE, ID
+        """
+    )
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except Exception:
+        return None
+    out: dict[str, str] = {}
+    for row in rows:
+        vo = str(row.get("voucno") or "").strip()
+        if not vo or vo in out:
+            continue
+        out[vo] = infer_settle_method(
+            row.get("chkno"),
+            bankname=row.get("bankname"),
+            acctno=row.get("acctno"),
+        )
+    return out
+
+
 def list_vouchered_notes(site: str, overlays: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Notes from this service that are vouchered in KSS (for proof queue)."""
     if not overlays:
@@ -550,7 +612,18 @@ def list_vouchered_notes(site: str, overlays: list[dict[str, Any]]) -> list[dict
         item["VOUCDATE"] = _iso_date(item.get("VOUCDATE"))
         for key in ("BILLAMT", "DISCOUNT", "NETAMT", "PAYAMT", "CHKAMT"):
             item[key] = _to_float(item.get(key)) if item.get(key) is not None else None
+        # Prefer overlay snapshot from รับชำระ; BRDET overrides below when present.
+        overlay_method = _overlay_settle_method(rem)
+        if overlay_method:
+            item["settle_method"] = overlay_method
         out.append(item)
+    settle_map = _brdet_settle_map(eng, [str(r.get("voucno") or "") for r in out])
+    if settle_map is not None:
+        for row in out:
+            vo = str(row.get("voucno") or "").strip()
+            method = settle_map.get(vo)
+            if method:
+                row["settle_method"] = method
     return out
 
 
@@ -572,23 +645,6 @@ def list_bills_for_edit(site: str, acctno: str, noteno: str) -> list[dict[str, A
         item["attached"] = False
         out.append(item)
     return out
-
-
-def infer_settle_method(
-    chkno: str | None,
-    *,
-    bankname: str | None = None,
-    acctno: str | None = None,
-) -> str:
-    """Infer actual receive channel from BRDET (prefer bank/GL over CHKNO text)."""
-    bank = (bankname or "").strip()
-    gl = (acctno or "").strip()
-    text_v = (chkno or "").strip()
-    if not bank and not gl:
-        return "cash"
-    if gl or text_v == "โอน":
-        return "transfer"
-    return "cheque"
 
 
 def list_brdet(site: str, voucno: str) -> list[dict[str, Any]]:
