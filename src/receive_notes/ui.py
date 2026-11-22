@@ -999,7 +999,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </section>
 
   <section id="panelVoucher" class="panel">
-    <p class="panel-intro">ขั้นที่ 4 · มีหลักฐานครบแล้ว · ดูรูปบิลและหลักฐานรับเงิน</p>
+    <p class="panel-intro">ขั้นที่ 4 · มีหลักฐานครบแล้ว · ดูรายละเอียดบิลและหลักฐานรับเงิน</p>
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
@@ -1177,8 +1177,6 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     </div>
     <div id="detBills"></div>
     <div id="detBillSum"></div>
-    <h3 style="margin:1rem 0 .4rem;font-size:.95rem">รูปใบวางบิล</h3>
-    <div class="thumbs" id="detBillThumbs"></div>
     <div id="detProofWrap" class="hidden">
       <h3 style="margin:1rem 0 .4rem;font-size:.95rem">หลักฐานรับเงิน</h3>
       <div class="thumbs" id="detProofThumbs"></div>
@@ -2297,7 +2295,6 @@ async function openDetailByKey(key, opts) {
   }
   $('detBills').innerHTML = '<p class="muted">กำลังโหลดบิลซื้อ…</p>';
   $('detBillSum').innerHTML = '';
-  $('detBillThumbs').innerHTML = 'กำลังโหลด…';
   $('detProofThumbs').innerHTML = thumbsHtml(row.payment_images || [], {canDelete: canUpload});
   if (!opts.keepVerify) {
     proofVerifyResult = null;
@@ -2356,11 +2353,6 @@ async function openDetailByKey(key, opts) {
         $('detPayMethodView').textContent = receiveBankLabel((det.reminder || {}).receive_bank_key) || '— ไม่ระบุ —';
       }
     }
-    const canEditBills = WRITE_ENABLED && row.is_editable === true;
-    $('detBillThumbs').innerHTML = thumbsHtml(det.bill_images || [], {
-      canDelete: canEditBills,
-      allowDeleteLast: true,
-    });
     if (det.payment_images) {
       $('detProofThumbs').innerHTML = thumbsHtml(det.payment_images, {canDelete: canUpload});
     }
@@ -2368,7 +2360,6 @@ async function openDetailByKey(key, opts) {
     if (opts.print) printDetail();
   } catch (e) {
     $('detBills').innerHTML = `<p class="err">${esc(e.message)}</p>`;
-    $('detBillThumbs').innerHTML = `<p class="err">${esc(e.message)}</p>`;
   }
 }
 $('detPayBtn').onclick = () => {
@@ -2384,38 +2375,6 @@ $('detCancelNoteBtn')?.addEventListener('click', () => {
   cancelNoteByKey(keyOf(detailRow), detailRow.stage === 'pending' ? 'pending' : 'byap', {
     closeDetail: true,
   });
-});
-async function deleteStoredBillImage(acctno, noteno, path) {
-  if (!acctno || !noteno || !path) return null;
-  if (!confirm('ลบรูปใบวางบิลนี้?')) return null;
-  const qs = new URLSearchParams({acctno, noteno, path});
-  const r = await fetch('/receive-notes/api/images/bill?' + qs.toString(), {method:'DELETE'});
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const msg = j.code === 'already_vouchered'
-      ? 'รับชำระแล้ว ลบรูปใบวางบิลไม่ได้'
-      : (j.detail || j.error || 'ลบไม่สำเร็จ');
-    throw new Error(msg);
-  }
-  return j;
-}
-$('detBillThumbs').addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-del-path]');
-  if (!btn || btn.disabled) return;
-  e.preventDefault();
-  e.stopPropagation();
-  if (!detailRow || detailRow.is_editable !== true || !WRITE_ENABLED) return;
-  try {
-    const j = await deleteStoredBillImage(detailRow.acctno, detailRow.noteno, btn.dataset.delPath);
-    if (!j) return;
-    $('detBillThumbs').innerHTML = thumbsHtml(j.remaining || [], {
-      canDelete: true,
-      allowDeleteLast: true,
-    });
-    if (detailPayload) detailPayload.bill_images = j.remaining || [];
-  } catch (err) {
-    alert(err.message || 'ลบไม่สำเร็จ');
-  }
 });
 function wireDropZone(dropEl, inputEl, onFiles) {
   if (!dropEl || !inputEl) return;
