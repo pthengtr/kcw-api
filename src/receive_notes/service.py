@@ -523,7 +523,17 @@ def start_note_cash_via_tiger(
                 "receipt": existing,
                 "tiger_attempt": attempt,
             }
-        # Prior attempt died — fall through to a fresh overlay + Tiger send.
+        # Prior attempt died — close the stale awaiting_tiger row so a retry
+        # can allocate bills again, then fall through to a fresh overlay send.
+        if receipt_id:
+            patch_receipt(
+                client,
+                receipt_id,
+                {
+                    "workflow_status": "failed",
+                    "kss_sync_error": f"tiger_{status or 'missing'}",
+                },
+            )
 
     billamt = round(sum(float(a.get("allocate_amt") or 0) for a in bill_allocations), 2)
     disc = round(float(discount or 0), 2)
