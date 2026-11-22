@@ -24,7 +24,6 @@ from src.receive_notes.db import (
     get_receive_notes_supabase_client,
     insert_note,
     list_all_service_notes,
-    list_canceled_service_notes,
     list_open_notes,
     patch_note,
 )
@@ -633,23 +632,20 @@ def api_debtor_summary(request: Request, acctno: str = ""):
 
 @router.get("/api/pending")
 def api_pending(request: Request):
+    """Open/unvouchered notes only. Canceled notes stay on /api/notes for search/audit."""
     _, err = _require_api(request)
     if err:
         return err
     settings = _settings()
     client = get_receive_notes_supabase_client()
     overlays = list_open_notes(client)
-    canceled_overlays = list_canceled_service_notes(client)
     try:
         rows = list_pending_notes(settings.site, overlays)
-        canceled_rows = list_canceled_notes(settings.site, canceled_overlays)
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=502)
     out = []
     for row in rows:
         out.append(_with_workflow({**row, "stage": "pending"}))
-    for row in canceled_rows:
-        out.append(_with_workflow({**row, "canceled": True}))
     return out
 
 

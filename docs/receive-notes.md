@@ -43,7 +43,7 @@ Mixed VAT/Non-VAT bills → reject (`mixed_jourmode`). Voucher is **note-first o
 ### Tab 2 — รอรับชำระ
 
 - Column: ยอดที่ต้องรับ (bill − overlay discount); no วิธีรับชำระ filter/column
-- Cancel mistaken note → soft cancel **both** systems (`RVMAS.CANCELED='Y'` + overlay `status=canceled`); keep document no.; red **ยกเลิก**; blocked if already vouchered
+- Cancel mistaken note → soft cancel **both** systems (`RVMAS.CANCELED='Y'` + overlay `status=canceled`); keep document no.; drop from รอรับชำระ list/KPIs; still searchable under ค้นหาตามลูกหนี้ with red **ยกเลิก**; blocked if already vouchered
 - No KBIZ reminder
 - Button / modal: **รับชำระ** (actual settle method chosen here)
 - Shows ส่วนลดจากใบวางบิล (read-only) to prevent double discount

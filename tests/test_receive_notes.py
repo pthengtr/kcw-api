@@ -133,6 +133,9 @@ def test_ui_exports_and_tabs():
     assert "formatDiscountLabel" in html
     # pending board no longer filters/columns by settle method
     assert "pfMethod" not in html
+    # canceled notes must not stay on รอรับชำระ (history via ค้นหาตามลูกหนี้)
+    assert "keep canceled visible in \"all\"" not in html
+    assert "if (isCanceledRow(r)) return false;" in html
 
 
 def test_pay_notes_ui_ap_accent_and_discount_label():

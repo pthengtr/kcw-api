@@ -1604,15 +1604,10 @@ function filteredPending() {
   const due = ($('pfDue').value || '').trim();
   const billMonth = ($('pfBillMonth').value || '').trim();
   let rows = pendingRows.filter(r => {
+    // Canceled notes are audit/history only (ค้นหาตามลูกหนี้), not the pending board.
+    if (isCanceledRow(r)) return false;
     const st = pendingStatus(r);
-    const canceled = st.bucket === 'canceled';
-    if (pendingBucket === 'all') {
-      // keep canceled visible in "all" so cancel does not look like delete
-    } else if (canceled) {
-      return false;
-    } else if (st.bucket !== pendingBucket) {
-      return false;
-    }
+    if (pendingBucket !== 'all' && st.bucket !== pendingBucket) return false;
     if (due && remDue(r) !== due) return false;
     if (billMonth && remBillMonth(r) !== billMonth) return false;
     if (q) {
