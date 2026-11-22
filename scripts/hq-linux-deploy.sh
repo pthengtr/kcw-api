@@ -39,86 +39,56 @@ if ! _install_reqs; then
   echo "WARNING: requirements install failed; continuing with service restart" >&2
 fi
 
-_units=(kcw-tiger-pay kcw-stock-check kcw-parts9-explorer kcw-ops kcw-pay-notes)
-if systemctl --user cat kcw-transfer.service &>/dev/null; then
-  _units+=(kcw-transfer)
-fi
-
-# สั่งซื้อ is HQ-only. Install the unit once if it was never enabled, then
-# restart it with the rest so a git pull actually reaches port 8793.
-_install_hq_po_unit() {
-  local src="${REPO}/scripts/systemd/kcw-hq-po.service"
-  local dest="${HOME}/.config/systemd/user/kcw-hq-po.service"
-  if systemctl --user cat kcw-hq-po.service &>/dev/null; then
+# Install unit from repo templates if missing, then enable it.
+_ensure_unit() {
+  local name="$1"
+  local src="${REPO}/scripts/systemd/${name}.service"
+  local dest="${HOME}/.config/systemd/user/${name}.service"
+  if systemctl --user cat "${name}.service" &>/dev/null; then
     return 0
   fi
   if [[ ! -f "$src" ]]; then
-    echo "WARNING: kcw-hq-po unit file missing; service not restarted" >&2
-    return 0
+    echo "WARNING: ${name} unit file missing in repo; not installed" >&2
+    return 1
   fi
   mkdir -p "${HOME}/.config/systemd/user"
   cp "$src" "$dest"
   systemctl --user daemon-reload
-  systemctl --user enable kcw-hq-po.service
+  systemctl --user enable "${name}.service"
 }
-if ! _install_hq_po_unit; then
-  echo "WARNING: could not install kcw-hq-po.service" >&2
-fi
-if systemctl --user cat kcw-hq-po.service &>/dev/null; then
-  _units+=(kcw-hq-po)
-fi
 
-# ใบเต็ม TAD is HQ-only. Install once, then restart with the other units.
-_install_to_bill_unit() {
-  local src="${REPO}/scripts/systemd/kcw-to-bill.service"
-  local dest="${HOME}/.config/systemd/user/kcw-to-bill.service"
-  if systemctl --user cat kcw-to-bill.service &>/dev/null; then
-    return 0
-  fi
-  if [[ ! -f "$src" ]]; then
-    echo "WARNING: kcw-to-bill unit file missing; service not restarted" >&2
-    return 0
-  fi
-  mkdir -p "${HOME}/.config/systemd/user"
-  cp "$src" "$dest"
-  systemctl --user daemon-reload
-  systemctl --user enable kcw-to-bill.service
-}
-if ! _install_to_bill_unit; then
-  echo "WARNING: could not install kcw-to-bill.service" >&2
-fi
-if systemctl --user cat kcw-to-bill.service &>/dev/null; then
-  _units+=(kcw-to-bill)
-fi
+# All HQ local kcw-api app services (not timers / oneshots / analytics).
+# Install-on-first-deploy, then always restart when the unit exists.
+_hq_app_units=(
+  kcw-tiger-pay
+  kcw-stock-check
+  kcw-parts9-explorer
+  kcw-ops
+  kcw-pay-notes
+  kcw-receive-notes
+  kcw-transfer
+  kcw-hq-po
+  kcw-hq-receive
+  kcw-online-sale
+  kcw-to-bill
+)
 
-# รับสินค้าเข้า is HQ-only. Install once, then restart with the other units.
-_install_hq_receive_unit() {
-  local src="${REPO}/scripts/systemd/kcw-hq-receive.service"
-  local dest="${HOME}/.config/systemd/user/kcw-hq-receive.service"
-  if systemctl --user cat kcw-hq-receive.service &>/dev/null; then
-    return 0
+_units=()
+for name in "${_hq_app_units[@]}"; do
+  if ! _ensure_unit "$name"; then
+    continue
   fi
-  if [[ ! -f "$src" ]]; then
-    echo "WARNING: kcw-hq-receive unit file missing; service not restarted" >&2
-    return 0
+  if systemctl --user cat "${name}.service" &>/dev/null; then
+    _units+=("$name")
   fi
-  mkdir -p "${HOME}/.config/systemd/user"
-  cp "$src" "$dest"
-  systemctl --user daemon-reload
-  systemctl --user enable kcw-hq-receive.service
-}
-if ! _install_hq_receive_unit; then
-  echo "WARNING: could not install kcw-hq-receive.service" >&2
-fi
-if systemctl --user cat kcw-hq-receive.service &>/dev/null; then
-  _units+=(kcw-hq-receive)
-fi
+done
+
 for u in "${_units[@]}"; do
   systemctl --user restart "${u}.service"
+  echo "restarted ${u}.service"
 done
-# Always bounce the worker on deploy so heartbeat/code fixes take effect.
-# Long jobs are interrupted and reclaimed as failed on startup; set
-# SKIP_WORKER_RESTART=1 only when you intentionally need to finish a run first.
+
+# Queue worker: always bounce unless SKIP_WORKER_RESTART=1.
 if [[ "${SKIP_WORKER_RESTART:-}" == "1" ]]; then
   if systemctl --user is-active --quiet kcw-worker.service; then
     echo "kcw-worker left running (SKIP_WORKER_RESTART=1)"
@@ -130,4 +100,25 @@ elif systemctl --user is-active --quiet kcw-worker.service; then
 else
   systemctl --user start kcw-worker.service
 fi
-systemctl --user --no-pager --full status "${_units[@]/%/.service}" kcw-worker.service | tail -n 50
+
+# Support worker: bounce so ticket-agent code updates take effect.
+# Skip when intentionally mid-ticket: SKIP_SUPPORT_WORKER_RESTART=1.
+if systemctl --user cat kcw-support-worker.service &>/dev/null; then
+  if [[ "${SKIP_SUPPORT_WORKER_RESTART:-}" == "1" ]]; then
+    if systemctl --user is-active --quiet kcw-support-worker.service; then
+      echo "kcw-support-worker left running (SKIP_SUPPORT_WORKER_RESTART=1)"
+    else
+      systemctl --user start kcw-support-worker.service
+    fi
+  elif systemctl --user is-active --quiet kcw-support-worker.service; then
+    systemctl --user restart kcw-support-worker.service
+  else
+    systemctl --user start kcw-support-worker.service
+  fi
+fi
+
+_status_units=("${_units[@]/%/.service}" kcw-worker.service)
+if systemctl --user cat kcw-support-worker.service &>/dev/null; then
+  _status_units+=(kcw-support-worker.service)
+fi
+systemctl --user --no-pager --full status "${_status_units[@]}" | tail -n 80

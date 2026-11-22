@@ -41,16 +41,46 @@ if ! _install_reqs; then
   echo "WARNING: requirements install failed; continuing with service restart" >&2
 fi
 
-_units=(kcw-stock-check kcw-parts9-explorer kcw-ops)
-if systemctl --user cat kcw-transfer.service &>/dev/null; then
-  _units+=(kcw-transfer)
-fi
+_ensure_unit() {
+  local name="$1"
+  local src="${REPO}/scripts/systemd/${name}.service"
+  local dest="${HOME}/.config/systemd/user/${name}.service"
+  if systemctl --user cat "${name}.service" &>/dev/null; then
+    return 0
+  fi
+  if [[ ! -f "$src" ]]; then
+    echo "WARNING: ${name} unit file missing in repo; not installed" >&2
+    return 1
+  fi
+  mkdir -p "${HOME}/.config/systemd/user"
+  cp "$src" "$dest"
+  systemctl --user daemon-reload
+  systemctl --user enable "${name}.service"
+}
+
+# SYP-hosted app services only (HQ-only companion/pay-notes/receive-notes/online-sale/hq-*).
+_syp_app_units=(
+  kcw-stock-check
+  kcw-parts9-explorer
+  kcw-ops
+  kcw-transfer
+)
+
+_units=()
+for name in "${_syp_app_units[@]}"; do
+  if ! _ensure_unit "$name"; then
+    continue
+  fi
+  if systemctl --user cat "${name}.service" &>/dev/null; then
+    _units+=("$name")
+  fi
+done
+
 for u in "${_units[@]}"; do
   systemctl --user restart "${u}.service"
+  echo "restarted ${u}.service"
 done
-# Always bounce the worker on deploy so heartbeat/code fixes take effect.
-# Long jobs are interrupted and reclaimed as failed on startup; set
-# SKIP_WORKER_RESTART=1 only when you intentionally need to finish a run first.
+
 if [[ "${SKIP_WORKER_RESTART:-}" == "1" ]]; then
   if systemctl --user is-active --quiet kcw-worker.service; then
     echo "kcw-worker left running (SKIP_WORKER_RESTART=1)"
@@ -62,4 +92,5 @@ elif systemctl --user is-active --quiet kcw-worker.service; then
 else
   systemctl --user start kcw-worker.service
 fi
+
 systemctl --user --no-pager --full status "${_units[@]/%/.service}" kcw-worker.service | tail -n 50
