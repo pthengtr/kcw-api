@@ -120,6 +120,35 @@ def commit_all(cwd: Path, message: str) -> None:
     _run(["git", "commit", "-m", message], cwd=cwd)
 
 
+def _pr_state(cwd: Path, pr_url: str) -> tuple[str | None, str | None]:
+    """Return (state, merge_sha) for a PR URL."""
+    view = _run(
+        [
+            "gh",
+            "pr",
+            "view",
+            pr_url,
+            "--json",
+            "state,mergeCommit",
+            "--jq",
+            "[.state, (.mergeCommit.oid // \"\")] | @tsv",
+        ],
+        cwd=cwd,
+        check=False,
+    )
+    if view.returncode != 0 or not view.stdout.strip():
+        return None, None
+    parts = view.stdout.strip().split("\t")
+    state = parts[0] if parts else None
+    sha = parts[1] if len(parts) > 1 and parts[1] else None
+    return state, sha
+
+
+def _merge_output_means_already_merged(text: str) -> bool:
+    low = (text or "").lower()
+    return "already merged" in low or "pull request is not mergeable: closed" in low
+
+
 def push_and_pr_merge(
     cwd: Path,
     *,
@@ -127,7 +156,12 @@ def push_and_pr_merge(
     title: str,
     body: str,
 ) -> tuple[str, str | None]:
-    """Push branch, create PR, squash-merge. Returns (pr_url, merge_sha)."""
+    """Push branch, create PR, squash-merge. Returns (pr_url, merge_sha).
+
+    Do not pass ``--delete-branch`` to ``gh pr merge`` from a support worktree:
+    after merge, gh tries to check out the base branch locally, which fails when
+    ``master`` is already checked out in the primary clone.
+    """
     _run(["git", "push", "-u", "origin", f"HEAD:{branch}", "--force-with-lease"], cwd=cwd)
 
     create = _run(
@@ -148,7 +182,7 @@ def push_and_pr_merge(
         check=False,
     )
     if create.returncode != 0:
-        # Maybe PR already exists for this branch.
+        # Maybe PR already exists for this branch (or agent already opened one).
         view = _run(
             ["gh", "pr", "view", branch, "--json", "url", "--jq", ".url"],
             cwd=cwd,
@@ -162,6 +196,12 @@ def push_and_pr_merge(
     else:
         pr_url = create.stdout.strip().splitlines()[-1].strip()
 
+    state, merge_sha = _pr_state(cwd, pr_url)
+    if state == "MERGED":
+        # Agent may have already merged; treat as success.
+        _run(["git", "push", "origin", "--delete", branch], cwd=cwd, check=False)
+        return pr_url, merge_sha
+
     merge = _run(
         [
             "gh",
@@ -169,7 +209,6 @@ def push_and_pr_merge(
             "merge",
             pr_url,
             "--squash",
-            "--delete-branch",
             "--admin",
         ],
         cwd=cwd,
@@ -184,20 +223,24 @@ def push_and_pr_merge(
                 "merge",
                 pr_url,
                 "--squash",
-                "--delete-branch",
             ],
             cwd=cwd,
             check=False,
         )
-    if merge.returncode != 0:
-        raise RuntimeError(f"gh pr merge failed: {merge.stderr or merge.stdout}")
 
-    sha_proc = _run(
-        ["gh", "pr", "view", pr_url, "--json", "mergeCommit", "--jq", ".mergeCommit.oid"],
-        cwd=cwd,
-        check=False,
-    )
-    merge_sha = sha_proc.stdout.strip() or None
+    out = (merge.stderr or merge.stdout or "").strip()
+    state, merge_sha = _pr_state(cwd, pr_url)
+    if merge.returncode != 0 and state != "MERGED" and not _merge_output_means_already_merged(out):
+        raise RuntimeError(f"gh pr merge failed: {out}")
+
+    if state != "MERGED":
+        # Race: merge reported already-merged; re-check once.
+        state, merge_sha = _pr_state(cwd, pr_url)
+    if state != "MERGED":
+        raise RuntimeError(f"gh pr merge failed: {out or 'PR not merged'}")
+
+    # Remote-only cleanup; never ask gh to switch this worktree onto master.
+    _run(["git", "push", "origin", "--delete", branch], cwd=cwd, check=False)
     return pr_url, merge_sha
 
 
