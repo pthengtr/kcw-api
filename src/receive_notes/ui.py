@@ -2863,10 +2863,12 @@ $('btnProofDone')?.addEventListener('click', () => {
 
 $('btnRefreshBills').onclick = () => loadBills();
 
+let createInFlight = false;
 async function createNote({ openPayAfter = false } = {}) {
   const btnCreate = $('btnCreateNote');
   const btnAndPay = $('btnCreateAndPay');
-  const createBusy = (btnCreate && btnCreate.dataset.busy === '1')
+  const createBusy = createInFlight
+    || (btnCreate && btnCreate.dataset.busy === '1')
     || (btnAndPay && btnAndPay.dataset.busy === '1');
   if (createBusy) return;
   const due = $('dueDate').value || todayISO();
@@ -2886,6 +2888,8 @@ async function createNote({ openPayAfter = false } = {}) {
       btn.disabled = !!on;
     });
   };
+  // Sync lock before any await so double-click create-and-pay cannot race.
+  createInFlight = true;
   setCreateBusy(true);
   let confirmUnmapped = false;
   try {
@@ -2945,6 +2949,7 @@ async function createNote({ openPayAfter = false } = {}) {
     $('createMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
     await loadBills();
   } finally {
+    createInFlight = false;
     setCreateBusy(false);
   }
 }

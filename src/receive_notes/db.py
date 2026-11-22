@@ -37,6 +37,65 @@ def insert_note(client: Client, row: dict[str, Any]) -> dict[str, Any]:
     return _first_row(resp)
 
 
+def is_duplicate_note_key_error(exc: BaseException) -> bool:
+    """PostgREST / Postgres unique violation on receive_note.note PK."""
+    text = str(exc).lower()
+    code = str(getattr(exc, "code", "") or "").lower()
+    if code == "23505" or "23505" in text:
+        return True
+    return "duplicate key" in text or "note_pkey" in text
+
+
+class NoteOverlayConflict(RuntimeError):
+    """Overlay row exists in a terminal state and must not be reopened."""
+
+    def __init__(self, message: str, *, code: str = "overlay_conflict"):
+        super().__init__(message)
+        self.code = code
+
+
+def ensure_open_note(client: Client, row: dict[str, Any]) -> dict[str, Any]:
+    """Insert overlay note, or reactivate/refresh when (acctno, noteno) already exists.
+
+    Matches docs/receive-notes.md "Upsert overlay". Canceled (and orphan open)
+    rows are reopened so BN/BNN reuse after soft-cancel / double-submit does not
+    500 with note_pkey. Received overlays stay blocked.
+    """
+    acct = str(row.get("acctno") or "").strip()
+    note = str(row.get("noteno") or "").strip()
+    if not acct or not note:
+        raise ValueError("acctno and noteno required")
+
+    def _refresh(existing: dict[str, Any]) -> dict[str, Any]:
+        status = str(existing.get("status") or "").lower()
+        if status == "received":
+            raise NoteOverlayConflict(
+                f"note overlay already received for {acct}/{note}",
+                code="already_received",
+            )
+        patch = {
+            key: value
+            for key, value in row.items()
+            if key not in ("acctno", "noteno", "created_at", "created_by")
+        }
+        patch["status"] = "open"
+        return patch_note(client, acct, note, patch)
+
+    existing = get_note(client, acct, note)
+    if existing:
+        return _refresh(existing)
+    try:
+        return insert_note(client, row)
+    except Exception as exc:
+        # Concurrent create-and-pay: loser hit note_pkey after winner inserted.
+        if not is_duplicate_note_key_error(exc):
+            raise
+        existing = get_note(client, acct, note)
+        if not existing:
+            raise
+        return _refresh(existing)
+
+
 def patch_note(client: Client, acctno: str, noteno: str, patch: dict[str, Any]) -> dict[str, Any]:
     patch = {**patch, "updated_at": datetime.now(_BKK).isoformat()}
     resp = (

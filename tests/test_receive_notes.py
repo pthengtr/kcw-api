@@ -117,6 +117,76 @@ def test_tiger_cash_skips_non_ar_pos_bill():
     assert complete_tiger_receipt_for_pos_bill(pos_bill_id="") is None
 
 
+def test_duplicate_note_key_error_detection():
+    from src.receive_notes.db import is_duplicate_note_key_error
+
+    assert is_duplicate_note_key_error(
+        Exception('duplicate key value violates unique constraint "note_pkey"')
+    )
+    assert is_duplicate_note_key_error(Exception("code=23505"))
+    err = Exception("boom")
+    err.code = "23505"  # type: ignore[attr-defined]
+    assert is_duplicate_note_key_error(err)
+    assert not is_duplicate_note_key_error(Exception("connection reset"))
+
+
+def test_ensure_open_note_reactivates_canceled(monkeypatch):
+    from src.receive_notes import db as rn_db
+
+    calls: dict[str, object] = {}
+
+    def fake_get(_client, acctno, noteno):
+        calls["get"] = (acctno, noteno)
+        return {"acctno": acctno, "noteno": noteno, "status": "canceled"}
+
+    def fake_patch(_client, acctno, noteno, patch):
+        calls["patch"] = (acctno, noteno, patch)
+        return {"acctno": acctno, "noteno": noteno, **patch}
+
+    def fail_insert(*_a, **_k):
+        raise AssertionError("insert should not run when overlay exists")
+
+    monkeypatch.setattr(rn_db, "get_note", fake_get)
+    monkeypatch.setattr(rn_db, "patch_note", fake_patch)
+    monkeypatch.setattr(rn_db, "insert_note", fail_insert)
+
+    out = rn_db.ensure_open_note(
+        object(),
+        {
+            "acctno": "TEST",
+            "noteno": "BNN6911-007",
+            "jourmode": "2",
+            "status": "open",
+            "due_date": "2026-11-22",
+            "discount_mode": "amount",
+            "discount_input": 0,
+            "discount_amount": 0,
+        },
+    )
+    assert out["status"] == "open"
+    assert calls["get"] == ("TEST", "BNN6911-007")
+    assert calls["patch"][0] == "TEST"
+    assert calls["patch"][2]["status"] == "open"
+
+
+def test_ensure_open_note_blocks_received(monkeypatch):
+    from src.receive_notes import db as rn_db
+
+    monkeypatch.setattr(
+        rn_db,
+        "get_note",
+        lambda *_a, **_k: {"acctno": "TEST", "noteno": "BNN6911-001", "status": "received"},
+    )
+    try:
+        rn_db.ensure_open_note(
+            object(),
+            {"acctno": "TEST", "noteno": "BNN6911-001", "jourmode": "2", "status": "open"},
+        )
+        assert False, "expected NoteOverlayConflict"
+    except rn_db.NoteOverlayConflict as exc:
+        assert exc.code == "already_received"
+
+
 def test_ui_exports_and_tabs():
     from src.receive_notes import ui as rn_ui
 
@@ -138,6 +208,7 @@ def test_ui_exports_and_tabs():
     assert "บันทึกและรับชำระ" in html
     assert "btnCreateAndPay" in html
     assert "createNote({ openPayAfter: true })" in html
+    assert "createInFlight" in html
     # Tiger cash poll on existing pay dialog (no new page)
     assert "pollTigerVoucher" in html
     assert "/vouchers/tiger-status" in html

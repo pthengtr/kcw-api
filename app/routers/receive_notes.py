@@ -20,6 +20,8 @@ from src.receive_notes.company_banks import (
 )
 from src.receive_notes.config import get_receive_notes_settings
 from src.receive_notes.db import (
+    NoteOverlayConflict,
+    ensure_open_note,
     get_note,
     get_receive_notes_supabase_client,
     insert_note,
@@ -795,7 +797,26 @@ def api_create_note(request: Request, body: NoteCreate):
     }
     client = get_receive_notes_supabase_client()
     try:
-        rem = insert_note(client, rem_row)
+        # Upsert: canceled/orphan open overlays must not 500 on note_pkey
+        # (create-and-pay double-submit / BN reuse after soft-cancel).
+        rem = ensure_open_note(client, rem_row)
+    except NoteOverlayConflict as exc:
+        rolled_back = False
+        rollback_error = None
+        try:
+            cancel_unvouchered_receive_note(settings=settings, acctno=acct, noteno=note)
+            rolled_back = True
+        except Exception as cancel_exc:
+            rollback_error = str(cancel_exc)
+        payload = {
+            "error": str(exc),
+            "code": exc.code,
+            "noteno": note,
+            "kss_rolled_back": rolled_back,
+        }
+        if rollback_error:
+            payload["kss_rollback_error"] = rollback_error
+        return JSONResponse(payload, status_code=409)
     except Exception as exc:
         rolled_back = False
         rollback_error = None
