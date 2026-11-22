@@ -19,6 +19,7 @@ from src.support.attachments import (
 from src.support.git_pr import (
     base_branch,
     commit_all,
+    data_query_cwd,
     has_changes,
     prepare_worktree,
     push_and_pr_merge,
@@ -119,9 +120,11 @@ def mark_waiting(
     engine,
     ticket_id: str,
     *,
-    pr_url: str,
+    pr_url: str | None,
     merge_sha: str | None,
     agent_session_id: str | None,
+    event_comment: str | None = None,
+    event_meta: dict | None = None,
 ) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -144,6 +147,12 @@ def mark_waiting(
                 "agent_session_id": agent_session_id,
             },
         )
+        meta = {
+            "pr_url": pr_url,
+            "merge_sha": merge_sha,
+            "worker": WORKER_NAME,
+            **(event_meta or {}),
+        }
         conn.execute(
             text(
                 """
@@ -152,16 +161,15 @@ def mark_waiting(
                 values (
                   cast(:id as uuid),
                   'waiting',
-                  null,
+                  :comment,
                   cast(:meta as jsonb)
                 )
                 """
             ),
             {
                 "id": ticket_id,
-                "meta": json.dumps(
-                    {"pr_url": pr_url, "merge_sha": merge_sha, "worker": WORKER_NAME}
-                ),
+                "comment": event_comment,
+                "meta": json.dumps(meta),
             },
         )
 
@@ -232,12 +240,143 @@ def add_event(
         )
 
 
+def process_data_query(engine, ticket: dict, *, local_files: list[str]) -> None:
+    """Answer-only path: no git worktree / PR."""
+    ticket_id = str(ticket["id"])
+    reopen_comment = latest_reopen_comment(engine, ticket_id)
+    prompt = build_agent_prompt(
+        ticket,
+        attachment_paths=local_files,
+        reopen_comment=reopen_comment,
+    )
+    cwd = data_query_cwd()
+    add_event(
+        engine,
+        ticket_id,
+        "agent_started",
+        meta={
+            "mode": "data_query",
+            "cwd": str(cwd),
+            "worker": WORKER_NAME,
+            "target_id": ticket.get("target_id"),
+        },
+    )
+
+    agent_out = run_local_agent(cwd=cwd, prompt=prompt)
+    answer = (agent_out or "").strip()
+    if not answer:
+        raise RuntimeError("Data-query agent finished with empty answer")
+
+    add_event(
+        engine,
+        ticket_id,
+        "answered",
+        comment=answer[:8000],
+        meta={"worker": WORKER_NAME, "mode": "data_query"},
+    )
+    mark_waiting(
+        engine,
+        ticket_id,
+        pr_url=None,
+        merge_sha=None,
+        agent_session_id=None,
+        event_comment=None,
+        event_meta={"mode": "data_query"},
+    )
+    print(f"[support] data_query waiting {ticket_id} answer_chars={len(answer)}")
+
+
+def process_code_ticket(engine, ticket: dict, *, local_files: list[str]) -> None:
+    ticket_id = str(ticket["id"])
+    target_source = ticket["target_source"]
+    if target_source not in ("kcw-api", "kcw-v2"):
+        raise RuntimeError(
+            f"Code tickets require kcw-api/kcw-v2 target, got {target_source}"
+        )
+
+    reopen_comment = latest_reopen_comment(engine, ticket_id)
+    prompt = build_agent_prompt(
+        ticket,
+        attachment_paths=local_files,
+        reopen_comment=reopen_comment,
+    )
+
+    worktree, branch = prepare_worktree(ticket_id, target_source)
+    add_event(
+        engine,
+        ticket_id,
+        "agent_started",
+        meta={"branch": branch, "cwd": str(worktree), "worker": WORKER_NAME},
+    )
+
+    agent_out = run_local_agent(cwd=worktree, prompt=prompt)
+    add_event(
+        engine,
+        ticket_id,
+        "agent_finished",
+        comment=agent_out[-1500:] if agent_out else None,
+    )
+
+    if has_changes(worktree):
+        commit_all(
+            worktree,
+            f"support: {ticket.get('title') or ticket_id}".strip()[:200],
+        )
+
+    from src.support.git_pr import _run
+
+    base = base_branch()
+    log = _run(
+        ["git", "rev-list", "--count", f"origin/{base}..HEAD"],
+        cwd=worktree,
+        check=False,
+    )
+    try:
+        ahead = int((log.stdout or "0").strip() or "0") > 0
+    except ValueError:
+        ahead = False
+    if not ahead:
+        raise RuntimeError(
+            "Agent finished with no code changes to commit/push"
+        )
+
+    pr_title = f"support: {ticket.get('title') or ticket_id}"
+    pr_body = (
+        f"Automated support ticket `{ticket_id}`\n\n"
+        f"- Target: {ticket.get('target_label')} "
+        f"({ticket.get('target_source')}/{ticket.get('target_id')})\n"
+        f"- Kind: {ticket.get('kind')}\n\n"
+        f"{ticket.get('body') or ''}\n"
+    )
+    pr_url, merge_sha = push_and_pr_merge(
+        worktree, branch=branch, title=pr_title, body=pr_body
+    )
+    add_event(
+        engine,
+        ticket_id,
+        "merged",
+        meta={"pr_url": pr_url, "merge_sha": merge_sha},
+    )
+    mark_waiting(
+        engine,
+        ticket_id,
+        pr_url=pr_url,
+        merge_sha=merge_sha,
+        agent_session_id=None,
+    )
+    print(f"[support] waiting verify {ticket_id} pr={pr_url}")
+
+
 def process_ticket(engine, ticket: dict) -> None:
     ticket_id = str(ticket["id"])
     target_source = ticket["target_source"]
+    kind = ticket.get("kind") or ""
     local_files: list[str] = []
 
-    print(f"[support] processing {ticket_id} target={target_source}/{ticket['target_id']}")
+    print(
+        f"[support] processing {ticket_id} kind={kind} "
+        f"target={target_source}/{ticket['target_id']}"
+    )
 
     try:
         sb = get_supabase_client()
@@ -247,86 +386,20 @@ def process_ticket(engine, ticket: dict) -> None:
         )
         local_files = [str(p) for p in downloaded]
 
-        reopen_comment = latest_reopen_comment(engine, ticket_id)
-        prompt = build_agent_prompt(
-            ticket,
-            attachment_paths=local_files,
-            reopen_comment=reopen_comment,
-        )
-
-        worktree, branch = prepare_worktree(ticket_id, target_source)
-        add_event(
-            engine,
-            ticket_id,
-            "agent_started",
-            meta={"branch": branch, "cwd": str(worktree), "worker": WORKER_NAME},
-        )
-
-        agent_out = run_local_agent(cwd=worktree, prompt=prompt)
-        add_event(
-            engine,
-            ticket_id,
-            "agent_finished",
-            comment=agent_out[-1500:] if agent_out else None,
-        )
-
-        if has_changes(worktree):
-            commit_all(
-                worktree,
-                f"support: {ticket.get('title') or ticket_id}".strip()[:200],
-            )
-
-        from src.support.git_pr import _run
-
-        base = base_branch()
-        log = _run(
-            ["git", "rev-list", "--count", f"origin/{base}..HEAD"],
-            cwd=worktree,
-            check=False,
-        )
-        try:
-            ahead = int((log.stdout or "0").strip() or "0") > 0
-        except ValueError:
-            ahead = False
-        if not ahead:
-            raise RuntimeError(
-                "Agent finished with no code changes to commit/push"
-            )
-
-        pr_title = f"support: {ticket.get('title') or ticket_id}"
-        pr_body = (
-            f"Automated support ticket `{ticket_id}`\n\n"
-            f"- Target: {ticket.get('target_label')} "
-            f"({ticket.get('target_source')}/{ticket.get('target_id')})\n"
-            f"- Kind: {ticket.get('kind')}\n\n"
-            f"{ticket.get('body') or ''}\n"
-        )
-        pr_url, merge_sha = push_and_pr_merge(
-            worktree, branch=branch, title=pr_title, body=pr_body
-        )
-        add_event(
-            engine,
-            ticket_id,
-            "merged",
-            meta={"pr_url": pr_url, "merge_sha": merge_sha},
-        )
-        mark_waiting(
-            engine,
-            ticket_id,
-            pr_url=pr_url,
-            merge_sha=merge_sha,
-            agent_session_id=None,
-        )
-        print(f"[support] waiting verify {ticket_id} pr={pr_url}")
+        if kind == "data_query":
+            process_data_query(engine, ticket, local_files=local_files)
+        else:
+            process_code_ticket(engine, ticket, local_files=local_files)
     except Exception as exc:
         print(f"[support] failed {ticket_id}: {exc}\n{traceback.format_exc()}")
         mark_failed(engine, ticket_id, str(exc))
     finally:
         cleanup_attachments(ticket_id)
-        try:
-            remove_worktree(ticket_id, target_source)
-        except Exception as cleanup_err:
-            print(f"[support] worktree cleanup warning: {cleanup_err}")
+        if kind != "data_query" and target_source in ("kcw-api", "kcw-v2"):
+            try:
+                remove_worktree(ticket_id, target_source)
+            except Exception as cleanup_err:
+                print(f"[support] worktree cleanup warning: {cleanup_err}")
 
 
 def main() -> None:

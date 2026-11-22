@@ -244,6 +244,18 @@ def push_and_pr_merge(
     return pr_url, merge_sha
 
 
+def data_query_cwd() -> Path:
+    """Working directory for answer-only data_query tickets (no git worktree)."""
+    raw = (
+        os.getenv("SUPPORT_DATA_QUERY_CWD")
+        or "/home/hqadmin/projects/kcw-analytic"
+    ).strip()
+    path = Path(raw)
+    if not path.is_dir():
+        raise RuntimeError(f"SUPPORT_DATA_QUERY_CWD is not a directory: {path}")
+    return path
+
+
 def run_local_agent(*, cwd: Path, prompt: str, timeout_sec: int = 45 * 60) -> str:
     agent_bin = os.getenv("SUPPORT_AGENT_BIN") or os.getenv("CURSOR_AGENT") or "agent"
     api_key = os.getenv("CURSOR_API_KEY") or ""
