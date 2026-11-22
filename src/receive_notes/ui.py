@@ -179,6 +179,7 @@ main { max-width:1120px; margin:0 auto; padding:var(--space-page-y) var(--space-
   display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.85rem;
 }
 .edit-actions .btn { flex:1 1 10rem; }
+.create-actions { margin-top:.85rem; }
 .kpis { display:grid; gap:.65rem; grid-template-columns:repeat(4, 1fr); margin:.85rem 0; }
 .kpi {
   display:flex; gap:.7rem; align-items:flex-start; text-align:left;
@@ -797,7 +798,10 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           </div>
         </div>
 
-        <button type="button" class="btn primary block" id="btnCreateNote">บันทึกใบวางบิล</button>
+        <div class="edit-actions create-actions">
+          <button type="button" class="btn outline" id="btnCreateNote">บันทึกใบวางบิล</button>
+          <button type="button" class="btn primary" id="btnCreateAndPay">บันทึกและรับชำระ</button>
+        </div>
         <div id="createMsg"></div>
     </div>
   </section>
@@ -2606,6 +2610,8 @@ function openPay(acct, note, billamt, discount) {
   if ($('payBankSelect') && preferBank) $('payBankSelect').value = preferBank;
   $('payMsg').innerHTML = '';
   $('payChkno').dataset.auto = '1';
+  const confirmBtn = $('btnConfirmPay');
+  if (confirmBtn) { confirmBtn.dataset.busy = '0'; confirmBtn.disabled = false; }
   // Actual settle chosen at receive time (default transfer).
   setSettleMethod('transfer');
   wireDatePickers($('dlgPay'));
@@ -2614,6 +2620,8 @@ function openPay(acct, note, billamt, discount) {
 $('btnClosePay').onclick = () => $('dlgPay').close();
 $('btnCancelPay').onclick = () => $('dlgPay').close();
 $('btnConfirmPay').onclick = async () => {
+  const btn = $('btnConfirmPay');
+  if (btn && btn.dataset.busy === '1') return;
   if (!WRITE_ENABLED) { $('payMsg').innerHTML = '<p class="err">KSS write ปิดอยู่</p>'; return; }
   if (!payTarget) return;
   const chkno = settleMethod === 'transfer' ? ($('payChkno').value.trim() || 'โอน')
@@ -2626,6 +2634,7 @@ $('btnConfirmPay').onclick = async () => {
   if (chkamt <= 0 && payTarget.netamt > 0) {
     $('payMsg').innerHTML = '<p class="err">กรอกจำนวนเงินที่รับ</p>'; return;
   }
+  if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
   try {
     const res = await api('/vouchers', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -2641,7 +2650,10 @@ $('btnConfirmPay').onclick = async () => {
       || settleMethod === 'cash'
       || String(res.voucno || '').toUpperCase().startsWith('RVI');
     setTimeout(() => { $('dlgPay').close(); showTab(skipProof ? 'voucher' : 'awaitproof'); }, 700);
-  } catch (e) { $('payMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  } catch (e) {
+    $('payMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+  }
 };
 
 let vendorTimer = null;
@@ -2807,9 +2819,12 @@ $('btnProofDone')?.addEventListener('click', () => {
 
 $('btnRefreshBills').onclick = () => loadBills();
 
-$('btnCreateNote').onclick = async () => {
-  const btn = $('btnCreateNote');
-  if (btn && btn.dataset.busy === '1') return;
+async function createNote({ openPayAfter = false } = {}) {
+  const btnCreate = $('btnCreateNote');
+  const btnAndPay = $('btnCreateAndPay');
+  const createBusy = (btnCreate && btnCreate.dataset.busy === '1')
+    || (btnAndPay && btnAndPay.dataset.busy === '1');
+  if (createBusy) return;
   const due = $('dueDate').value || todayISO();
   const billnos = [...$('billList').querySelectorAll('input:checked')].map(x => x.value);
   $('createMsg').innerHTML = '';
@@ -2820,7 +2835,14 @@ $('btnCreateNote').onclick = async () => {
   if (resolveDiscAmount(total) - total > 1e-9) {
     $('createMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
   }
-  if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
+  const setCreateBusy = (on) => {
+    [btnCreate, btnAndPay].forEach((btn) => {
+      if (!btn) return;
+      btn.dataset.busy = on ? '1' : '0';
+      btn.disabled = !!on;
+    });
+  };
+  setCreateBusy(true);
   let confirmUnmapped = false;
   try {
     let res;
@@ -2855,21 +2877,35 @@ $('btnCreateNote').onclick = async () => {
       ? `<br/><span class="note-reuse-hint" style="display:inline-block;margin-top:.45rem">${esc(res.reuse_hint)}</span>`
       : '';
     const discBit = discShow ? ` · ${discLabel}` : '';
-    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel}${discBit} · รับ ${fmtMoney(netShow)}${reuseNote}</p>`;
+    const okExtra = openPayAfter ? ' · เปิดรับชำระ' : '';
+    $('createMsg').innerHTML = `<p class="ok">บันทึกใบวางบิลแล้ว · ${noteLabel}${discBit} · รับ ${fmtMoney(netShow)}${okExtra}${reuseNote}</p>`;
     $('discInput').value = '0.00';
     resetRemarkForm('note', picked?.acctno || '');
     noteReceiveBankKey = '';
     fillReceiveBankSelect($('noteReceiveBank'), '');
     setDiscMode('amount');
     await loadBills();
-    setTimeout(() => { showTab('pending'); }, 600);
+    if (openPayAfter) {
+      // Keep note in รอรับชำระ if modal is closed without settle; reuse existing pay dialog.
+      await loadPending();
+      openPay(
+        res.acctno || picked.acctno,
+        res.noteno,
+        Number(res.billamt || total),
+        discShow
+      );
+    } else {
+      setTimeout(() => { showTab('pending'); }, 600);
+    }
   } catch (e) {
     $('createMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
     await loadBills();
   } finally {
-    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+    setCreateBusy(false);
   }
-};
+}
+$('btnCreateNote').onclick = () => createNote({ openPayAfter: false });
+$('btnCreateAndPay').onclick = () => createNote({ openPayAfter: true });
 
 async function openEditNote(key, returnTab) {
   const row = findRow(key) || pendingRows.find(r => keyOf(r) === key);
