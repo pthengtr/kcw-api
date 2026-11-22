@@ -128,6 +128,9 @@ def test_ui_exports_and_tabs():
     assert "จำนวนเงินที่รับ" in html
     assert "บัญชีที่รับเงิน" in html
     assert "รับชำระ" in html
+    assert "บันทึกและรับชำระ" in html
+    assert "btnCreateAndPay" in html
+    assert "createNote({ openPayAfter: true })" in html
     # AR brand accent (Deep Teal)
     assert "#247B74" in html
     assert "formatDiscountLabel" in html
