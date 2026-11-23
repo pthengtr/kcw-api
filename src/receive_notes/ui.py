@@ -1334,7 +1334,8 @@ function netAmt(r) {
     return Number(r.NETAMT != null ? r.NETAMT : r.BILLAMT || 0);
   }
   const disc = Number((r.reminder || {}).discount_amount || 0);
-  return Math.max(0, Number(r.BILLAMT || 0) - disc);
+  // Allow negative nets (ใบลดหนี้); do not clamp to 0.
+  return Number(r.BILLAMT || 0) - disc;
 }
 function dueBucket(due) {
   const today = todayISO();
@@ -1599,7 +1600,7 @@ async function loadPending() {
   }
 }
 function pendingNet(r) {
-  return Math.max(0, Number(r.BILLAMT || 0) - Number((r.reminder || {}).discount_amount || 0));
+  return Number(r.BILLAMT || 0) - Number((r.reminder || {}).discount_amount || 0);
 }
 function filteredPending() {
   const q = ($('pfQ').value || '').trim().toLowerCase();
@@ -2114,7 +2115,7 @@ function fillPrintSheet(det, row) {
   const month = monthRaw ? String(monthRaw).slice(0, 7) : '';
   const disc = Number(totals.discount || 0);
   const billamt = Number(totals.billamt != null ? totals.billamt : 0);
-  const net = Number(totals.netamt != null ? totals.netamt : Math.max(0, billamt - disc));
+  const net = Number(totals.netamt != null ? totals.netamt : (billamt - disc));
   const billcnt = totals.billcnt || bills.length;
   const words = totals.net_text || '';
   const remarkNote = String(rem.remark || '').trim();
@@ -2554,7 +2555,7 @@ $('payChkno').addEventListener('input', () => { $('payChkno').dataset.auto = '0'
 function openPay(acct, note, billamt, discount) {
   const bill = Number(billamt || 0);
   const disc = Number(discount || 0);
-  const net = Math.max(0, bill - disc);
+  const net = bill - disc;
   payTarget = {acctno: acct, noteno: note, billamt: bill, discount: disc, netamt: net};
   const row = pendingRows.find(r => r.acctno === acct && r.noteno === note)
     || findRow(`${acct}|${note}`);
@@ -2729,6 +2730,10 @@ function selectedBillTotal() {
   const checked = [...$('billList').querySelectorAll('input[type=checkbox]:checked')];
   return { n: checked.length, total: checked.reduce((s, cb) => s + (Number(cb.dataset.amt) || 0), 0) };
 }
+/** Discount overflow only applies to non-negative bill totals; negative CN nets are valid. */
+function discExceedsBill(disc, bill) {
+  return Number(bill) >= 0 && Number(disc) - Number(bill) > 1e-9;
+}
 function resolveDiscAmount(bill) {
   const raw = Number($('discInput').value || 0);
   if (discMode === 'percent') return Math.round(bill * Math.min(raw, 100) / 100 * 100) / 100;
@@ -2739,8 +2744,8 @@ function syncDiscPreview() {
   const disc = resolveDiscAmount(total);
   $('discBillAmt').textContent = fmtMoney(total);
   $('discResolved').textContent = fmtMoney(disc);
-  $('discNetAmt').textContent = fmtMoney(Math.max(0, total - disc));
-  $('discResolved').style.color = (disc - total > 1e-9) ? 'var(--down)' : '';
+  $('discNetAmt').textContent = fmtMoney(total - disc);
+  $('discResolved').style.color = discExceedsBill(disc, total) ? 'var(--down)' : '';
 }
 function setDiscMode(mode) {
   discMode = mode === 'percent' ? 'percent' : 'amount';
@@ -2837,7 +2842,7 @@ async function createNote({ openPayAfter = false } = {}) {
   if (!picked) { $('createMsg').innerHTML = '<p class="err">เลือกลูกหนี้</p>'; return; }
   if (!billnos.length) { $('createMsg').innerHTML = '<p class="err">เลือกบิลอย่างน้อย 1</p>'; return; }
   const { total } = selectedBillTotal();
-  if (resolveDiscAmount(total) - total > 1e-9) {
+  if (discExceedsBill(resolveDiscAmount(total), total)) {
     $('createMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
   }
   const setCreateBusy = (on) => {
@@ -2877,7 +2882,7 @@ async function createNote({ openPayAfter = false } = {}) {
     }
     const rem = res.reminder || {};
     const discShow = Number(rem.discount_amount != null ? rem.discount_amount : resolveDiscAmount(total));
-    const netShow = Math.max(0, Number(res.billamt || total) - discShow);
+    const netShow = Number(res.billamt || total) - discShow;
     const noteLabel = esc(res.noteno_display || displayNoteno(res.noteno));
     const discLabel = esc(formatDiscountLabel(rem, discShow, {withPrefix: true}));
     const reuseNote = res.is_reused_label && res.reuse_hint
@@ -2968,7 +2973,10 @@ function syncEditDiscPreview() {
   const disc = resolveEditDiscAmount(total);
   $('editDiscBillAmt').textContent = fmtMoney(total);
   $('editDiscResolved').textContent = fmtMoney(disc);
-  $('editDiscNetAmt').textContent = fmtMoney(Math.max(0, total - disc));
+  $('editDiscNetAmt').textContent = fmtMoney(total - disc);
+  if ($('editDiscResolved')) {
+    $('editDiscResolved').style.color = discExceedsBill(disc, total) ? 'var(--down)' : '';
+  }
 }
 function setEditDiscMode(mode) {
   editDiscMode = mode === 'percent' ? 'percent' : 'amount';
@@ -3000,7 +3008,7 @@ $('btnSaveEdit').onclick = async () => {
   const billnos = [...$('editBillList').querySelectorAll('input:checked')].map(x => x.value);
   if (!billnos.length) { $('editMsg').innerHTML = '<p class="err">เลือกบิลอย่างน้อย 1</p>'; return; }
   const { total } = editSelectedBillTotal();
-  if (resolveEditDiscAmount(total) - total > 1e-9) {
+  if (discExceedsBill(resolveEditDiscAmount(total), total)) {
     $('editMsg').innerHTML = '<p class="err">ส่วนลดมากกว่ายอดบิล</p>'; return;
   }
   try {

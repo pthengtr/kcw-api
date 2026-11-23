@@ -162,19 +162,33 @@ def prepare_receive(
         bno = str(alloc.get("billno") or "").strip()
         bill = by_no[bno]
         aftertax = round(float(bill.get("AFTERTAX") or 0), 2)
-        remaining = round(aftertax - prior.get(bno, 0.0), 2)
+        prior_amt = float(prior.get(bno, 0.0))
+        remaining = round(aftertax - prior_amt, 2)
         amount = round(float(alloc.get("allocate_amt") or remaining), 2)
-        if remaining <= 0:
-            raise ReceiveServiceError(f"bill {bno} already fully allocated", code="already_paid")
-        if amount <= 0 or amount - remaining > 1e-6:
-            raise ReceiveServiceError(f"invalid allocate for {bno}", code="validation")
+        # Sale: remaining > 0. Credit note (ใบลดหนี้): remaining < 0 is still open.
+        if aftertax >= 0:
+            if remaining <= 0:
+                raise ReceiveServiceError(
+                    f"bill {bno} already fully allocated", code="already_paid"
+                )
+            if amount <= 0 or amount - remaining > 1e-6:
+                raise ReceiveServiceError(f"invalid allocate for {bno}", code="validation")
+            fully = amount + prior_amt + 1e-6 >= aftertax
+        else:
+            if remaining >= 0:
+                raise ReceiveServiceError(
+                    f"bill {bno} already fully allocated", code="already_paid"
+                )
+            if amount >= 0 or amount < remaining - 1e-6:
+                raise ReceiveServiceError(f"invalid allocate for {bno}", code="validation")
+            fully = amount + prior_amt - 1e-6 <= aftertax
         enriched.append(
             {
                 "billno": bno,
                 "aftertax": aftertax,
                 "allocate_amt": amount,
                 "JOURMODE": str(bill.get("JOURMODE") or "1").strip() or "1",
-                "fully_paid": amount + prior.get(bno, 0.0) + 1e-6 >= aftertax,
+                "fully_paid": fully,
             }
         )
 
