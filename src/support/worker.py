@@ -262,7 +262,8 @@ def process_data_query(engine, ticket: dict, *, local_files: list[str]) -> None:
         },
     )
 
-    agent_out = run_local_agent(cwd=cwd, prompt=prompt)
+    # data_query needs ~/mnt mounts — no sandbox; watchdog still kills home-wide finds.
+    agent_out = run_local_agent(cwd=cwd, prompt=prompt, sandbox=False)
     answer = (agent_out or "").strip()
     if not answer:
         raise RuntimeError("Data-query agent finished with empty answer")
@@ -309,7 +310,8 @@ def process_code_ticket(engine, ticket: dict, *, local_files: list[str]) -> None
         meta={"branch": branch, "cwd": str(worktree), "worker": WORKER_NAME},
     )
 
-    agent_out = run_local_agent(cwd=worktree, prompt=prompt)
+    # Code tickets: sandbox keeps tools in the worktree (avoids ~/mnt FUSE hangs).
+    agent_out = run_local_agent(cwd=worktree, prompt=prompt, sandbox=True)
     add_event(
         engine,
         ticket_id,

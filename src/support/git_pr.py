@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
+import signal
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 
@@ -256,30 +260,239 @@ def data_query_cwd() -> Path:
     return path
 
 
-def run_local_agent(*, cwd: Path, prompt: str, timeout_sec: int = 45 * 60) -> str:
+# Broad home / FUSE scans hang on rclone mounts under ~/mnt. Kill early.
+_BROAD_FIND_RE = re.compile(
+    r"(?:^|\s)(?:find|fd|fdfind)\s+(?:-[^\s]+\s+)*"
+    r"(?:/home/hqadmin(?:/mnt)?(?:\s|$)|/\s|/home(?:\s|$))",
+)
+_MNT_SCAN_RE = re.compile(r"/home/hqadmin/mnt(?:/|\s|$)")
+
+
+def _read_cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return ""
+    return raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
+
+
+def _read_stat_start_ticks(pid: int) -> int | None:
+    try:
+        # /proc/<pid>/stat field 22 is starttime (clock ticks after boot).
+        fields = Path(f"/proc/{pid}/stat").read_text().split()
+        return int(fields[21])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _process_age_sec(pid: int, *, ticks_per_sec: float, boot_time: float) -> float:
+    start = _read_stat_start_ticks(pid)
+    if start is None:
+        return 0.0
+    return max(0.0, time.time() - (boot_time + start / ticks_per_sec))
+
+
+def _boot_time_sec() -> float:
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1])
+    except OSError:
+        pass
+    return time.time()
+
+
+def _iter_descendant_pids(root_pid: int) -> set[int]:
+    """Best-effort walk of /proc for children of root_pid (incl. root)."""
+    children: dict[int, list[int]] = {}
+    try:
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            try:
+                status = (entry / "status").read_text()
+            except OSError:
+                continue
+            ppid = None
+            for line in status.splitlines():
+                if line.startswith("PPid:"):
+                    ppid = int(line.split()[1])
+                    break
+            if ppid is None:
+                continue
+            children.setdefault(ppid, []).append(pid)
+    except OSError:
+        return {root_pid}
+
+    found = {root_pid}
+    stack = [root_pid]
+    while stack:
+        cur = stack.pop()
+        for child in children.get(cur, []):
+            if child not in found:
+                found.add(child)
+                stack.append(child)
+    return found
+
+
+def _is_dangerous_scan(cmdline: str, *, worktree: Path) -> bool:
+    """True for home-wide / mount-wide filesystem crawls that wedge on FUSE."""
+    if not cmdline:
+        return False
+    wt = str(worktree)
+    # Explicit worktree-scoped find is OK.
+    if wt in cmdline and not _MNT_SCAN_RE.search(cmdline):
+        return False
+    if _BROAD_FIND_RE.search(cmdline):
+        return True
+    if _MNT_SCAN_RE.search(cmdline) and re.search(
+        r"(?:^|\s)(?:find|fd|fdfind|rg|grep|locate)\s", cmdline
+    ):
+        return True
+    return False
+
+
+def _kill_process_group(pid: int, *, sig: int = signal.SIGKILL) -> None:
+    try:
+        os.killpg(pid, sig)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            pass
+
+
+def _watch_and_reap_dangerous_scans(
+    root_pid: int,
+    *,
+    worktree: Path,
+    stop: threading.Event,
+    grace_sec: float,
+) -> list[str]:
+    """Kill descendant scans that crawl $HOME or ~/mnt (rclone FUSE hang risk)."""
+    killed: list[str] = []
+    ticks = float(os.sysconf("SC_CLK_TCK"))
+    boot = _boot_time_sec()
+    while not stop.wait(2.0):
+        for pid in _iter_descendant_pids(root_pid):
+            if pid == root_pid:
+                continue
+            cmd = _read_cmdline(pid)
+            if not _is_dangerous_scan(cmd, worktree=worktree):
+                continue
+            age = _process_age_sec(pid, ticks_per_sec=ticks, boot_time=boot)
+            if age < grace_sec:
+                continue
+            try:
+                os.kill(pid, signal.SIGKILL)
+                killed.append(f"pid={pid} age={age:.0f}s cmd={cmd[:240]}")
+                print(
+                    f"[support] killed dangerous scan: pid={pid} "
+                    f"age={age:.0f}s cmd={cmd[:200]}"
+                )
+            except OSError:
+                pass
+    return killed
+
+
+def run_local_agent(
+    *,
+    cwd: Path,
+    prompt: str,
+    timeout_sec: int | None = None,
+    sandbox: bool = True,
+) -> str:
+    """Run Cursor CLI agent in ``cwd``.
+
+    Hardening vs FUSE hangs under ``~/mnt``:
+    - optional ``--sandbox enabled`` (code tickets) to keep tools in-workspace
+    - own process group so timeouts can SIGKILL the whole tree
+    - watchdog kills home-wide / mount-wide ``find`` scans quickly
+    """
     agent_bin = os.getenv("SUPPORT_AGENT_BIN") or os.getenv("CURSOR_AGENT") or "agent"
     api_key = os.getenv("CURSOR_API_KEY") or ""
+    if timeout_sec is None:
+        timeout_sec = int(os.getenv("SUPPORT_AGENT_TIMEOUT_SEC", str(45 * 60)))
+    grace_sec = float(os.getenv("SUPPORT_SCAN_KILL_GRACE_SEC", "12"))
+    sandbox_env = (os.getenv("SUPPORT_AGENT_SANDBOX") or "").strip().lower()
+    if sandbox_env in ("0", "false", "off", "disabled"):
+        sandbox = False
+    elif sandbox_env in ("1", "true", "on", "enabled"):
+        sandbox = True
+
     cmd = [
         agent_bin,
         "-p",
         "--force",
+        "--trust",
+        "--workspace",
+        str(cwd),
         "--output-format",
         "text",
-        prompt,
     ]
-    env = {}
+    if sandbox:
+        cmd.extend(["--sandbox", "enabled"])
+    cmd.append(prompt)
+
+    env = {**os.environ}
     if api_key:
         env["CURSOR_API_KEY"] = api_key
-    proc = subprocess.run(
+
+    proc = subprocess.Popen(
         cmd,
         cwd=str(cwd),
         text=True,
-        capture_output=True,
-        env={**os.environ, **env},
-        timeout=timeout_sec,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=True,
     )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"agent failed ({proc.returncode}): {(proc.stderr or proc.stdout)[-4000:]}"
+    assert proc.pid is not None
+
+    stop = threading.Event()
+    killed_scans: list[str] = []
+
+    def _watch() -> None:
+        killed_scans.extend(
+            _watch_and_reap_dangerous_scans(
+                proc.pid,
+                worktree=cwd.resolve(),
+                stop=stop,
+                grace_sec=grace_sec,
+            )
         )
-    return (proc.stdout or "")[-8000:]
+
+    watcher = threading.Thread(target=_watch, name="support-scan-watch", daemon=True)
+    watcher.start()
+
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc.pid)
+        try:
+            stdout, stderr = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc.pid)
+            stdout, stderr = proc.communicate()
+        raise RuntimeError(
+            f"agent timed out after {timeout_sec}s: "
+            f"{(stderr or stdout or '')[-4000:]}"
+        ) from None
+    finally:
+        stop.set()
+        watcher.join(timeout=5)
+        if proc.poll() is None:
+            _kill_process_group(proc.pid)
+
+    if proc.returncode != 0:
+        detail = (stderr or stdout or "")[-4000:]
+        if killed_scans:
+            detail = (
+                f"{detail}\n[support] also killed dangerous scans: "
+                + "; ".join(killed_scans[-5:])
+            )
+        raise RuntimeError(f"agent failed ({proc.returncode}): {detail}")
+    return (stdout or "")[-8000:]
