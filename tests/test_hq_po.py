@@ -1352,7 +1352,12 @@ def test_page_confirms_before_removing_a_waiting_line():
     assert 'row.source === "iclow"' in html
     assert "ต้องเลือกเจ้าหนี้" in html
     assert "บริษัทนี้สินค้าหมด" in html
-    assert "มีสินค้าแล้ว" in html
+    tools_fn = html.split("function productTools", 1)[1].split("function qtyCell", 1)[0]
+    assert "data-unblock=" in tools_fn
+    assert "data-clear-block=" in tools_fn
+    assert "สั่งย้ำเจ้าเดิม" in tools_fn
+    assert "มีสินค้าแล้ว" not in tools_fn
+    assert "อยู่หน้ารอสั่งนี้ต่อ" in html
     assert "data-block-ordered" in html
     assert "/hq-po/api/iclow/" in html
     assert "data-l=" in html

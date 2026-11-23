@@ -647,8 +647,8 @@ function productTools(row){
     : "";
   const back = (STAMP && row.vendor_blocked && row.vendor)
     ? (row.iclow_id && row.source === "iclow"
-        ? `<button type="button" class="peer-btn" data-unblock="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">มีสินค้าแล้ว</button>`
-        : `<button type="button" class="peer-btn" data-clear-block="${esc(row.bcode||"")}" data-acct="${esc(row.vendor||"")}">มีสินค้าแล้ว</button>`)
+        ? `<button type="button" class="peer-btn" data-unblock="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">สั่งย้ำเจ้าเดิม</button>`
+        : `<button type="button" class="peer-btn" data-clear-block="${esc(row.bcode||"")}" data-acct="${esc(row.vendor||"")}">สั่งย้ำเจ้าเดิม</button>`)
     : "";
   const canStamp = STAMP && row.source === "iclow" && row.iclow_id;
   const cancel = canStamp
@@ -1583,36 +1583,36 @@ async function markUnavailable(iclowId, bcode, ordered){
 async function clearUnavailable(iclowId, bcode){
   if(state.busy || !iclowId) return;
   const name = bcode ? ` ${bcode}` : "";
-  if(!confirm(`เอาเครื่องหมายไม่มีสินค้าออกจาก${name}?`)) return;
-  setBusy(true, "กำลังเอาเครื่องหมายออก…");
+  if(!confirm(`สั่งย้ำเจ้าเดิม${name}?\nจะเอาเครื่องหมายบริษัทนี้สินค้าหมดออก แล้วอยู่หน้ารอสั่งนี้ต่อ`)) return;
+  setBusy(true, "กำลังสั่งย้ำเจ้าเดิม…");
   let failed = null;
   try {
     const res = await fetch("/hq-po/api/iclow/" + encodeURIComponent(iclowId) + "/available", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
     const data = await res.json().catch(()=>({}));
-    if(!res.ok) failed = new Error(data.message || "เอาเครื่องหมายออกไม่สำเร็จ");
+    if(!res.ok) failed = new Error(data.message || "สั่งย้ำเจ้าเดิมไม่สำเร็จ");
   } catch (err) {
     failed = err;
   } finally {
     setBusy(false);
   }
-  if(failed){ alert(failed.message || "เอาเครื่องหมายออกไม่สำเร็จ"); return; }
+  if(failed){ alert(failed.message || "สั่งย้ำเจ้าเดิมไม่สำเร็จ"); return; }
   await loadSuggest();
 }
 async function clearNamedBlock(bcode, acct){
   if(state.busy || !bcode || !acct) return;
-  if(!confirm(`เอาเครื่องหมายไม่มีสินค้าออกจาก ${bcode}?`)) return;
-  setBusy(true, "กำลังเอาเครื่องหมายออก…");
+  if(!confirm(`สั่งย้ำเจ้าเดิม ${bcode}?\nจะเอาเครื่องหมายบริษัทนี้สินค้าหมดออก แล้วอยู่หน้ารอสั่งนี้ต่อ`)) return;
+  setBusy(true, "กำลังสั่งย้ำเจ้าเดิม…");
   let failed = null;
   try {
     const res = await fetch("/hq-po/api/blocks/clear", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({bcode: bcode, acctno: acct})});
     const data = await res.json().catch(()=>({}));
-    if(!res.ok) failed = new Error(data.message || "เอาเครื่องหมายออกไม่สำเร็จ");
+    if(!res.ok) failed = new Error(data.message || "สั่งย้ำเจ้าเดิมไม่สำเร็จ");
   } catch (err) {
     failed = err;
   } finally {
     setBusy(false);
   }
-  if(failed){ alert(failed.message || "เอาเครื่องหมายออกไม่สำเร็จ"); return; }
+  if(failed){ alert(failed.message || "สั่งย้ำเจ้าเดิมไม่สำเร็จ"); return; }
   state.insightLoaded = false;
   await loadSuggest();
 }
