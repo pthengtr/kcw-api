@@ -1210,6 +1210,18 @@ def _tiger_pending_response(
     }
 
 
+def _attach_refund_voucher_qr(pending: dict[str, Any], attempt: dict[str, Any] | None) -> None:
+    """Expose KCN-style voucher QR for staff to scan at Tiger cashbox."""
+    from src.receive_notes.tiger import ar_refund_voucher_display
+
+    voucher = ar_refund_voucher_display(attempt)
+    if not voucher:
+        return
+    pending["voucher"] = voucher
+    if voucher.get("voucher_num") and not pending.get("tiger_payment_no"):
+        pending["tiger_payment_no"] = voucher.get("voucher_num")
+
+
 def _refund_response(
     *,
     started: dict[str, Any],
@@ -1226,6 +1238,7 @@ def _refund_response(
         attempt = started.get("tiger_attempt") or {}
         if attempt.get("voucher_num") and not pending.get("tiger_payment_no"):
             pending["tiger_payment_no"] = attempt.get("voucher_num")
+        _attach_refund_voucher_qr(pending, attempt)
         return pending
 
     kss = started.get("kss") or {}
@@ -1504,7 +1517,7 @@ def api_tiger_voucher_status(request: Request, receipt_id: str = ""):
             or attempt.get("tiger_payment_no")
             or receipt.get("tiger_payment_no")
         )
-        return {
+        pending = {
             "awaiting_tiger": True,
             "done": False,
             "is_refund": is_refund,
@@ -1519,6 +1532,9 @@ def api_tiger_voucher_status(request: Request, receipt_id: str = ""):
             "receipt": receipt,
             "tiger_attempt": attempt,
         }
+        if is_refund:
+            _attach_refund_voucher_qr(pending, attempt)
+        return pending
 
     if synced.get("failed"):
         return JSONResponse(

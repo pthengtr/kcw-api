@@ -263,6 +263,17 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .empty { text-align:center; color:var(--muted); padding:1.6rem .8rem; }
 .err { color:var(--down); font-size:.85rem; margin:.35rem 0; }
 .ok { color:var(--ok); font-size:.85rem; }
+.tiger-voucher-box {
+  margin:.65rem 0 .35rem; padding:.75rem; border:1px solid var(--line);
+  border-radius:10px; background:var(--inset); text-align:center;
+}
+.tiger-voucher-box img {
+  width:min(220px, 70vw); height:auto; display:block; margin:.45rem auto 0;
+  background:#fff; border-radius:8px;
+}
+.tiger-voucher-code {
+  font-weight:700; letter-spacing:.04em; font-size:1.05rem; margin:.25rem 0 0;
+}
 .row-actions { display:flex; gap:.4rem; justify-content:flex-end; flex-wrap:wrap; }
 .step { display:flex; gap:.85rem; margin:0 0 1.15rem; }
 .step-num {
@@ -2638,6 +2649,39 @@ let tigerPollTimer = null;
 function stopTigerPoll() {
   if (tigerPollTimer) { clearTimeout(tigerPollTimer); tigerPollTimer = null; }
 }
+function tigerVoucherImgSrc(image) {
+  const raw = String(image || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('data:') || raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  return 'data:image/png;base64,' + raw;
+}
+function renderTigerAwaiting(res, { refund }) {
+  const st = esc(res.tiger_status || 'pending');
+  if (!refund) {
+    const tno = esc(res.tiger_payment_no || res.tiger_attempt_id || '');
+    $('payMsg').innerHTML =
+      `<p class="ok">รอ Tiger ยืนยันรับเงินสด… (${st}` +
+      (tno ? ` · ${tno}` : '') + `)</p>`;
+    return;
+  }
+  // Cash refund: show voucher QR for staff to scan at Tiger (KCN payout pattern).
+  const v = res.voucher || {};
+  const code = esc(v.voucher_num || v.code || res.tiger_payment_no || '');
+  const imgSrc = tigerVoucherImgSrc(v.qr_image || v.image || '');
+  let html = `<p class="ok">สร้าง Voucher คืนเงินแล้ว — สแกน QR ที่ตู้ Tiger เพื่อจ่ายเงินสด</p>`;
+  html += `<div class="tiger-voucher-box">`;
+  if (code) html += `<div class="tiger-voucher-code">${code}</div>`;
+  if (imgSrc) {
+    html += `<img alt="Tiger voucher QR" src="${imgSrc}"/>`;
+  } else if (code) {
+    html += `<p class="muted" style="margin:.45rem 0 0">พิมพ์รหัสด้านบนที่ตู้ Tiger</p>`;
+  } else {
+    html += `<p class="muted" style="margin:.45rem 0 0">รอเลข voucher จาก Tiger…</p>`;
+  }
+  html += `</div>`;
+  html += `<p class="muted">รอเครื่องยืนยันจ่ายคืนเงินสด… (${st})</p>`;
+  $('payMsg').innerHTML = html;
+}
 async function finishPaySuccess(res, method) {
   const refund = !!(payTarget && payTarget.is_refund) || !!res.is_refund;
   const vouc = esc(res.voucno || '');
@@ -2663,12 +2707,7 @@ async function pollTigerVoucher(receiptId, method) {
   try {
     const res = await api('/vouchers/tiger-status?receipt_id=' + encodeURIComponent(rid));
     if (res.awaiting_tiger) {
-      const st = esc(res.tiger_status || 'pending');
-      const tno = esc(res.tiger_payment_no || res.tiger_attempt_id || '');
-      $('payMsg').innerHTML =
-        `<p class="ok">${refund ? 'รอ Tiger ยืนยันจ่ายคืนเงินสด…' : 'รอ Tiger ยืนยันรับเงินสด…'} (${st}` +
-        (tno ? ` · ${tno}` : '') +
-        `)</p>`;
+      renderTigerAwaiting(res, { refund });
       tigerPollTimer = setTimeout(() => pollTigerVoucher(rid, method), 1500);
       return;
     }
@@ -2713,11 +2752,7 @@ $('btnConfirmPay').onclick = async () => {
       })
     });
     if (res.awaiting_tiger && res.receipt_id) {
-      const tno = esc(res.tiger_payment_no || res.tiger_attempt_id || '');
-      $('payMsg').innerHTML =
-        `<p class="ok">${refund ? 'ส่ง Voucher คืนเงินไป Tiger แล้ว รอเครื่องยืนยัน…' : 'ส่งยอดไป Tiger แล้ว รอรับเงินสด…'}` +
-        (tno ? ` (${tno})` : '') +
-        `</p>`;
+      renderTigerAwaiting(res, { refund });
       pollTigerVoucher(res.receipt_id, settleMethod);
       return;
     }
