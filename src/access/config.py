@@ -8,4 +8,8 @@ COMMAND_PERMISSIONS = {
     "ที่เก็บ": {"admin", "exec", "user"},
     "สแกนตาราง": {"admin", "exec", "staff"},
     "สถานะใบสั่งซื้อ": {"admin", "exec", "staff"},
+    "รายการเบิก": {"admin", "exec"},
+    "อนุมัติเบิก": {"admin", "exec"},
+    "ส่งกลับเบิก": {"admin", "exec"},
+    "ปฏิเสธเบิก": {"admin", "exec"},
 }

@@ -16,6 +16,7 @@ logging.basicConfig(
 )
 
 from app.routers.companion import router as companion_router
+from app.routers.expense_cash import router as expense_cash_router
 from app.routers.health import router as health_router
 from app.routers.tiger_pay import router as tiger_pay_router
 from app.routers.windows_remote import router as windows_remote_router
@@ -36,6 +37,10 @@ from src.handlers.router import route_user_text
 from src.handlers.product import (
     handle_product_search_next_postback,
     is_product_search_next_postback,
+)
+from src.handlers.expense_cash import (
+    handle_expense_cash_postback,
+    is_expense_cash_postback,
 )
 from src.handlers.image import handle_line_image_message
 from src.handlers.product_scan import handle_product_scan_image
@@ -99,6 +104,7 @@ app.include_router(health_router)
 app.include_router(tiger_pay_router)
 app.include_router(companion_router)
 app.include_router(windows_remote_router)
+app.include_router(expense_cash_router)
 
 
 @app.get("/")
@@ -225,6 +231,13 @@ async def line_webhook(request: Request):
                     reply_payload = handle_product_search_next_postback(
                         engine,
                         data,
+                        access=access,
+                    )
+                elif is_expense_cash_postback(data):
+                    reply_payload = handle_expense_cash_postback(
+                        engine,
+                        data,
+                        line_user_id=line_user_id,
                         access=access,
                     )
                 else:
