@@ -21,7 +21,19 @@ from src.tiger_pay.voucher_service import (
     VoucherServiceError,
     cancel_voucher_attempt,
     create_voucher_for_bill,
+    tiger_voucher_create_amount,
 )
+
+
+def test_tiger_voucher_create_amount_ceils_to_whole_baht():
+    assert tiger_voucher_create_amount(Decimal("460.10")) == 461
+    assert tiger_voucher_create_amount(Decimal("460.01")) == 461
+    assert tiger_voucher_create_amount(Decimal("460.00")) == 460
+    assert tiger_voucher_create_amount("150") == 150
+    assert tiger_voucher_create_amount(Decimal("0.01")) == 1
+    with pytest.raises(VoucherServiceError) as exc:
+        tiger_voucher_create_amount(Decimal("0"))
+    assert exc.value.code == "invalid_voucher_amount"
 
 
 def test_is_cn_payout_bill_number():
@@ -325,7 +337,51 @@ def test_create_voucher_for_bill_persists(monkeypatch):
 
     assert result["voucher"]["voucher_num"] == "V100"
     create_m.assert_called_once()
+    assert create_m.call_args.kwargs["amount"] == 150
     voucher_api.create_voucher.assert_called_once()
+    assert voucher_api.create_voucher.call_args.kwargs["amount"] == 150
+
+
+def test_create_voucher_for_bill_ceils_satang(monkeypatch):
+    engine = MagicMock()
+    voucher_api = MagicMock()
+    voucher_api.create_voucher.return_value = {
+        "raw": {"data": {"voucher_num": "V101", "used": "N"}},
+        "data": {"voucher_num": "V101", "used": "N"},
+    }
+    fractional = PosBill(
+        id="bill-cn-frac",
+        bill_number="CN6911-003",
+        amount=Decimal("460.10"),
+        created_at=datetime(2026, 11, 23, 8, 30, tzinfo=timezone.utc),
+        pos_status="Y",
+        salesperson="mock.user",
+        kind="payout",
+    )
+
+    with (
+        patch("src.tiger_pay.voucher_service.get_open_bill", return_value=fractional),
+        patch("src.tiger_pay.voucher_service.voucher_repos.get_active_voucher_for_bill", return_value=None),
+        patch("src.tiger_pay.voucher_service.voucher_repos.get_used_voucher_for_bill", return_value=None),
+        patch(
+            "src.tiger_pay.voucher_service.voucher_repos.create_voucher_attempt",
+            return_value={"id": "attempt-frac", "status": "creating"},
+        ) as create_m,
+        patch("src.tiger_pay.voucher_service.voucher_repos.insert_voucher_event"),
+        patch(
+            "src.tiger_pay.voucher_service.voucher_repos.update_voucher_attempt",
+            return_value={
+                "id": "attempt-frac",
+                "status": "pending",
+                "voucher_num": "V101",
+                "amount": 461,
+            },
+        ),
+    ):
+        create_voucher_for_bill(engine, "bill-cn-frac", voucher_api=voucher_api)
+
+    assert create_m.call_args.kwargs["amount"] == 461
+    assert voucher_api.create_voucher.call_args.kwargs["amount"] == 461
 
 
 def test_create_voucher_rejects_when_already_used():
