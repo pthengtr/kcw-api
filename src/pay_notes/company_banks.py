@@ -36,10 +36,24 @@ COMPANY_PAY_ACCOUNTS: dict[str, dict[str, str]] = {
 }
 
 DEFAULT_PAY_BANK_KEY = "ktb_44244"
+# Vendors whose acctno starts with "7" pay out from Kasikorn …3557 by default.
+VENDOR_PREFIX_7_PAY_BANK_KEY = "kbank_72355"
 
 
 def list_company_pay_accounts() -> list[dict[str, str]]:
     return [dict(v) for v in COMPANY_PAY_ACCOUNTS.values()]
+
+
+def default_pay_bank_key_for_acctno(acctno: str | None) -> str:
+    """Default company payout account for transfer, by vendor code.
+
+    - acctno starting with 7 → กสิกร …3557 (kbank_72355)
+    - all other vendors → กรุงไทย …2446 (ktb_44244)
+    """
+    acct = (acctno or "").strip()
+    if acct.startswith("7"):
+        return VENDOR_PREFIX_7_PAY_BANK_KEY
+    return DEFAULT_PAY_BANK_KEY
 
 
 def resolve_company_pay_account(key: str | None) -> dict[str, str]:
