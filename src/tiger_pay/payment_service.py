@@ -1161,7 +1161,7 @@ def reconcile_from_tiger_payment(
             touch_last_polled=touch_last_polled,
         )
 
-    return apply_status_update(
+    updated = apply_status_update(
         engine,
         attempt_id=str(attempt["id"]),
         raw_status=raw_status,
@@ -1173,6 +1173,85 @@ def reconcile_from_tiger_payment(
         touch_last_polled=touch_last_polled,
         recover_failed_success=recover_failed_success,
     )
+    # Poller/webhook success must also land on payment_transaction or the
+    # Bangkok Z-report (cash_in) stays short when the success webhook is missing
+    # or an earlier pending ingest was skipped (truncated updatedAt).
+    if incoming == "success" and tiger_payment_id is not None:
+        _sync_payment_transaction_on_success(
+            engine,
+            attempt=updated or attempt,
+            payment=payment,
+            tiger_payment_id=tiger_payment_id,
+            payment_no=str(payment_no) if payment_no is not None else None,
+            source=source,
+        )
+    return updated
+
+
+def _sync_payment_transaction_on_success(
+    engine: Engine,
+    *,
+    attempt: dict[str, Any],
+    payment: dict[str, Any],
+    tiger_payment_id: int,
+    payment_no: str | None,
+    source: str,
+) -> None:
+    """Mirror companion success onto payment_transaction for Z-report totals."""
+    amount = _attempt_amount(attempt)
+    raw_tiger_amount = payment.get("amount")
+    try:
+        if raw_tiger_amount is not None and raw_tiger_amount != "":
+            amount = float(raw_tiger_amount)
+    except (TypeError, ValueError):
+        pass
+
+    raw_total = (
+        payment.get("totalPay")
+        if payment.get("totalPay") is not None
+        else payment.get("total_pay")
+    )
+    total_pay: float
+    try:
+        total_pay = float(raw_total) if raw_total is not None and raw_total != "" else 0.0
+    except (TypeError, ValueError):
+        total_pay = 0.0
+    if total_pay <= 0:
+        total_pay = amount
+
+    payment_type = str(
+        payment.get("type")
+        or payment.get("payment_type")
+        or payment_type_from_attempt(attempt)
+        or "cash"
+    ).strip().lower()
+    settings = get_tiger_pay_settings()
+    try:
+        repos.ensure_payment_transaction_success(
+            engine,
+            tiger_payment_id,
+            amount=amount,
+            total_pay=total_pay,
+            payment_no=payment_no or attempt.get("tiger_payment_no"),
+            payment_type=payment_type,
+            payment=omit_qr_images(payment),
+            remark=f"{source} success sync to payment_transaction",
+            manual_meta={
+                "action": f"{source}_success_transaction_sync",
+                "attempt_id": str(attempt.get("id") or ""),
+            },
+            shop_code=settings.tiger_pay_default_shop_code or None,
+            ref_no_1=attempt.get("pos_bill_number") or payment.get("refNo1"),
+            ref_no_2=str(attempt.get("id") or "") or payment.get("refNo2"),
+        )
+    except Exception:
+        logger.exception(
+            "Failed syncing payment_transaction on %s success "
+            "tiger_payment_id=%s attempt_id=%s",
+            source,
+            tiger_payment_id,
+            attempt.get("id"),
+        )
 
 
 def reconcile_from_webhook_transaction(

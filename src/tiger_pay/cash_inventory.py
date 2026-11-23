@@ -421,6 +421,48 @@ def freeze_daily_close(
     )
 
 
+def rebuild_daily_close_report(
+    engine: Engine,
+    *,
+    biz_day: date,
+    shop_code: str,
+) -> dict[str, Any]:
+    """Recompute a locked Z-report from current payment_transaction rows."""
+    existing = cash_repos.get_daily_close(engine, biz_day=biz_day, shop_code=shop_code)
+    if not existing:
+        raise RuntimeError(f"No daily_close for {biz_day} shop={shop_code}")
+
+    opening_id = existing.get("opening_snapshot_id")
+    closing_id = existing.get("closing_snapshot_id")
+    opening = (
+        cash_repos.get_snapshot_by_id(engine, str(opening_id)) if opening_id else None
+    )
+    closing = (
+        cash_repos.get_snapshot_by_id(engine, str(closing_id)) if closing_id else None
+    )
+    if closing is None:
+        raise RuntimeError(
+            f"daily_close {biz_day} shop={shop_code} missing closing snapshot"
+        )
+
+    txns = cash_repos.list_payment_transactions_for_day(
+        engine, biz_day=biz_day, shop_code=shop_code
+    )
+    vouchers = cash_repos.list_voucher_attempts_for_day(engine, biz_day=biz_day)
+    report = build_daily_report(
+        txns,
+        vouchers=vouchers,
+        opening_items=parse_cash_items((opening or {}).get("items")),
+        closing_items=parse_cash_items(closing.get("items")),
+    )
+    updated = cash_repos.update_daily_close_report(
+        engine, biz_day=biz_day, shop_code=shop_code, report=report
+    )
+    if updated is None:
+        raise RuntimeError(f"Failed updating daily_close for {biz_day} shop={shop_code}")
+    return updated
+
+
 def build_daily_report(
     txns: list[dict[str, Any]],
     *,

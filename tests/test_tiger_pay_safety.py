@@ -59,10 +59,16 @@ def test_reconcile_paid_qr_fail_webhook_stores_success():
             "src.tiger_pay.payment_service.repos.update_payment_attempt",
             return_value={**attempt, "status": "success"},
         ) as update,
+        patch(
+            "src.tiger_pay.payment_service.repos.ensure_payment_transaction_success"
+        ) as ensure_txn,
     ):
         reconcile_from_tiger_payment(engine, _paid_qr(), source="webhook")
     assert update.call_args.kwargs["status"] == "success"
     assert update.call_args.kwargs["recover_failed_success"] is False
+    assert ensure_txn.called
+    assert ensure_txn.call_args.args[1] == 3064
+    assert float(ensure_txn.call_args.kwargs["total_pay"]) == 350.0
 
 
 def test_reconcile_paid_qr_replaces_stuck_failed():
@@ -78,6 +84,9 @@ def test_reconcile_paid_qr_replaces_stuck_failed():
             "src.tiger_pay.payment_service.repos.update_payment_attempt",
             return_value={**attempt, "status": "success"},
         ) as update,
+        patch(
+            "src.tiger_pay.payment_service.repos.ensure_payment_transaction_success"
+        ) as ensure_txn,
     ):
         reconcile_from_tiger_payment(
             engine,
@@ -86,6 +95,7 @@ def test_reconcile_paid_qr_replaces_stuck_failed():
         )
     assert update.call_args.kwargs["status"] == "success"
     assert update.call_args.kwargs["recover_failed_success"] is True
+    assert ensure_txn.called
 
 
 def test_reconcile_cash_success_does_not_replace_failed():
@@ -174,6 +184,9 @@ def test_reconcile_rejects_qr_amount_mismatch_on_success():
             "src.tiger_pay.payment_service.repos.update_payment_attempt",
             return_value=attempt,
         ) as update,
+        patch(
+            "src.tiger_pay.payment_service.repos.ensure_payment_transaction_success"
+        ) as ensure_txn,
     ):
         reconcile_from_tiger_payment(
             engine,
@@ -188,6 +201,54 @@ def test_reconcile_rejects_qr_amount_mismatch_on_success():
         )
     assert insert.call_args.kwargs["payload"]["action"] == "webhook_amount_mismatch"
     assert update.call_args.kwargs.get("status") is None
+    assert not ensure_txn.called
+
+
+def test_reconcile_cash_success_syncs_payment_transaction():
+    engine = MagicMock()
+    attempt = {
+        "id": "att-cash",
+        "status": "pending",
+        "amount": Decimal("200"),
+        "pos_bill_number": "8K69-0021759",
+        "tiger_payment_no": "PA2611220031",
+    }
+    payment = {
+        "id": 8138,
+        "refNo2": "att-cash",
+        "status": "success",
+        "type": "cash",
+        "amount": 200,
+        "totalPay": 200,
+        "paymentNo": "PA2611220031",
+        "cashList": [{"value": 100, "amount": 2}],
+    }
+    with (
+        patch(
+            "src.tiger_pay.payment_service.repos.find_attempt_by_tiger_or_ref",
+            return_value=attempt,
+        ),
+        patch("src.tiger_pay.payment_service.repos.insert_payment_event"),
+        patch(
+            "src.tiger_pay.payment_service.repos.update_payment_attempt",
+            return_value={**attempt, "status": "success"},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.repos.ensure_payment_transaction_success"
+        ) as ensure_txn,
+        patch(
+            "src.tiger_pay.payment_service.get_tiger_pay_settings",
+            return_value=MagicMock(
+                tiger_pay_default_shop_code="1",
+                tiger_pay_id_epoch="2020-01-01T00:00:00+00:00",
+            ),
+        ),
+    ):
+        reconcile_from_tiger_payment(engine, payment, source="polling")
+    assert ensure_txn.call_args.args[1] == 8138
+    assert float(ensure_txn.call_args.kwargs["total_pay"]) == 200.0
+    assert ensure_txn.call_args.kwargs["payment_type"] == "cash"
+    assert ensure_txn.call_args.kwargs["payment_no"] == "PA2611220031"
 
 
 def test_send_payment_leaves_sending_on_timeout():

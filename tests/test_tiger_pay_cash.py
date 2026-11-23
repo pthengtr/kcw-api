@@ -162,6 +162,66 @@ def test_hopper_moved_by_webhook_rules():
     ) is True
 
 
+def test_rebuild_daily_close_report_updates_frozen_json():
+    from datetime import date
+
+    from src.tiger_pay.cash_inventory import rebuild_daily_close_report
+
+    engine = MagicMock()
+    existing = {
+        "biz_day": date(2026, 11, 22),
+        "shop_code": "1",
+        "opening_snapshot_id": "open-1",
+        "closing_snapshot_id": "close-1",
+        "report": {"cash_in": 0},
+    }
+    with (
+        patch(
+            "src.tiger_pay.cash_inventory.cash_repos.get_daily_close",
+            return_value=existing,
+        ),
+        patch(
+            "src.tiger_pay.cash_inventory.cash_repos.get_snapshot_by_id",
+            side_effect=[
+                {"id": "open-1", "items": []},
+                {"id": "close-1", "items": []},
+            ],
+        ),
+        patch(
+            "src.tiger_pay.cash_inventory.cash_repos.list_payment_transactions_for_day",
+            return_value=[
+                {
+                    "payment_no": "PA2611220031",
+                    "payment_type": "cash",
+                    "status": "success",
+                    "amount": "200.00",
+                    "total_pay": "200.00",
+                    "change_amount": "0.00",
+                    "payload": {
+                        "payment": {
+                            "cashList": [{"value": 100, "amount": 2}],
+                        }
+                    },
+                }
+            ],
+        ),
+        patch(
+            "src.tiger_pay.cash_inventory.cash_repos.list_voucher_attempts_for_day",
+            return_value=[],
+        ),
+        patch(
+            "src.tiger_pay.cash_inventory.cash_repos.update_daily_close_report",
+            return_value={**existing, "report": {"cash_in": 200.0}},
+        ) as update,
+    ):
+        rebuilt = rebuild_daily_close_report(
+            engine, biz_day=date(2026, 11, 22), shop_code="1"
+        )
+    assert rebuilt["report"]["cash_in"] == 200.0
+    assert update.call_args.kwargs["report"]["cash_in"] == 200.0
+    assert update.call_args.kwargs["report"]["billed"] == 200.0
+
+
 def test_build_daily_report_identity_and_unspecified_cash():
     txns = [
         {
