@@ -96,7 +96,7 @@ def attach_catalog(
     items: list[dict[str, Any]],
     products: dict[str, dict[str, Any]] | None = None,
 ) -> None:
-    """Fill ชื่อรุ่น, เบอร์แท้, เบอร์โรงงาน, ยี่ห้อ, ราคา, and ค่า from HQ ICMAS."""
+    """Fill ชื่อรุ่น, เบอร์แท้, เบอร์โรงงาน, ยี่ห้อ, ราคา, and ทุน from HQ ICMAS."""
     codes = [str(item.get("bcode") or "").strip() for item in items if item.get("bcode")]
     if not codes:
         return
