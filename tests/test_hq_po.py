@@ -1365,6 +1365,9 @@ def test_page_confirms_before_removing_a_waiting_line():
 def test_page_autosaves_waiting_drafts():
     html = page(user_name="Pannawit", stamp_enabled=True)
     assert "scheduleDraftSave" in html
+    assert "flushPendingDrafts" in html
+    assert "keepalive: true" in html
+    assert "pagehide" in html
     assert "/hq-po/api/drafts/" in html
     assert "/hq-po/api/drafts/check" in html
     assert "บันทึกแล้ว" in html
