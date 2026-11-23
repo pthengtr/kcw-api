@@ -469,6 +469,19 @@ def test_page_defaults_vendor_view():
     assert "/hq-po/api/products" in html
     assert "/hq-po/api/vendors" in html
     assert "openVendorOrder" in html
+    assert "function afterVendorChange" in html
+    stay_fn = html.split("function afterVendorChange", 1)[1].split("function setSource", 1)[0]
+    assert 'state.view === "vendor" && state.vendorKey != null' in stay_fn
+    assert "renderList()" in stay_fn
+    assert "openVendorOrder(row)" in stay_fn
+    assert "scheduleDraftSave(row)" in stay_fn
+    choose_fn = html.split("async function chooseSupplier", 1)[1].split(
+        'document.getElementById("list").onchange', 1
+    )[0]
+    assert "afterVendorChange(row)" in choose_fn
+    assert "openVendorOrder(row)" not in choose_fn
+    apply_fn = html.split("function applyNewVendor", 1)[1].split("function syncVendorLabel", 1)[0]
+    assert "afterVendorChange(row)" in apply_fn
     assert "สินค้าแทน" in html
     assert "data-peers" in html
     assert "data-open-vendor" in html

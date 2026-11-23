@@ -1074,6 +1074,16 @@ function openVendorOrder(row){
   const line = document.getElementById("line-" + rowKey(row));
   if(line) line.scrollIntoView({block:"center"});
 }
+function afterVendorChange(row){
+  // ตามบริษัท: keep the open company; the line leaves this list for the new vendor.
+  scheduleDraftSave(row);
+  if(state.view === "vendor" && state.vendorKey != null){
+    row.picked = false;
+    renderList();
+    return;
+  }
+  openVendorOrder(row);
+}
 function setSource(source){
   state.source = source;
   for(const [id, val] of [["srcAll","all"],["srcIclow","iclow"],["srcAi","ai"]]){
@@ -2352,11 +2362,11 @@ function applyNewVendor(row, acct, name){
     renderCatalog();
     return;
   }
-  scheduleDraftSave(row);
   if(row.vendor && !row.vendor_blocked){
-    openVendorOrder(row);
+    afterVendorChange(row);
     return;
   }
+  scheduleDraftSave(row);
   const key = rowKey(row);
   const box = document.querySelector(`[data-vendorbox="${CSS.escape(key)}"]`);
   if(box){
@@ -2922,8 +2932,7 @@ async function chooseSupplier(row, pick){
   row.vendor_blocked = false;
   row._hay = "";
   haystack(row);
-  scheduleDraftSave(row);
-  openVendorOrder(row);
+  afterVendorChange(row);
 }
 document.getElementById("list").onchange = (e) => {
   const all = e.target.closest("input[data-select-all]");
