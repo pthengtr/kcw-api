@@ -297,7 +297,9 @@ def _resolve_discount(billamt: float, mode: str, raw_input: float) -> tuple[str,
         amount = round(bill * val / 100.0, 2)
     else:
         amount = round(val, 2)
-    if amount - bill > 1e-9:
+    # Negative BILLAMT (ใบลดหนี้ / CN) is a valid BN/BNN total — not a discount.
+    # Only reject when a discount exceeds a non-negative bill total.
+    if bill >= 0 and amount - bill > 1e-9:
         raise ValueError("discount exceeds bill total")
     return m, val, amount
 
@@ -1202,7 +1204,8 @@ def api_create_voucher(request: Request, body: VoucherCreate):
 
     billamt = float(header.get("BILLAMT") or 0)
     disc = float(rem.get("discount_amount") or 0)
-    if disc - billamt > 1e-9:
+    # Same rule as _resolve_discount: negative BILLAMT is a valid note total.
+    if billamt >= 0 and disc - billamt > 1e-9:
         return JSONResponse({"error": "stored discount invalid"}, status_code=400)
     net = round(billamt - disc, 2)
 

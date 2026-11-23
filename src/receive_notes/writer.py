@@ -601,14 +601,31 @@ def create_receipt_voucher(
         bill = by_no[bno]
         aftertax = round(float(bill.get("AFTERTAX") or 0), 2)
         amount = round(float(alloc.get("allocate_amt") or aftertax), 2)
-        if amount <= 0:
-            raise ReceiveNoteWriteError(f"allocate_amt must be > 0 for {bno}", code="validation")
-        if amount - aftertax > 1e-6:
-            raise ReceiveNoteWriteError(
-                f"allocate_amt exceeds AFTERTAX for {bno}",
-                code="validation",
-            )
-        fully = amount + 1e-6 >= aftertax
+        # Sale bills: positive allocate up to AFTERTAX.
+        # Credit notes (ใบลดหนี้): negative AFTERTAX is a valid allocate, not a discount.
+        if aftertax >= 0:
+            if amount <= 0:
+                raise ReceiveNoteWriteError(
+                    f"allocate_amt must be > 0 for {bno}", code="validation"
+                )
+            if amount - aftertax > 1e-6:
+                raise ReceiveNoteWriteError(
+                    f"allocate_amt exceeds AFTERTAX for {bno}",
+                    code="validation",
+                )
+            fully = amount + 1e-6 >= aftertax
+        else:
+            if amount >= 0:
+                raise ReceiveNoteWriteError(
+                    f"allocate_amt must be < 0 for credit bill {bno}",
+                    code="validation",
+                )
+            if amount < aftertax - 1e-6:
+                raise ReceiveNoteWriteError(
+                    f"allocate_amt exceeds AFTERTAX for {bno}",
+                    code="validation",
+                )
+            fully = amount - 1e-6 <= aftertax
         alloc_rows.append(
             {
                 "billno": bno,
@@ -622,7 +639,9 @@ def create_receipt_voucher(
     billamt = round(billamt, 2)
     disc = float(discount or 0)
     netamt = round(billamt - disc, 2)
-    if netamt < -1e-9:
+    # Negative BILLAMT (CN / ใบลดหนี้) is a valid note net — only reject discount overflow
+    # on non-negative totals.
+    if billamt >= 0 and disc - billamt > 1e-9:
         raise ReceiveNoteWriteError("discount exceeds bill amount", code="validation")
 
     channel_sum = round(sum(float(l.get("chkamt") or 0) for l in brdet_lines), 2)

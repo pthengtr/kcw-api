@@ -395,3 +395,33 @@ def test_optional_receive_account():
     assert resolve_optional_receive_account("") is None
     assert resolve_optional_receive_account(None) is None
     assert resolve_optional_receive_account("kbank_91723")["key"] == "kbank_91723"
+
+
+def test_resolve_discount_allows_negative_billamt():
+    """ใบลดหนี้ nets are valid BN/BNN totals — not 'discount exceeds bill'."""
+    from app.routers.receive_notes import _resolve_discount
+
+    mode, raw, amount = _resolve_discount(-1500.0, "amount", 0.0)
+    assert mode == "amount"
+    assert raw == 0.0
+    assert amount == 0.0
+
+    mode, raw, amount = _resolve_discount(-500.0, "amount", -0.01)
+    assert amount == -0.01
+
+    # Positive bill still rejects discount above total.
+    try:
+        _resolve_discount(100.0, "amount", 100.01)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "discount exceeds" in str(exc)
+
+
+def test_ui_disc_exceeds_allows_negative_bill_total():
+    from src.receive_notes import ui as rn_ui
+
+    html = rn_ui.page(user_name="Test", site="HQ", write_enabled=True)
+    assert "function discExceedsBill" in html
+    assert "Number(bill) >= 0 && Number(disc) - Number(bill) > 1e-9" in html
+    assert "discExceedsBill(resolveDiscAmount(total), total)" in html
+    assert "discExceedsBill(resolveEditDiscAmount(total), total)" in html
