@@ -397,6 +397,16 @@ def refresh_voucher_attempt(
             payload={"action": "show_polled", "show_response": raw},
             event_key=f"poll:show:{attempt_id}:{status}:{raw_status}",
         )
+    if status == "used":
+        try:
+            from src.expense_cash import repos as expense_cash_repos
+
+            expense_cash_repos.mark_paid_by_voucher_attempt(engine, attempt_id)
+        except Exception:
+            logger.exception(
+                "Failed marking expense_cash_request paid for voucher %s",
+                attempt_id,
+            )
     return updated or attempt
 
 

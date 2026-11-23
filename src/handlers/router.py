@@ -74,6 +74,13 @@ from src.handlers.services_menu import (
     is_services_menu_request,
     handle_services_menu,
 )
+from src.handlers.expense_cash import (
+    handle_expense_cash_admin_command,
+    handle_expense_cash_intent,
+    handle_expense_cash_session_text,
+    is_expense_cash_admin_command,
+    is_expense_cash_intent,
+)
 
 
 def route_user_text(
@@ -98,6 +105,16 @@ def route_user_text(
     if product_scan_session_reply is not None:
         return product_scan_session_reply
 
+    # Expense cash request / admin-note sessions (+ needs_info free-text reply).
+    expense_cash_session_reply = handle_expense_cash_session_text(
+        engine,
+        line_user_id,
+        text,
+        access=access,
+    )
+    if expense_cash_session_reply is not None:
+        return expense_cash_session_reply
+
     # Legacy LIFF callback text → product search (same as typing the barcode).
     if is_product_scan_callback(text):
         return handle_product_scan_callback(
@@ -112,6 +129,21 @@ def route_user_text(
 
     if is_help_request(user_text):
         return {"type": "text", "text": GREETING_MESSAGE}
+
+    if is_expense_cash_intent(text):
+        return handle_expense_cash_intent(
+            engine,
+            line_user_id=line_user_id or "unknown",
+            access=access,
+        )
+
+    if is_expense_cash_admin_command(text):
+        return handle_expense_cash_admin_command(
+            engine,
+            text,
+            line_user_id=line_user_id or "unknown",
+            access=access,
+        )
 
     if is_stock_check_command(text):
         return handle_stock_check_command(

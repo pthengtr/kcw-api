@@ -67,9 +67,11 @@ def reply_line_payload(reply_token: str, messages: list[dict]):
     resp.raise_for_status()
 
 
-def push_line_message(to: str, text: str):
+def push_line_messages(to: str, messages: list[dict]):
     if not (to or "").strip():
         raise ValueError("Missing LINE user id")
+    if not messages:
+        raise ValueError("Missing LINE messages")
 
     headers = {
         "Content-Type": "application/json",
@@ -77,10 +79,14 @@ def push_line_message(to: str, text: str):
     }
     payload = {
         "to": to,
-        "messages": [{"type": "text", "text": (text or "")[:5000]}],
+        "messages": messages[:5],
     }
     resp = requests.post(LINE_PUSH_URL, headers=headers, json=payload, timeout=15)
     resp.raise_for_status()
+
+
+def push_line_message(to: str, text: str):
+    push_line_messages(to, [{"type": "text", "text": (text or "")[:5000]}])
 
 
 def reply_line_message(reply_token: str, text: str):
