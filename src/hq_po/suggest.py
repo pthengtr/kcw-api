@@ -328,15 +328,47 @@ def _num_eq(left: Any, right: Any) -> bool:
     return abs(a - b) < 1e-9
 
 
+def _iclow_vendor_key(item: dict[str, Any]) -> str:
+    """ICLOW vendor identity for stale checks.
+
+    settle_waiting_vendors may clear or rewrite item["vendor"]; vendor_raw keeps
+    the original ICLOW value so refresh does not look like a real change.
+    """
+    raw = str(item.get("vendor_raw") or "").strip()
+    if raw:
+        return raw
+    return str(item.get("vendor") or "").strip()
+
+
+def _vendors_equivalent(left: str, right: str) -> bool:
+    """True when codes match, or one is only a trail note on the other account."""
+    a = str(left or "").strip()
+    b = str(right or "").strip()
+    if a == b:
+        return True
+    if not a or not b:
+        return False
+    from src.hq_po.vendor_link import trail_parent
+
+    # Probe with only the other code as a live account. Including both makes
+    # trail_parent treat the trail form as linked and return empty.
+    return trail_parent(a, {b}) == b or trail_parent(b, {a}) == a
+
+
 def draft_stale_reasons(item: dict[str, Any], draft: dict[str, Any]) -> list[str]:
-    """Compare live ICLOW/product fields to the snapshot stored with the draft."""
+    """Compare live ICLOW fields to the snapshot stored when the draft was saved.
+
+    Only real ICLOW drift that affects ordering is flagged. Vendor settle / trail
+    rewrite / refresh must not count as a change.
+    """
     reasons: list[str] = []
     if draft.get("base_qty") is not None and not _num_eq(item.get("qty"), draft.get("base_qty")):
         reasons.append("qty")
-    live_vendor = str(item.get("vendor") or "").strip()
     base_vendor = str(draft.get("base_vendor") or "").strip()
-    if draft.get("base_vendor") is not None and live_vendor != base_vendor:
-        reasons.append("vendor")
+    if draft.get("base_vendor") is not None:
+        live_vendor = _iclow_vendor_key(item)
+        if not _vendors_equivalent(live_vendor, base_vendor):
+            reasons.append("vendor")
     live_descr = str(item.get("descr") or "").strip()
     base_descr = str(draft.get("base_descr") or "").strip()
     if draft.get("base_descr") is not None and live_descr != base_descr:
@@ -345,7 +377,11 @@ def draft_stale_reasons(item: dict[str, Any], draft: dict[str, Any]) -> list[str
 
 
 def apply_waiting_draft(item: dict[str, Any], draft: dict[str, Any]) -> None:
-    """Overlay a shared draft onto one waiting line. Marks stale when live data moved."""
+    """Overlay a shared draft onto one waiting line. Marks stale when live data moved.
+
+    Always restores staff qty / unit / vendor from the draft — never reset them
+    just because the underlying ICLOW snapshot went stale.
+    """
     reasons = draft_stale_reasons(item, draft)
     qty = draft.get("qty")
     try:

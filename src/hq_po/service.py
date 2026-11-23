@@ -310,6 +310,23 @@ def _draft_qty(value: Any) -> float:
     return qty
 
 
+def _draft_base_vendor(raw: str) -> str:
+    """Snapshot the APMAS account settle would show, so refresh is not 'stale'."""
+    code = str(raw or "").strip()
+    if not code:
+        return ""
+    try:
+        from src.hq_po.vendor_link import _codes_to_check, resolve_vendor
+
+        live = fetch_live_vendors(_codes_to_check([code]))
+        resolved = resolve_vendor(code, set(live))
+        if resolved["status"] in ("linked", "trail"):
+            return str(resolved["acctno"] or "").strip()
+    except Exception:
+        pass
+    return code
+
+
 def save_waiting_draft(
     iclow_id: int,
     *,
@@ -341,6 +358,7 @@ def save_waiting_draft(
     unit = str(ui or "").strip() or None
     name = str(vendor_name or "").strip() or None
     live_vendor = str(live.get("vendor") or "").strip()
+    base_vendor = _draft_base_vendor(live_vendor)
     client = get_hq_po_supabase_client()
     stored = upsert_waiting_draft(
         client,
@@ -352,7 +370,7 @@ def save_waiting_draft(
             "vendor_acctno": vendor_acct,
             "vendor_name": name,
             "base_qty": live.get("qty"),
-            "base_vendor": live_vendor,
+            "base_vendor": base_vendor,
             "base_descr": str(live.get("descr") or "").strip() or None,
             "updated_by": (updated_by or "")[:120] or None,
         },
@@ -361,7 +379,8 @@ def save_waiting_draft(
         "iclow_id": iclow_n,
         "bcode": bcode,
         "qty": live.get("qty"),
-        "vendor": live_vendor,
+        "vendor": base_vendor or live_vendor,
+        "vendor_raw": live_vendor if live_vendor and live_vendor != base_vendor else None,
         "descr": live.get("descr") or "",
     }
     reasons = draft_stale_reasons(item, stored)
