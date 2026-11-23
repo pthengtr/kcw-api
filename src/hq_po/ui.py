@@ -529,13 +529,18 @@ function closePhoto(){
   box.hidden = true;
   document.getElementById("photoImg").removeAttribute("src");
 }
+function staleFlagLabel(row){
+  const reasons = (row && row.draft && row.draft.stale_reasons) || [];
+  const labels = reasons.map(staleReasonLabel).filter(Boolean);
+  return labels.length ? labels.join(" · ") : "ข้อมูลเปลี่ยน";
+}
 function flagHtml(row){
   const parts = [];
   if(row && row.vendor_blocked) parts.push(`<div class="flag unavailable">บริษัทนี้สินค้าหมด</div>`);
   if(row && row.draft && row.draft.stale){
-    parts.push(`<div class="flag draft-stale" data-draft-stale="${esc(rowKey(row))}">ยอดค้างสั่ง/สินค้าเปลี่ยน</div>`);
+    parts.push(`<div class="flag draft-stale" data-draft-stale="${esc(rowKey(row))}">${esc(staleFlagLabel(row))}</div>`);
   } else if(row && row.iclow_id){
-    parts.push(`<div class="flag draft-stale" data-draft-stale="${esc(rowKey(row))}" hidden>ยอดค้างสั่ง/สินค้าเปลี่ยน</div>`);
+    parts.push(`<div class="flag draft-stale" data-draft-stale="${esc(rowKey(row))}" hidden></div>`);
   }
   const mark = row && row.release;
   if(mark && mark.label){
@@ -665,7 +670,7 @@ function draftStatusText(row){
   if(!d) return "";
   if(d.saving) return "กำลังบันทึก…";
   if(d.error) return "บันทึกไม่สำเร็จ";
-  if(d.stale) return "ข้อมูลเปลี่ยน";
+  if(d.stale) return staleFlagLabel(row);
   if(d.saved) return "บันทึกแล้ว";
   return "";
 }
@@ -689,7 +694,11 @@ function paintDraftStatus(row){
     el.className = "draft-status" + draftStatusClass(row);
   }
   const flag = document.querySelector(`[data-draft-stale="${CSS.escape(rowKey(row))}"]`);
-  if(flag) flag.hidden = !(row.draft && row.draft.stale);
+  if(flag){
+    const stale = !!(row.draft && row.draft.stale);
+    flag.hidden = !stale;
+    flag.textContent = stale ? staleFlagLabel(row) : "";
+  }
 }
 function scheduleDraftSave(row){
   if(!STAMP || !row || !row.iclow_id) return;
@@ -1184,10 +1193,10 @@ async function postVendor(vendor, picked){
   return data;
 }
 function staleReasonLabel(code){
-  if(code === "qty") return "ยอดค้างสั่ง";
-  if(code === "vendor") return "เจ้าหนี้บนรายการรอสั่ง";
-  if(code === "product") return "ข้อมูลสินค้า";
-  return code || "ข้อมูล";
+  if(code === "qty") return "เปลี่ยนยอดสั่ง";
+  if(code === "vendor") return "เปลี่ยนเจ้าหนี้";
+  if(code === "product") return "เปลี่ยนข้อมูลสินค้า";
+  return code || "ข้อมูลเปลี่ยน";
 }
 async function warnStaleDrafts(rows){
   const ids = [];
@@ -1225,10 +1234,10 @@ async function warnStaleDrafts(rows){
   }
   if(!stale.length) return true;
   const lines = stale.map(({row, hit}) => {
-    const reasons = (hit.stale_reasons || row.draft.stale_reasons || []).map(staleReasonLabel).join("/");
-    return `${row.bcode || row.iclow_id}${reasons ? " (" + reasons + ")" : ""}`;
+    const reasons = (hit.stale_reasons || (row.draft && row.draft.stale_reasons) || []).map(staleReasonLabel).join(" · ");
+    return `${row.bcode || row.iclow_id}${reasons ? " — " + reasons : ""}`;
   });
-  return confirm("ข้อมูลสินค้าหรือยอดค้างสั่งเปลี่ยนไปแล้ว:\n" + lines.join("\n") + "\n\nยืนยันสั่งซื้อต่อหรือไม่?");
+  return confirm("ข้อมูลบนรายการรอสั่งเปลี่ยนไปแล้ว:\n" + lines.join("\n") + "\n\nยืนยันสั่งซื้อต่อหรือไม่?");
 }
 async function confirmRows(rows){
   if(state.busy) return;

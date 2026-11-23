@@ -1390,7 +1390,9 @@ def test_page_autosaves_waiting_drafts():
     assert "/hq-po/api/drafts/check" in html
     assert "บันทึกแล้ว" in html
     assert "warnStaleDrafts" in html
-    assert "ยอดค้างสั่ง/สินค้าเปลี่ยน" in html
+    assert "staleFlagLabel" in html
+    assert "เปลี่ยนยอดสั่ง" in html
+    assert "ยอดค้างสั่ง/สินค้าเปลี่ยน" not in html
 
 
 def test_apply_waiting_draft_overlays_qty_and_vendor():
@@ -1428,6 +1430,57 @@ def test_apply_waiting_draft_overlays_qty_and_vendor():
     stale_item = dict(item, qty=9, vendor="V1", descr="bolt v2", order_qty=None)
     reasons = draft_stale_reasons(stale_item, draft)
     assert set(reasons) == {"qty", "product"}
+    apply_waiting_draft(stale_item, draft)
+    assert stale_item["order_qty"] == 5
+    assert stale_item["vendor"] == "V2"
+    assert stale_item["draft"]["stale"] is True
+    assert set(stale_item["draft"]["stale_reasons"]) == {"qty", "product"}
+
+
+def test_draft_stale_ignores_vendor_settle_on_refresh():
+    from src.hq_po.suggest import apply_waiting_draft, draft_stale_reasons
+
+    draft = {
+        "qty": 4,
+        "ui": "PCS",
+        "vendor_acctno": "BK",
+        "vendor_name": "บี.เค.",
+        "base_qty": 2,
+        "base_vendor": "BK",
+        "base_descr": "bolt",
+    }
+    # settle cleared an unknown placeholder; original ICLOW value is in vendor_raw
+    unknown = {
+        "iclow_id": 1,
+        "qty": 2,
+        "vendor": "",
+        "vendor_raw": "สั่งเอง",
+        "descr": "bolt",
+    }
+    draft_unknown = dict(draft, base_vendor="สั่งเอง", vendor_acctno="BK")
+    assert draft_stale_reasons(unknown, draft_unknown) == []
+
+    # settle stripped a trail note; display vendor is the account
+    trail = {
+        "iclow_id": 2,
+        "qty": 2,
+        "vendor": "BK",
+        "vendor_raw": "BK1",
+        "descr": "bolt",
+    }
+    assert draft_stale_reasons(trail, draft) == []
+    apply_waiting_draft(trail, draft)
+    assert trail["order_qty"] == 4
+    assert trail["vendor"] == "BK"
+    assert trail["draft"]["stale"] is False
+
+    # old draft snapshotted the trail form; live row was rewritten to the account
+    rewritten = {"iclow_id": 3, "qty": 2, "vendor": "BK", "descr": "bolt"}
+    assert draft_stale_reasons(rewritten, dict(draft, base_vendor="BK1")) == []
+
+    # real vendor change still flags
+    changed = {"iclow_id": 4, "qty": 2, "vendor": "V9", "descr": "bolt"}
+    assert draft_stale_reasons(changed, draft) == ["vendor"]
 
 
 def test_save_waiting_draft_writes_shared_row(monkeypatch):
@@ -1455,6 +1508,7 @@ def test_save_waiting_draft_writes_shared_row(monkeypatch):
             }
         },
     )
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda codes: {"V1": "Vendor One"} if "V1" in codes else {})
     monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
 
     def fake_upsert(_client, row):
@@ -1479,6 +1533,40 @@ def test_save_waiting_draft_writes_shared_row(monkeypatch):
     assert stored["base_vendor"] == "V1"
     assert result["draft"]["saved"] is True
     assert result["draft"]["qty"] == 8
+    assert result["draft"]["stale"] is False
+
+
+def test_save_waiting_draft_snapshots_trail_parent(monkeypatch):
+    from src.hq_po import service
+
+    stored = {}
+    monkeypatch.setattr(
+        service,
+        "fetch_iclow_by_ids",
+        lambda _ids: {
+            8: {
+                "iclow_id": 8,
+                "bcode": "A1",
+                "qty": 3,
+                "ui": "PCS",
+                "vendor": "BK1",
+                "descr": "bolt",
+                "ordered": "N",
+                "canceled": "N",
+            }
+        },
+    )
+    monkeypatch.setattr(service, "fetch_live_vendors", lambda codes: {"BK": "บี.เค."} if "BK" in codes else {})
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+
+    def fake_upsert(_client, row):
+        stored.update(row)
+        return dict(row, updated_at="2026-11-23T10:00:00+00:00")
+
+    monkeypatch.setattr(service, "upsert_waiting_draft", fake_upsert)
+    result = service.save_waiting_draft(8, qty=3, vendor="BK", vendor_name="บี.เค.", updated_by="Pannawit")
+    assert stored["base_vendor"] == "BK"
+    assert result["draft"]["stale"] is False
 
 
 def test_resolve_vendor_keeps_the_account_under_a_trail():
