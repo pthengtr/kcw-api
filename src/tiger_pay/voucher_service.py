@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 import uuid
+from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +42,36 @@ class VoucherServiceError(Exception):
         self.code = code
         self.details = details or {}
         super().__init__(message)
+
+
+def tiger_voucher_create_amount(amount: Decimal | float | int | str) -> int:
+    """Whole-baht amount sent to Tiger voucher create.
+
+    Cashboxes cannot dispense satang. Round **up** so the customer is not
+    shorted (``460.10`` → ``461``; whole baht stays unchanged).
+    """
+    try:
+        value = Decimal(str(amount))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise VoucherServiceError(
+            "Invalid voucher amount",
+            code="invalid_voucher_amount",
+            details={"amount": str(amount)},
+        ) from exc
+    if not value.is_finite() or value <= 0:
+        raise VoucherServiceError(
+            "Voucher amount must be positive",
+            code="invalid_voucher_amount",
+            details={"amount": str(amount)},
+        )
+    ceiled = int(value.to_integral_value(rounding=ROUND_CEILING))
+    if ceiled <= 0:
+        raise VoucherServiceError(
+            "Voucher amount must be at least 1 baht after rounding up",
+            code="invalid_voucher_amount",
+            details={"amount": str(amount), "ceiled": ceiled},
+        )
+    return ceiled
 
 
 def new_voucher_attempt_id() -> str:
@@ -172,6 +203,7 @@ def create_voucher_for_bill(
             code="voucher_already_completed",
         )
 
+    amount_value = tiger_voucher_create_amount(bill.amount)
     attempt_id = new_voucher_attempt_id()
     try:
         attempt = voucher_repos.create_voucher_attempt(
@@ -179,7 +211,7 @@ def create_voucher_for_bill(
             attempt_id=attempt_id,
             pos_bill_id=bill.id,
             pos_bill_number=bill.bill_number,
-            amount=bill.amount,
+            amount=amount_value,
             status="creating",
             raw_status="creating",
             ref_num=bill.bill_number,
@@ -205,15 +237,14 @@ def create_voucher_for_bill(
         payload={
             "action": "voucher_created",
             "pos_bill_id": bill.id,
+            "pos_amount": str(bill.amount),
+            "tiger_amount": amount_value,
             **submitter,
         },
         event_key=f"api:created:{attempt_id}",
     )
 
     client = voucher_api or get_voucher_api_client()
-    amount_value: float | int = float(bill.amount)
-    if float(amount_value).is_integer():
-        amount_value = int(amount_value)
     try:
         create_result = client.create_voucher(
             amount=amount_value,

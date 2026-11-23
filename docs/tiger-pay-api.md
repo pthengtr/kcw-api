@@ -269,7 +269,7 @@ Bearer auth, `multipart/form-data`:
 | Cancel voucher | `POST /companion/vouchers/{attempt_id}/cancel` |
 | Query vouchers | Client method only (not exposed in UI yet) |
 
-CN / cash-return bill selection: cashed rows with negative `AFTERTAX`, including `KCN*` and normal sale numbers such as `6K69-0011467`. Transfer and online subtypes (`CNTF*` / `CNTAD*`) stay off the list. Amount = `abs(AFTERTAX)`. Stored in `tiger_pay.voucher_attempt` + `voucher_event` (see `docs/sql/tiger_pay_voucher_attempt.sql`).
+CN / cash-return bill selection: cashed rows with negative `AFTERTAX`, including `KCN*` and normal sale numbers such as `6K69-0011467`. Transfer and online subtypes (`CNTF*` / `CNTAD*`) stay off the list. Amount = `abs(AFTERTAX)`, then **ceiled to whole baht** before Tiger create (cashbox cannot dispense satang; `460.10` → `461`). Stored in `tiger_pay.voucher_attempt` + `voucher_event` (see `docs/sql/tiger_pay_voucher_attempt.sql`).
 
 ---
 
@@ -308,7 +308,7 @@ If you add the JSON files under `docs/postman/`, keep secrets out of committed v
 
 ## 5. Production notes (HQ companion)
 
-Cash Open API still **floors satang to whole baht**. That is an accepted vendor limit, not a Companion bug.
+Cash Open API still **floors satang to whole baht**. Voucher create **ceils** satang to whole baht so payouts are not shorted. Both are accepted vendor limits (cashbox has no satang), not Companion bugs.
 
 **POS `PAID` is not written back.** SIMAS close-out stays with the cashier. Companion uses `tiger_pay.payment_attempt` as the payment source of truth.
 

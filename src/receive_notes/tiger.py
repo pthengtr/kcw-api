@@ -24,6 +24,7 @@ from src.tiger_pay.voucher_service import (
     companion_voucher_from_attempt,
     new_voucher_attempt_id,
     refresh_voucher_attempt,
+    tiger_voucher_create_amount,
 )
 
 
@@ -233,16 +234,14 @@ def start_ar_refund_voucher_attempt(
         )
 
     attempt_id = new_voucher_attempt_id()
-    amount_value: float | int = float(refund_amt)
-    if float(amount_value).is_integer():
-        amount_value = int(amount_value)
+    amount_value = tiger_voucher_create_amount(refund_amt)
 
     attempt = voucher_repos.create_voucher_attempt(
         engine,
         attempt_id=attempt_id,
         pos_bill_id=pos_bill_id,
         pos_bill_number=bill_number,
-        amount=Decimal(str(refund_amt)),
+        amount=amount_value,
         status="creating",
         raw_status="creating",
         ref_num=bill_number,
@@ -258,6 +257,8 @@ def start_ar_refund_voucher_attempt(
             "action": "ar_refund_voucher_created",
             "pos_bill_id": pos_bill_id,
             "noteno": note_ref,
+            "pos_amount": str(refund_amt),
+            "tiger_amount": amount_value,
             **submitter,
         },
         event_key=f"api:ar_refund_created:{attempt_id}",
