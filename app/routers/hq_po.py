@@ -12,6 +12,7 @@ from src.hq_po.service import (
     cancel_order,
     cancel_order_line,
     cancel_waiting_line,
+    check_waiting_drafts,
     clear_named_block,
     clear_product_unavailable,
     confirm_order,
@@ -29,6 +30,7 @@ from src.hq_po.service import (
     product_sales_history_payload,
     peers_payload,
     product_search_payload,
+    save_waiting_draft,
     suggest_payload,
     suppliers_payload,
     update_product_qtymin,
@@ -50,6 +52,17 @@ class ConfirmBody(BaseModel):
     vendor: str = ""
     vendor_name: str | None = None
     lines: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DraftBody(BaseModel):
+    qty: float | None = None
+    vendor: str = ""
+    vendor_name: str | None = None
+    ui: str | None = None
+
+
+class DraftCheckBody(BaseModel):
+    iclow_ids: list[int] = Field(default_factory=list)
 
 
 class CancelBody(BaseModel):
@@ -523,6 +536,37 @@ def api_cancel_waiting(iclow_id: int, request: Request):
         return cancel_waiting_line(iclow_id)
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "missing" else 409)
+
+
+@router.put("/api/drafts/{iclow_id}")
+def api_save_draft(iclow_id: int, body: DraftBody, request: Request):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return save_waiting_draft(
+            iclow_id,
+            qty=body.qty,
+            vendor=body.vendor,
+            vendor_name=body.vendor_name,
+            ui=body.ui,
+            updated_by=_actor(ident),
+        )
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code in ("missing", "bad_qty") else 409)
+
+
+@router.post("/api/drafts/check")
+def api_check_drafts(body: DraftCheckBody, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return check_waiting_drafts(body.iclow_ids)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "draft_check_failed", "message": str(exc)}, status_code=502)
 
 
 @router.post("/api/products/{bcode}/qtymin")

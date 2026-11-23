@@ -1362,6 +1362,104 @@ def test_page_confirms_before_removing_a_waiting_line():
     assert "saveLowStock" in html
 
 
+def test_page_autosaves_waiting_drafts():
+    html = page(user_name="Pannawit", stamp_enabled=True)
+    assert "scheduleDraftSave" in html
+    assert "/hq-po/api/drafts/" in html
+    assert "/hq-po/api/drafts/check" in html
+    assert "บันทึกแล้ว" in html
+    assert "warnStaleDrafts" in html
+    assert "ยอดค้างสั่ง/สินค้าเปลี่ยน" in html
+
+
+def test_apply_waiting_draft_overlays_qty_and_vendor():
+    from src.hq_po.suggest import apply_waiting_draft, draft_stale_reasons
+
+    item = {
+        "iclow_id": 7,
+        "bcode": "A1",
+        "qty": 2,
+        "vendor": "V1",
+        "vendor_name": "Alpha",
+        "descr": "bolt",
+        "ui": "PCS",
+    }
+    draft = {
+        "qty": 5,
+        "ui": "BOX",
+        "vendor_acctno": "V2",
+        "vendor_name": "Beta",
+        "base_qty": 2,
+        "base_vendor": "V1",
+        "base_descr": "bolt",
+        "updated_at": "2026-11-23T10:00:00+00:00",
+        "updated_by": "Pannawit",
+    }
+    assert draft_stale_reasons(item, draft) == []
+    apply_waiting_draft(item, draft)
+    assert item["order_qty"] == 5
+    assert item["order_ui"] == "BOX"
+    assert item["vendor"] == "V2"
+    assert item["vendor_name"] == "Beta"
+    assert item["draft"]["saved"] is True
+    assert item["draft"]["stale"] is False
+
+    stale_item = dict(item, qty=9, vendor="V1", descr="bolt v2", order_qty=None)
+    reasons = draft_stale_reasons(stale_item, draft)
+    assert set(reasons) == {"qty", "product"}
+
+
+def test_save_waiting_draft_writes_shared_row(monkeypatch):
+    from src.hq_po import service
+
+    class _Settings:
+        stamp_enabled = True
+
+    stored = {}
+
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: _Settings())
+    monkeypatch.setattr(
+        service,
+        "fetch_iclow_by_ids",
+        lambda _ids: {
+            7: {
+                "iclow_id": 7,
+                "bcode": "A1",
+                "qty": 2,
+                "ui": "PCS",
+                "vendor": "V1",
+                "descr": "bolt",
+                "ordered": "N",
+                "canceled": "N",
+            }
+        },
+    )
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+
+    def fake_upsert(_client, row):
+        stored.update(row)
+        row = dict(row)
+        row["updated_at"] = "2026-11-23T10:00:00+00:00"
+        return row
+
+    monkeypatch.setattr(service, "upsert_waiting_draft", fake_upsert)
+    result = service.save_waiting_draft(
+        7,
+        qty=8,
+        vendor="V2",
+        vendor_name="Beta",
+        ui="BOX",
+        updated_by="Pannawit",
+    )
+    assert stored["iclow_id"] == 7
+    assert stored["qty"] == 8
+    assert stored["vendor_acctno"] == "V2"
+    assert stored["base_qty"] == 2
+    assert stored["base_vendor"] == "V1"
+    assert result["draft"]["saved"] is True
+    assert result["draft"]["qty"] == 8
+
+
 def test_resolve_vendor_keeps_the_account_under_a_trail():
     from src.hq_po.vendor_link import resolve_vendor
 

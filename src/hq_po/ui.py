@@ -126,9 +126,14 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .recs{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
 .rec{border:1px solid var(--line);background:#fff;color:var(--blue-deep);border-radius:999px;padding:3px 7px;font-size:12px;font-weight:650}
 .rec.off{border:0;background:transparent;color:var(--muted);padding:3px 0}
-.qty-edit{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.qty-edit{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.qty-edit .qty-row{display:flex;align-items:center;justify-content:flex-end;gap:4px}
 .qty-in{width:76px;min-height:36px;border:1px solid var(--line);border-radius:10px;padding:5px 7px;font-size:16px;font-weight:700;text-align:right;color:var(--blue-deep);background:#fff}
 .qty-in:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
+.draft-status{font-size:11px;font-weight:650;line-height:1.2;color:var(--muted);min-height:14px;text-align:right}
+.draft-status.ok{color:var(--ok)}
+.draft-status.warn{color:var(--warn)}
+.flag.draft-stale{background:var(--warn-bg);color:var(--warn)}
 .vendor-pick{display:flex;flex-direction:column;gap:4px;margin-top:4px;font-size:12px;color:var(--muted);font-weight:650}
 .vendor-pick select{width:100%;max-width:100%;min-height:36px;border:1px solid var(--line);border-radius:10px;padding:5px 8px;font:650 14px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);background:#fff}
 .unit-pick{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
@@ -361,6 +366,8 @@ let searchTimer = 0;
 let vendorTimer = 0;
 let catalogTimer = 0;
 let apTimer = 0;
+const draftTimers = {};
+const draftSeq = {};
 document.getElementById("who").textContent = USER;
 if(!STAMP){
   document.getElementById("banner").innerHTML = '<div class="note">ยังไม่เปิดบันทึกลง ICLOW (HQ_PO_ICLOW_STAMP_ENABLED) — ดูรายการและคำแนะนำ AI ได้ แต่ยืนยันสั่งซื้อยังไม่ได้</div>';
@@ -525,6 +532,11 @@ function closePhoto(){
 function flagHtml(row){
   const parts = [];
   if(row && row.vendor_blocked) parts.push(`<div class="flag unavailable">บริษัทนี้สินค้าหมด</div>`);
+  if(row && row.draft && row.draft.stale){
+    parts.push(`<div class="flag draft-stale" data-draft-stale="${esc(rowKey(row))}">ยอดค้างสั่ง/สินค้าเปลี่ยน</div>`);
+  } else if(row && row.iclow_id){
+    parts.push(`<div class="flag draft-stale" data-draft-stale="${esc(rowKey(row))}" hidden>ยอดค้างสั่ง/สินค้าเปลี่ยน</div>`);
+  }
   const mark = row && row.release;
   if(mark && mark.label){
     const kind = mark.kind === "reorder" ? "reorder" : "switch";
@@ -648,11 +660,85 @@ function productTools(row){
   const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${cancel}${dismiss}</div></details>`;
   return `<div class="line-actions">${manage}${tradeButton(row.bcode)}</div><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div>`;
 }
+function draftStatusText(row){
+  const d = row && row.draft;
+  if(!d) return "";
+  if(d.saving) return "กำลังบันทึก…";
+  if(d.error) return "บันทึกไม่สำเร็จ";
+  if(d.stale) return "ข้อมูลเปลี่ยน";
+  if(d.saved) return "บันทึกแล้ว";
+  return "";
+}
+function draftStatusClass(row){
+  const d = row && row.draft;
+  if(!d) return "";
+  if(d.error || d.stale) return " warn";
+  if(d.saved && !d.saving) return " ok";
+  return "";
+}
+function draftStatusHtml(row){
+  if(!(row && row.iclow_id && STAMP)) return "";
+  const text = draftStatusText(row);
+  return `<div class="draft-status${draftStatusClass(row)}" data-draft-status="${esc(rowKey(row))}">${esc(text)}</div>`;
+}
+function paintDraftStatus(row){
+  if(!row || !row.iclow_id) return;
+  const el = document.querySelector(`[data-draft-status="${CSS.escape(rowKey(row))}"]`);
+  if(el){
+    el.textContent = draftStatusText(row);
+    el.className = "draft-status" + draftStatusClass(row);
+  }
+  const flag = document.querySelector(`[data-draft-stale="${CSS.escape(rowKey(row))}"]`);
+  if(flag) flag.hidden = !(row.draft && row.draft.stale);
+}
+function scheduleDraftSave(row){
+  if(!STAMP || !row || !row.iclow_id) return;
+  const id = String(row.iclow_id);
+  clearTimeout(draftTimers[id]);
+  row.draft = Object.assign({}, row.draft || {}, {saving: true, saved: false, error: false});
+  paintDraftStatus(row);
+  draftTimers[id] = setTimeout(() => saveDraft(row), 450);
+}
+async function saveDraft(row){
+  if(!STAMP || !row || !row.iclow_id) return;
+  const qty = orderQty(row);
+  if(!(qty > 0)){
+    row.draft = Object.assign({}, row.draft || {}, {saving: false, saved: false, error: false});
+    paintDraftStatus(row);
+    return;
+  }
+  const id = String(row.iclow_id);
+  const seq = (draftSeq[id] || 0) + 1;
+  draftSeq[id] = seq;
+  row.draft = Object.assign({}, row.draft || {}, {saving: true, saved: false, error: false});
+  paintDraftStatus(row);
+  try {
+    const res = await fetch("/hq-po/api/drafts/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        qty,
+        vendor: row.vendor || "",
+        vendor_name: row.vendor_name || "",
+        ui: selectedUnit(row) || "",
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if(draftSeq[id] !== seq) return;
+    if(!res.ok) throw new Error(data.message || "บันทึกไม่สำเร็จ");
+    row.draft = Object.assign({}, data.draft || {}, {saving: false, saved: true, error: false});
+    paintDraftStatus(row);
+  } catch (err) {
+    if(draftSeq[id] !== seq) return;
+    row.draft = Object.assign({}, row.draft || {}, {saving: false, saved: false, error: true});
+    paintDraftStatus(row);
+  }
+}
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
     return `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;
   }
-  return `<div class="qty-edit"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(selectedUnit(row))}</span></div>`;
+  return `<div class="qty-edit"><div class="qty-row"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(selectedUnit(row))}</span></div>${draftStatusHtml(row)}</div>`;
 }
 function lowStockControl(row){
   if(row.hq_qtymin == null || row.hq_qtymin === "") return "";
@@ -1069,6 +1155,53 @@ async function postVendor(vendor, picked){
   if(!res.ok) throw new Error(data.message || "สั่งซื้อไม่สำเร็จ");
   return data;
 }
+function staleReasonLabel(code){
+  if(code === "qty") return "ยอดค้างสั่ง";
+  if(code === "vendor") return "เจ้าหนี้บนรายการรอสั่ง";
+  if(code === "product") return "ข้อมูลสินค้า";
+  return code || "ข้อมูล";
+}
+async function warnStaleDrafts(rows){
+  const ids = [];
+  for(const row of rows || []){
+    if(row && row.iclow_id) ids.push(row.iclow_id);
+  }
+  if(!ids.length) return true;
+  let items = [];
+  try {
+    const res = await fetch("/hq-po/api/drafts/check", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({iclow_ids: ids}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if(res.ok) items = data.items || [];
+  } catch (err) {
+    items = [];
+  }
+  const byId = new Map(items.map(row => [Number(row.iclow_id), row]));
+  const stale = [];
+  for(const row of rows || []){
+    if(!row || !row.iclow_id) continue;
+    const hit = byId.get(Number(row.iclow_id));
+    if(hit){
+      row.draft = Object.assign({}, row.draft || {}, {
+        stale: !!hit.stale,
+        stale_reasons: hit.stale_reasons || [],
+      });
+      paintDraftStatus(row);
+      if(hit.stale) stale.push({row, hit});
+    } else if(row.draft && row.draft.stale){
+      stale.push({row, hit: row.draft});
+    }
+  }
+  if(!stale.length) return true;
+  const lines = stale.map(({row, hit}) => {
+    const reasons = (hit.stale_reasons || row.draft.stale_reasons || []).map(staleReasonLabel).join("/");
+    return `${row.bcode || row.iclow_id}${reasons ? " (" + reasons + ")" : ""}`;
+  });
+  return confirm("ข้อมูลสินค้าหรือยอดค้างสั่งเปลี่ยนไปแล้ว:\n" + lines.join("\n") + "\n\nยืนยันสั่งซื้อต่อหรือไม่?");
+}
 async function confirmRows(rows){
   if(state.busy) return;
   const byVendor = new Map();
@@ -1079,6 +1212,8 @@ async function confirmRows(rows){
     byVendor.get(key).push(row);
   }
   if(!byVendor.size){ alert("เลือกรายการและใส่จำนวน"); return; }
+  const ok = await warnStaleDrafts([...byVendor.values()].flat());
+  if(!ok) return;
   const docs = [];
   const skipped = [];
   let failed = null;
@@ -2199,6 +2334,7 @@ function applyNewVendor(row, acct, name){
     renderCatalog();
     return;
   }
+  scheduleDraftSave(row);
   if(row.vendor && !row.vendor_blocked){
     openVendorOrder(row);
     return;
@@ -2654,6 +2790,7 @@ document.getElementById("list").onclick = (e) => {
         const meta = line.querySelector(".qty-edit .meta");
         if(meta) meta.textContent = u;
       }
+      scheduleDraftSave(row);
     }
     return;
   }
@@ -2699,6 +2836,7 @@ document.getElementById("list").onclick = (e) => {
       row.order_qty = q;
       const input = document.querySelector(`input[data-qty="${CSS.escape(fill.dataset.fill || "")}"]`);
       if(input) input.value = qtyText(q);
+      scheduleDraftSave(row);
     }
     return;
   }
@@ -2715,7 +2853,10 @@ document.getElementById("list").oninput = (e) => {
   const input = e.target.closest("input[data-qty]");
   if(!input) return;
   const row = findRow(input.dataset.qty || "");
-  if(row) row.order_qty = input.value;
+  if(row){
+    row.order_qty = input.value;
+    scheduleDraftSave(row);
+  }
 };
 document.getElementById("list").addEventListener("change", (e) => {
   const input = e.target.closest("input[data-l]");
@@ -2763,6 +2904,7 @@ async function chooseSupplier(row, pick){
   row.vendor_blocked = false;
   row._hay = "";
   haystack(row);
+  scheduleDraftSave(row);
   openVendorOrder(row);
 }
 document.getElementById("list").onchange = (e) => {

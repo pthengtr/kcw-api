@@ -12,6 +12,21 @@ from src.hq_po.guards import HqPoError
 SCHEMA = "hq_po"
 
 
+def _iclow_ids(raw_ids: list[int]) -> list[int]:
+    ids: list[int] = []
+    seen: set[int] = set()
+    for raw in raw_ids:
+        try:
+            iclow_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if iclow_id > 0 and iclow_id not in seen:
+            seen.add(iclow_id)
+            ids.append(iclow_id)
+    return ids
+
+
+
 @lru_cache
 def get_hq_po_supabase_client() -> Client:
     settings = get_hq_po_settings()
@@ -338,3 +353,61 @@ def clear_product_vendor_block(client: Client, *, bcode: str, acctno: str) -> No
     _table(client, "product_vendor_blocks").update({"cleared_at": now}).eq("bcode", product).eq(
         "acctno", acct
     ).is_("cleared_at", "null").execute()
+
+
+def waiting_drafts_for(client: Client, iclow_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Shared waiting-list drafts keyed by ICLOW id."""
+    ids = _iclow_ids(iclow_ids)
+    found: dict[int, dict[str, Any]] = {}
+    for start in range(0, len(ids), 250):
+        chunk = ids[start : start + 250]
+        rows = _rows(
+            _table(client, "waiting_drafts")
+            .select(
+                "iclow_id,bcode,qty,ui,vendor_acctno,vendor_name,"
+                "base_qty,base_vendor,base_descr,updated_by,updated_at"
+            )
+            .in_("iclow_id", chunk)
+            .execute()
+        )
+        for row in rows:
+            try:
+                iclow_id = int(row.get("iclow_id"))
+            except (TypeError, ValueError):
+                continue
+            found[iclow_id] = row
+    return found
+
+
+def upsert_waiting_draft(client: Client, row: dict[str, Any]) -> dict[str, Any]:
+    """Insert or replace one waiting draft. Shared across staff, not per browser."""
+    now = datetime.now(timezone.utc).isoformat()
+    payload = dict(row)
+    payload["updated_at"] = now
+    stored = _first(
+        _table(client, "waiting_drafts").upsert(payload, on_conflict="iclow_id").execute()
+    )
+    return stored or payload
+
+
+def delete_waiting_drafts(
+    client: Client,
+    *,
+    iclow_ids: list[int] | None = None,
+    bcodes: list[str] | None = None,
+) -> None:
+    """Drop drafts after order / dismiss / cancel. Missing rows are fine."""
+    ids = _iclow_ids(iclow_ids or [])
+    for start in range(0, len(ids), 250):
+        chunk = ids[start : start + 250]
+        _table(client, "waiting_drafts").delete().in_("iclow_id", chunk).execute()
+    codes: list[str] = []
+    seen: set[str] = set()
+    for raw in bcodes or []:
+        code = str(raw or "").strip()
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    for start in range(0, len(codes), 250):
+        chunk = codes[start : start + 250]
+        _table(client, "waiting_drafts").delete().in_("bcode", chunk).execute()
