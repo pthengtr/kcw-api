@@ -66,23 +66,27 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .card h2 .count{flex:none;margin-top:2px}
 .select-all{display:flex;align-items:center;gap:8px;min-height:44px;padding:10px 12px;border-top:1px solid var(--line);background:#fff;font-size:14px;font-weight:650;color:var(--blue-deep)}
 .select-all input{margin:0;flex:none}
-.line{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:8px;padding:12px;border-top:1px solid var(--line);align-items:start}
+.line{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:6px;padding:8px 10px;border-top:1px solid var(--line);align-items:start}
 .line.plain{grid-template-columns:minmax(0,1fr) auto}
-.line .code{font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.line .code{font-weight:600;line-height:1.3;overflow-wrap:anywhere}
 .sku{display:inline-block;background:var(--blue-soft);color:var(--blue-deep);border-radius:6px;padding:0 6px;font-size:12px;font-weight:700;margin-right:4px;vertical-align:1px}
-.line .meta{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
-.stock-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.line .meta{color:var(--muted);font-size:12px;margin-top:2px;line-height:1.3;overflow-wrap:anywhere}
+.stock-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
 .low-edit{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;font-weight:650}
 .low-in{width:64px;min-height:32px;font-size:14px;padding:4px 6px}
-.line-main{display:flex;gap:8px;min-width:0}
+.line-main{display:flex;gap:6px;min-width:0}
 .line-main > div{min-width:0;flex:1}
 .thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
-.thumb{width:52px;height:52px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
+.thumb{width:40px;height:40px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
+.line-rec{display:inline-block;margin-top:4px;border-radius:8px;padding:3px 8px;font-size:12px;font-weight:700;line-height:1.3;background:var(--blue-wash);color:var(--blue-deep)}
+.line-rec.ok{background:var(--ok-bg);color:var(--ok)}
+.line-rec.warn{background:var(--warn-bg);color:var(--warn)}
+.line-rec.bad{background:#fee2e2;color:#991b1b}
 #photo{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.78);display:flex;align-items:center;justify-content:center;padding:48px 16px 16px}
 #photo[hidden]{display:none}
 #photo img{max-width:min(960px,100%);max-height:calc(100vh - 88px);object-fit:contain;border-radius:12px;background:#fff}
 #photoClose{position:absolute;top:12px;right:12px;min-height:40px;border:0;border-radius:10px;background:#fff;color:var(--blue-deep);font-weight:700;padding:8px 14px}
-.flag{display:inline-block;margin-top:6px;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;line-height:1.35}
+.flag{display:inline-block;margin-top:4px;border-radius:999px;padding:2px 7px;font-size:11px;font-weight:700;line-height:1.3}
 .flag.switch{background:#ffedd5;color:#9a3412}
 .flag.reorder{background:#dbeafe;color:#1e3a8a}
 .flag.unavailable{background:#fee2e2;color:#991b1b}
@@ -117,24 +121,24 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .itable .num{text-align:right;font-variant-numeric:tabular-nums}
 .hist-top button{min-height:36px;border:0;background:transparent;color:var(--blue);font-weight:700}
 .ai{color:var(--blue);font-size:12px;margin-top:6px;padding:6px 8px;background:var(--blue-wash);border-radius:8px;line-height:1.4}
-.qty{text-align:right;font-weight:700;font-size:16px;color:var(--blue-deep);white-space:nowrap}
-.line button.ghost{display:block;margin-top:8px;min-height:36px;background:#fff;color:var(--warn);border:1px solid #fdba74;border-radius:10px;padding:6px 10px;font-size:13px;font-weight:650}
-.recs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.rec{border:1px solid var(--line);background:#fff;color:var(--blue-deep);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:650}
-.rec.off{border:0;background:transparent;color:var(--muted);padding:4px 0}
-.qty-edit{display:flex;align-items:center;justify-content:flex-end;gap:6px}
-.qty-in{width:84px;min-height:40px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:16px;font-weight:700;text-align:right;color:var(--blue-deep);background:#fff}
+.qty{text-align:right;font-weight:700;font-size:15px;color:var(--blue-deep);white-space:nowrap}
+.line button.ghost{display:block;margin-top:6px;min-height:34px;background:#fff;color:var(--warn);border:1px solid #fdba74;border-radius:10px;padding:5px 10px;font-size:13px;font-weight:650}
+.recs{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.rec{border:1px solid var(--line);background:#fff;color:var(--blue-deep);border-radius:999px;padding:3px 7px;font-size:12px;font-weight:650}
+.rec.off{border:0;background:transparent;color:var(--muted);padding:3px 0}
+.qty-edit{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.qty-in{width:76px;min-height:36px;border:1px solid var(--line);border-radius:10px;padding:5px 7px;font-size:16px;font-weight:700;text-align:right;color:var(--blue-deep);background:#fff}
 .qty-in:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
-.vendor-pick{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:12px;color:var(--muted);font-weight:650}
-.vendor-pick select{width:100%;max-width:100%;min-height:40px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font:650 14px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);background:#fff}
-.unit-pick{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.unit-pick button,.peer-btn{min-height:36px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:650;color:var(--blue-deep)}
+.vendor-pick{display:flex;flex-direction:column;gap:4px;margin-top:4px;font-size:12px;color:var(--muted);font-weight:650}
+.vendor-pick select{width:100%;max-width:100%;min-height:36px;border:1px solid var(--line);border-radius:10px;padding:5px 8px;font:650 14px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);background:#fff}
+.unit-pick{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.unit-pick button,.peer-btn{min-height:34px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:650;color:var(--blue-deep)}
 .unit-pick button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
-.peer-btn{border-radius:10px;margin-top:8px}
-.line-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:flex-start}
+.peer-btn{border-radius:10px;margin-top:6px}
+.line-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;align-items:flex-start}
 .line-actions .peer-btn{margin-top:0}
 .manage{margin:0;min-width:0}
-.manage > summary{list-style:none;min-height:36px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:4px 10px;font-size:13px;font-weight:650;color:var(--blue-deep);cursor:pointer;display:inline-flex;align-items:center;gap:4px;user-select:none}
+.manage > summary{list-style:none;min-height:34px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:3px 9px;font-size:12px;font-weight:650;color:var(--blue-deep);cursor:pointer;display:inline-flex;align-items:center;gap:4px;user-select:none}
 .manage > summary::-webkit-details-marker{display:none}
 .manage > summary::after{content:"▾";font-size:11px;color:var(--muted)}
 .manage[open] > summary::after{content:"▴"}
@@ -433,6 +437,17 @@ function aiQty(row){
   if(row.source==="insight") return Number(row.qty) || 0;
   return 0;
 }
+function orderAdviceHtml(row){
+  const unit = selectedUnit(row) || String(row.ui || row.ui1 || "").trim();
+  const ai = aiQty(row);
+  if(ai > 0){
+    return `<div class="line-rec">ควรสั่งเพิ่ม ${esc(qtyText(ai))}${unit ? " " + esc(unit) : ""}</div>`;
+  }
+  if(stockRecovered(row)){
+    return `<div class="line-rec ok">ยังไม่ต้องสั่ง</div>`;
+  }
+  return "";
+}
 function recHtml(row){
   const key = rowKey(row);
   const p9 = Number(row.parts9_qty);
@@ -443,9 +458,7 @@ function recHtml(row){
   const aiel = ai > 0
     ? `<button type="button" class="rec" data-fill="${esc(key)}" data-fillq="${esc(String(ai))}">AI ${esc(qtyText(ai))}</button>`
     : `<span class="rec off">AI —</span>`;
-  const reason = row.propose_meta && row.propose_meta.reason
-    ? `<div class="ai">${esc(row.propose_meta.reason)}</div>` : "";
-  return `<div class="recs">${p9el}${aiel}</div>${reason}`;
+  return `<div class="recs">${p9el}${aiel}</div>`;
 }
 function lineAmount(line){
   const qty = Number(line && line.qty);
@@ -535,22 +548,20 @@ function syncViewHint(){
   if(el) el.textContent = viewHintText(state.view);
 }
 function productMeta(row){
-  const id = [];
+  const bits = [];
   const model = String(row.model || "").trim();
   const pcode = String(row.pcode || "").trim();
   const mcode = String(row.mcode || "").trim();
   const brand = String(row.brand || "").trim();
-  if(model) id.push("ชื่อรุ่น " + esc(model));
-  if(pcode) id.push("เบอร์แท้ " + esc(pcode));
-  if(mcode) id.push("เบอร์โรงงาน " + esc(mcode));
-  if(brand) id.push("ยี่ห้อ " + esc(brand));
-  const money = [];
+  if(model) bits.push("ชื่อรุ่น " + esc(model));
+  if(pcode) bits.push("เบอร์แท้ " + esc(pcode));
+  if(mcode) bits.push("เบอร์โรงงาน " + esc(mcode));
+  if(brand) bits.push("ยี่ห้อ " + esc(brand));
   const price = moneyText(row.price);
   const cost = moneyText(row.cost);
-  if(price) money.push("ราคา " + price);
-  if(cost) money.push("ค่า " + cost);
-  return (id.length ? `<div class="meta">${id.join(" · ")}</div>` : "")
-    + (money.length ? `<div class="meta">${money.join(" · ")}</div>` : "");
+  if(price) bits.push("ราคา " + price);
+  if(cost) bits.push("ทุน " + cost);
+  return bits.length ? `<div class="meta">${bits.join(" · ")}</div>` : "";
 }
 function supplierLabel(s){
   const name = String(s.name || "").trim();
@@ -690,6 +701,7 @@ function lineHtml(row, mode){
       ${thumbHtml(row)}
       <div>
       <div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>
+      ${orderAdviceHtml(row)}
       ${productMeta(row)}
       ${flagHtml(row)}
       ${priorHtml(row)}
@@ -2022,7 +2034,7 @@ function peerLineHtml(owner, line){
   const bits = [];
   const cost = moneyText(line.cost);
   if(line.brand) bits.push(line.brand);
-  if(cost) bits.push("ค่า " + cost);
+  if(cost) bits.push("ทุน " + cost);
   if(line.company_qtyoh2 != null) bits.push("คงเหลือ " + qtyText(line.company_qtyoh2));
   if(line.vendor_name || line.vendor) bits.push(line.vendor_name || line.vendor);
   return `<button type="button" class="peer" data-use="${esc(rowKey(owner))}" data-peer="${esc(line.bcode)}"><span class="sku">${esc(line.bcode)}</span>${esc(line.descr||"")}<span class="meta">${esc(bits.join(" · "))}</span></button>`;

@@ -447,7 +447,12 @@ def test_page_defaults_vendor_view():
     assert "เบอร์โรงงาน" in html
     assert "ยี่ห้อ" in html
     assert "ราคา " in html
-    assert "ค่า " in html
+    assert "ทุน " in html
+    assert "bits.push(\"ค่า \"" not in html
+    assert "function orderAdviceHtml" in html
+    assert "line-rec" in html
+    assert "ยังไม่ต้องสั่ง" in html
+    assert "propose_meta.reason" not in html.split("function recHtml", 1)[1].split("function lineAmount", 1)[0]
     assert "เปลี่ยนเจ้าหนี้" in html
     assert "สั่งกับบริษัทนี้" not in html
     assert "เลือกบริษัทก่อนสั่ง" not in html
