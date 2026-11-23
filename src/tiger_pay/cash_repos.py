@@ -220,6 +220,35 @@ def first_snapshot_of_day(
     return _row_mapping(row) if row else None
 
 
+def update_daily_close_report(
+    engine: Engine,
+    *,
+    biz_day: date,
+    shop_code: str,
+    report: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Refresh a frozen Z-report JSON without unlocking the day."""
+    sql = text(
+        """
+        update tiger_pay.daily_close
+        set report = cast(:report as jsonb)
+        where biz_day = :biz_day
+          and shop_code = :shop_code
+        returning *
+        """
+    )
+    with engine.begin() as conn:
+        row = conn.execute(
+            sql,
+            {
+                "biz_day": biz_day,
+                "shop_code": shop_code,
+                "report": json.dumps(report),
+            },
+        ).first()
+    return _row_mapping(row) if row else None
+
+
 def insert_daily_close(
     engine: Engine,
     *,
