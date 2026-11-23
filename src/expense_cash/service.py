@@ -7,6 +7,12 @@ from sqlalchemy.engine import Engine
 
 from src.expense_cash import copy, notify, repos
 from src.expense_cash.tiger import ExpenseCashTigerError, start_expense_cash_voucher
+from src.tiger_pay import voucher_repos
+from src.tiger_pay.voucher_service import (
+    VoucherServiceError,
+    cancel_voucher_attempt,
+    refresh_voucher_attempt,
+)
 
 
 class ExpenseCashError(Exception):
@@ -243,5 +249,114 @@ def format_open_list(rows: list[dict[str, Any]]) -> str:
         )
     lines.append(
         "\nพิมพ์ อนุมัติ {เลข} / ส่งกลับ {เลข} เหตุผล… / ปฏิเสธ {เลข} เหตุผล…"
+        "\nสถานะเบิก {เลข} / ยกเลิกเบิก {เลข}"
     )
     return "\n".join(lines)
+
+
+def _resolve_row(
+    engine: Engine,
+    *,
+    request_id: str | None = None,
+    short_code: int | None = None,
+) -> dict[str, Any]:
+    row = (
+        repos.get_by_id(engine, request_id)
+        if request_id
+        else repos.get_by_short_code(engine, int(short_code or 0))
+    )
+    if not row:
+        raise ExpenseCashError("not found", code="not_found")
+    return row
+
+
+def refresh_request_voucher(
+    engine: Engine,
+    *,
+    request_id: str | None = None,
+    short_code: int | None = None,
+) -> dict[str, Any]:
+    """Refresh Tiger show for linked voucher; return request + voucher summary."""
+    row = _resolve_row(engine, request_id=request_id, short_code=short_code)
+    attempt_id = str(row.get("voucher_attempt_id") or "").strip()
+    attempt: dict[str, Any] | None = None
+    if attempt_id:
+        try:
+            attempt = refresh_voucher_attempt(engine, attempt_id)
+        except Exception:
+            attempt = voucher_repos.get_voucher_attempt(engine, attempt_id)
+        # Re-read request in case used → paid hook ran.
+        row = repos.get_by_id(engine, str(row["id"])) or row
+        if not attempt:
+            attempt = voucher_repos.get_voucher_attempt(engine, attempt_id)
+
+    voucher_status = str(attempt.get("status") or "") if attempt else None
+    voucher_num = str(attempt.get("voucher_num") or "") if attempt else None
+    return {
+        "request": row,
+        "voucher": {
+            "attempt_id": attempt_id or None,
+            "status": voucher_status,
+            "voucher_num": voucher_num or None,
+            "amount": attempt.get("amount") if attempt else None,
+            "raw_status": attempt.get("raw_status") if attempt else None,
+        }
+        if attempt_id
+        else None,
+    }
+
+
+def cancel_request_voucher(
+    engine: Engine,
+    *,
+    request_id: str | None = None,
+    short_code: int | None = None,
+    reviewer_line_user_id: str | None = None,
+    reviewer_name: str | None = None,
+    admin_note: str | None = None,
+) -> dict[str, Any]:
+    """Cancel active Tiger voucher and mark request cancelled."""
+    row = _resolve_row(engine, request_id=request_id, short_code=short_code)
+    if row.get("status") not in ("approved",):
+        raise ExpenseCashError(f"status {row.get('status')}", code="bad_state")
+    if row.get("status") == "paid":
+        raise ExpenseCashError("already paid", code="bad_state")
+
+    attempt_id = str(row.get("voucher_attempt_id") or "").strip()
+    if not attempt_id:
+        raise ExpenseCashError("no voucher", code="no_voucher")
+
+    attempt = voucher_repos.get_voucher_attempt(engine, attempt_id)
+    if attempt and str(attempt.get("status")) == "used":
+        # Sync paid if refresh missed it.
+        repos.mark_paid_by_voucher_attempt(engine, attempt_id)
+        raise ExpenseCashError("already used", code="already_used")
+
+    try:
+        cancel_voucher_attempt(
+            engine,
+            attempt_id,
+            submitted_by=reviewer_line_user_id,
+            submitted_by_name=reviewer_name,
+        )
+    except VoucherServiceError as exc:
+        raise ExpenseCashError(exc.message, code=exc.code) from exc
+
+    note = (admin_note or "").strip() or "ยกเลิก voucher"
+    updated = repos.update_request(
+        engine,
+        str(row["id"]),
+        status="cancelled",
+        admin_note=note,
+        reviewed_by=reviewer_line_user_id,
+        reviewed_by_name=reviewer_name,
+        reviewed_at=datetime.now(timezone.utc).isoformat(),
+    )
+    if not updated:
+        raise ExpenseCashError("update failed", code="update_failed")
+
+    notify.notify_requester_text(
+        str(row.get("requester_line_user_id") or ""),
+        copy.cancelled_requester(short_code=int(row["short_code"])),
+    )
+    return updated

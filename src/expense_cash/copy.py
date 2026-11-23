@@ -129,8 +129,56 @@ def session_busy_other() -> str:
 STATUS_TH = {
     "pending": "รออนุมัติ",
     "needs_info": "รอข้อมูลเพิ่ม",
-    "approved": "อนุมัติแล้ว",
+    "approved": "อนุมัติแล้ว (รอถอน)",
     "rejected": "ปฏิเสธ",
     "cancelled": "ยกเลิก",
     "paid": "ถอนแล้ว",
 }
+
+VOUCHER_STATUS_TH = {
+    "creating": "กำลังสร้าง",
+    "pending": "รอสแกนถอน",
+    "used": "ถอนแล้ว",
+    "cancelled": "ยกเลิก voucher",
+    "expired": "หมดอายุ",
+    "failed": "สร้างไม่สำเร็จ",
+}
+
+
+def status_detail(
+    *,
+    short_code: int,
+    request_status: str,
+    amount: int,
+    voucher_status: str | None,
+    voucher_num: str | None,
+) -> str:
+    req = STATUS_TH.get(request_status, request_status)
+    lines = [
+        f"คำขอ #{short_code} · {amount:,} บาท",
+        f"สถานะคำขอ: {req}",
+    ]
+    if voucher_status:
+        vth = VOUCHER_STATUS_TH.get(voucher_status, voucher_status)
+        lines.append(f"สถานะ voucher: {vth}")
+    if voucher_num:
+        lines.append(f"รหัส: {voucher_num}")
+    if request_status == "approved" and voucher_status in {
+        "creating",
+        "pending",
+        None,
+        "",
+    }:
+        lines.append(f"ยกเลิกได้ด้วย: ยกเลิกเบิก {short_code}")
+    return "\n".join(lines)
+
+
+def cancel_ok(*, short_code: int) -> str:
+    return f"ยกเลิก voucher ของคำขอ #{short_code} แล้วครับ"
+
+
+def cancelled_requester(*, short_code: int) -> str:
+    return (
+        f"แอดมินยกเลิก QR ของคำขอ #{short_code} แล้วครับ\n"
+        "สแกนตัวเดิมไม่ได้แล้ว — อยากเบิกใหม่พิมพ์ เบิกเงิน ได้เลย"
+    )

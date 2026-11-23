@@ -31,6 +31,8 @@ def test_admin_commands():
     assert is_expense_cash_admin_command("อนุมัติ #12")
     assert is_expense_cash_admin_command("ส่งกลับ 3 ขอใบเสร็จ")
     assert is_expense_cash_admin_command("ปฏิเสธ 3 ไม่ผ่าน")
+    assert is_expense_cash_admin_command("สถานะเบิก 3")
+    assert is_expense_cash_admin_command("ยกเลิกเบิก 12")
     assert not is_expense_cash_admin_command("อนุมัติ")
 
 

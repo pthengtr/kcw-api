@@ -6,17 +6,18 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.db import get_engine
 from src.expense_cash import repos
 from src.expense_cash.service import (
     ExpenseCashError,
     approve_request,
+    cancel_request_voucher,
+    refresh_request_voucher,
     reject_request,
     send_back_for_info,
 )
-from src.tiger_pay.voucher_service import refresh_voucher_attempt
 
 router = APIRouter(prefix="/expense-cash", tags=["expense-cash"])
 
@@ -54,17 +55,10 @@ def get_request(
     x_expense_cash_secret: str | None = Header(default=None),
 ) -> dict[str, Any]:
     _require_secret(x_expense_cash_secret)
-    row = repos.get_by_id(get_engine(), request_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Not found")
-    attempt_id = row.get("voucher_attempt_id")
-    if attempt_id and row.get("status") == "approved":
-        try:
-            refresh_voucher_attempt(get_engine(), str(attempt_id))
-            row = repos.get_by_id(get_engine(), request_id) or row
-        except Exception:
-            pass
-    return {"request": row}
+    try:
+        return refresh_request_voucher(get_engine(), request_id=request_id)
+    except ExpenseCashError as exc:
+        raise _http_err(exc) from exc
 
 
 @router.post("/requests/{request_id}/approve")
@@ -127,10 +121,37 @@ def api_reject(
     return {"request": row}
 
 
+@router.post("/requests/{request_id}/cancel")
+def api_cancel(
+    request_id: str,
+    body: ReviewBody | None = None,
+    x_expense_cash_secret: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _require_secret(x_expense_cash_secret)
+    body = body or ReviewBody()
+    try:
+        row = cancel_request_voucher(
+            get_engine(),
+            request_id=request_id,
+            admin_note=body.note or "ยกเลิก voucher",
+            reviewer_line_user_id=body.reviewer_id,
+            reviewer_name=body.reviewer_name or "kcw-v2",
+        )
+    except ExpenseCashError as exc:
+        raise _http_err(exc) from exc
+    return {"request": row}
+
+
 def _http_err(exc: ExpenseCashError) -> HTTPException:
     status = 400
     if exc.code == "not_found":
         status = 404
-    elif exc.code in {"tiger_create_failed", "qr_upload_failed", "supabase_missing"}:
+    elif exc.code in {
+        "tiger_create_failed",
+        "qr_upload_failed",
+        "supabase_missing",
+        "tiger_cancel_failed",
+        "tiger_cancel_unconfirmed",
+    }:
         status = 502
     return HTTPException(status_code=status, detail={"code": exc.code, "message": exc.message})

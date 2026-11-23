@@ -15,6 +15,8 @@ LINE chat flow on **Railway** `POST /line-webhook` for cashbox withdrawals. Not 
 - `อนุมัติ 3`
 - `ส่งกลับ 3 ขอใบเสร็จ`
 - `ปฏิเสธ 3 ไม่ผ่าน`
+- `สถานะเบิก 3` (refresh Tiger voucher: รอสแกน / ถอนแล้ว / ยกเลิก)
+- `ยกเลิกเบิก 3` (cancel unused QR; marks request cancelled)
 - Or Flex postbacks (Need info / Reject then ask for a note)
 
 ## Admin (kcw-v2)
