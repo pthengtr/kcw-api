@@ -8,9 +8,11 @@ from src.expense_cash import copy, repos, sessions
 from src.expense_cash.service import (
     ExpenseCashError,
     approve_request,
+    cancel_request_voucher,
     create_pending,
     format_open_list,
     parse_amount,
+    refresh_request_voucher,
     reject_request,
     resubmit_extra_reason,
     send_back_for_info,
@@ -41,6 +43,14 @@ REJECT_RE = re.compile(
     r"^\s*ปฏิเสธ\s*#?\s*(\d+)\s+(.+)$",
     re.IGNORECASE | re.DOTALL,
 )
+STATUS_RE = re.compile(
+    r"^\s*สถานะเบิก\s*#?\s*(\d+)\s*$",
+    re.IGNORECASE,
+)
+CANCEL_RE = re.compile(
+    r"^\s*ยกเลิกเบิก\s*#?\s*(\d+)\s*$",
+    re.IGNORECASE,
+)
 
 POSTBACK_PREFIX = "expense_cash:"
 
@@ -66,6 +76,10 @@ def is_expense_cash_admin_command(text: str) -> bool:
     if SEND_BACK_RE.match(text or ""):
         return True
     if REJECT_RE.match(text or ""):
+        return True
+    if STATUS_RE.match(text or ""):
+        return True
+    if CANCEL_RE.match(text or ""):
         return True
     return False
 
@@ -341,18 +355,63 @@ def handle_expense_cash_admin_command(
         except ExpenseCashError as exc:
             return _admin_err(exc, code)
 
+    m = STATUS_RE.match(text or "")
+    if m:
+        code = int(m.group(1))
+        try:
+            detail = refresh_request_voucher(engine, short_code=code)
+            row = detail["request"]
+            voucher = detail.get("voucher") or {}
+            return {
+                "type": "text",
+                "text": copy.status_detail(
+                    short_code=int(row["short_code"]),
+                    request_status=str(row.get("status") or ""),
+                    amount=int(float(row.get("amount") or 0)),
+                    voucher_status=(voucher.get("status") if voucher else None),
+                    voucher_num=(voucher.get("voucher_num") if voucher else None),
+                ),
+            }
+        except ExpenseCashError as exc:
+            return _admin_err(exc, code)
+
+    m = CANCEL_RE.match(text or "")
+    if m:
+        code = int(m.group(1))
+        try:
+            row = cancel_request_voucher(
+                engine,
+                short_code=code,
+                reviewer_line_user_id=line_user_id,
+                reviewer_name=name,
+            )
+            return {
+                "type": "text",
+                "text": copy.cancel_ok(short_code=int(row["short_code"])),
+            }
+        except ExpenseCashError as exc:
+            return _admin_err(exc, code)
+
     return {"type": "text", "text": "ไม่เข้าใจคำสั่งเบิกครับ"}
 
 
 def _admin_err(exc: ExpenseCashError, code: int) -> dict:
     if exc.code == "not_found":
         return {"type": "text", "text": copy.not_found(code=str(code))}
-    if exc.code == "bad_state":
+    if exc.code in {"bad_state", "already_used", "no_voucher"}:
         return {
             "type": "text",
             "text": copy.bad_state(short_code=code, status=exc.message),
         }
-    if exc.code in {"tiger_create_failed", "qr_upload_failed", "supabase_missing"}:
+    if exc.code in {
+        "tiger_create_failed",
+        "qr_upload_failed",
+        "supabase_missing",
+        "tiger_cancel_failed",
+        "tiger_cancel_unconfirmed",
+        "not_active",
+        "missing_voucher_num",
+    }:
         return {
             "type": "text",
             "text": copy.voucher_failed(short_code=code, err=exc.message),
