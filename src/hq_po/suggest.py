@@ -319,6 +319,87 @@ def _attach_release_marks(items: list[dict[str, Any]]) -> None:
             item["release"] = badge
 
 
+def _num_eq(left: Any, right: Any) -> bool:
+    try:
+        a = float(left)
+        b = float(right)
+    except (TypeError, ValueError):
+        return str(left or "") == str(right or "")
+    return abs(a - b) < 1e-9
+
+
+def draft_stale_reasons(item: dict[str, Any], draft: dict[str, Any]) -> list[str]:
+    """Compare live ICLOW/product fields to the snapshot stored with the draft."""
+    reasons: list[str] = []
+    if draft.get("base_qty") is not None and not _num_eq(item.get("qty"), draft.get("base_qty")):
+        reasons.append("qty")
+    live_vendor = str(item.get("vendor") or "").strip()
+    base_vendor = str(draft.get("base_vendor") or "").strip()
+    if draft.get("base_vendor") is not None and live_vendor != base_vendor:
+        reasons.append("vendor")
+    live_descr = str(item.get("descr") or "").strip()
+    base_descr = str(draft.get("base_descr") or "").strip()
+    if draft.get("base_descr") is not None and live_descr != base_descr:
+        reasons.append("product")
+    return reasons
+
+
+def apply_waiting_draft(item: dict[str, Any], draft: dict[str, Any]) -> None:
+    """Overlay a shared draft onto one waiting line. Marks stale when live data moved."""
+    reasons = draft_stale_reasons(item, draft)
+    qty = draft.get("qty")
+    try:
+        qty_n = float(qty) if qty is not None and qty != "" else None
+    except (TypeError, ValueError):
+        qty_n = None
+    if qty_n is not None and qty_n > 0:
+        item["order_qty"] = qty_n
+    ui = str(draft.get("ui") or "").strip()
+    if ui:
+        item["order_ui"] = ui
+    vendor = str(draft.get("vendor_acctno") or "").strip()
+    if vendor:
+        item["vendor"] = vendor
+        name = draft.get("vendor_name")
+        item["vendor_name"] = str(name).strip() if name not in (None, "") else item.get("vendor_name")
+        item["vendor_blocked"] = False
+    item["draft"] = {
+        "saved": True,
+        "updated_at": draft.get("updated_at"),
+        "updated_by": draft.get("updated_by"),
+        "stale": bool(reasons),
+        "stale_reasons": reasons,
+    }
+
+
+def _attach_waiting_drafts(items: list[dict[str, Any]]) -> None:
+    ids: list[int] = []
+    for item in items:
+        try:
+            iclow_id = int(item.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if iclow_id > 0:
+            ids.append(iclow_id)
+    if not ids:
+        return
+    try:
+        from src.hq_po.db import get_hq_po_supabase_client, waiting_drafts_for
+
+        drafts = waiting_drafts_for(get_hq_po_supabase_client(), ids)
+    except Exception:
+        logger.warning("hq po waiting-draft lookup failed", exc_info=True)
+        return
+    for item in items:
+        try:
+            iclow_id = int(item.get("iclow_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        draft = drafts.get(iclow_id)
+        if draft:
+            apply_waiting_draft(item, draft)
+
+
 def _catalog_for(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     try:
         return fetch_sheet_products(bcodes)
@@ -491,6 +572,11 @@ def build_suggest() -> dict[str, Any]:
         products = products_f.result()
         settle_f.result()
         marks_f.result()
+    # After settle so stale checks see the resolved vendor, then draft overlays it.
+    _attach_waiting_drafts(items)
+    from src.hq_po.vendor_link import apply_vendor_blocks
+
+    apply_vendor_blocks(items)
     if stock_ok:
         for item in items:
             bcode = item.get("bcode") or ""

@@ -10,6 +10,7 @@ from src.hq_po.db import (
     active_blocks_for_bcodes,
     block_product_vendor,
     clear_product_vendor_block,
+    delete_waiting_drafts,
     get_hq_po_supabase_client,
     get_order,
     insert_order,
@@ -19,6 +20,8 @@ from src.hq_po.db import (
     open_lines_for_iclow,
     release_marks_for,
     upsert_release_mark,
+    upsert_waiting_draft,
+    waiting_drafts_for,
 )
 from src.hq_po.docno import make_docno, make_short_id
 from src.hq_po.guards import (
@@ -72,6 +75,7 @@ from src.hq_po.suggest import (
     build_insight_only,
     build_suggest,
     describe_holds,
+    draft_stale_reasons,
     suppliers_for_bcode,
 )
 
@@ -264,7 +268,17 @@ def dismiss_waiting_line(iclow_id: int) -> dict[str, Any]:
             "stamp_disabled",
             "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่นำออกจากรอสั่ง",
         )
-    return dismiss_waiting_iclow(iclow_id)
+    result = dismiss_waiting_iclow(iclow_id)
+    try:
+        client = get_hq_po_supabase_client()
+        bcode = str(result.get("bcode") or "").strip()
+        if bcode:
+            delete_waiting_drafts(client, bcodes=[bcode])
+        else:
+            delete_waiting_drafts(client, iclow_ids=[int(result.get("iclow_id") or iclow_id)])
+    except Exception:
+        pass
+    return result
 
 
 def cancel_waiting_line(iclow_id: int) -> dict[str, Any]:
@@ -275,7 +289,147 @@ def cancel_waiting_line(iclow_id: int) -> dict[str, Any]:
             "stamp_disabled",
             "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่ยกเลิกรายการรอสั่ง",
         )
-    return cancel_waiting_iclow(iclow_id)
+    result = cancel_waiting_iclow(iclow_id)
+    try:
+        delete_waiting_drafts(
+            get_hq_po_supabase_client(),
+            iclow_ids=[int(result.get("iclow_id") or iclow_id)],
+        )
+    except Exception:
+        pass
+    return result
+
+
+def _draft_qty(value: Any) -> float:
+    try:
+        qty = float(value)
+    except (TypeError, ValueError):
+        raise HqPoError("bad_qty", "จำนวนไม่ถูกต้อง") from None
+    if qty <= 0:
+        raise HqPoError("bad_qty", "จำนวนต้องมากกว่า 0")
+    return qty
+
+
+def save_waiting_draft(
+    iclow_id: int,
+    *,
+    qty: Any,
+    vendor: str = "",
+    vendor_name: str | None = None,
+    ui: str | None = None,
+    updated_by: str | None = None,
+) -> dict[str, Any]:
+    """Autosave qty / vendor for one waiting line. Shared by every staff session."""
+    try:
+        iclow_n = int(iclow_id)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "ไม่พบแถว ICLOW") from None
+    if iclow_n <= 0:
+        raise HqPoError("missing", "ไม่พบแถว ICLOW")
+    live = fetch_iclow_by_ids([iclow_n]).get(iclow_n)
+    if not live:
+        raise HqPoError("missing", f"ไม่พบ ICLOW {iclow_n}")
+    if str(live.get("canceled") or "").strip().upper() == "Y":
+        raise HqPoError("missing", "รายการนี้ถูกยกเลิกแล้ว")
+    if str(live.get("ordered") or "").strip().upper() == "Y":
+        raise HqPoError("already_ordered", "รายการนี้อยู่ในค้างรับ ไม่ใช่รายการรอสั่ง")
+    bcode = str(live.get("bcode") or "").strip()
+    if not bcode:
+        raise HqPoError("missing", "แถวนี้ไม่มีรหัสสินค้า")
+    qty_n = _draft_qty(qty)
+    vendor_acct = str(vendor or "").strip()
+    unit = str(ui or "").strip() or None
+    name = str(vendor_name or "").strip() or None
+    live_vendor = str(live.get("vendor") or "").strip()
+    client = get_hq_po_supabase_client()
+    stored = upsert_waiting_draft(
+        client,
+        {
+            "iclow_id": iclow_n,
+            "bcode": bcode,
+            "qty": qty_n,
+            "ui": unit,
+            "vendor_acctno": vendor_acct,
+            "vendor_name": name,
+            "base_qty": live.get("qty"),
+            "base_vendor": live_vendor,
+            "base_descr": str(live.get("descr") or "").strip() or None,
+            "updated_by": (updated_by or "")[:120] or None,
+        },
+    )
+    item = {
+        "iclow_id": iclow_n,
+        "bcode": bcode,
+        "qty": live.get("qty"),
+        "vendor": live_vendor,
+        "descr": live.get("descr") or "",
+    }
+    reasons = draft_stale_reasons(item, stored)
+    return {
+        "iclow_id": iclow_n,
+        "bcode": bcode,
+        "draft": {
+            "saved": True,
+            "qty": qty_n,
+            "ui": unit,
+            "vendor": vendor_acct,
+            "vendor_name": name,
+            "updated_at": stored.get("updated_at"),
+            "updated_by": stored.get("updated_by"),
+            "stale": bool(reasons),
+            "stale_reasons": reasons,
+        },
+    }
+
+
+def check_waiting_drafts(iclow_ids: list[int]) -> dict[str, Any]:
+    """Re-read live ICLOW and report which drafts are stale before confirm."""
+    ids: list[int] = []
+    seen: set[int] = set()
+    for raw in iclow_ids or []:
+        try:
+            iclow_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if iclow_id > 0 and iclow_id not in seen:
+            seen.add(iclow_id)
+            ids.append(iclow_id)
+    if not ids:
+        return {"items": []}
+    client = get_hq_po_supabase_client()
+    drafts = waiting_drafts_for(client, ids)
+    live = fetch_iclow_by_ids(ids)
+    out: list[dict[str, Any]] = []
+    for iclow_id in ids:
+        draft = drafts.get(iclow_id)
+        row = live.get(iclow_id)
+        if not draft or not row:
+            continue
+        item = {
+            "iclow_id": iclow_id,
+            "bcode": row.get("bcode") or draft.get("bcode") or "",
+            "qty": row.get("qty"),
+            "vendor": str(row.get("vendor") or "").strip(),
+            "descr": row.get("descr") or "",
+        }
+        reasons = draft_stale_reasons(item, draft)
+        out.append(
+            {
+                "iclow_id": iclow_id,
+                "bcode": item["bcode"],
+                "stale": bool(reasons),
+                "stale_reasons": reasons,
+                "live_qty": row.get("qty"),
+                "base_qty": draft.get("base_qty"),
+                "live_vendor": item["vendor"],
+                "base_vendor": draft.get("base_vendor"),
+                "live_descr": item["descr"],
+                "base_descr": draft.get("base_descr"),
+                "draft_qty": draft.get("qty"),
+                "draft_vendor": draft.get("vendor_acctno"),
+            }
+        )
+    return {"items": out}
 
 
 def update_product_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:
@@ -1024,6 +1178,17 @@ def confirm_order(
             if inserted:
                 cancel_created(inserted, docno=docno)
             raise
+        ordered_ids: list[int] = []
+        for line in stored_lines:
+            try:
+                ordered_ids.append(int(line.get("iclow_id")))
+            except (TypeError, ValueError):
+                continue
+        if ordered_ids:
+            try:
+                delete_waiting_drafts(client, iclow_ids=ordered_ids)
+            except Exception:
+                pass
         order["vendor_name"] = name
         order["skipped"] = skipped
         return order
