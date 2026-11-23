@@ -217,6 +217,50 @@ def get_pending_tiger_receipt_for_note(
     return dict(rows[0]) if rows else None
 
 
+def list_receipts_for_note(
+    client: Client, acctno: str, noteno: str, *, limit: int = 100
+) -> list[dict[str, Any]]:
+    """Overlay receipts for one billing note (refund/receive history)."""
+    resp = (
+        _table(client, "receipt")
+        .select("*, receipt_bill(*), receipt_channel(*)")
+        .eq("acctno", acctno.strip())
+        .eq("noteno", noteno.strip())
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return list(resp.data or [])
+
+
+def confirmed_refund_total(client: Client, acctno: str, noteno: str) -> float:
+    """Sum of confirmed customer-refund amounts (positive) for a BN/BNN note."""
+    total = 0.0
+    for row in list_receipts_for_note(client, acctno, noteno):
+        status = str(row.get("workflow_status") or "")
+        if status == "failed":
+            continue
+        # In-flight Tiger payouts do not count until money_confirmed.
+        if status == "awaiting_tiger" and not row.get("money_confirmed"):
+            continue
+        if status == "review" and not row.get("money_confirmed"):
+            continue
+        net = float(row.get("netamt") or 0)
+        if net < -1e-9:
+            total = round(total + abs(net), 2)
+            continue
+        billamt = float(row.get("billamt") or 0)
+        if billamt < -1e-9:
+            paid = (
+                float(row.get("cash_amt") or 0)
+                + float(row.get("transfer_amt") or 0)
+                + float(row.get("cheque_amt") or 0)
+            )
+            if paid > 0:
+                total = round(total + paid, 2)
+    return total
+
+
 def list_receipts(
     client: Client,
     *,

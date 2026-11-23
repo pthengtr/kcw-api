@@ -209,6 +209,14 @@ def test_ui_exports_and_tabs():
     assert "btnCreateAndPay" in html
     assert "createNote({ openPayAfter: true })" in html
     assert "createInFlight" in html
+    # Negative BN/BNN → refund labels (same dialog / tabs, no new tab)
+    assert "บันทึกและคืนเงินลูกค้า" in html
+    assert "syncCreatePayButton" in html
+    assert "รอคืนเงิน" in html
+    assert "ยอดค้างคืน" in html
+    assert "คืนเงินลูกค้า" in html
+    assert "ใบสำคัญจ่าย" in html
+    assert "รอ Tiger ยืนยันจ่ายคืนเงินสด" in html
     # Tiger cash poll on existing pay dialog (no new page)
     assert "pollTigerVoucher" in html
     assert "/vouchers/tiger-status" in html
@@ -221,6 +229,50 @@ def test_ui_exports_and_tabs():
     # canceled notes must not stay on รอรับชำระ (history via ค้นหาตามลูกหนี้)
     assert "keep canceled visible in \"all\"" not in html
     assert "if (isCanceledRow(r)) return false;" in html
+
+
+def test_pvn_refund_voucher_stem():
+    when = datetime(2026, 11, 23, tzinfo=ZoneInfo("Asia/Bangkok"))
+    from src.receive_notes.writer import voucher_stem
+
+    assert voucher_stem("1", when, refund=True) == "PVN6911-"
+    assert voucher_stem("2", when, refund=True) == "PVN6911-"
+    assert voucher_stem("1", when, refund=False) == "RC6911-"
+    assert voucher_stem("2", when, refund=False) == "RCN6911-"
+
+
+def test_tiger_ar_refund_source_key():
+    from src.receive_notes.tiger import (
+        ar_refund_pos_bill_id,
+        is_ar_refund_pos_bill_id,
+        receipt_id_from_pos_bill_id,
+    )
+
+    rid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    key = ar_refund_pos_bill_id(rid)
+    assert key.startswith("ar-refund:")
+    assert is_ar_refund_pos_bill_id(key)
+    assert not is_ar_pos_bill_id(key)
+    assert receipt_id_from_pos_bill_id(key) == rid
+
+
+def test_note_refund_snapshot(monkeypatch):
+    from src.receive_notes import service as rn_svc
+
+    monkeypatch.setattr(rn_svc, "confirmed_refund_total", lambda *_a, **_k: 400.0)
+    snap = rn_svc.note_refund_snapshot(
+        acctno="C001", noteno="BNN6911-001", note_net=-1500.0, client=object()
+    )
+    assert snap["is_refund"] is True
+    assert snap["credit_amt"] == 1500.0
+    assert snap["refunded_amt"] == 400.0
+    assert snap["remaining_refund"] == 1100.0
+
+    snap2 = rn_svc.note_refund_snapshot(
+        acctno="C001", noteno="BN6911-002", note_net=500.0, client=object()
+    )
+    assert snap2["is_refund"] is False
+    assert snap2["remaining_refund"] == 0.0
 
 
 def test_pay_notes_ui_ap_accent_and_discount_label():
