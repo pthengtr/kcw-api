@@ -216,7 +216,12 @@ def test_ui_exports_and_tabs():
     assert "ยอดค้างคืน" in html
     assert "คืนเงินลูกค้า" in html
     assert "ใบสำคัญจ่าย" in html
-    assert "รอ Tiger ยืนยันจ่ายคืนเงินสด" in html
+    # Cash refund shows Tiger voucher QR (KCN pattern) in the same pay dialog
+    assert "renderTigerAwaiting" in html
+    assert "tiger-voucher-box" in html
+    assert "สแกน QR ที่ตู้ Tiger เพื่อจ่ายเงินสด" in html
+    assert "รอเครื่องยืนยันจ่ายคืนเงินสด" in html
+    assert "Tiger voucher QR" in html
     # Tiger cash poll on existing pay dialog (no new page)
     assert "pollTigerVoucher" in html
     assert "/vouchers/tiger-status" in html
@@ -254,6 +259,24 @@ def test_tiger_ar_refund_source_key():
     assert is_ar_refund_pos_bill_id(key)
     assert not is_ar_pos_bill_id(key)
     assert receipt_id_from_pos_bill_id(key) == rid
+
+
+def test_ar_refund_voucher_display_builds_qr():
+    """Cash refund API must expose scannable QR like KCN companion voucher."""
+    from src.receive_notes.tiger import ar_refund_voucher_display
+
+    display = ar_refund_voucher_display(
+        {
+            "voucher_num": "082475711990",
+            "status": "pending",
+            "raw_status": "pending",
+            "raw_create_response": {"data": {"voucher_num": "082475711990", "used": "N"}},
+        }
+    )
+    assert display is not None
+    assert display["voucher_num"] == "082475711990"
+    assert display["code"] == "082475711990"
+    assert str(display.get("qr_image") or "").startswith("data:image/png;base64,")
 
 
 def test_note_refund_snapshot(monkeypatch):

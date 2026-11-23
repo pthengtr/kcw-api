@@ -20,7 +20,11 @@ from src.tiger_pay.voucher_api import (
     get_voucher_api_client,
     normalize_voucher_status,
 )
-from src.tiger_pay.voucher_service import new_voucher_attempt_id, refresh_voucher_attempt
+from src.tiger_pay.voucher_service import (
+    companion_voucher_from_attempt,
+    new_voucher_attempt_id,
+    refresh_voucher_attempt,
+)
 
 
 def ar_pos_bill_id(receipt_id: str) -> str:
@@ -337,6 +341,11 @@ def get_ar_refund_attempt(receipt_id: str) -> dict[str, Any] | None:
     if active:
         return active
     return voucher_repos.get_used_voucher_for_bill(engine, pos_bill_id)
+
+
+def ar_refund_voucher_display(attempt: dict[str, Any] | None) -> dict[str, Any] | None:
+    """QR + code for staff to scan at Tiger (same shape as KCN companion voucher)."""
+    return companion_voucher_from_attempt(attempt)
 
 
 def refresh_ar_refund_attempt(receipt_id: str) -> dict[str, Any] | None:
