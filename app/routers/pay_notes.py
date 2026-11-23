@@ -61,6 +61,7 @@ from src.staff_shell.wiring import entry_source, shell_page, stamp_staff_session
 from src.pay_notes.company_banks import (
     DEFAULT_PAY_BANK_KEY,
     bpdet_line_from_payment,
+    default_pay_bank_key_for_acctno,
     list_company_pay_accounts,
     resolve_company_pay_account,
 )
@@ -1130,12 +1131,12 @@ def api_create_voucher(request: Request, body: VoucherCreate):
             status_code=400,
         )
 
-    pay_bank_key = (body.pay_bank or "").strip() or DEFAULT_PAY_BANK_KEY
+    pay_bank_key = (body.pay_bank or "").strip() or default_pay_bank_key_for_acctno(acct)
     if body.bank_gl and not (body.pay_bank or "").strip():
         gl = (body.bank_gl or "").strip()
-        for acct in list_company_pay_accounts():
-            if acct.get("gl") == gl:
-                pay_bank_key = acct["key"]
+        for acct_row in list_company_pay_accounts():
+            if acct_row.get("gl") == gl:
+                pay_bank_key = acct_row["key"]
                 break
 
     chkdate = (body.chkdate or "").strip() or datetime.now(_BKK).date().isoformat()

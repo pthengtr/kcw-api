@@ -4,7 +4,11 @@ import html as html_lib
 import json
 import re
 
-from src.pay_notes.company_banks import DEFAULT_PAY_BANK_KEY, list_company_pay_accounts
+from src.pay_notes.company_banks import (
+    DEFAULT_PAY_BANK_KEY,
+    VENDOR_PREFIX_7_PAY_BANK_KEY,
+    list_company_pay_accounts,
+)
 
 APP = "pay-notes"
 SESSION_COOKIE = "kcw_pay_notes"
@@ -43,6 +47,7 @@ def page(
         .replace("__INITIALS__", html_lib.escape(initials(who)))
         .replace("__COMPANY_PAY_JSON__", json.dumps(company_pay, ensure_ascii=False))
         .replace("__DEFAULT_PAY_BANK__", json.dumps(DEFAULT_PAY_BANK_KEY))
+        .replace("__VENDOR_PREFIX_7_PAY_BANK__", json.dumps(VENDOR_PREFIX_7_PAY_BANK_KEY))
     )
 
 
@@ -2632,6 +2637,13 @@ $('detProofThumbs').addEventListener('click', (e) => {
 
 const COMPANY_PAY_ACCOUNTS = __COMPANY_PAY_JSON__;
 const DEFAULT_PAY_BANK = __DEFAULT_PAY_BANK__;
+const VENDOR_PREFIX_7_PAY_BANK = __VENDOR_PREFIX_7_PAY_BANK__;
+
+function defaultPayBankForAcct(acctno) {
+  const acct = String(acctno || '').trim();
+  if (acct.startsWith('7')) return VENDOR_PREFIX_7_PAY_BANK || 'kbank_72355';
+  return DEFAULT_PAY_BANK || (COMPANY_PAY_ACCOUNTS[0] && COMPANY_PAY_ACCOUNTS[0].key) || '';
+}
 
 function initPayBankSelect() {
   const sel = $('payBankSelect');
@@ -2702,7 +2714,7 @@ function openPay(acct, note, billamt, discount, bankname) {
   $('payBankLine').textContent = formatBankDisplay(bankname) || '— ไม่พบบัญชีธนาคาร —';
   $('payChkamt').value = net.toFixed(2);
   $('payChkdate').value = todayISO();
-  $('payBankSelect').value = DEFAULT_PAY_BANK;
+  $('payBankSelect').value = defaultPayBankForAcct(acct);
   $('payMsg').innerHTML = '';
   $('payChkno').dataset.auto = '1';
   const intended = row ? noteSettleMethod(row) : 'transfer';

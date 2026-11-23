@@ -241,6 +241,8 @@ def test_page_has_voucher_and_proof_tabs():
     assert "248-6-00138-7" in html
     assert "141-1-72355-7" in html
     assert "payBankSelect" in html
+    assert "defaultPayBankForAcct" in html
+    assert "VENDOR_PREFIX_7_PAY_BANK" in html
     assert "openEditNote" in html
     assert "data-print=" in html
     assert "openDetailByKey" in html
