@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from src.receive_notes.company_banks import brdet_line_from_payment
 from src.receive_notes.config import ReceiveNotesSettings, get_receive_notes_settings
 from src.receive_notes.db import (
+    confirmed_refund_total,
     get_pending_tiger_receipt_for_note,
     get_receipt,
     get_receive_notes_supabase_client,
@@ -14,6 +15,7 @@ from src.receive_notes.db import (
     insert_receipt,
     insert_receipt_bills,
     insert_receipt_channels,
+    list_receipts_for_note,
     patch_note,
     patch_receipt,
     prior_allocations_for_bills,
@@ -22,9 +24,12 @@ from src.receive_notes.parts9 import fetch_bills_for_receive
 from src.receive_notes.tiger import (
     ReceiveTigerError,
     get_ar_attempt,
+    get_ar_refund_attempt,
     is_ar_pos_bill_id,
     receipt_id_from_pos_bill_id,
+    refresh_ar_refund_attempt,
     start_ar_cash_attempt,
+    start_ar_refund_voucher_attempt,
 )
 from src.receive_notes.writer import ReceiveNoteWriteError, create_receive_note, create_receipt_voucher
 
@@ -63,6 +68,7 @@ def _build_brdet_lines(channels: list[dict[str, Any]], *, tiger_payment_no: str 
     lines = []
     for ch in channels:
         method = str(ch.get("settle_method") or "transfer").lower()
+        tiger_ref = ch.get("tiger_payment_no") or tiger_payment_no
         lines.append(
             brdet_line_from_payment(
                 settle_method=method,
@@ -70,7 +76,7 @@ def _build_brdet_lines(channels: list[dict[str, Any]], *, tiger_payment_no: str 
                 chkamt=float(ch.get("amount") or ch.get("chkamt") or 0),
                 chkdate=str(ch.get("chkdate") or date.today().isoformat()),
                 receive_bank_key=ch.get("receive_bank_key") or ch.get("bankname"),
-                tiger_payment_no=tiger_payment_no if method == "cash" else None,
+                tiger_payment_no=tiger_ref if method == "cash" else None,
             )
         )
     return lines
@@ -696,4 +702,622 @@ def resync_receipt(
             operator=operator,
         ),
         "receipt": get_receipt(get_receive_notes_supabase_client(), receipt_id),
+    }
+
+
+def note_refund_snapshot(
+    *,
+    acctno: str,
+    noteno: str,
+    note_net: float,
+    client=None,
+) -> dict[str, Any]:
+    """Remaining customer-credit refund for a negative BN/BNN note."""
+    client = client or get_receive_notes_supabase_client()
+    net = round(float(note_net or 0), 2)
+    credit = round(abs(net), 2) if net < -1e-9 else 0.0
+    refunded = confirmed_refund_total(client, acctno, noteno) if credit else 0.0
+    remaining = round(max(credit - refunded, 0.0), 2)
+    return {
+        "is_refund": credit > 0,
+        "note_net": net,
+        "credit_amt": credit,
+        "refunded_amt": refunded,
+        "remaining_refund": remaining,
+    }
+
+
+def _allocate_refund_bills(
+    bills: list[dict[str, Any]],
+    *,
+    refund_amt: float,
+    prior: dict[str, float],
+) -> list[dict[str, Any]]:
+    """Greedy negative allocate across credit bills up to refund_amt (positive)."""
+    target = -round(abs(float(refund_amt)), 2)
+    if target >= 0:
+        raise ReceiveServiceError("refund amount must be > 0", code="validation")
+    remaining_target = target
+    enriched: list[dict[str, Any]] = []
+    for bill in bills:
+        if remaining_target >= -1e-9:
+            break
+        bno = str(bill.get("BILLNO") or "").strip()
+        aftertax = round(float(bill.get("AFTERTAX") or 0), 2)
+        if aftertax >= 0:
+            continue
+        prior_amt = float(prior.get(bno, 0.0))
+        bill_remaining = round(aftertax - prior_amt, 2)  # still negative when open
+        if bill_remaining >= -1e-9:
+            continue
+        # Allocate as much negative as min(|remaining_target|, |bill_remaining|)
+        take = round(max(remaining_target, bill_remaining), 2)
+        fully = take + prior_amt - 1e-6 <= aftertax
+        enriched.append(
+            {
+                "billno": bno,
+                "aftertax": aftertax,
+                "allocate_amt": take,
+                "JOURMODE": str(bill.get("JOURMODE") or "1").strip() or "1",
+                "fully_paid": fully,
+            }
+        )
+        remaining_target = round(remaining_target - take, 2)
+    if abs(remaining_target) > 0.05:
+        raise ReceiveServiceError(
+            "refund exceeds remaining credit on note bills",
+            code="validation",
+        )
+    if not enriched:
+        raise ReceiveServiceError("no open credit bills to refund", code="already_paid")
+    return enriched
+
+
+def finalize_refund_kss_for_receipt(
+    *,
+    receipt_id: str,
+    settings: ReceiveNotesSettings | None = None,
+    operator: str | None = None,
+    tiger_voucher_num: str | None = None,
+) -> dict[str, Any]:
+    """Write PVN to KSS only when this refund closes the note credit (no remaining)."""
+    settings = settings or get_receive_notes_settings()
+    client = get_receive_notes_supabase_client()
+    receipt = get_receipt(client, receipt_id)
+    if not receipt:
+        raise ReceiveServiceError("receipt not found", code="not_found")
+
+    if receipt.get("voucno") and receipt.get("kss_sync_status") == "synced":
+        return {
+            "voucno": receipt.get("voucno"),
+            "noteno": receipt.get("noteno"),
+            "acctno": receipt.get("acctno"),
+            "idempotent": True,
+            "is_refund": True,
+        }
+
+    tiger_ref = (
+        tiger_voucher_num
+        or receipt.get("tiger_payment_no")
+        or ""
+    ).strip() or None
+
+    acct = str(receipt.get("acctno") or "").strip()
+    note = str(receipt.get("noteno") or "").strip()
+
+    # Credit snapshot stashed as "credit:{amt}" in cash_manual_reason (no schema change).
+    credit = 0.0
+    reason = str(receipt.get("cash_manual_reason") or "")
+    if reason.startswith("credit:"):
+        try:
+            credit = abs(float(reason.split(":", 1)[1]))
+        except (TypeError, ValueError):
+            credit = 0.0
+    if credit <= 0:
+        credit = abs(float(receipt.get("billamt") or 0))
+
+    channels = receipt.get("receipt_channel") or []
+    bills = receipt.get("receipt_bill") or []
+    method = (
+        str((channels[0] or {}).get("settle_method") or "transfer").lower()
+        if channels
+        else "transfer"
+    )
+    proof_needed = method in ("transfer", "cheque")
+
+    # Leave awaiting_tiger so confirmed_refund_total can include this row.
+    patch_receipt(
+        client,
+        receipt_id,
+        {
+            "money_confirmed": True,
+            "tiger_payment_no": tiger_ref or receipt.get("tiger_payment_no"),
+            "workflow_status": "review",
+        },
+    )
+
+    refunded = confirmed_refund_total(client, acct, note)
+    remaining = round(max(credit - refunded, 0.0), 2)
+
+    if remaining > 0.05:
+        # Partial refund: keep overlay PVN placeholder for history/print; defer KSS clear.
+        overlay_vouc = str(receipt.get("voucno") or "").strip()
+        patch_receipt(
+            client,
+            receipt_id,
+            {
+                "workflow_status": "awaiting_proof" if proof_needed else "done",
+                "proof_status": "awaiting" if proof_needed else "none",
+                "kss_sync_status": "pending",
+                "kss_sync_error": None,
+            },
+        )
+        return {
+            "voucno": overlay_vouc or None,
+            "noteno": note,
+            "acctno": acct,
+            "is_refund": True,
+            "partial": True,
+            "remaining_refund": remaining,
+            "refunded_amt": refunded,
+            "kss_deferred": True,
+            "settle_method": method,
+        }
+
+    # Full credit cleared — write PVN + stamp SIMAS / RVMAS.
+    # Rebuild full allocations for all note bills from confirmed overlay receipts.
+    alloc_by_bill: dict[str, float] = {}
+    for row in list_receipts_for_note(client, acct, note):
+        status = str(row.get("workflow_status") or "")
+        if status in ("failed", "awaiting_tiger"):
+            continue
+        if status == "review" and not row.get("money_confirmed"):
+            continue
+        for b in row.get("receipt_bill") or []:
+            bno = str(b.get("billno") or "").strip()
+            if not bno:
+                continue
+            alloc_by_bill[bno] = round(
+                alloc_by_bill.get(bno, 0.0) + float(b.get("allocate_amt") or 0), 2
+            )
+    if not alloc_by_bill and bills:
+        for b in bills:
+            bno = str(b.get("billno") or "").strip()
+            if bno:
+                alloc_by_bill[bno] = float(b.get("allocate_amt") or 0)
+
+    allocs = [{"billno": bno, "allocate_amt": amt} for bno, amt in alloc_by_bill.items()]
+    # BRDET: one line per confirmed refund channel across receipts (positive chkamt).
+    brdet_lines: list[dict[str, Any]] = []
+    for row in list_receipts_for_note(client, acct, note):
+        status = str(row.get("workflow_status") or "")
+        if status in ("failed", "awaiting_tiger"):
+            continue
+        if status == "review" and not row.get("money_confirmed"):
+            continue
+        row_tiger = str(row.get("tiger_payment_no") or "").strip() or None
+        for c in row.get("receipt_channel") or []:
+            brdet_lines.append(
+                {
+                    "settle_method": c.get("settle_method"),
+                    "amount": c.get("amount"),
+                    "chkamt": c.get("amount") or c.get("chkamt"),
+                    "chkno": c.get("chkno"),
+                    "chkdate": c.get("chkdate"),
+                    "receive_bank_key": c.get("receive_bank_key"),
+                    "bankname": c.get("bankname"),
+                    "tiger_payment_no": row_tiger if str(c.get("settle_method") or "") == "cash" else None,
+                }
+            )
+    brdet_built = _build_brdet_lines(brdet_lines, tiger_payment_no=tiger_ref)
+
+    try:
+        result = create_receipt_voucher(
+            settings=settings,
+            acctno=acct,
+            acctname=receipt.get("acctname") or "",
+            bill_allocations=allocs,
+            brdet_lines=brdet_built,
+            discount=0.0,
+            noteno=note,
+            existing_voucno=receipt.get("voucno"),
+            operator=operator,
+            refund=True,
+        )
+    except ReceiveNoteWriteError as exc:
+        patch_receipt(
+            client,
+            receipt_id,
+            {
+                "kss_sync_status": "failed",
+                "kss_sync_error": str(exc),
+                "workflow_status": "review",
+            },
+        )
+        raise ReceiveServiceError(str(exc), code=exc.code) from exc
+
+    voucno = result.get("voucno")
+    proof = "tiger_auto" if method == "cash" else ("awaiting" if proof_needed else "none")
+    workflow = "awaiting_proof" if proof == "awaiting" else "done"
+    patch_receipt(
+        client,
+        receipt_id,
+        {
+            "voucno": voucno,
+            "kss_sync_status": "synced",
+            "kss_sync_error": None,
+            "workflow_status": workflow,
+            "proof_status": proof,
+            "money_confirmed": True,
+            "tiger_payment_no": tiger_ref or receipt.get("tiger_payment_no"),
+        },
+    )
+    # Stamp sibling overlay refunds with same PVN for history.
+    for row in list_receipts_for_note(client, acct, note):
+        rid = str(row.get("id") or "")
+        if not rid or rid == receipt_id:
+            continue
+        status = str(row.get("workflow_status") or "")
+        if status in ("failed", "awaiting_tiger"):
+            continue
+        if row.get("voucno") and row.get("kss_sync_status") == "synced":
+            continue
+        patch_receipt(
+            client,
+            rid,
+            {
+                "voucno": voucno,
+                "kss_sync_status": "synced",
+                "workflow_status": "done" if status != "awaiting_proof" else status,
+                "money_confirmed": True,
+            },
+        )
+    if note:
+        try:
+            patch_note(client, acct, note, {"status": "received", "settle_method": method})
+        except Exception:
+            pass
+    return {**result, "is_refund": True, "partial": False, "remaining_refund": 0.0}
+
+
+def start_note_refund(
+    *,
+    acctno: str,
+    acctname: str,
+    noteno: str,
+    bills: list[dict[str, Any]],
+    refund_amt: float,
+    note_net: float,
+    settle_method: str,
+    chkno: str = "",
+    chkdate: str | None = None,
+    receive_bank_key: str | None = None,
+    discount: float = 0.0,
+    operator: str | None = None,
+    settings: ReceiveNotesSettings | None = None,
+) -> dict[str, Any]:
+    """Customer credit refund for a negative BN/BNN.
+
+    Cash → Tiger voucher (KCN pattern); KSS PVN only after machine confirms used.
+    Transfer/cheque → finalize immediately when remaining hits zero.
+    Closing the dialog before Tiger success leaves the note open (รอคืนเงิน).
+    """
+    settings = settings or get_receive_notes_settings()
+    client = get_receive_notes_supabase_client()
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    method = (settle_method or "transfer").strip().lower()
+    if method not in ("transfer", "cheque", "cash"):
+        method = "transfer"
+    if not acct or not note:
+        raise ReceiveServiceError("acctno and noteno required", code="validation")
+
+    snap = note_refund_snapshot(acctno=acct, noteno=note, note_net=note_net, client=client)
+    if not snap["is_refund"]:
+        raise ReceiveServiceError("note is not a credit refund", code="validation")
+    remaining = float(snap["remaining_refund"])
+    if remaining <= 1e-9:
+        raise ReceiveServiceError("credit already fully refunded", code="already_paid")
+
+    amount = round(abs(float(refund_amt)), 2)
+    if amount <= 0:
+        raise ReceiveServiceError("refund amount must be > 0", code="validation")
+    if amount - remaining > 0.01:
+        raise ReceiveServiceError(
+            f"refund ({amount}) exceeds remaining credit ({remaining})",
+            code="validation",
+        )
+
+    # Reuse in-flight Tiger refund for this note (dedupe / reopen after close).
+    if method == "cash":
+        existing = get_pending_tiger_receipt_for_note(client, acct, note)
+        if existing and float(existing.get("netamt") or 0) < 0:
+            receipt_id = str(existing.get("id") or "")
+            attempt = get_ar_refund_attempt(receipt_id) if receipt_id else None
+            status = str((attempt or {}).get("status") or "").lower()
+            if attempt and status == "used":
+                return complete_tiger_refund(
+                    receipt_id=receipt_id,
+                    operator=operator,
+                    settings=settings,
+                )
+            if attempt and status not in ("failed", "cancelled", "canceled", "expired"):
+                return {
+                    "awaiting_tiger": True,
+                    "is_refund": True,
+                    "receipt": existing,
+                    "tiger_attempt": attempt,
+                    **note_refund_snapshot(
+                        acctno=acct, noteno=note, note_net=note_net, client=client
+                    ),
+                }
+            if receipt_id:
+                patch_receipt(
+                    client,
+                    receipt_id,
+                    {
+                        "workflow_status": "failed",
+                        "kss_sync_error": f"tiger_{status or 'missing'}",
+                    },
+                )
+
+    prior = prior_allocations_for_bills(
+        client, [str(b.get("BILLNO") or "").strip() for b in bills]
+    )
+    enriched = _allocate_refund_bills(bills, refund_amt=amount, prior=prior)
+    jourmode = str(enriched[0].get("JOURMODE") or "1")
+    billamt = round(sum(float(a["allocate_amt"]) for a in enriched), 2)  # negative
+    disc = round(float(discount or 0), 2)
+    netamt = round(billamt - disc, 2)  # negative
+    day = (chkdate or date.today().isoformat())
+
+    cash_amt = amount if method == "cash" else 0.0
+    transfer_amt = amount if method == "transfer" else 0.0
+    cheque_amt = amount if method == "cheque" else 0.0
+    needs_tiger = method == "cash"
+    proof_needed = method in ("transfer", "cheque")
+
+    receipt = insert_receipt(
+        client,
+        {
+            "acctno": acct,
+            "acctname": (acctname or "").strip(),
+            "noteno": note,
+            "jourmode": jourmode,
+            "received_at": date.today().isoformat(),
+            "received_by": operator,
+            "remark": f"refund BN {note}",
+            "billamt": billamt,
+            "discount": disc,
+            "netamt": netamt,
+            "cash_amt": cash_amt,
+            "transfer_amt": transfer_amt,
+            "cheque_amt": cheque_amt,
+            "workflow_status": "awaiting_tiger" if needs_tiger else "review",
+            "proof_status": "none",
+            "kss_sync_status": "pending",
+            "cash_mode": "tiger" if needs_tiger else None,
+            "money_confirmed": False,
+        },
+    )
+    receipt_id = receipt["id"]
+    insert_receipt_bills(
+        client,
+        [
+            {
+                "receipt_id": receipt_id,
+                "billno": a["billno"],
+                "aftertax": a["aftertax"],
+                "allocate_amt": a["allocate_amt"],
+                "fully_paid": bool(a["fully_paid"]),
+            }
+            for a in enriched
+        ],
+    )
+    channel_row = {
+        "receipt_id": receipt_id,
+        "settle_method": method,
+        "amount": amount,
+        "chkno": (chkno or None),
+        "chkdate": day,
+        "receive_bank_key": receive_bank_key,
+        "bankname": None,
+        "bank_gl": None,
+    }
+    if method == "transfer":
+        from src.receive_notes.company_banks import resolve_company_receive_account
+
+        bank = resolve_company_receive_account(receive_bank_key)
+        channel_row["receive_bank_key"] = bank["key"]
+        channel_row["bankname"] = bank["bank_name"]
+        channel_row["bank_gl"] = bank["gl"]
+        if not channel_row.get("chkno"):
+            channel_row["chkno"] = "โอน"
+    insert_receipt_channels(client, [channel_row])
+
+    # Stash note credit snapshot for finalize remaining check (no schema migration).
+    patch_receipt(
+        client,
+        receipt_id,
+        {"cash_manual_reason": f"credit:{snap['credit_amt']}"},
+    )
+
+    out: dict[str, Any] = {
+        "is_refund": True,
+        "receipt": get_receipt(client, receipt_id),
+        **note_refund_snapshot(acctno=acct, noteno=note, note_net=note_net, client=client),
+    }
+
+    if needs_tiger:
+        try:
+            attempt = start_ar_refund_voucher_attempt(
+                receipt_id=receipt_id,
+                amount=amount,
+                noteno=note,
+                submitted_by=operator,
+                submitted_by_name=operator,
+                note=f"AR refund {note} {receipt_id}",
+            )
+        except ReceiveTigerError as exc:
+            patch_receipt(
+                client,
+                receipt_id,
+                {"workflow_status": "failed", "kss_sync_error": str(exc)},
+            )
+            raise ReceiveServiceError(str(exc), code=exc.code) from exc
+        patch_receipt(
+            client,
+            receipt_id,
+            {
+                "tiger_attempt_id": attempt.get("id"),
+                "tiger_payment_no": attempt.get("voucher_num"),
+            },
+        )
+        out["awaiting_tiger"] = True
+        out["tiger_attempt"] = attempt
+        out["receipt"] = get_receipt(client, receipt_id)
+        return out
+
+    # Transfer / cheque — confirm money now; KSS PVN when credit fully cleared.
+    done = finalize_refund_kss_for_receipt(
+        receipt_id=receipt_id,
+        settings=settings,
+        operator=operator,
+    )
+    out["awaiting_tiger"] = False
+    out["kss"] = done
+    out["receipt"] = get_receipt(client, receipt_id)
+    out.update(
+        note_refund_snapshot(acctno=acct, noteno=note, note_net=note_net, client=client)
+    )
+    return out
+
+
+def complete_tiger_refund(
+    *,
+    receipt_id: str,
+    operator: str | None = None,
+    settings: ReceiveNotesSettings | None = None,
+) -> dict[str, Any]:
+    settings = settings or get_receive_notes_settings()
+    client = get_receive_notes_supabase_client()
+    receipt = get_receipt(client, receipt_id)
+    if not receipt:
+        raise ReceiveServiceError("receipt not found", code="not_found")
+
+    attempt = refresh_ar_refund_attempt(receipt_id) or get_ar_refund_attempt(receipt_id)
+    if not attempt:
+        raise ReceiveServiceError("no Tiger refund voucher for receipt", code="tiger_missing")
+    status = str(attempt.get("status") or "").lower()
+    if status != "used":
+        if status in ("failed", "cancelled", "canceled", "expired"):
+            patch_receipt(
+                client,
+                receipt_id,
+                {"workflow_status": "failed", "kss_sync_error": f"tiger_{status}"},
+            )
+            raise ReceiveServiceError(f"Tiger status={status}", code="tiger_failed")
+        raise ReceiveServiceError(f"Tiger still {status}", code="tiger_pending")
+
+    voucher_num = str(attempt.get("voucher_num") or "").strip() or None
+    patch_receipt(
+        client,
+        receipt_id,
+        {
+            "tiger_attempt_id": attempt.get("id"),
+            "tiger_payment_no": voucher_num,
+            "money_confirmed": True,
+        },
+    )
+    kss = finalize_refund_kss_for_receipt(
+        receipt_id=receipt_id,
+        settings=settings,
+        operator=operator,
+        tiger_voucher_num=voucher_num,
+    )
+    return {
+        "attempt": attempt,
+        "kss": kss,
+        "receipt": get_receipt(client, receipt_id),
+        "is_refund": True,
+        "awaiting_tiger": False,
+    }
+
+
+def sync_tiger_refund(
+    *,
+    receipt_id: str,
+    operator: str | None = None,
+    settings: ReceiveNotesSettings | None = None,
+) -> dict[str, Any]:
+    """Poll Tiger refund voucher; write KSS PVN only after status used (+ full clear)."""
+    settings = settings or get_receive_notes_settings()
+    client = get_receive_notes_supabase_client()
+    receipt = get_receipt(client, receipt_id)
+    if not receipt:
+        raise ReceiveServiceError("receipt not found", code="not_found")
+
+    if receipt.get("voucno") and receipt.get("kss_sync_status") == "synced":
+        return {
+            "awaiting_tiger": False,
+            "done": True,
+            "is_refund": True,
+            "receipt": receipt,
+            "kss": {"voucno": receipt.get("voucno"), "noteno": receipt.get("noteno")},
+        }
+
+    if receipt.get("money_confirmed") and str(receipt.get("workflow_status")) != "awaiting_tiger":
+        # Partial already finalized without KSS.
+        return {
+            "awaiting_tiger": False,
+            "done": True,
+            "is_refund": True,
+            "partial": True,
+            "receipt": receipt,
+            "kss": {
+                "voucno": receipt.get("voucno"),
+                "noteno": receipt.get("noteno"),
+                "partial": True,
+                "kss_deferred": receipt.get("kss_sync_status") != "synced",
+            },
+        }
+
+    attempt = refresh_ar_refund_attempt(receipt_id) or get_ar_refund_attempt(receipt_id)
+    if not attempt:
+        raise ReceiveServiceError("no Tiger refund voucher for receipt", code="tiger_missing")
+    status = str(attempt.get("status") or "").lower()
+    if status == "used":
+        done = complete_tiger_refund(
+            receipt_id=receipt_id, operator=operator, settings=settings
+        )
+        return {
+            "awaiting_tiger": False,
+            "done": True,
+            "is_refund": True,
+            "receipt": done.get("receipt"),
+            "tiger_attempt": done.get("attempt"),
+            "kss": done.get("kss"),
+        }
+    if status in ("failed", "cancelled", "canceled", "expired"):
+        patch_receipt(
+            client,
+            receipt_id,
+            {"workflow_status": "failed", "kss_sync_error": f"tiger_{status}"},
+        )
+        return {
+            "awaiting_tiger": False,
+            "done": False,
+            "failed": True,
+            "is_refund": True,
+            "tiger_status": status,
+            "receipt": get_receipt(client, receipt_id),
+            "tiger_attempt": attempt,
+        }
+    return {
+        "awaiting_tiger": True,
+        "done": False,
+        "is_refund": True,
+        "tiger_status": status,
+        "receipt": receipt,
+        "tiger_attempt": attempt,
     }

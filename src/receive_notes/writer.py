@@ -65,9 +65,13 @@ def voucher_stem(
     when: datetime | None = None,
     *,
     acctno: str | None = None,
+    refund: bool = False,
 ) -> str:
-    """VAT → RC… ; Non-VAT → RCN… ; marketplace TAD debtors → RVI…"""
+    """VAT → RC… ; Non-VAT → RCN… ; marketplace TAD → RVI… ; customer refund → PVN…"""
     yymm = buddhist_yymm(when)
+    if refund:
+        # Customer credit refund (ใบสำคัญจ่าย) — Service AR only; not PVMAS AP.
+        return f"PVN{yymm}-"
     if uses_rvi_voucher(acctno):
         return f"RVI{yymm}-"
     mode = (jourmode or "1").strip() or "1"
@@ -82,8 +86,9 @@ def next_voucno(
     jourmode: str,
     when: datetime | None = None,
     acctno: str | None = None,
+    refund: bool = False,
 ) -> str:
-    stem = voucher_stem(jourmode, when, acctno=acctno)
+    stem = voucher_stem(jourmode, when, acctno=acctno, refund=refund)
     row = conn.execute(
         text("SELECT MAX(VOUCNO) AS max_no FROM dbo.RVMAS WHERE VOUCNO LIKE :pat"),
         {"pat": stem + "%"},
@@ -102,13 +107,14 @@ def next_voucno(
 
 
 def proof_required(*, voucno: str = "", settle_method: str = "") -> bool:
-    """RVI marketplace receipts and cash settles skip the proof tab."""
+    """RVI marketplace receipts, PVN cash refunds, and cash settles skip the proof tab."""
     method = (settle_method or "").strip().lower()
     if method == "cash":
         return False
     vo = (voucno or "").strip().upper()
     if vo.startswith("RVI"):
         return False
+    # Customer refund PVN: transfer/cheque still need proof; cash already skipped.
     return True
 
 
@@ -539,8 +545,13 @@ def create_receipt_voucher(
     existing_voucno: str | None = None,
     operator: str | None = None,
     engine: Engine | None = None,
+    refund: bool | None = None,
 ) -> dict[str, Any]:
-    """Create or complete an AR receipt voucher (CR). Idempotent if existing_voucno set."""
+    """Create or complete an AR receipt / refund voucher (CR). Idempotent if existing_voucno set.
+
+    When ``refund`` is True (or net is negative), allocates ``PVN{YYMM}-`` and treats
+    BRDET CHKAMT as the positive payout amount matching ``abs(netamt)``.
+    """
     if not settings.receive_notes_write_enabled:
         raise ReceiveNoteWriteError("RECEIVE_NOTES_WRITE_ENABLED is false", code="write_disabled")
 
@@ -644,13 +655,15 @@ def create_receipt_voucher(
     if billamt >= 0 and disc - billamt > 1e-9:
         raise ReceiveNoteWriteError("discount exceeds bill amount", code="validation")
 
+    is_refund = bool(refund) if refund is not None else netamt < -1e-9
+    channel_target = round(abs(netamt), 2) if is_refund else netamt
     channel_sum = round(sum(float(l.get("chkamt") or 0) for l in brdet_lines), 2)
-    if brdet_lines and abs(channel_sum - netamt) > 0.05:
+    if brdet_lines and abs(channel_sum - channel_target) > 0.05:
         raise ReceiveNoteWriteError(
-            f"channel sum {channel_sum} != net {netamt}",
+            f"channel sum {channel_sum} != net {channel_target}",
             code="channel_mismatch",
         )
-    if not brdet_lines and netamt > 1e-9:
+    if not brdet_lines and channel_target > 1e-9:
         raise ReceiveNoteWriteError("at least one BRDET line required", code="validation")
 
     cash_amt = round(
@@ -672,7 +685,9 @@ def create_receipt_voucher(
 
     try:
         with write_eng.begin() as conn:
-            voucno = next_voucno(conn, jourmode=jourmode, when=voucd, acctno=acct)
+            voucno = next_voucno(
+                conn, jourmode=jourmode, when=voucd, acctno=acct, refund=is_refund
+            )
             if note:
                 header = conn.execute(
                     text(

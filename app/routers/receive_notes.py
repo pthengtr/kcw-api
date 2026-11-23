@@ -32,8 +32,11 @@ from src.receive_notes.db import (
 from src.receive_notes.net import is_tailscale_cg_nat
 from src.receive_notes.service import (
     ReceiveServiceError,
+    note_refund_snapshot,
     start_note_cash_via_tiger,
+    start_note_refund,
     sync_tiger_receipt,
+    sync_tiger_refund,
 )
 from src.receive_notes.parts9 import (
     debtor_summary,
@@ -332,6 +335,7 @@ def _workflow_meta(
     has_proof: bool = False,
     canceled: bool = False,
     settle_method: str = "",
+    is_refund: bool = False,
 ) -> dict[str, Any]:
     if canceled:
         return {
@@ -344,12 +348,14 @@ def _workflow_meta(
     if not vo:
         return {
             "stage": "pending",
-            "workflow_status": "รอรับชำระ",
+            "workflow_status": "รอคืนเงิน" if is_refund else "รอรับชำระ",
             "is_editable": True,
             "canceled": False,
+            "is_refund": bool(is_refund),
         }
     done = _proof_done(voucno=vo, has_proof=has_proof, settle_method=settle_method)
     needs_proof = proof_required(voucno=vo, settle_method=settle_method)
+    is_pvn = vo.upper().startswith("PVN") or is_refund
     if not done:
         return {
             "stage": "await_proof",
@@ -357,13 +363,15 @@ def _workflow_meta(
             "is_editable": False,
             "canceled": False,
             "proof_required": True,
+            "is_refund": bool(is_pvn),
         }
     return {
         "stage": "voucher",
-        "workflow_status": "ใบเสร็จรับเงิน",
+        "workflow_status": "ใบสำคัญจ่าย" if is_pvn else "ใบเสร็จรับเงิน",
         "is_editable": False,
         "canceled": False,
         "proof_required": needs_proof,
+        "is_refund": bool(is_pvn),
     }
 
 
@@ -373,6 +381,10 @@ def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str,
     rem = row.get("reminder") or {}
     canceled = bool(row.get("canceled")) or str(rem.get("status") or "").lower() == "canceled"
     settle = _settle_method_of(row)
+    billamt = float(row.get("BILLAMT") or row.get("billamt") or 0)
+    disc = float(rem.get("discount_amount") or row.get("DISCOUNT") or 0)
+    net = float(row.get("NETAMT") or 0) if voucno else round(billamt - disc, 2)
+    is_refund = bool(row.get("is_refund")) or net < -1e-9 or voucno.upper().startswith("PVN")
     out = {
         **row,
         **_workflow_meta(
@@ -380,12 +392,19 @@ def _with_workflow(row: dict[str, Any], *, has_proof: bool = False) -> dict[str,
             has_proof=has_proof,
             canceled=canceled,
             settle_method=settle,
+            is_refund=is_refund,
         ),
         **noteno_meta(stored),
     }
     # Tab 3/4 list columns read top-level settle_method (not reminder.*).
     if settle:
         out["settle_method"] = settle
+    if is_refund and not voucno:
+        snap = row.get("refund") or {}
+        if snap:
+            out["refund"] = snap
+            out["remaining_refund"] = snap.get("remaining_refund")
+            out["refunded_amt"] = snap.get("refunded_amt")
     return out
 
 
@@ -658,7 +677,23 @@ def api_pending(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=502)
     out = []
     for row in rows:
-        out.append(_with_workflow({**row, "stage": "pending"}))
+        rem = row.get("reminder") or {}
+        billamt = float(row.get("BILLAMT") or 0)
+        disc = float(rem.get("discount_amount") or 0)
+        net = round(billamt - disc, 2)
+        enriched = {**row, "stage": "pending"}
+        if net < -1e-9:
+            snap = note_refund_snapshot(
+                acctno=str(row.get("acctno") or ""),
+                noteno=str(row.get("noteno") or ""),
+                note_net=net,
+                client=client,
+            )
+            enriched["refund"] = snap
+            enriched["is_refund"] = True
+            enriched["remaining_refund"] = snap.get("remaining_refund")
+            enriched["refunded_amt"] = snap.get("refunded_amt")
+        out.append(_with_workflow(enriched))
     return out
 
 
@@ -1175,12 +1210,68 @@ def _tiger_pending_response(
     }
 
 
+def _refund_response(
+    *,
+    started: dict[str, Any],
+    rem: dict[str, Any] | None,
+    method: str,
+    pay_bank_key: str,
+) -> dict[str, Any]:
+    if started.get("awaiting_tiger"):
+        pending = _tiger_pending_response(started=started, rem=rem, method=method)
+        pending["is_refund"] = True
+        pending["workflow_status"] = "รอ Tiger คืนเงินสด"
+        pending["remaining_refund"] = started.get("remaining_refund")
+        pending["refunded_amt"] = started.get("refunded_amt")
+        attempt = started.get("tiger_attempt") or {}
+        if attempt.get("voucher_num") and not pending.get("tiger_payment_no"):
+            pending["tiger_payment_no"] = attempt.get("voucher_num")
+        return pending
+
+    kss = started.get("kss") or {}
+    voucno = str(kss.get("voucno") or "").strip()
+    recv_acct = resolve_company_receive_account(pay_bank_key)
+    needs_proof = proof_required(voucno=voucno, settle_method=method) if voucno else False
+    # Partial refund: note stays open (รอคืนเงิน); no KSS PVN yet.
+    if kss.get("partial") or kss.get("kss_deferred") or not voucno:
+        return {
+            **kss,
+            "reminder": rem,
+            "settle_method": method,
+            "pay_bank": recv_acct["key"],
+            "receive_bank_key": recv_acct["key"],
+            "proof_required": False,
+            "awaiting_tiger": False,
+            "is_refund": True,
+            "partial": True,
+            "remaining_refund": started.get("remaining_refund", kss.get("remaining_refund")),
+            "refunded_amt": started.get("refunded_amt", kss.get("refunded_amt")),
+            "stage": "pending",
+            "workflow_status": "รอคืนเงิน",
+            "is_editable": True,
+            "canceled": False,
+            "receipt": started.get("receipt"),
+        }
+    return {
+        **_voucher_response_from_kss(
+            result=kss,
+            rem=rem,
+            method=method,
+            pay_bank_key=pay_bank_key,
+        ),
+        "is_refund": True,
+        "proof_required": needs_proof,
+        "workflow_status": "ใบสำคัญจ่าย",
+        "remaining_refund": 0.0,
+    }
+
+
 @router.post("/api/vouchers")
 def api_create_voucher(request: Request, body: VoucherCreate):
-    """Record receipt voucher: discount from overlay; operator enters CHKNO/CHKAMT.
+    """Record receipt voucher or customer credit refund.
 
-    Cash settle routes through Tiger first (BN/BNN as ref). KSS voucher is written
-    only after Tiger confirms success.
+    Positive net → รับชำระ (cash via Tiger payment). Negative net → คืนเงินลูกค้า
+    (cash via Tiger voucher / KCN pattern). KSS PVN only after real payout confirm.
     """
     ident, err = _require_api(request)
     if err:
@@ -1222,13 +1313,6 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         chkamt = float(body.chkamt)
     except (TypeError, ValueError):
         return JSONResponse({"error": "CHKAMT required"}, status_code=400)
-    if chkamt <= 0 and net > 1e-9:
-        return JSONResponse({"error": "CHKAMT must be > 0"}, status_code=400)
-    if chkamt - net > 0.01:
-        return JSONResponse(
-            {"error": f"CHKAMT ({chkamt}) exceeds net payable ({net})"},
-            status_code=400,
-        )
 
     pay_bank_key = (
         (body.pay_bank or "").strip()
@@ -1243,6 +1327,54 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         return JSONResponse({"error": str(exc)}, status_code=502)
     if not bills:
         return JSONResponse({"error": "no bills on note"}, status_code=400)
+
+    acctname = str(header.get("acctname") or header.get("ACCTNAME") or "").strip()
+    operator = ident.display_name if ident else None
+
+    # ---- Customer credit refund (negative BN/BNN) ----
+    if net < -1e-9:
+        refund_amt = abs(float(chkamt))
+        if refund_amt <= 0:
+            return JSONResponse({"error": "refund amount must be > 0"}, status_code=400)
+        try:
+            started = start_note_refund(
+                acctno=acct,
+                acctname=acctname,
+                noteno=note,
+                bills=bills,
+                refund_amt=refund_amt,
+                note_net=net,
+                settle_method=method,
+                chkno=chkno,
+                chkdate=chkdate,
+                receive_bank_key=pay_bank_key,
+                discount=disc,
+                operator=operator,
+                settings=settings,
+            )
+        except ReceiveServiceError as exc:
+            status = 409 if exc.code in (
+                "already_paid",
+                "tiger_busy",
+                "active_attempt",
+                "already_completed",
+            ) else 400
+            if exc.code == "write_disabled":
+                status = 403
+            return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+        return _refund_response(
+            started=started, rem=rem, method=method, pay_bank_key=pay_bank_key
+        )
+
+    # ---- Normal receive (positive / zero net) ----
+    if chkamt <= 0 and net > 1e-9:
+        return JSONResponse({"error": "CHKAMT must be > 0"}, status_code=400)
+    if chkamt - net > 0.01:
+        return JSONResponse(
+            {"error": f"CHKAMT ({chkamt}) exceeds net payable ({net})"},
+            status_code=400,
+        )
+
     bill_allocations = [
         {
             "billno": str(b.get("BILLNO") or "").strip(),
@@ -1251,9 +1383,6 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         for b in bills
         if str(b.get("BILLNO") or "").strip()
     ]
-
-    acctname = str(header.get("acctname") or header.get("ACCTNAME") or "").strip()
-    operator = ident.display_name if ident else None
 
     if method == "cash":
         try:
@@ -1341,15 +1470,23 @@ def api_create_voucher(request: Request, body: VoucherCreate):
 
 @router.get("/api/vouchers/tiger-status")
 def api_tiger_voucher_status(request: Request, receipt_id: str = ""):
-    """Poll Tiger cash attempt; writes KSS receipt only after success."""
+    """Poll Tiger cash attempt / refund voucher; writes KSS only after success."""
     ident, err = _require_api(request)
     if err:
         return err
     rid = (receipt_id or "").strip()
     if not rid:
         return JSONResponse({"error": "receipt_id required"}, status_code=400)
+
+    from src.receive_notes.db import get_receipt
+
+    client = get_receive_notes_supabase_client()
+    receipt0 = get_receipt(client, rid)
+    is_refund = bool(receipt0) and float((receipt0 or {}).get("netamt") or 0) < -1e-9
+    sync_fn = sync_tiger_refund if is_refund else sync_tiger_receipt
+
     try:
-        synced = sync_tiger_receipt(
+        synced = sync_fn(
             receipt_id=rid,
             operator=ident.display_name if ident else None,
         )
@@ -1359,23 +1496,28 @@ def api_tiger_voucher_status(request: Request, receipt_id: str = ""):
             status = 202
         return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
 
-    receipt = synced.get("receipt") or {}
+    receipt = synced.get("receipt") or receipt0 or {}
+    attempt = synced.get("tiger_attempt") or {}
     if synced.get("awaiting_tiger"):
+        tiger_no = (
+            attempt.get("voucher_num")
+            or attempt.get("tiger_payment_no")
+            or receipt.get("tiger_payment_no")
+        )
         return {
             "awaiting_tiger": True,
             "done": False,
+            "is_refund": is_refund,
             "receipt_id": rid,
             "tiger_status": synced.get("tiger_status"),
-            "tiger_attempt_id": (synced.get("tiger_attempt") or {}).get("id")
-            or receipt.get("tiger_attempt_id"),
-            "tiger_payment_no": (synced.get("tiger_attempt") or {}).get("tiger_payment_no")
-            or receipt.get("tiger_payment_no"),
+            "tiger_attempt_id": attempt.get("id") or receipt.get("tiger_attempt_id"),
+            "tiger_payment_no": tiger_no,
             "settle_method": "cash",
             "proof_required": False,
             "stage": "awaiting_tiger",
-            "workflow_status": "รอ Tiger",
+            "workflow_status": "รอ Tiger คืนเงินสด" if is_refund else "รอ Tiger",
             "receipt": receipt,
-            "tiger_attempt": synced.get("tiger_attempt"),
+            "tiger_attempt": attempt,
         }
 
     if synced.get("failed"):
@@ -1384,6 +1526,7 @@ def api_tiger_voucher_status(request: Request, receipt_id: str = ""):
                 "awaiting_tiger": False,
                 "done": False,
                 "failed": True,
+                "is_refund": is_refund,
                 "error": f"Tiger {synced.get('tiger_status') or 'failed'}",
                 "code": "tiger_failed",
                 "receipt_id": rid,
@@ -1394,8 +1537,25 @@ def api_tiger_voucher_status(request: Request, receipt_id: str = ""):
         )
 
     kss = synced.get("kss") or {}
+    if is_refund:
+        return _refund_response(
+            started={
+                "awaiting_tiger": False,
+                "kss": kss,
+                "receipt": receipt,
+                "remaining_refund": kss.get("remaining_refund"),
+                "refunded_amt": kss.get("refunded_amt"),
+            },
+            rem=get_note(
+                client,
+                str(receipt.get("acctno") or ""),
+                str(receipt.get("noteno") or ""),
+            ),
+            method="cash",
+            pay_bank_key=DEFAULT_RECEIVE_BANK_KEY,
+        )
+
     voucno = str(kss.get("voucno") or receipt.get("voucno") or "").strip()
-    client = get_receive_notes_supabase_client()
     acct = str(receipt.get("acctno") or "").strip()
     note = str(receipt.get("noteno") or "").strip()
     rem = None
