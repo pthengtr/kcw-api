@@ -699,6 +699,16 @@ function scheduleDraftSave(row){
   paintDraftStatus(row);
   draftTimers[id] = setTimeout(() => saveDraft(row), 450);
 }
+function flushPendingDrafts(){
+  if(!STAMP) return;
+  const ids = Object.keys(draftTimers);
+  for(const id of ids){
+    clearTimeout(draftTimers[id]);
+    delete draftTimers[id];
+    const row = (state.items || []).find(item => String(item.iclow_id) === id);
+    if(row) saveDraft(row);
+  }
+}
 async function saveDraft(row){
   if(!STAMP || !row || !row.iclow_id) return;
   const qty = orderQty(row);
@@ -708,6 +718,8 @@ async function saveDraft(row){
     return;
   }
   const id = String(row.iclow_id);
+  clearTimeout(draftTimers[id]);
+  delete draftTimers[id];
   const seq = (draftSeq[id] || 0) + 1;
   draftSeq[id] = seq;
   row.draft = Object.assign({}, row.draft || {}, {saving: true, saved: false, error: false});
@@ -722,6 +734,8 @@ async function saveDraft(row){
         vendor_name: row.vendor_name || "",
         ui: selectedUnit(row) || "",
       }),
+      // Survive refresh / service switch while the request is in flight.
+      keepalive: true,
     });
     const data = await res.json().catch(() => ({}));
     if(draftSeq[id] !== seq) return;
@@ -734,6 +748,10 @@ async function saveDraft(row){
     paintDraftStatus(row);
   }
 }
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "hidden") flushPendingDrafts();
+});
+window.addEventListener("pagehide", flushPendingDrafts);
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
     return `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;

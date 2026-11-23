@@ -554,6 +554,8 @@ def api_save_draft(iclow_id: int, body: DraftBody, request: Request):
         )
     except HqPoError as exc:
         return _error(exc, 400 if exc.code in ("missing", "bad_qty") else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "draft_save_failed", "message": str(exc)}, status_code=502)
 
 
 @router.post("/api/drafts/check")
