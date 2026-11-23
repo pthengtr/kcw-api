@@ -95,6 +95,12 @@ Response rules:
 - Do not invent data. Do not modify production tables unless the user explicitly asked
   for a write and it is safe/reversible.
 - Put the final answer in plain text at the end (this becomes the ticket reply).
+
+Filesystem safety (mandatory — rclone FUSE under ~/mnt hangs process trees):
+- NEVER run find/fd/locate/rg starting at /, /home, /home/hqadmin, or /home/hqadmin/mnt.
+- Scope file searches to a concrete subdirectory you need
+  (e.g. /home/hqadmin/mnt/gdrive/KCW-Data/kcw_analytics/04_outputs or ~/projects/kcw-analytic).
+- Prefer known paths and SQL over recursive filesystem crawls.
 """
 
 
@@ -130,6 +136,17 @@ def build_agent_prompt(
 
     roots = ", ".join(code_roots) if code_roots else "(use target label to locate code)"
 
+    pytest_hint = {
+        "kcw-api": (
+            "Tests: /home/hqadmin/projects/kcw-api/.venv/bin/python -m pytest "
+            "<path> -q   (worktree has no local .venv — do NOT search for pytest)."
+        ),
+        "kcw-v2": (
+            "Tests: from this worktree run  npm test  /  npx vitest  / project scripts "
+            "as documented; do NOT find binaries under /home/hqadmin."
+        ),
+    }.get(str(repo), "Use project-local test runners only; never search $HOME for binaries.")
+
     return f"""You are fixing a support ticket in repo {repo} only.
 Do not modify other repositories. Work only in this git working tree.
 
@@ -153,4 +170,10 @@ Constraints:
 - Smallest correct change; match attached design/example output when provided.
 - Leave a clear commit message describing the fix.
 - Prefer editing existing files over large refactors.
+- {pytest_hint}
+
+Filesystem safety (mandatory — rclone FUSE under ~/mnt hangs process trees):
+- NEVER run find/fd/locate starting at /, /home, /home/hqadmin, or /home/hqadmin/mnt.
+- NEVER recursively scan /home/hqadmin/mnt (gdrive/kss mounts).
+- Stay inside this worktree (+ listed attachment paths). Do not explore sibling repos.
 """
