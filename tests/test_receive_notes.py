@@ -211,6 +211,11 @@ def test_ui_exports_and_tabs():
     assert "createInFlight" in html
     assert "detEditMetaBtn" in html
     assert "dlgEditReceipt" in html
+    # Mobile proof upload: opaque overlay input (not display:none + JS click)
+    assert 'id="dropProofWrap"' in html
+    assert 'class="drop-file-input"' in html
+    assert 'id="detProofFiles" class="hidden"' not in html
+    assert "แตะหรือคลิกเพื่อเลือกไฟล์" in html
     # Negative BN/BNN → refund labels (same dialog / tabs, no new tab)
     assert "บันทึกและคืนเงินลูกค้า" in html
     assert "syncCreatePayButton" in html
