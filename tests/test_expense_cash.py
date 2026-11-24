@@ -3,8 +3,11 @@ from __future__ import annotations
 from src.access.config import COMMAND_PERMISSIONS
 from src.access.helper import can_execute
 from src.expense_cash.approvers import (
+    CARTOON_LINE_USER_ID,
     CASH_APPROVER_GROUP,
     ICE_LINE_USER_ID,
+    JEAB_LINE_USER_ID,
+    MAY_LINE_USER_ID,
     PEUNG_LINE_USER_ID,
     PHU_LINE_USER_ID,
     is_cash_approver,
@@ -63,28 +66,22 @@ def test_expense_commands_use_cash_approver_group_not_admin_exec():
         assert not can_execute("exec", cmd)
 
 
-def test_cash_approver_roster_peung_phu_ice_only():
-    assert is_cash_approver(
-        {
-            "line_user_id": PEUNG_LINE_USER_ID,
-            "access_group": "admin",
-            "is_allowed": True,
-        }
-    )
-    assert is_cash_approver(
-        {
-            "line_user_id": PHU_LINE_USER_ID,
-            "access_group": "exec",
-            "is_allowed": True,
-        }
-    )
-    assert is_cash_approver(
-        {
-            "line_user_id": ICE_LINE_USER_ID,
-            "access_group": "exec",
-            "is_allowed": True,
-        }
-    )
+def test_cash_approver_roster_named_approvers():
+    for uid, group in (
+        (PEUNG_LINE_USER_ID, "admin"),
+        (PHU_LINE_USER_ID, "exec"),
+        (ICE_LINE_USER_ID, "exec"),
+        (MAY_LINE_USER_ID, "user"),
+        (CARTOON_LINE_USER_ID, "user"),
+        (JEAB_LINE_USER_ID, "exec"),
+    ):
+        assert is_cash_approver(
+            {
+                "line_user_id": uid,
+                "access_group": group,
+                "is_allowed": True,
+            }
+        )
     # Other admin/exec must not approve.
     assert not is_cash_approver(
         {

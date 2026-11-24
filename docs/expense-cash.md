@@ -9,7 +9,7 @@ LINE chat flow on **Railway** `POST /line-webhook` for cashbox withdrawals. Not 
 3. Row in `public.expense_cash_request` (`pending`)
 4. Cash approvers get Flex with Approve / Need info / Reject
 
-Approvers are **Peung / Phu / Ice** only (LINE id roster in `src/expense_cash/approvers.py`), plus anyone with `ops.line_access.access_group = cash_approver`. Not blanket admin/exec. On approve, the requester gets the QR and the other approvers get a peer notice.
+Approvers are **Peung / Phu / Ice / May / Cartoon / Jeab** (LINE id roster in `src/expense_cash/approvers.py`), plus anyone with `ops.line_access.access_group = cash_approver`. Not blanket admin/exec. On approve, the requester gets the QR and the other approvers get a peer notice.
 
 ## Approver (LINE)
 
