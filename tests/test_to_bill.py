@@ -93,6 +93,16 @@ def test_buyer_validation_and_branch():
     assert buyer.branch_label == "สาขาที่ 2"
     assert validate_buyer(buyer) is None
     assert validate_buyer(parse_buyer({"customer_name": "A", "address": "B", "tax_id": "123"}))
+    padded = parse_buyer(
+        {
+            "customer_name": "บริษัท ทดสอบ จำกัด",
+            "address": "1 ถนนทดสอบ",
+            "tax_id": "1234567890123",
+            "branch_label": "สาขาที่",
+            "branch_no": "00001",
+        }
+    )
+    assert padded.branch_label == "สาขาที่ 00001"
 
 
 def test_armas_prefill_skips_marketplace():
