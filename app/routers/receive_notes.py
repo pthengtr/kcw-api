@@ -533,27 +533,44 @@ def _note_detail_response(settings, acctno: str, noteno: str):
         }
     )
     done = _proof_done(voucno=voucno, has_proof=bool(proofs), settle_method=settle)
-    receipt = get_receipt_by_voucno(client, voucno) if voucno else None
-    edit_gate = (
-        assess_receive_edit_gate(header=header, payments=payments)
-        if voucno
-        else {"needs_accounting_review": False, "reasons": []}
-    )
-    edit_history = list_receipt_edit_audits(client, voucno=voucno) if voucno else []
-    pay0 = payments[0] if payments else {}
-    channels = list((receipt or {}).get("receipt_channel") or [])
-    channel0 = channels[0] if channels else {}
-    pay_bank_key = (
-        str(channel0.get("receive_bank_key") or "").strip()
-        or receive_bank_key_from_gl(pay0.get("ACCTNO") or channel0.get("bank_gl"))
-        or receive_bank_key_from_bankname(pay0.get("BANKNAME") or channel0.get("bankname"))
-    )
-    received_at = (
-        str(channel0.get("chkdate") or "").strip()[:10]
-        or str((receipt or {}).get("received_at") or "").strip()[:10]
-        or str(pay0.get("CHKDATE") or "").strip()[:10]
-        or str(header.get("VOUCDATE") or "").strip()[:10]
-    )
+    # Meta-edit enrichment must never 500 the detail/"ดู" view.
+    receipt = None
+    edit_history: list[dict[str, Any]] = []
+    edit_gate = {"needs_accounting_review": False, "reasons": []}
+    pay_bank_key = ""
+    received_at = str(header.get("VOUCDATE") or "").strip()[:10]
+    if voucno:
+        try:
+            edit_gate = assess_receive_edit_gate(header=header, payments=payments)
+        except Exception:
+            edit_gate = {"needs_accounting_review": False, "reasons": []}
+        try:
+            receipt = get_receipt_by_voucno(client, voucno)
+        except Exception:
+            receipt = None
+        try:
+            edit_history = list_receipt_edit_audits(client, voucno=voucno)
+        except Exception:
+            edit_history = []
+        pay0 = payments[0] if payments else {}
+        channels = list((receipt or {}).get("receipt_channel") or [])
+        channel0 = channels[0] if isinstance(channels, list) and channels else {}
+        if not isinstance(channel0, dict):
+            channel0 = {}
+        pay_bank_key = (
+            str(channel0.get("receive_bank_key") or "").strip()
+            or receive_bank_key_from_gl(pay0.get("ACCTNO") or channel0.get("bank_gl"))
+            or receive_bank_key_from_bankname(
+                pay0.get("BANKNAME") or channel0.get("bankname")
+            )
+            or ""
+        )
+        received_at = (
+            str(channel0.get("chkdate") or "").strip()[:10]
+            or str((receipt or {}).get("received_at") or "").strip()[:10]
+            or str(pay0.get("CHKDATE") or "").strip()[:10]
+            or received_at
+        )
     return {
         "header": header,
         "bills": bills,
@@ -1361,6 +1378,8 @@ def api_edit_voucher_meta(request: Request, body: VoucherMetaEdit):
             status = 409
         elif exc.code == "write_disabled":
             status = 403
+        elif exc.code == "audit_unavailable":
+            status = 503
         payload: dict[str, Any] = {"error": str(exc), "code": exc.code}
         if exc.code == "needs_accounting_review":
             try:

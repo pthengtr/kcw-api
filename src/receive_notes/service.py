@@ -1526,20 +1526,27 @@ def edit_vouchered_receive_meta(
         except Exception:
             pass
 
-    audit = insert_receipt_edit_audit(
-        client,
-        {
-            "receipt_id": (overlay or {}).get("id"),
-            "acctno": acct,
-            "noteno": note,
-            "voucno": voucno,
-            "edited_by": operator,
-            "accounting_reviewed": bool(accounting_reviewed),
-            "gate_reasons": gate["reasons"],
-            "old_values": old_snap,
-            "new_values": new_snap,
-        },
-    )
+    try:
+        audit = insert_receipt_edit_audit(
+            client,
+            {
+                "receipt_id": (overlay or {}).get("id"),
+                "acctno": acct,
+                "noteno": note,
+                "voucno": voucno,
+                "edited_by": operator,
+                "accounting_reviewed": bool(accounting_reviewed),
+                "gate_reasons": gate["reasons"],
+                "old_values": old_snap,
+                "new_values": new_snap,
+            },
+        )
+    except Exception as exc:
+        raise ReceiveServiceError(
+            "receipt edit audit unavailable "
+            "(apply receive_note.receipt_edit_audit migration / reload PostgREST)",
+            code="audit_unavailable",
+        ) from exc
     history = list_receipt_edit_audits(client, voucno=voucno, limit=20)
     return {
         "unchanged": False,
