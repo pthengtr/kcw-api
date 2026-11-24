@@ -332,6 +332,12 @@ label.lbl { display:block; font-size:.78rem; color:var(--muted); margin:0 0 .25r
   background:var(--inset); color:var(--muted); cursor:pointer;
 }
 .drop.drag { border-color:var(--acc); background:var(--acc-soft); color:var(--acc); }
+/* Full-size overlay input: mobile browsers ignore programmatic click() on display:none file inputs */
+.drop-wrap { position:relative; }
+.drop-file-input {
+  position:absolute; inset:0; z-index:1; width:100%; height:100%; margin:0; padding:0;
+  opacity:0; cursor:pointer; border:0; border-radius:inherit; font-size:0;
+}
 .thumbs { display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.5rem; }
 .thumbs img { width:72px; height:72px; object-fit:cover; border-radius:.4rem; border:1px solid var(--line); }
 .thumb-item { position:relative; display:inline-flex; }
@@ -1202,13 +1208,15 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <h3 style="margin:1rem 0 .4rem;font-size:.95rem">หลักฐานรับเงิน</h3>
       <div class="thumbs" id="detProofThumbs"></div>
       <div id="detUploadWrap" class="hidden" style="margin-top:.55rem">
-        <label class="lbl" id="detUploadLabel">อัปโหลดหลักฐาน</label>
-        <div class="drop" id="dropProof" tabindex="0">
-          <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
-          <div id="detUploadHint">คลิกหรือลากไฟล์มาวางที่นี่</div>
-          <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB) · ต้องมีอย่างน้อย 1 รูป</div>
+        <label class="lbl" id="detUploadLabel" for="detProofFiles">อัปโหลดหลักฐาน</label>
+        <div class="drop-wrap" id="dropProofWrap">
+          <div class="drop" id="dropProof" tabindex="0">
+            <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
+            <div id="detUploadHint">แตะหรือคลิกเพื่อเลือกไฟล์ · หรือลากมาวาง</div>
+            <div class="date-hint">รองรับไฟล์ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB) · ต้องมีอย่างน้อย 1 รูป</div>
+          </div>
+          <input id="detProofFiles" class="drop-file-input" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple aria-label="อัปโหลดหลักฐาน"/>
         </div>
-        <input id="detProofFiles" class="hidden" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple/>
         <div id="detProofVerify" class="ai-panel hidden" style="margin-top:.55rem"></div>
         <div id="proofMismatchAckWrap" class="ai-panel ai-warn hidden" style="margin-top:.55rem">
           <label class="ai-warn">
@@ -2385,7 +2393,7 @@ async function openDetailByKey(key, opts) {
   if ($('detUploadHint')) {
     $('detUploadHint').textContent = isDoneVoucher
       ? 'อัปโหลดรูปใหม่เพื่อเพิ่ม/แทนที่ · ลบได้แต่ต้องเหลืออย่างน้อย 1 รูป'
-      : 'คลิกหรือลากไฟล์มาวางที่นี่';
+      : 'แตะหรือคลิกเพื่อเลือกไฟล์ · หรือลากมาวาง';
   }
   $('detBills').innerHTML = '<p class="muted">กำลังโหลดบิลซื้อ…</p>';
   $('detBillSum').innerHTML = '';
@@ -2630,13 +2638,18 @@ $('detCancelNoteBtn')?.addEventListener('click', () => {
 });
 function wireDropZone(dropEl, inputEl, onFiles) {
   if (!dropEl || !inputEl) return;
-  dropEl.onclick = () => inputEl.click();
+  // Overlay .drop-file-input receives taps natively (works on mobile). Fallback click for older markup.
+  const overlay = inputEl.classList.contains('drop-file-input');
+  if (!overlay) {
+    dropEl.onclick = () => inputEl.click();
+  }
   dropEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputEl.click(); }
   });
-  dropEl.addEventListener('dragover', (e) => { e.preventDefault(); dropEl.classList.add('drag'); });
-  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
-  dropEl.addEventListener('drop', async (e) => {
+  const dragTarget = inputEl.closest('.drop-wrap') || dropEl;
+  dragTarget.addEventListener('dragover', (e) => { e.preventDefault(); dropEl.classList.add('drag'); });
+  dragTarget.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+  dragTarget.addEventListener('drop', async (e) => {
     e.preventDefault(); dropEl.classList.remove('drag');
     await onFiles(e.dataTransfer.files);
   });
