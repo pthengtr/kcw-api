@@ -165,6 +165,8 @@ def lookup_product(code: str) -> dict[str, Any]:
         "qtyoh2": float(hit.get("hq_qtyoh2") or 0),
         "location": hit.get("location_hq") or hit.get("location") or "",
         "location1": hit.get("location1") or hit.get("location_hq") or "",
+        "brand": hit.get("brand") or "",
+        "model": hit.get("model") or "",
         "pcode": hit.get("pcode") or "",
         "mcode": hit.get("mcode") or "",
         "price1": 0,
