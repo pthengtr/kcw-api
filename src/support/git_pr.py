@@ -95,6 +95,8 @@ def prepare_worktree(ticket_id: str, target_source: str) -> tuple[Path, str]:
         ],
         cwd=main_repo,
     )
+    # Before the sandboxed agent runs (it drops toolchain under .tools/).
+    _ensure_worktree_excludes(worktree)
     return worktree, branch
 
 
@@ -112,14 +114,113 @@ def remove_worktree(ticket_id: str, target_source: str) -> None:
             shutil.rmtree(worktree, ignore_errors=True)
 
 
+# Sandbox / local junk the agent must never push (esp. Cursor --sandbox .tools/).
+_NEVER_COMMIT_PATHSPECS = (
+    ".tools",
+    ".tools/**",
+    ".venv",
+    ".venv/**",
+    "node_modules",
+    "node_modules/**",
+)
+# GitHub hard limit is 100 MiB; fail early with margin.
+_MAX_PUSH_FILE_BYTES = 95 * 1024 * 1024
+
+
 def has_changes(cwd: Path) -> bool:
+    """True if the worktree has any tracked/untracked changes git can see."""
     staged = _run(["git", "status", "--porcelain"], cwd=cwd)
     return bool(staged.stdout.strip())
 
 
+def _has_staged_changes(cwd: Path) -> bool:
+    proc = _run(["git", "diff", "--cached", "--quiet"], cwd=cwd, check=False)
+    # exit 1 => differences exist; 0 => clean index vs HEAD
+    return proc.returncode == 1
+
+
+def _git_dir(cwd: Path) -> Path:
+    out = _run(["git", "rev-parse", "--git-dir"], cwd=cwd)
+    p = Path(out.stdout.strip())
+    return p if p.is_absolute() else (cwd / p).resolve()
+
+
+def _ensure_worktree_excludes(cwd: Path) -> None:
+    """Append never-commit paths to this worktree's info/exclude (local only)."""
+    exclude = _git_dir(cwd) / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    lines = existing.splitlines()
+    to_add = [
+        p
+        for p in (".tools/", ".venv/", "node_modules/")
+        if p not in lines and f"/{p}" not in lines
+    ]
+    if not to_add:
+        return
+    with exclude.open("a", encoding="utf-8") as fh:
+        if existing and not existing.endswith("\n"):
+            fh.write("\n")
+        fh.write("# support-worker: never commit sandbox / local toolchains\n")
+        for p in to_add:
+            fh.write(f"{p}\n")
+
+
+def _unstage_never_commit(cwd: Path) -> None:
+    _run(
+        ["git", "reset", "-q", "--", *_NEVER_COMMIT_PATHSPECS],
+        cwd=cwd,
+        check=False,
+    )
+
+
+def _staged_oversized_files(cwd: Path) -> list[tuple[str, int]]:
+    """Return (path, size) for staged files over the push limit."""
+    listed = _run(
+        ["git", "diff", "--cached", "--name-only", "-z"],
+        cwd=cwd,
+        check=False,
+    )
+    names = [n for n in (listed.stdout or "").split("\0") if n]
+    oversized: list[tuple[str, int]] = []
+    for name in names:
+        # Prefer blob size from index (handles deletes / renames safely).
+        size_proc = _run(
+            ["git", "cat-file", "-s", f":{name}"],
+            cwd=cwd,
+            check=False,
+        )
+        if size_proc.returncode != 0:
+            continue
+        try:
+            size = int((size_proc.stdout or "").strip())
+        except ValueError:
+            continue
+        if size > _MAX_PUSH_FILE_BYTES:
+            oversized.append((name, size))
+    return oversized
+
+
 def commit_all(cwd: Path, message: str) -> None:
+    """Stage and commit ticket changes, never sandbox toolchains or huge blobs."""
+    _ensure_worktree_excludes(cwd)
     _run(["git", "add", "-A"], cwd=cwd)
-    if not has_changes(cwd):
+    _unstage_never_commit(cwd)
+
+    oversized = _staged_oversized_files(cwd)
+    if oversized:
+        detail = ", ".join(
+            f"{path} ({size / (1024 * 1024):.1f} MB)" for path, size in oversized
+        )
+        for path, _size in oversized:
+            _run(["git", "reset", "-q", "--", path], cwd=cwd, check=False)
+        raise RuntimeError(
+            "Refusing to commit file(s) over GitHub's size limit "
+            f"(>{_MAX_PUSH_FILE_BYTES // (1024 * 1024)} MB): {detail}. "
+            "Unstaged them; fix the agent output and retry."
+        )
+
+    if not _has_staged_changes(cwd):
         return
     _run(["git", "commit", "-m", message], cwd=cwd)
 

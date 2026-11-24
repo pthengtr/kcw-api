@@ -8,5 +8,8 @@ env/
 logs/
 *.log
 
+# Cursor agent sandbox toolchain (downloaded into worktrees; never commit)
+.tools/
+
 # Local stock-check runtime DB
 .stock_check/
