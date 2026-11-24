@@ -64,7 +64,8 @@ def normalize_branch(label: str | None, branch_no: str | None = None) -> str:
         n = int(number)
         if n < 1 or n > 99999:
             raise ValueError("branch")
-        return f"สาขาที่ {n}"
+        # Keep leading zeros as entered (e.g. 00001), not int-stripped "1".
+        return f"สาขาที่ {number}"
     return "สำนักงานใหญ่"
 
 
