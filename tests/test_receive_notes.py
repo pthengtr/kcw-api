@@ -565,3 +565,23 @@ def test_voucher_meta_edit_model_fields():
     )
     assert body.acctno == "C001"
     assert body.accounting_reviewed is True
+
+
+def test_get_receipt_by_voucno_uses_limit_not_maybe_single():
+    import inspect
+
+    from src.receive_notes import db as rn_db
+
+    src = inspect.getsource(rn_db.get_receipt_by_voucno)
+    assert ".maybe_single(" not in src
+    assert ".limit(1)" in src
+
+
+def test_list_receipt_edit_audits_soft_fails(monkeypatch):
+    from src.receive_notes import db as rn_db
+
+    class Boom:
+        def schema(self, *_a, **_k):
+            raise RuntimeError("PGRST205 schema cache")
+
+    assert rn_db.list_receipt_edit_audits(Boom(), voucno="RV6911-001") == []

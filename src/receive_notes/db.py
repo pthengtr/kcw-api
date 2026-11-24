@@ -187,16 +187,24 @@ def get_receipt(client: Client, receipt_id: str) -> dict[str, Any] | None:
 
 
 def get_receipt_by_voucno(client: Client, voucno: str) -> dict[str, Any] | None:
+    """Latest overlay receipt for a KSS voucher number.
+
+    Uses limit(1) instead of maybe_single so duplicate overlay rows (retries /
+    re-voucher attempts) do not 406 the detail view.
+    """
+    vno = (voucno or "").strip()
+    if not vno:
+        return None
     resp = (
         _table(client, "receipt")
         .select("*, receipt_bill(*), receipt_channel(*)")
-        .eq("voucno", voucno.strip())
-        .maybe_single()
+        .eq("voucno", vno)
+        .order("created_at", desc=True)
+        .limit(1)
         .execute()
     )
-    if not resp or not resp.data:
-        return None
-    return dict(resp.data)
+    rows = list(resp.data or [])
+    return dict(rows[0]) if rows else None
 
 
 def get_pending_tiger_receipt_for_note(
@@ -391,15 +399,20 @@ def insert_receipt_edit_audit(client: Client, row: dict[str, Any]) -> dict[str, 
 def list_receipt_edit_audits(
     client: Client, *, voucno: str, limit: int = 50
 ) -> list[dict[str, Any]]:
+    """History for a voucher. Returns [] if the audit table is missing/unavailable."""
     vno = (voucno or "").strip()
     if not vno:
         return []
-    resp = (
-        _table(client, "receipt_edit_audit")
-        .select("*")
-        .eq("voucno", vno)
-        .order("edited_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
+    try:
+        resp = (
+            _table(client, "receipt_edit_audit")
+            .select("*")
+            .eq("voucno", vno)
+            .order("edited_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+    except Exception:
+        # Table not migrated / PostgREST schema cache stale must not 500 "ดู".
+        return []
     return list(resp.data or [])
