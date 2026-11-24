@@ -77,7 +77,10 @@ def rejected_text(*, short_code: int, admin_note: str) -> str:
 
 
 def approve_ok(*, short_code: int) -> str:
-    return f"อนุมัติ #{short_code} แล้วครับ ส่ง QR ให้ผู้ขอแล้ว ✅"
+    return (
+        f"อนุมัติ #{short_code} เรียบร้อยแล้วนะ 😊\n"
+        "จ๋าส่ง QR ให้คนขอเบิกแล้ว ✅"
+    )
 
 
 def approved_peer_notice(
