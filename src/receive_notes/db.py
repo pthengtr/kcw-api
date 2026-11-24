@@ -368,3 +368,38 @@ def daily_channel_totals(client: Client, received_at: str) -> dict[str, Any]:
         totals["transfer"] = round(totals["transfer"] + float(row.get("transfer_amt") or 0), 2)
         totals["cheque"] = round(totals["cheque"] + float(row.get("cheque_amt") or 0), 2)
     return totals
+
+
+def patch_receipt_channel(
+    client: Client, channel_id: str, patch: dict[str, Any]
+) -> dict[str, Any]:
+    resp = (
+        _table(client, "receipt_channel")
+        .update(patch)
+        .eq("id", channel_id)
+        .select("*")
+        .execute()
+    )
+    return _first_row(resp)
+
+
+def insert_receipt_edit_audit(client: Client, row: dict[str, Any]) -> dict[str, Any]:
+    resp = _table(client, "receipt_edit_audit").insert(row).select("*").execute()
+    return _first_row(resp)
+
+
+def list_receipt_edit_audits(
+    client: Client, *, voucno: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    vno = (voucno or "").strip()
+    if not vno:
+        return []
+    resp = (
+        _table(client, "receipt_edit_audit")
+        .select("*")
+        .eq("voucno", vno)
+        .order("edited_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return list(resp.data or [])

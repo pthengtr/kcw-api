@@ -1187,6 +1187,15 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <label class="lbl" id="detPayMethodLabel">บัญชีสำหรับรับชำระ</label>
       <div id="detPayMethodView">—</div>
     </div>
+    <div id="detReceiveMetaWrap" class="hidden" style="margin-top:.65rem">
+      <div class="date-hint" id="detIssueDateLine"></div>
+      <div style="margin-top:.35rem"><span class="lbl">วันที่รับชำระ</span> <span id="detReceivedAtView">—</span></div>
+      <div style="margin-top:.25rem"><span class="lbl">บัญชีที่รับเงิน</span> <span id="detPayBankView">—</span></div>
+    </div>
+    <div id="detEditHistoryWrap" class="hidden" style="margin-top:.75rem">
+      <h3 style="margin:0 0 .35rem;font-size:.9rem">ประวัติการแก้ไข</h3>
+      <div id="detEditHistory" class="muted" style="font-size:.82rem"></div>
+    </div>
     <div id="detBills"></div>
     <div id="detBillSum"></div>
     <div id="detProofWrap" class="hidden">
@@ -1214,8 +1223,43 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   <div class="dlg-foot">
     <button type="button" class="btn ghost" id="btnCloseDetail2">ปิด</button>
     <button type="button" class="btn danger hidden" id="detCancelNoteBtn">ยกเลิกใบวางบิล</button>
+    <button type="button" class="btn outline hidden" id="detEditMetaBtn">แก้ไข</button>
     <button type="button" class="btn outline" id="btnPrintDetail">พิมพ์</button>
     <button type="button" class="btn primary hidden" id="detPayBtn">รับชำระ</button>
+  </div>
+</dialog>
+
+<dialog id="dlgEditReceipt" class="dlg">
+  <div class="dlg-head">
+    <h2 id="editRcptTitle">แก้ไขข้อมูลรับชำระ</h2>
+    <button type="button" class="dlg-x" id="btnCloseEditRcpt" aria-label="ปิด">×</button>
+  </div>
+  <div class="dlg-body">
+    <p class="date-hint" id="editRcptHint">แก้ไขได้เฉพาะวันที่รับชำระ · หมายเหตุ · บัญชีธนาคาร · ไม่เปลี่ยนยอดเงิน วิธีชำระ หรือวันที่ออกใบเสร็จ</p>
+    <div style="margin-top:.55rem">
+      <label class="lbl" for="editRcptReceivedAt">วันที่รับชำระ</label>
+      <input class="inp date-ce" id="editRcptReceivedAt" type="date" lang="en" inputmode="none"/>
+    </div>
+    <div style="margin-top:.55rem">
+      <label class="lbl" for="editRcptRemark">หมายเหตุ</label>
+      <textarea class="area" id="editRcptRemark" maxlength="500" rows="3" placeholder="หมายเหตุ"></textarea>
+    </div>
+    <div id="editRcptBankWrap" style="margin-top:.55rem">
+      <label class="lbl" for="editRcptBank">บัญชีธนาคารที่รับเงิน</label>
+      <select class="inp" id="editRcptBank"></select>
+    </div>
+    <div id="editRcptGateWrap" class="ai-panel ai-warn hidden" style="margin-top:.75rem">
+      <p id="editRcptGateMsg" style="margin:0 0 .45rem">รายการนี้กระทบยอดธนาคารหรือปิดงวดบัญชีแล้ว · ต้องให้บัญชีตรวจสอบก่อนแก้ไข</p>
+      <label>
+        <input type="checkbox" id="editRcptAcctAck"/>
+        บัญชีตรวจสอบและอนุมัติให้แก้ไขแล้ว
+      </label>
+    </div>
+    <div id="editRcptMsg" style="margin-top:.55rem"></div>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="btn ghost" id="btnCancelEditRcpt">ยกเลิก</button>
+    <button type="button" class="btn primary" id="btnSaveEditRcpt">บันทึกการแก้ไข</button>
   </div>
 </dialog>
 
@@ -1549,7 +1593,7 @@ function showEditPanel(on) {
 }
 
 function closeDialogs() {
-  ['dlgDetail', 'dlgPay'].forEach((id) => {
+  ['dlgDetail', 'dlgPay', 'dlgEditReceipt'].forEach((id) => {
     const el = $(id);
     if (el && typeof el.close === 'function' && el.open) el.close();
   });
@@ -2322,6 +2366,9 @@ async function openDetailByKey(key, opts) {
   if ($('detPayBtn')) $('detPayBtn').textContent = refundRow ? 'คืนเงิน' : 'รับชำระ';
   $('detPayBtn').classList.toggle('hidden', !(opts.canPay && canEditDue && WRITE_ENABLED));
   $('detCancelNoteBtn')?.classList.toggle('hidden', !(canEditDue && WRITE_ENABLED));
+  $('detEditMetaBtn')?.classList.add('hidden');
+  $('detReceiveMetaWrap')?.classList.add('hidden');
+  $('detEditHistoryWrap')?.classList.add('hidden');
   // Cash / RVI skip proof tab (stage already voucher even without images).
   const skipProof = row.proof_required === false;
   const hasProofImgs = !!(row.payment_images || []).length;
@@ -2403,12 +2450,170 @@ async function openDetailByKey(key, opts) {
     if (det.payment_images) {
       $('detProofThumbs').innerHTML = thumbsHtml(det.payment_images, {canDelete: canUpload});
     }
+    renderDetReceiveMeta(det, row);
     fillPrintSheet(det, row);
     if (opts.print) printDetail();
   } catch (e) {
     $('detBills').innerHTML = `<p class="err">${esc(e.message)}</p>`;
   }
 }
+function renderDetReceiveMeta(det, row) {
+  const voucno = String((row && row.voucno) || (det && det.header && det.header.voucno) || '').trim();
+  const canceled = !!(det && det.canceled) || isCanceledRow(row);
+  const wrap = $('detReceiveMetaWrap');
+  const histWrap = $('detEditHistoryWrap');
+  const editBtn = $('detEditMetaBtn');
+  if (!voucno || canceled) {
+    wrap?.classList.add('hidden');
+    histWrap?.classList.add('hidden');
+    editBtn?.classList.add('hidden');
+    return;
+  }
+  wrap?.classList.remove('hidden');
+  const issue = String((det && det.issue_date) || (det && det.header && det.header.VOUCDATE) || row.VOUCDATE || '').slice(0, 10);
+  const recv = String((det && det.received_at) || '').slice(0, 10) || issue;
+  if ($('detIssueDateLine')) {
+    $('detIssueDateLine').textContent = issue
+      ? `วันที่ออกใบเสร็จ ${fmtDate(issue)} (แก้ไม่ได้)`
+      : '';
+  }
+  if ($('detReceivedAtView')) $('detReceivedAtView').textContent = fmtDate(recv) || '—';
+  const bankKey = (det && det.pay_bank_key) || '';
+  const bankLbl = receiveBankLabel(bankKey)
+    || ((det.payments || [])[0] && formatBankDisplay((det.payments || [])[0].BANKNAME))
+    || '—';
+  if ($('detPayBankView')) $('detPayBankView').textContent = bankLbl || '—';
+  const canEdit = WRITE_ENABLED && det.can_edit_meta !== false;
+  editBtn?.classList.toggle('hidden', !canEdit);
+
+  const history = (det && det.edit_history) || [];
+  if (histWrap && $('detEditHistory')) {
+    if (!history.length) {
+      histWrap.classList.add('hidden');
+      $('detEditHistory').innerHTML = '';
+    } else {
+      histWrap.classList.remove('hidden');
+      $('detEditHistory').innerHTML = history.slice(0, 8).map((h) => {
+        const when = String(h.edited_at || '').replace('T', ' ').slice(0, 19);
+        const who = esc(h.edited_by || '—');
+        const oldV = h.old_values || {};
+        const newV = h.new_values || {};
+        const bits = [];
+        if (oldV.received_at !== newV.received_at) {
+          bits.push(`วันที่ ${esc(oldV.received_at || '—')} → ${esc(newV.received_at || '—')}`);
+        }
+        if ((oldV.remark || '') !== (newV.remark || '')) {
+          bits.push('หมายเหตุ');
+        }
+        if ((oldV.receive_bank_key || '') !== (newV.receive_bank_key || '')) {
+          bits.push(`บัญชี ${esc(receiveBankLabel(oldV.receive_bank_key) || oldV.receive_bank_key || '—')} → ${esc(receiveBankLabel(newV.receive_bank_key) || newV.receive_bank_key || '—')}`);
+        }
+        return `<div style="margin:.2rem 0">${esc(when)} · ${who}${h.accounting_reviewed ? ' · บัญชีอนุมัติ' : ''}${bits.length ? ' · ' + bits.join(' · ') : ''}</div>`;
+      }).join('');
+    }
+  }
+}
+async function openEditReceiptMeta() {
+  if (!detailRow || !detailPayload || !WRITE_ENABLED) return;
+  if (!detailRow.voucno && !(detailPayload.header || {}).voucno) return;
+  const det = detailPayload;
+  const settle = String(det.settle_method || noteSettleMethod(detailRow) || '').toLowerCase();
+  const refund = isRefundNote(detailRow);
+  $('editRcptTitle').textContent = refund ? 'แก้ไขข้อมูลคืนเงิน' : 'แก้ไขข้อมูลรับชำระ';
+  $('editRcptHint').textContent = refund
+    ? 'แก้ไขได้เฉพาะวันที่คืนเงิน · หมายเหตุ · บัญชี · ไม่เปลี่ยนยอดเงิน วิธีชำระ หรือวันที่ออกใบสำคัญ'
+    : 'แก้ไขได้เฉพาะวันที่รับชำระ · หมายเหตุ · บัญชีธนาคาร · ไม่เปลี่ยนยอดเงิน วิธีชำระ หรือวันที่ออกใบเสร็จ';
+  if ($('editRcptReceivedAt')) {
+    $('editRcptReceivedAt').value = String(det.received_at || todayISO()).slice(0, 10);
+  }
+  if ($('editRcptRemark')) {
+    $('editRcptRemark').value = String((det.reminder || {}).remark || '').trim();
+  }
+  const bankWrap = $('editRcptBankWrap');
+  const bankSel = $('editRcptBank');
+  if (settle === 'cash') {
+    bankWrap?.classList.add('hidden');
+  } else {
+    bankWrap?.classList.remove('hidden');
+    if (bankSel) {
+      const accounts = (typeof COMPANY_PAY_ACCOUNTS !== 'undefined' ? COMPANY_PAY_ACCOUNTS : []) || [];
+      bankSel.innerHTML = accounts.map(a =>
+        `<option value="${esc(a.key)}">${esc(a.label || a.bank_name || a.key)}</option>`
+      ).join('');
+      bankSel.value = det.pay_bank_key || (accounts[0] && accounts[0].key) || '';
+    }
+  }
+  const gate = det.edit_gate || {};
+  const needsGate = !!gate.needs_accounting_review;
+  $('editRcptGateWrap')?.classList.toggle('hidden', !needsGate);
+  if ($('editRcptAcctAck')) $('editRcptAcctAck').checked = false;
+  if ($('editRcptGateMsg') && needsGate) {
+    const reasons = (gate.reasons || []).map(r =>
+      r === 'bank_reconciled' ? 'กระทบยอดธนาคารแล้ว'
+        : (r === 'period_closed' ? 'ปิดงวดบัญชีแล้ว' : r)
+    ).join(' · ');
+    $('editRcptGateMsg').textContent = reasons
+      ? `รายการนี้${reasons} · ต้องให้บัญชีตรวจสอบก่อนแก้ไข`
+      : 'รายการนี้กระทบยอดธนาคารหรือปิดงวดบัญชีแล้ว · ต้องให้บัญชีตรวจสอบก่อนแก้ไข';
+  }
+  if ($('editRcptMsg')) $('editRcptMsg').innerHTML = '';
+  const dlg = $('dlgEditReceipt');
+  if (dlg && !dlg.open) dlg.showModal();
+}
+async function saveEditReceiptMeta() {
+  if (!detailRow || !WRITE_ENABLED) return;
+  const gate = (detailPayload && detailPayload.edit_gate) || {};
+  if (gate.needs_accounting_review && !($('editRcptAcctAck') && $('editRcptAcctAck').checked)) {
+    alert('ต้องให้บัญชีตรวจสอบและติ๊กยืนยันก่อนแก้ไข');
+    return;
+  }
+  const settle = String((detailPayload && detailPayload.settle_method) || noteSettleMethod(detailRow) || '').toLowerCase();
+  const body = {
+    acctno: detailRow.acctno,
+    noteno: detailRow.noteno,
+    received_at: ($('editRcptReceivedAt') && $('editRcptReceivedAt').value) || null,
+    remark: ($('editRcptRemark') && $('editRcptRemark').value) || '',
+    accounting_reviewed: !!(gate.needs_accounting_review && $('editRcptAcctAck') && $('editRcptAcctAck').checked),
+  };
+  if (settle !== 'cash' && $('editRcptBank')) {
+    body.receive_bank_key = $('editRcptBank').value.trim();
+  }
+  if ($('editRcptMsg')) $('editRcptMsg').innerHTML = '<span class="muted">กำลังบันทึก…</span>';
+  $('btnSaveEditRcpt').disabled = true;
+  try {
+    const r = await fetch('/receive-notes/api/vouchers/meta', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (j.code === 'needs_accounting_review') {
+        $('editRcptGateWrap')?.classList.remove('hidden');
+        if (j.edit_gate) detailPayload.edit_gate = j.edit_gate;
+      }
+      throw new Error(j.error || j.detail || 'บันทึกไม่สำเร็จ');
+    }
+    try { $('dlgEditReceipt').close(); } catch (_) {}
+    await loadAwaitProof();
+    await loadVouchers();
+    const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow))
+      || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow))
+      || detailRow;
+    openDetailByKey(keyOf(fresh), {voucher: true, canUpload: true});
+  } catch (e) {
+    if ($('editRcptMsg')) $('editRcptMsg').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    $('btnSaveEditRcpt').disabled = false;
+  }
+}
+$('detEditMetaBtn')?.addEventListener('click', () => openEditReceiptMeta());
+$('btnCloseEditRcpt')?.addEventListener('click', () => { try { $('dlgEditReceipt').close(); } catch (_) {} });
+$('btnCancelEditRcpt')?.addEventListener('click', () => { try { $('dlgEditReceipt').close(); } catch (_) {} });
+$('btnSaveEditRcpt')?.addEventListener('click', () => saveEditReceiptMeta());
+$('dlgEditReceipt')?.addEventListener('click', (e) => {
+  if (e.target === $('dlgEditReceipt')) { try { $('dlgEditReceipt').close(); } catch (_) {} }
+});
 $('detPayBtn').onclick = () => {
   if (!detailRow) return;
   $('dlgDetail').close();

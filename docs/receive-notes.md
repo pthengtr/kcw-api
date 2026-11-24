@@ -15,8 +15,8 @@ Template: [`pay-notes.md`](./pay-notes.md) — same Layout / Process / Function 
 | 1. สร้าง | Create note (debtor → bills → discount → save) | yes (new) | `RVMAS` INSERT + `SIMAS` stamp; `receive_note.note` |
 | 2. รอรับชำระ | Pending board; edit note; cancel mistaken note; record receive | yes while unvouchered | unvouchered `RVMAS` + overlay |
 | 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `RVMAS`; `payment/{VOUCNO}/` images |
-| 4. ใบเสร็จรับเงิน | Complete vouchers (proof attached); issued after receive confirm | proof images only | vouchered `RVMAS` with proof |
-| 5. ค้นหาตามลูกหนี้ | Browse notes/vouchers per AR debtor | edit when รอรับชำระ | `GET /api/notes?acctno=` |
+| 4. ใบเสร็จรับเงิน | Complete vouchers (proof attached); issued after receive confirm | proof images; **แก้ไข** receive date / remark / bank | vouchered `RVMAS` + `BRDET` in place; `receive_note.receipt_edit_audit` |
+| 5. ค้นหาตามลูกหนี้ | Browse notes/vouchers per AR debtor | edit when รอรับชำระ; meta-edit when vouchered | `GET /api/notes?acctno=` |
 
 ### Tab 1 — create (differs from AP)
 
@@ -101,6 +101,13 @@ Supabase: schema `receive_note` (migrations `*_receive_note_*.sql`, including `2
 ## Tiger cash (เงินสด)
 
 On **รับชำระ** with settle method **เงินสด**, the service sends the note net to Tiger using the BN/BNN `NOTENO` as `ref_no_1`. Overlay receipt stays `awaiting_tiger` until Tiger confirms; only then does KSS get the RC/RCN/RVI voucher (proof skipped / `tiger_auto`). Each overlay receipt keeps its own `tiger_attempt_id` so retries and multi-pay do not collide. Transfer / cheque still voucher immediately and may need proof.
+
+### Post-voucher meta edit (วันที่รับชำระ / หมายเหตุ / บัญชี)
+
+- Detail **ดู** → **แก้ไข** patches `BRDET.CHKDATE` + bank (`BANKNAME`/`ACCTNO`) and overlay `received_at` / remark / `receipt_channel` **in place** (no new voucher, no Tiger touch, `VOUCDATE` unchanged).
+- `PATCH /api/vouchers/meta` — body: `acctno`, `noteno`, optional `received_at`, `remark`, `receive_bank_key`, `accounting_reviewed`.
+- If `RVMAS` is posted/done (`POSTED1`/`POSTED2`/`DONE`) or `BRDET.DONE=Y` (bank reconciled), UI requires accounting ack (`accounting_reviewed=true`) before save.
+- History: `receive_note.receipt_edit_audit` (old/new values, editor, time, gate reasons).
 
 ## Deferred (after main process test)
 

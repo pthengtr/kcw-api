@@ -209,6 +209,8 @@ def test_ui_exports_and_tabs():
     assert "btnCreateAndPay" in html
     assert "createNote({ openPayAfter: true })" in html
     assert "createInFlight" in html
+    assert "detEditMetaBtn" in html
+    assert "dlgEditReceipt" in html
     # Negative BN/BNN → refund labels (same dialog / tabs, no new tab)
     assert "บันทึกและคืนเงินลูกค้า" in html
     assert "syncCreatePayButton" in html
@@ -500,3 +502,66 @@ def test_ui_disc_exceeds_allows_negative_bill_total():
     assert "Number(bill) >= 0 && Number(disc) - Number(bill) > 1e-9" in html
     assert "discExceedsBill(resolveDiscAmount(total), total)" in html
     assert "discExceedsBill(resolveEditDiscAmount(total), total)" in html
+
+
+def test_assess_receive_edit_gate_flags_posted_and_bank_done():
+    from src.receive_notes.parts9 import assess_receive_edit_gate
+
+    open_gate = assess_receive_edit_gate(
+        header={"POSTED1": "N", "POSTED2": "N", "DONE": "N"},
+        payments=[{"DONE": "N"}],
+    )
+    assert open_gate["needs_accounting_review"] is False
+    assert open_gate["reasons"] == []
+
+    posted = assess_receive_edit_gate(
+        header={"POSTED1": "Y", "POSTED2": "N", "DONE": "N"},
+        payments=[{"DONE": "N"}],
+    )
+    assert posted["needs_accounting_review"] is True
+    assert "period_closed" in posted["reasons"]
+
+    bank = assess_receive_edit_gate(
+        header={"POSTED1": "N", "POSTED2": "N", "DONE": "N"},
+        payments=[{"DONE": "Y"}],
+    )
+    assert bank["needs_accounting_review"] is True
+    assert "bank_reconciled" in bank["reasons"]
+
+
+def test_receive_bank_key_from_gl_and_name():
+    from src.receive_notes.company_banks import (
+        receive_bank_key_from_bankname,
+        receive_bank_key_from_gl,
+    )
+
+    assert receive_bank_key_from_gl("2101.7") == "ktb_44244"
+    assert receive_bank_key_from_gl("") is None
+    assert receive_bank_key_from_bankname("กสิกร 064-8-91723-6") == "kbank_91723"
+
+
+def test_ui_has_voucher_meta_edit_controls():
+    from src.receive_notes import ui as rn_ui
+
+    html = rn_ui.page(user_name="Test", site="HQ", write_enabled=True)
+    assert 'id="detEditMetaBtn"' in html
+    assert "แก้ไขข้อมูลรับชำระ" in html
+    assert "/api/vouchers/meta" in html
+    assert "accounting_reviewed" in html
+    assert "editRcptAcctAck" in html
+    assert "ประวัติการแก้ไข" in html
+
+
+def test_voucher_meta_edit_model_fields():
+    from app.routers.receive_notes import VoucherMetaEdit
+
+    body = VoucherMetaEdit(
+        acctno="C001",
+        noteno="BN6911-001",
+        received_at="2026-11-20",
+        remark="แก้วันที่",
+        receive_bank_key="ktb_44244",
+        accounting_reviewed=True,
+    )
+    assert body.acctno == "C001"
+    assert body.accounting_reviewed is True

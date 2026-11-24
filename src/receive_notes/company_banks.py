@@ -73,6 +73,32 @@ def resolve_optional_receive_account(key: str | None) -> dict[str, str] | None:
     return dict(acct) if acct else None
 
 
+def receive_bank_key_from_gl(gl: str | None) -> str | None:
+    """Map BRDET.ACCTNO (GL) back to a company receive-bank key."""
+    needle = (gl or "").strip()
+    if not needle:
+        return None
+    for key, acct in COMPANY_RECEIVE_ACCOUNTS.items():
+        if str(acct.get("gl") or "").strip() == needle:
+            return key
+    return None
+
+
+def receive_bank_key_from_bankname(bankname: str | None) -> str | None:
+    """Best-effort match BRDET.BANKNAME to a company receive-bank key."""
+    needle = (bankname or "").strip()
+    if not needle:
+        return None
+    for key, acct in COMPANY_RECEIVE_ACCOUNTS.items():
+        if needle == str(acct.get("bank_name") or "").strip():
+            return key
+        if needle == str(acct.get("label") or "").strip():
+            return key
+        if needle in str(acct.get("bank_name") or ""):
+            return key
+    return None
+
+
 def brdet_line_from_payment(
     *,
     settle_method: str,

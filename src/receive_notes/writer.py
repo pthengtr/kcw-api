@@ -795,3 +795,109 @@ def create_receipt_voucher(
         "stamped_bills": stamped,
         "idempotent": False,
     }
+
+
+def update_voucher_receive_meta(
+    *,
+    settings: ReceiveNotesSettings,
+    voucno: str,
+    chkdate: str | None = None,
+    bankname: str | None = None,
+    bank_gl: str | None = None,
+    update_bank: bool = False,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    """Patch existing BRDET receive date / bank in place (no new voucher or Tiger touch).
+
+    Never updates VOUCDATE, CHKAMT, CHKNO, PAYTYPE, or RVMAS amounts.
+    """
+    if not settings.receive_notes_write_enabled:
+        raise ReceiveNoteWriteError("RECEIVE_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    vno = (voucno or "").strip()
+    if not vno:
+        raise ReceiveNoteWriteError("voucno required", code="validation")
+    if not chkdate and not update_bank:
+        raise ReceiveNoteWriteError("nothing to update", code="validation")
+
+    chk_dt = None
+    if chkdate is not None:
+        try:
+            chk_dt = datetime.strptime(str(chkdate).strip()[:10], "%Y-%m-%d")
+        except ValueError as exc:
+            raise ReceiveNoteWriteError("chkdate must be YYYY-MM-DD", code="validation") from exc
+
+    write_eng = engine or _writer_engine(settings)
+    try:
+        with write_eng.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1 ID, VOUCNO, VOUCDATE, POSTED1, POSTED2, DONE, CANCELED
+                    FROM dbo.RVMAS
+                    WHERE LTRIM(RTRIM(VOUCNO)) = :voucno
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"voucno": vno},
+            ).mappings().first()
+            if not header:
+                raise ReceiveNoteWriteError("voucher not found in KSS", code="not_found")
+
+            lines = conn.execute(
+                text(
+                    """
+                    SELECT ID, CHKDATE, CHKAMT, CHKNO, BANKNAME, ACCTNO, PAYTYPE, STATUS, DONE, CANCELED
+                    FROM dbo.BRDET
+                    WHERE LTRIM(RTRIM(VOUCNO)) = :voucno
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    ORDER BY CHKDATE, ID
+                    """
+                ),
+                {"voucno": vno},
+            ).mappings().all()
+            if not lines:
+                raise ReceiveNoteWriteError("no BRDET lines for voucher", code="not_found")
+
+            updated = 0
+            for line in lines:
+                sets: list[str] = []
+                params: dict[str, Any] = {"id": line["ID"]}
+                if chk_dt is not None:
+                    sets.append("CHKDATE = :chkdate")
+                    params["chkdate"] = chk_dt
+                if update_bank:
+                    # Only rewrite bank fields on instrument lines that already carry a bank/GL
+                    # (transfer). Cash lines stay empty; settle method / amounts untouched.
+                    has_bank = bool(
+                        str(line.get("BANKNAME") or "").strip()
+                        or str(line.get("ACCTNO") or "").strip()
+                    )
+                    if has_bank:
+                        sets.append("BANKNAME = :bankname")
+                        sets.append("ACCTNO = :bank_gl")
+                        params["bankname"] = (bankname or "").strip()[:60] or None
+                        params["bank_gl"] = (bank_gl or "").strip()[:10] or None
+                if not sets:
+                    continue
+                conn.execute(
+                    text(f"UPDATE dbo.BRDET SET {', '.join(sets)} WHERE ID = :id"),
+                    params,
+                )
+                updated += 1
+            if updated == 0 and update_bank and chk_dt is None:
+                raise ReceiveNoteWriteError(
+                    "no transfer BRDET line to update bank",
+                    code="not_editable",
+                )
+    except ReceiveNoteWriteError:
+        raise
+    except Exception as exc:
+        raise _map_write_exc(exc) from exc
+
+    return {
+        "voucno": vno,
+        "chkdate": chk_dt.date().isoformat() if chk_dt else None,
+        "bank_updated": bool(update_bank),
+        "voucdate_unchanged": True,
+    }

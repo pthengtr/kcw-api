@@ -246,7 +246,7 @@ def get_note_header(
           LTRIM(RTRIM(ACCTNO)) AS acctno,
           LTRIM(RTRIM(ACCTNAME)) AS acctname,
           BILLCNT, BILLAMT, DISCOUNT, NETAMT, PAYAMT,
-          CHKAMT, CASHAMT, PAID, CANCELED
+          CHKAMT, CASHAMT, PAID, CANCELED, POSTED1, POSTED2, DONE
         FROM dbo.RVMAS
         WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
           AND LTRIM(RTRIM(NOTENO)) = :noteno
@@ -284,7 +284,7 @@ def get_voucher_header(
           ID, JOURMODE, JOURTYPE, NOTED, NOTEDATE, NOTENO,
           VOUCED, VOUCDATE, VOUCNO, RCPTNO,
           ACCTNO, ACCTNAME, BILLCNT, BILLAMT, DISCOUNT, NETAMT, PAYAMT,
-          CHKAMT, CASHAMT, PAID, CANCELED
+          CHKAMT, CASHAMT, PAID, CANCELED, POSTED1, POSTED2, DONE
         FROM dbo.RVMAS
         WHERE LTRIM(RTRIM(VOUCNO)) = :voucno
           AND ISNULL(CANCELED, 'N') <> 'Y'
@@ -654,7 +654,8 @@ def list_brdet(site: str, voucno: str) -> list[dict[str, Any]]:
     eng = get_site_engine(_site_key(site))
     sql = text(
         """
-        SELECT VOUCNO, VOUCDATE, CHKNO, CHKDATE, CHKAMT, BANKNAME, ACCTNO, PAYTYPE, JOURTYPE, STATUS
+        SELECT ID, VOUCNO, VOUCDATE, CHKNO, CHKDATE, CHKAMT, BANKNAME, ACCTNO,
+               PAYTYPE, JOURTYPE, STATUS, DONE, CANCELED
         FROM dbo.BRDET
         WHERE LTRIM(RTRIM(VOUCNO)) = :voucno
           AND ISNULL(CANCELED, 'N') <> 'Y'
@@ -671,6 +672,41 @@ def list_brdet(site: str, voucno: str) -> list[dict[str, Any]]:
         item["CHKAMT"] = _to_float(item.get("CHKAMT")) if item.get("CHKAMT") is not None else None
         out.append(item)
     return out
+
+
+def assess_receive_edit_gate(
+    *,
+    header: dict[str, Any] | None,
+    payments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Detect bank-reconciled / period-closed vouchers that need accounting review before edit."""
+    reasons: list[str] = []
+    hdr = header or {}
+    if str(hdr.get("POSTED1") or "N").strip().upper() == "Y":
+        reasons.append("period_closed")
+    elif str(hdr.get("POSTED2") or "N").strip().upper() == "Y":
+        reasons.append("period_closed")
+    elif str(hdr.get("DONE") or "N").strip().upper() == "Y":
+        reasons.append("period_closed")
+
+    for pay in payments or []:
+        if str(pay.get("DONE") or "N").strip().upper() == "Y":
+            if "bank_reconciled" not in reasons:
+                reasons.append("bank_reconciled")
+            break
+
+    # De-dupe while preserving order
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for reason in reasons:
+        if reason in seen:
+            continue
+        seen.add(reason)
+        ordered.append(reason)
+    return {
+        "needs_accounting_review": bool(ordered),
+        "reasons": ordered,
+    }
 
 
 def debtor_summary(site: str, acctno: str) -> dict[str, Any]:

@@ -15,6 +15,8 @@ from src.receive_notes.company_banks import (
     DEFAULT_RECEIVE_BANK_KEY,
     brdet_line_from_payment,
     list_company_receive_accounts,
+    receive_bank_key_from_bankname,
+    receive_bank_key_from_gl,
     resolve_company_receive_account,
     resolve_optional_receive_account,
 )
@@ -23,15 +25,18 @@ from src.receive_notes.db import (
     NoteOverlayConflict,
     ensure_open_note,
     get_note,
+    get_receipt_by_voucno,
     get_receive_notes_supabase_client,
     insert_note,
     list_all_service_notes,
     list_open_notes,
+    list_receipt_edit_audits,
     patch_note,
 )
 from src.receive_notes.net import is_tailscale_cg_nat
 from src.receive_notes.service import (
     ReceiveServiceError,
+    edit_vouchered_receive_meta,
     note_refund_snapshot,
     start_note_cash_via_tiger,
     start_note_refund,
@@ -39,6 +44,7 @@ from src.receive_notes.service import (
     sync_tiger_refund,
 )
 from src.receive_notes.parts9 import (
+    assess_receive_edit_gate,
     debtor_summary,
     get_debtor,
     get_note_header,
@@ -255,6 +261,17 @@ class VoucherCreate(BaseModel):
     chkdate: str | None = None
     pay_bank: str = DEFAULT_RECEIVE_BANK_KEY
     receive_bank_key: str | None = None  # alias for pay_bank
+
+
+class VoucherMetaEdit(BaseModel):
+    """Post-voucher correction: receive date / remark / bank only."""
+
+    acctno: str
+    noteno: str
+    received_at: str | None = None
+    remark: str | None = None
+    receive_bank_key: str | None = None
+    accounting_reviewed: bool = False
 
 
 def _parse_due(raw: str) -> str:
@@ -516,6 +533,27 @@ def _note_detail_response(settings, acctno: str, noteno: str):
         }
     )
     done = _proof_done(voucno=voucno, has_proof=bool(proofs), settle_method=settle)
+    receipt = get_receipt_by_voucno(client, voucno) if voucno else None
+    edit_gate = (
+        assess_receive_edit_gate(header=header, payments=payments)
+        if voucno
+        else {"needs_accounting_review": False, "reasons": []}
+    )
+    edit_history = list_receipt_edit_audits(client, voucno=voucno) if voucno else []
+    pay0 = payments[0] if payments else {}
+    channels = list((receipt or {}).get("receipt_channel") or [])
+    channel0 = channels[0] if channels else {}
+    pay_bank_key = (
+        str(channel0.get("receive_bank_key") or "").strip()
+        or receive_bank_key_from_gl(pay0.get("ACCTNO") or channel0.get("bank_gl"))
+        or receive_bank_key_from_bankname(pay0.get("BANKNAME") or channel0.get("bankname"))
+    )
+    received_at = (
+        str(channel0.get("chkdate") or "").strip()[:10]
+        or str((receipt or {}).get("received_at") or "").strip()[:10]
+        or str(pay0.get("CHKDATE") or "").strip()[:10]
+        or str(header.get("VOUCDATE") or "").strip()[:10]
+    )
     return {
         "header": header,
         "bills": bills,
@@ -530,6 +568,13 @@ def _note_detail_response(settings, acctno: str, noteno: str):
         "canceled": canceled,
         "has_proof": done,
         "settle_method": settle,
+        "receipt": receipt,
+        "edit_gate": edit_gate,
+        "edit_history": edit_history,
+        "can_edit_meta": bool(voucno) and not canceled,
+        "received_at": received_at,
+        "pay_bank_key": pay_bank_key,
+        "issue_date": str(header.get("VOUCDATE") or "").strip()[:10] or None,
         **_workflow_meta(
             voucno=voucno,
             has_proof=bool(proofs),
@@ -1277,6 +1322,58 @@ def _refund_response(
         "workflow_status": "ใบสำคัญจ่าย",
         "remaining_refund": 0.0,
     }
+
+
+@router.patch("/api/vouchers/meta")
+def api_edit_voucher_meta(request: Request, body: VoucherMetaEdit):
+    """Correct receive date / remark / bank on an existing voucher (no re-cut)."""
+    ident, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    acct = body.acctno.strip()
+    note = body.noteno.strip()
+    if not acct or not note:
+        return JSONResponse({"error": "acctno and noteno required"}, status_code=400)
+    if (
+        body.received_at is None
+        and body.remark is None
+        and body.receive_bank_key is None
+    ):
+        return JSONResponse({"error": "nothing to update"}, status_code=400)
+    operator = ident.display_name if ident else None
+    try:
+        result = edit_vouchered_receive_meta(
+            acctno=acct,
+            noteno=note,
+            received_at=body.received_at,
+            remark=body.remark,
+            receive_bank_key=body.receive_bank_key,
+            accounting_reviewed=bool(body.accounting_reviewed),
+            operator=operator,
+            settings=settings,
+        )
+    except ReceiveServiceError as exc:
+        status = 400
+        if exc.code in ("not_found",):
+            status = 404
+        elif exc.code in ("needs_accounting_review", "not_editable", "not_vouchered"):
+            status = 409
+        elif exc.code == "write_disabled":
+            status = 403
+        payload: dict[str, Any] = {"error": str(exc), "code": exc.code}
+        if exc.code == "needs_accounting_review":
+            try:
+                header = get_note_header(settings.site, acct, note)
+                voucno = str((header or {}).get("voucno") or "").strip()
+                payments = _list_voucher_payments(settings.site, voucno) if voucno else []
+                payload["edit_gate"] = assess_receive_edit_gate(
+                    header=header, payments=payments
+                )
+            except Exception:
+                payload["edit_gate"] = {"needs_accounting_review": True, "reasons": []}
+        return JSONResponse(payload, status_code=status)
+    return result
 
 
 @router.post("/api/vouchers")
