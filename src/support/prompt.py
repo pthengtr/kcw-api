@@ -170,6 +170,7 @@ Constraints:
 - Smallest correct change; match attached design/example output when provided.
 - Leave a clear commit message describing the fix.
 - Prefer editing existing files over large refactors.
+- Never add/commit `.tools/`, `.venv/`, `node_modules/`, binaries, or any file near GitHub's 100MB limit.
 - {pytest_hint}
 
 Filesystem safety (mandatory — rclone FUSE under ~/mnt hangs process trees):
