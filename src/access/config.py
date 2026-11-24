@@ -8,8 +8,10 @@ COMMAND_PERMISSIONS = {
     "ที่เก็บ": {"admin", "exec", "user"},
     "สแกนตาราง": {"admin", "exec", "staff"},
     "สถานะใบสั่งซื้อ": {"admin", "exec", "staff"},
-    "รายการเบิก": {"admin", "exec"},
-    "อนุมัติเบิก": {"admin", "exec"},
-    "ส่งกลับเบิก": {"admin", "exec"},
-    "ปฏิเสธเบิก": {"admin", "exec"},
+    # Expense cash: dedicated cash_approver group (not blanket admin/exec).
+    # Peung/Phu/Ice are also allowed by LINE id roster in expense_cash.approvers.
+    "รายการเบิก": {"cash_approver"},
+    "อนุมัติเบิก": {"cash_approver"},
+    "ส่งกลับเบิก": {"cash_approver"},
+    "ปฏิเสธเบิก": {"cash_approver"},
 }

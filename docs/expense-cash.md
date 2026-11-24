@@ -7,9 +7,11 @@ LINE chat flow on **Railway** `POST /line-webhook` for cashbox withdrawals. Not 
 1. `เบิกเงิน` / `เบิกค่าใช้จ่าย` / `ถอนเงิน` / `ขอเบิก`
 2. Bot asks reason → amount (digits only)
 3. Row in `public.expense_cash_request` (`pending`)
-4. Admins (`ops.line_access` admin/exec) get Flex with Approve / Need info / Reject
+4. Cash approvers get Flex with Approve / Need info / Reject
 
-## Admin (LINE)
+Approvers are **Peung / Phu / Ice** only (LINE id roster in `src/expense_cash/approvers.py`), plus anyone with `ops.line_access.access_group = cash_approver`. Not blanket admin/exec. On approve, the requester gets the QR and the other approvers get a peer notice.
+
+## Approver (LINE)
 
 - `รายการเบิก`
 - `อนุมัติ 3`

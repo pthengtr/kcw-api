@@ -195,14 +195,39 @@ def mark_paid_by_voucher_attempt(
 
 
 def list_approver_line_ids(engine: Engine) -> list[str]:
+    """LINE ids that should receive expense-cash review notifies."""
+    from src.expense_cash.approvers import (
+        CASH_APPROVER_GROUP,
+        CASH_APPROVER_LINE_USER_IDS,
+    )
+
+    roster = sorted(CASH_APPROVER_LINE_USER_IDS)
     sql = text(
         """
         select line_user_id
         from ops.line_access
         where is_allowed = true
-          and access_group in ('admin', 'exec')
+          and (
+            lower(access_group) = :group
+            or line_user_id = any(:roster)
+          )
         """
     )
     with engine.connect() as conn:
-        rows = conn.execute(sql).fetchall()
-    return [str(r[0]) for r in rows if r[0]]
+        rows = conn.execute(
+            sql,
+            {"group": CASH_APPROVER_GROUP, "roster": roster},
+        ).fetchall()
+    # Preserve stable order: roster first, then any extra cash_approver ids.
+    seen: set[str] = set()
+    out: list[str] = []
+    by_id = {str(r[0]) for r in rows if r[0]}
+    for uid in roster:
+        if uid in by_id and uid not in seen:
+            seen.add(uid)
+            out.append(uid)
+    for uid in sorted(by_id):
+        if uid not in seen:
+            seen.add(uid)
+            out.append(uid)
+    return out

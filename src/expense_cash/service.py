@@ -143,6 +143,12 @@ def approve_request(
         voucher_num=str(attempt.get("voucher_num") or "") or None,
         qr_image_url=qr_url,
     )
+    notify.notify_other_approvers_approved(
+        engine,
+        updated,
+        reviewer_line_user_id=reviewer_line_user_id,
+        reviewer_name=reviewer_name,
+    )
     return updated
 
 
