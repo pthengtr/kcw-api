@@ -106,7 +106,10 @@ def reject_ok(*, short_code: int) -> str:
 
 def ask_admin_note(*, action: str, short_code: int) -> str:
     if action == "reject":
-        return f"ปฏิเสธ #{short_code} — บอกเหตุผลสั้นๆ ให้ผู้ขอทราบครับ"
+        return (
+            f"ขอเหตุผลที่ไม่อนุมัติ #{short_code} หน่อยนะ 😊 "
+            "จ๋าจะได้แจ้งคนที่ขอเบิก"
+        )
     return f"ส่งกลับ #{short_code} — อยากให้ผู้ขอเติมอะไรเพิ่มครับ?"
 
 
