@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from src.hq_po.sheet import COMPANY_ADDRESS, COMPANY_BRANCH, COMPANY_NAME, COMPANY_PHONE
 from src.pay_notes.baht_text import baht_text
-from src.to_bill.buyers import shop_label
+from src.to_bill.buyers import display_branch_label, shop_label
 from src.to_bill.kinds import pay_via_label
 from src.to_bill.signers import (
     ROLE_APPROVER,
@@ -155,7 +155,7 @@ def _article(invoice: dict, *, seller_tax_id: str, copy_label: str) -> str:
     ]
     buyer = [
         _field("เลขประจำตัวผู้เสียภาษี", f"<span class='wide-v'>{_esc(invoice.get('tax_id'))}</span>"),
-        _field("สาขา", _esc(invoice.get("branch_label"))),
+        _field("สาขา", _esc(display_branch_label(invoice.get("branch_label")))),
     ]
     phone = str(invoice.get("phone") or "").strip()
     email = str(invoice.get("email") or "").strip()

@@ -53,6 +53,14 @@ def usable_tax_id(raw: str | None) -> str:
     return digits
 
 
+def _branch_digits(number: str) -> str:
+    """Thai tax forms use a 5-digit branch code (e.g. 00001), not bare 1."""
+    n = int(number)
+    if n < 1 or n > 99999:
+        raise ValueError("branch")
+    return str(n).zfill(5)
+
+
 def normalize_branch(label: str | None, branch_no: str | None = None) -> str:
     raw = (label or "").strip()
     number = re.sub(r"\D", "", branch_no or "")
@@ -61,12 +69,22 @@ def normalize_branch(label: str | None, branch_no: str | None = None) -> str:
             number = re.sub(r"\D", "", raw)
         if not number:
             raise ValueError("branch")
-        n = int(number)
-        if n < 1 or n > 99999:
-            raise ValueError("branch")
-        # Keep leading zeros as entered (e.g. 00001), not int-stripped "1".
-        return f"สาขาที่ {number}"
+        return f"สาขาที่ {_branch_digits(number)}"
     return "สำนักงานใหญ่"
+
+
+def display_branch_label(label: str | None) -> str:
+    """Normalize stored branch text for print (fixes pre-pad rows like 'สาขาที่ 1')."""
+    raw = (label or "").strip() or "สำนักงานใหญ่"
+    if not raw.startswith("สาขา"):
+        return raw
+    number = re.sub(r"\D", "", raw)
+    if not number:
+        return raw
+    try:
+        return f"สาขาที่ {_branch_digits(number)}"
+    except ValueError:
+        return raw
 
 
 def parse_buyer(payload: dict | None) -> Buyer:

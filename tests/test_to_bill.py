@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from src.to_bill.buyers import (
     armas_prefill,
+    display_branch_label,
     is_generic_party,
     parse_buyer,
     shop_label,
@@ -90,7 +91,7 @@ def test_buyer_validation_and_branch():
             "phone": "0812345678",
         }
     )
-    assert buyer.branch_label == "สาขาที่ 2"
+    assert buyer.branch_label == "สาขาที่ 00002"
     assert validate_buyer(buyer) is None
     assert validate_buyer(parse_buyer({"customer_name": "A", "address": "B", "tax_id": "123"}))
     padded = parse_buyer(
@@ -103,6 +104,9 @@ def test_buyer_validation_and_branch():
         }
     )
     assert padded.branch_label == "สาขาที่ 00001"
+    # Already-issued rows saved before padding (e.g. TO6911-010) still print 00001.
+    assert display_branch_label("สาขาที่ 1") == "สาขาที่ 00001"
+    assert display_branch_label("สำนักงานใหญ่") == "สำนักงานใหญ่"
 
 
 def test_armas_prefill_skips_marketplace():
@@ -309,6 +313,27 @@ def test_receipt_sheet_names_payment():
     assert pay_via_label("cod") == "เก็บเงินปลายทาง (COD)"
     assert parse_pay_via("platform") == "platform"
     assert parse_pay_via("") is None
+
+
+def test_sheet_pads_legacy_branch_number():
+    html = build_sheet(
+        {
+            "status": "issued",
+            "docno": "TO6911-010",
+            "tad_billno": "TAD6911-010",
+            "customer_name": "บริษัท ทดสอบ จำกัด",
+            "address": "1 ถนนทดสอบ",
+            "tax_id": "1234567890123",
+            "branch_label": "สาขาที่ 1",
+            "beforetax": 100,
+            "tax": 7,
+            "aftertax": 107,
+            "lines": [],
+        },
+        seller_tax_id="0105537000000",
+    )
+    assert "สาขาที่ 00001" in html
+    assert "สาขาที่ 1" not in html
 
 
 def test_void_sheet_has_watermark():
