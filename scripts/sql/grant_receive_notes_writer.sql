@@ -17,4 +17,5 @@ GRANT INSERT ON dbo.RVMAS TO python_writer;
 GRANT UPDATE ON dbo.RVMAS TO python_writer;
 GRANT UPDATE ON dbo.SIMAS TO python_writer;
 GRANT INSERT ON dbo.BRDET TO python_writer;
+GRANT UPDATE ON dbo.BRDET TO python_writer;
 GO

@@ -4,23 +4,39 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.receive_notes.company_banks import brdet_line_from_payment
+from src.receive_notes.company_banks import (
+    brdet_line_from_payment,
+    receive_bank_key_from_bankname,
+    receive_bank_key_from_gl,
+    resolve_company_receive_account,
+)
 from src.receive_notes.config import ReceiveNotesSettings, get_receive_notes_settings
 from src.receive_notes.db import (
     confirmed_refund_total,
+    get_note,
     get_pending_tiger_receipt_for_note,
     get_receipt,
+    get_receipt_by_voucno,
     get_receive_notes_supabase_client,
     insert_note,
     insert_receipt,
     insert_receipt_bills,
     insert_receipt_channels,
+    insert_receipt_edit_audit,
+    list_receipt_edit_audits,
     list_receipts_for_note,
     patch_note,
     patch_receipt,
+    patch_receipt_channel,
     prior_allocations_for_bills,
 )
-from src.receive_notes.parts9 import fetch_bills_for_receive
+from src.receive_notes.parts9 import (
+    assess_receive_edit_gate,
+    fetch_bills_for_receive,
+    get_note_header,
+    infer_settle_method,
+    list_brdet,
+)
 from src.receive_notes.tiger import (
     ReceiveTigerError,
     get_ar_attempt,
@@ -31,7 +47,12 @@ from src.receive_notes.tiger import (
     start_ar_cash_attempt,
     start_ar_refund_voucher_attempt,
 )
-from src.receive_notes.writer import ReceiveNoteWriteError, create_receive_note, create_receipt_voucher
+from src.receive_notes.writer import (
+    ReceiveNoteWriteError,
+    create_receive_note,
+    create_receipt_voucher,
+    update_voucher_receive_meta,
+)
 
 _BKK = ZoneInfo("Asia/Bangkok")
 
@@ -1320,4 +1341,216 @@ def sync_tiger_refund(
         "tiger_status": status,
         "receipt": receipt,
         "tiger_attempt": attempt,
+    }
+
+
+def _snapshot_receive_meta(
+    *,
+    received_at: str | None,
+    remark: str | None,
+    receive_bank_key: str | None,
+    bankname: str | None = None,
+    bank_gl: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "received_at": (received_at or "").strip()[:10] or None,
+        "remark": (remark or "").strip() or "",
+        "receive_bank_key": (receive_bank_key or "").strip() or None,
+        "bankname": (bankname or "").strip() or None,
+        "bank_gl": (bank_gl or "").strip() or None,
+    }
+
+
+def edit_vouchered_receive_meta(
+    *,
+    acctno: str,
+    noteno: str,
+    received_at: str | None = None,
+    remark: str | None = None,
+    receive_bank_key: str | None = None,
+    accounting_reviewed: bool = False,
+    operator: str | None = None,
+    settings: ReceiveNotesSettings | None = None,
+) -> dict[str, Any]:
+    """Edit receive date / remark / bank on an existing voucher without re-cutting money.
+
+    Leaves VOUCDATE, amounts, settle method, and Tiger transactions untouched.
+    """
+    settings = settings or get_receive_notes_settings()
+    if not settings.receive_notes_write_enabled:
+        raise ReceiveServiceError("RECEIVE_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise ReceiveServiceError("acctno and noteno required", code="validation")
+
+    client = get_receive_notes_supabase_client()
+    header = get_note_header(settings.site, acct, note)
+    if not header:
+        raise ReceiveServiceError("note not found in KSS", code="not_found")
+    voucno = str(header.get("voucno") or "").strip()
+    if not voucno:
+        raise ReceiveServiceError("note is not vouchered yet", code="not_vouchered")
+
+    payments = list_brdet(settings.site, voucno)
+    gate = assess_receive_edit_gate(header=header, payments=payments)
+    if gate["needs_accounting_review"] and not accounting_reviewed:
+        raise ReceiveServiceError(
+            "accounting review required before edit "
+            f"({', '.join(gate['reasons']) or 'locked'})",
+            code="needs_accounting_review",
+        )
+
+    overlay = get_receipt_by_voucno(client, voucno)
+    rem = get_note(client, acct, note)
+    channels = list((overlay or {}).get("receipt_channel") or [])
+    pay0 = payments[0] if payments else {}
+    channel0 = channels[0] if channels else {}
+
+    old_bank_key = (
+        str(channel0.get("receive_bank_key") or "").strip()
+        or receive_bank_key_from_gl(pay0.get("ACCTNO") or channel0.get("bank_gl"))
+        or receive_bank_key_from_bankname(pay0.get("BANKNAME") or channel0.get("bankname"))
+    )
+    old_remark = str((rem or {}).get("remark") or "").strip()
+    if not old_remark and overlay:
+        old_remark = str(overlay.get("remark") or "").strip()
+    old_snap = _snapshot_receive_meta(
+        received_at=(
+            str(channel0.get("chkdate") or "").strip()
+            or str((overlay or {}).get("received_at") or "").strip()
+            or str(pay0.get("CHKDATE") or "").strip()
+        ),
+        remark=old_remark,
+        receive_bank_key=old_bank_key,
+        bankname=str(pay0.get("BANKNAME") or channel0.get("bankname") or "") or None,
+        bank_gl=str(pay0.get("ACCTNO") or channel0.get("bank_gl") or "") or None,
+    )
+
+    new_date = (
+        str(received_at).strip()[:10]
+        if received_at is not None
+        else old_snap["received_at"]
+    )
+    if received_at is not None:
+        try:
+            datetime.strptime(new_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ReceiveServiceError(
+                "received_at must be YYYY-MM-DD", code="validation"
+            ) from exc
+
+    new_remark = str(remark).strip() if remark is not None else old_snap["remark"]
+    update_bank = receive_bank_key is not None
+    new_bank_key = (
+        str(receive_bank_key).strip() if update_bank else (old_snap["receive_bank_key"] or "")
+    )
+    bank_acct = None
+    settle = str(channel0.get("settle_method") or "").lower()
+    if not settle:
+        settle = infer_settle_method(
+            pay0.get("CHKNO"),
+            bankname=pay0.get("BANKNAME"),
+            acctno=pay0.get("ACCTNO"),
+        )
+    if update_bank:
+        if settle == "cash":
+            raise ReceiveServiceError(
+                "cash receipts have no receive bank to edit",
+                code="not_editable",
+            )
+        if not new_bank_key:
+            raise ReceiveServiceError("receive_bank_key required", code="validation")
+        bank_acct = resolve_company_receive_account(new_bank_key)
+        new_bank_key = bank_acct["key"]
+
+    new_snap = _snapshot_receive_meta(
+        received_at=new_date,
+        remark=new_remark,
+        receive_bank_key=new_bank_key or None,
+        bankname=(bank_acct["bank_name"] if bank_acct else old_snap["bankname"]),
+        bank_gl=(bank_acct["gl"] if bank_acct else old_snap["bank_gl"]),
+    )
+    if new_snap == old_snap:
+        return {
+            "unchanged": True,
+            "voucno": voucno,
+            "old_values": old_snap,
+            "new_values": new_snap,
+            "edit_gate": gate,
+            "receipt": overlay,
+            "audit": None,
+        }
+
+    date_changed = new_snap["received_at"] != old_snap["received_at"]
+    bank_changed = update_bank and new_snap["receive_bank_key"] != old_snap["receive_bank_key"]
+    kss: dict[str, Any] | None = None
+    if date_changed or bank_changed:
+        try:
+            kss = update_voucher_receive_meta(
+                settings=settings,
+                voucno=voucno,
+                chkdate=new_snap["received_at"] if date_changed else None,
+                bankname=new_snap["bankname"] if bank_changed else None,
+                bank_gl=new_snap["bank_gl"] if bank_changed else None,
+                update_bank=bank_changed,
+            )
+        except ReceiveNoteWriteError as exc:
+            raise ReceiveServiceError(str(exc), code=exc.code) from exc
+
+    if overlay:
+        receipt_patch: dict[str, Any] = {}
+        if date_changed:
+            receipt_patch["received_at"] = new_snap["received_at"]
+        if remark is not None:
+            receipt_patch["remark"] = new_snap["remark"]
+        if receipt_patch:
+            overlay = patch_receipt(client, overlay["id"], receipt_patch)
+        if date_changed or bank_changed:
+            for ch in channels:
+                ch_patch: dict[str, Any] = {}
+                if date_changed:
+                    ch_patch["chkdate"] = new_snap["received_at"]
+                if bank_changed and str(ch.get("settle_method") or "").lower() != "cash":
+                    ch_patch["receive_bank_key"] = new_snap["receive_bank_key"]
+                    ch_patch["bankname"] = new_snap["bankname"]
+                    ch_patch["bank_gl"] = new_snap["bank_gl"]
+                if ch_patch and ch.get("id"):
+                    patch_receipt_channel(client, str(ch["id"]), ch_patch)
+            overlay = get_receipt(client, overlay["id"])
+
+    if remark is not None:
+        try:
+            patch_note(client, acct, note, {"remark": new_snap["remark"]})
+        except Exception:
+            pass
+
+    audit = insert_receipt_edit_audit(
+        client,
+        {
+            "receipt_id": (overlay or {}).get("id"),
+            "acctno": acct,
+            "noteno": note,
+            "voucno": voucno,
+            "edited_by": operator,
+            "accounting_reviewed": bool(accounting_reviewed),
+            "gate_reasons": gate["reasons"],
+            "old_values": old_snap,
+            "new_values": new_snap,
+        },
+    )
+    history = list_receipt_edit_audits(client, voucno=voucno, limit=20)
+    return {
+        "unchanged": False,
+        "voucno": voucno,
+        "voucdate": header.get("VOUCDATE"),
+        "kss": kss,
+        "old_values": old_snap,
+        "new_values": new_snap,
+        "edit_gate": gate,
+        "receipt": overlay,
+        "audit": audit,
+        "edit_history": history,
+        "settle_method": settle,
     }
