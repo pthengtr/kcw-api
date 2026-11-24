@@ -572,7 +572,7 @@ def _attach_pick_photos(bill: dict[str, Any]) -> None:
 
 
 def _attach_pick_stock(bill: dict[str, Any]) -> None:
-    """Refresh on-hand qty so the pick sheet คงเหลือ column is current."""
+    """Refresh on-hand qty + ICMAS name extras for the pick sheet."""
     for ln in bill.get("lines") or []:
         code = str(ln.get("bcode") or "").strip()
         if not code:
@@ -589,6 +589,10 @@ def _attach_pick_stock(bill: dict[str, Any]) -> None:
             pass
         if not ln.get("location1") and (product.get("location") or product.get("location1")):
             ln["location1"] = product.get("location1") or product.get("location") or ""
+        for key in ("brand", "model", "pcode", "mcode"):
+            value = str(product.get(key) or "").strip()
+            if value:
+                ln[key] = value
 
 
 def print_pick_html(

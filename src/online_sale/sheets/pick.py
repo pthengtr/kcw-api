@@ -14,6 +14,7 @@ _PICK_CSS = (
 .rcp .thumb { width:1.5cm; height:1.5cm; object-fit:cover; border:1px solid #ccc; background:#f3f4f6; display:block; }
 .rcp .chk { width:1.4cm; text-align:center; font-size:16px; }
 .rcp .bill-break { font-size:12px; color:#333; margin-top:2px; line-height:1.35; }
+.rcp .prod-extra { font-size:12px; color:#333; margin-top:2px; line-height:1.35; }
 .rcp td.warn { color:#b91c1c; font-weight:700; }
 .rcp .sig2 { display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-top:32px; font-size:14px; break-inside:avoid; page-break-inside:avoid; }
 .rcp .sig2 .box { border-top:1px solid #111; padding-top:8px; min-height:4.5rem; }
@@ -76,6 +77,27 @@ def _bill_breakdown_html(ln: dict) -> str:
     return f"<div class='bill-break'>{' · '.join(bits)}</div>"
 
 
+def _product_extra_html(ln: dict) -> str:
+    """Brand / OEM codes / model under ชื่อสินค้า — omit empty fields."""
+    bits: list[str] = []
+    brand = str(ln.get("brand") or "").strip()
+    model = str(ln.get("model") or "").strip()
+    pcode = str(ln.get("pcode") or "").strip()
+    mcode = str(ln.get("mcode") or "").strip()
+    if brand:
+        bits.append(f"<div class='prod-extra'>ยี่ห้อ {esc(brand)}</div>")
+    codes = []
+    if pcode:
+        codes.append(f"เบอร์แท้ {esc(pcode)}")
+    if mcode:
+        codes.append(f"เบอร์โรงงาน {esc(mcode)}")
+    if codes:
+        bits.append(f"<div class='prod-extra'>{' · '.join(codes)}</div>")
+    if model:
+        bits.append(f"<div class='prod-extra'>รุ่น {esc(model)}</div>")
+    return "".join(bits)
+
+
 def merge_pick_lines(bills: list[dict]) -> list[dict]:
     """Merge lines across orders by (bcode, ui); keep per-order qty for packing."""
     buckets: dict[tuple[str, str], dict] = {}
@@ -96,6 +118,10 @@ def merge_pick_lines(bills: list[dict]) -> list[dict]:
                     "detail": ln.get("detail") or ln.get("descr") or "",
                     "location1": ln.get("location1") or ln.get("location") or "",
                     "photo": ln.get("photo") or "",
+                    "brand": str(ln.get("brand") or "").strip(),
+                    "model": str(ln.get("model") or "").strip(),
+                    "pcode": str(ln.get("pcode") or "").strip(),
+                    "mcode": str(ln.get("mcode") or "").strip(),
                     "qty": 0.0,
                     "qtyoh2": float(ln.get("qtyoh2") or 0),
                     "mtp": float(ln.get("mtp") or 1) or 1.0,
@@ -110,6 +136,11 @@ def merge_pick_lines(bills: list[dict]) -> list[dict]:
                 bucket["location1"] = ln.get("location1") or ln.get("location") or ""
             if not bucket.get("photo") and ln.get("photo"):
                 bucket["photo"] = ln.get("photo")
+            for key_meta in ("brand", "model", "pcode", "mcode"):
+                if not bucket.get(key_meta):
+                    value = str(ln.get(key_meta) or "").strip()
+                    if value:
+                        bucket[key_meta] = value
             # Keep the freshest / highest on-hand reading across merged drafts.
             try:
                 oh = float(ln.get("qtyoh2") or 0)
@@ -161,6 +192,7 @@ def pick_rows_html(lines: list[dict]) -> str:
             f"{_thumb_cell(ln)}"
             f"<td>{esc(ln.get('bcode'))}</td>"
             f"<td>{esc(ln.get('detail') or ln.get('descr') or '')}"
+            f"{_product_extra_html(ln)}"
             f"{_bill_breakdown_html(ln)}</td>"
             f"<td>{esc(loc)}</td>"
             f"<td class='num'>{fmt_qty(need)}</td>"

@@ -134,6 +134,10 @@ def test_pick_sheet_sorted_no_price():
                     "price": 999,
                     "amount": 1998,
                     "photo": "https://example.com/b2.jpg",
+                    "brand": "KUBOTA",
+                    "model": "L3408",
+                    "pcode": "1G888-11111",
+                    "mcode": "HH123",
                 },
                 {
                     "bcode": "B1",
@@ -168,6 +172,13 @@ def test_pick_sheet_sorted_no_price():
     assert "1,998" not in html
     assert "ราคา" not in html
     assert "https://example.com/b2.jpg" in html
+    # Name extras under ชื่อสินค้า; omit blank fields (B1 has none).
+    assert "ยี่ห้อ KUBOTA" in html
+    assert "รุ่น L3408" in html
+    assert "เบอร์แท้ 1G888-11111" in html
+    assert "เบอร์โรงงาน HH123" in html
+    assert html.count("ยี่ห้อ ") == 1
+    assert html.count("รุ่น ") == 1
 
 
 def test_pick_sheet_merges_multi_bill_same_sku_unit():
