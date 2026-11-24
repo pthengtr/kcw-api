@@ -161,3 +161,35 @@ def notify_requester_approved(
         push_line_messages(line_user_id, messages)
     except Exception:
         logger.exception("Failed to push approved QR")
+
+
+def notify_other_approvers_approved(
+    engine: Engine,
+    row: dict[str, Any],
+    *,
+    reviewer_line_user_id: str | None,
+    reviewer_name: str | None,
+) -> None:
+    """Tell peer approvers that someone already approved (skip the actor)."""
+    actor = (reviewer_line_user_id or "").strip()
+    ids = [
+        uid
+        for uid in repos.list_approver_line_ids(engine)
+        if uid and uid != actor
+    ]
+    if not ids:
+        return
+    short = int(row.get("short_code") or 0)
+    amount = _amount_int(row)
+    text = copy.approved_peer_notice(
+        short_code=short,
+        amount=amount,
+        reviewer_name=reviewer_name,
+        requester_name=(row.get("requester_name") or None),
+    )
+    msg = {"type": "text", "text": text[:5000]}
+    for uid in ids:
+        try:
+            push_line_messages(uid, [msg])
+        except Exception:
+            logger.exception("Failed to push peer-approve notify to %s", uid)

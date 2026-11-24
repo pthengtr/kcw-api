@@ -80,6 +80,22 @@ def approve_ok(*, short_code: int) -> str:
     return f"อนุมัติ #{short_code} แล้วครับ ส่ง QR ให้ผู้ขอแล้ว ✅"
 
 
+def approved_peer_notice(
+    *,
+    short_code: int,
+    amount: int,
+    reviewer_name: str | None,
+    requester_name: str | None,
+) -> str:
+    who = (reviewer_name or "แอดมิน").strip() or "แอดมิน"
+    req = (requester_name or "ผู้ขอ").strip() or "ผู้ขอ"
+    return (
+        f"{who} อนุมัติคำขอ #{short_code} แล้วครับ "
+        f"({amount:,} บาท · {req})\n"
+        "ส่ง QR ให้ผู้ขอแล้ว ✅"
+    )
+
+
 def needs_info_ok(*, short_code: int) -> str:
     return f"ส่งกลับ #{short_code} ให้ผู้ขอเพิ่มเหตุผลแล้วครับ"
 

@@ -8,7 +8,7 @@ from typing import Any
 
 
 # Phase A: open to every known access_group used in ops.line_access.
-OPEN_GROUPS = frozenset({"admin", "exec", "staff", "user", "guest"})
+OPEN_GROUPS = frozenset({"admin", "exec", "staff", "user", "guest", "cash_approver"})
 
 
 def _port(env_key: str, default: int) -> int:

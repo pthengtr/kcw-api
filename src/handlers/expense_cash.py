@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from src.access.helper import can_execute
 from src.expense_cash import copy, repos, sessions
+from src.expense_cash.approvers import is_cash_approver
 from src.expense_cash.service import (
     ExpenseCashError,
     approve_request,
@@ -98,8 +98,7 @@ def _display_name(access: dict | None, line_user_id: str | None) -> str | None:
 
 
 def _is_approver(access: dict | None) -> bool:
-    group = (access or {}).get("access_group") or ""
-    return can_execute(group, "รายการเบิก")
+    return is_cash_approver(access)
 
 
 def handle_expense_cash_session_text(
