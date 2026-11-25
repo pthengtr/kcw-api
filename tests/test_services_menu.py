@@ -62,6 +62,7 @@ def test_menu_is_categorized_two_column():
             assert icon["size"] == "xxs"
             assert icon["url"].endswith(".png")
             label = next(n for n in cell["contents"] if n.get("type") == "text")
+            assert label.get("size") == "sm"
             assert label.get("align") == "start"
             assert "gravity" not in label  # invalid inside baseline boxes
 
