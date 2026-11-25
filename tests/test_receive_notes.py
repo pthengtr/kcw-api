@@ -211,6 +211,17 @@ def test_ui_exports_and_tabs():
     assert "createInFlight" in html
     assert "detEditMetaBtn" in html
     assert "dlgEditReceipt" in html
+    # Receipt board owns proof tracking (no separate awaiting-proof tab)
+    assert 'id="tabAwaitProof"' not in html
+    assert 'id="panelAwaitProof"' not in html
+    assert 'id="voucherProofKpis"' in html
+    assert 'data-proof="all"' in html
+    assert 'data-proof="awaiting"' in html
+    assert 'data-proof="done"' in html
+    assert "vouchered?proof=all" in html
+    assert "voucherProofBucket" in html
+    assert "แนบหลักฐาน" in html
+    assert "สร้าง → รอรับชำระ → ใบเสร็จรับเงิน" in html
     # Mobile proof upload: opaque overlay input (not display:none + JS click)
     assert 'id="dropProofWrap"' in html
     assert 'class="drop-file-input"' in html

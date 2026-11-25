@@ -183,6 +183,7 @@ main { max-width:1120px; margin:0 auto; padding:var(--space-page-y) var(--space-
 .edit-actions .btn { flex:1 1 10rem; }
 .create-actions { margin-top:.85rem; }
 .kpis { display:grid; gap:.65rem; grid-template-columns:repeat(4, 1fr); margin:.85rem 0; }
+.kpis.kpis-3 { grid-template-columns:repeat(3, 1fr); }
 .kpi {
   display:flex; gap:.7rem; align-items:flex-start; text-align:left;
   border:1px solid var(--line); border-radius:.85rem; padding:.85rem .9rem;
@@ -202,6 +203,10 @@ main { max-width:1120px; margin:0 auto; padding:var(--space-page-y) var(--space-
 .kpi-today .mark { background:#fed7aa; color:var(--warn); }
 .kpi-soon { background:var(--soon-bg); border-color:transparent; }
 .kpi-soon .mark { background:#bbf7d0; color:var(--soon); }
+.kpi-proof { background:var(--proof-bg); border-color:transparent; }
+.kpi-proof .mark { background:#fde68a; color:var(--proof); }
+.kpi-done { background:var(--ok-bg); border-color:transparent; }
+.kpi-done .mark { background:#bbf7d0; color:var(--ok); }
 .table-wrap { overflow:auto; -webkit-overflow-scrolling:touch; }
 .mob-cards { --card-pad:.65rem; }
 table { width:100%; border-collapse:collapse; min-width:40rem; }
@@ -222,6 +227,7 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 .b-soon { background:var(--soon-bg); color:var(--soon); }
 .b-wait { background:var(--proof-bg); color:var(--proof); }
 .b-done { background:var(--ok-bg); color:var(--ok); }
+tr.row-await-proof td { background:var(--proof-bg); }
 .b-cheque { background:var(--soon-bg); color:var(--soon); }
 .b-transfer { background:var(--chip); color:var(--muted); }
 .note-reuse-badge {
@@ -444,7 +450,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
 .toggle { display:flex; align-items:center; gap:.35rem; font-size:.82rem; color:var(--muted); }
 @media (max-width: 834px) {
   .tabs {
-    display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:.35rem;
+    display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:.35rem;
     margin-top:.6rem; overflow-x:visible; scroll-snap-type:none;
   }
   .tabs button {
@@ -701,8 +707,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   <nav class="tabs" aria-label="ขั้นตอนงาน">
     <button type="button" id="tabCreate" class="on"><span class="t-full">1. สร้าง</span><span class="t-short">1. สร้าง</span></button>
     <button type="button" id="tabPending"><span class="t-full">2. รอรับชำระ</span><span class="t-short">2. รอรับ</span></button>
-    <button type="button" id="tabAwaitProof"><span class="t-full">3. รอแนบหลักฐาน</span><span class="t-short">3. หลักฐาน</span></button>
-    <button type="button" id="tabVoucher"><span class="t-full">4. ใบเสร็จรับเงิน</span><span class="t-short">4. ใบเสร็จ</span></button>
+    <button type="button" id="tabVoucher"><span class="t-full">3. ใบเสร็จรับเงิน</span><span class="t-short">3. ใบเสร็จ</span></button>
     <button type="button" id="tabByAp"><span class="t-full">ค้นหาตามลูกหนี้</span><span class="t-short">ค้นหาลูกหนี้</span></button>
   </nav>
 </header>
@@ -968,7 +973,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <div id="pendingEmpty" class="empty hidden">ยังไม่มีรายการรอรับชำระ</div>
       <div class="table-foot">
         <div class="table-foot-meta">
-          <p class="hint">ⓘ รับชำระแล้วจะย้ายไปแท็บรอแนบหลักฐาน (ยกเว้นเงินสด / RVI)</p>
+          <p class="hint">ⓘ รับชำระแล้วจะย้ายไปแท็บใบเสร็จรับเงิน (เงินสด / RVI ถือว่าเรียบร้อยโดยไม่ต้องแนบหลักฐาน)</p>
         </div>
         <div class="table-foot-nav">
           <div class="pager" id="pendingPager"></div>
@@ -977,48 +982,8 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     </div>
   </section>
 
-  <section id="panelAwaitProof" class="panel">
-    <p class="panel-intro">ขั้นที่ 3 · รับชำระแล้ว · รออัปโหลดหลักฐาน</p>
-    <div class="card toolbar">
-      <div class="field grow">
-        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
-        <input id="afQ" placeholder="ค้นหาเลขใบเสร็จรับเงิน / ลูกหนี้ / เลขใบวางบิล" autocomplete="off"/>
-      </div>
-      <button type="button" class="btn soft" id="btnRefreshAwaitProof">↻ รีเฟรช</button>
-      <div class="field" style="min-width:9.5rem">
-        <input id="afBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
-      </div>
-    </div>
-    <div class="card card-table">
-      <div class="table-wrap mob-cards">
-        <table>
-          <thead>
-            <tr>
-              <th>เลขใบเสร็จรับเงิน</th>
-              <th>รหัสลูกหนี้</th>
-              <th>เลขใบวางบิล</th>
-              <th>วันที่รับเงิน</th>
-              <th>หมายเหตุ</th>
-              <th class="num">ยอดรับ</th>
-              <th>วิธีรับชำระ</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="awaitProofBody"></tbody>
-        </table>
-      </div>
-      <div id="awaitProofEmpty" class="empty hidden">ไม่มีรายการรอแนบหลักฐาน</div>
-      <div class="table-foot">
-        <div class="table-foot-meta" id="awaitProofCount">แสดง 0 รายการ</div>
-        <div class="table-foot-nav">
-          <div class="pager" id="awaitProofPager"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <section id="panelVoucher" class="panel">
-    <p class="panel-intro">ขั้นที่ 4 · มีหลักฐานครบแล้ว · ดูรายละเอียดบิลและหลักฐานรับเงิน</p>
+    <p class="panel-intro">ขั้นที่ 3 · รับชำระแล้ว · ดูรายละเอียด / แนบหลักฐานย้อนหลังได้</p>
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
@@ -1038,10 +1003,25 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
           <option value="cash">เงินสด</option>
         </select>
       </div>
+      <button type="button" class="btn soft" id="btnRefreshVouchers">↻ รีเฟรช</button>
       <button type="button" class="btn ghost" id="btnClearVoucherFilters">↻ ล้างตัวกรอง</button>
       <div class="field" style="min-width:9.5rem">
         <input id="vfBillMonth" type="month" class="inp" aria-label="บิลเดือน" title="กรองตามบิลเดือน"/>
       </div>
+    </div>
+    <div class="kpis kpis-3" id="voucherProofKpis">
+      <button type="button" class="kpi kpi-all on" data-proof="all">
+        <span class="mark">▤</span>
+        <span><b>ทั้งหมด</b><span id="vkpiAll">0 รายการ</span></span>
+      </button>
+      <button type="button" class="kpi kpi-proof" data-proof="awaiting">
+        <span class="mark">!</span>
+        <span><b>รอแนบหลักฐาน</b><span id="vkpiAwaiting">0 รายการ</span></span>
+      </button>
+      <button type="button" class="kpi kpi-done" data-proof="done">
+        <span class="mark">✓</span>
+        <span><b>เรียบร้อย</b><span id="vkpiDone">0 รายการ</span></span>
+      </button>
     </div>
     <div class="card card-table">
       <div class="table-wrap mob-cards">
@@ -1055,6 +1035,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
               <th>หมายเหตุ</th>
               <th class="num">ยอดรับ (บาท)</th>
               <th>วิธีรับชำระ</th>
+              <th>สถานะ</th>
               <th></th>
             </tr>
           </thead>
@@ -1310,16 +1291,15 @@ let settleMethod = 'transfer';
 let noteReceiveBankKey = '';
 let editReceiveBankKey = '';
 let pendingRows = [];
-let awaitProofRows = [];
 let voucherRows = [];
 let byApRows = [];
 let byApVendor = null;
 let pendingPage = 1;
-let awaitProofPage = 1;
 let voucherPage = 1;
 let byApPage = 1;
 let voucherPageSize = 10;
 let pendingBucket = 'all';
+let voucherProofBucket = 'all';
 let detailRow = null;
 let detailPayload = null;
 let proofVerifyResult = null;
@@ -1435,9 +1415,15 @@ function workflowBadge(r) {
   if (r.canceled || r.stage === 'canceled' || r.workflow_status === 'ยกเลิก') {
     return `<span class="badge b-canceled">ยกเลิก</span>`;
   }
+  if (r.stage === 'await_proof') {
+    return `<span class="badge b-wait">รอแนบหลักฐาน</span>`;
+  }
+  if (r.stage === 'voucher') {
+    const refund = isRefundNote(r) || String(r.voucno || '').toUpperCase().startsWith('PVN');
+    const label = refund ? (r.workflow_status || 'ใบสำคัญจ่าย') : 'เรียบร้อย';
+    return `<span class="badge b-done">${esc(label)}</span>`;
+  }
   const st = r.workflow_status || '—';
-  if (r.stage === 'await_proof') return `<span class="badge b-wait">${esc(st)}</span>`;
-  if (r.stage === 'voucher') return `<span class="badge b-done">${esc(st)}</span>`;
   const ps = pendingStatus(r);
   return `<span class="badge ${ps.cls}">${esc(st || ps.label)}</span>`;
 }
@@ -1602,12 +1588,11 @@ $('themeBtn').onclick = () => {
 applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
 
 function setCrumb(tab, extra) {
-  const flow = 'สร้าง → รอรับชำระ → รอแนบหลักฐาน → ใบเสร็จรับเงิน';
+  const flow = 'สร้าง → รอรับชำระ → ใบเสร็จรับเงิน';
   const base = `${USER_NAME} · HQ only · ${flow}`;
   const labels = {
     create: 'สร้างใบวางบิล',
     pending: 'รอรับชำระ',
-    awaitproof: 'รอแนบหลักฐาน',
     voucher: 'ใบเสร็จรับเงิน',
     byap: 'ค้นหาตามลูกหนี้',
     edit: 'แก้ไขใบวางบิล',
@@ -1632,8 +1617,13 @@ function closeDialogs() {
 function showTab(name) {
   closeDialogs();
   showEditPanel(false);
+  // Legacy hash/tab name from removed "รอแนบหลักฐาน" tab → receipt board + awaiting filter.
+  if (name === 'awaitproof') {
+    voucherProofBucket = 'awaiting';
+    name = 'voucher';
+  }
   const map = {
-    create: 'Create', pending: 'Pending', awaitproof: 'AwaitProof',
+    create: 'Create', pending: 'Pending',
     voucher: 'Voucher', byap: 'ByAp',
   };
   Object.keys(map).forEach(k => {
@@ -1644,14 +1634,12 @@ function showTab(name) {
   setCrumb(name);
   if (name === 'create' && !$('dueDate').value) $('dueDate').value = todayISO();
   if (name === 'pending') loadPending();
-  if (name === 'awaitproof') loadAwaitProof();
   if (name === 'voucher') loadVouchers();
   if (name === 'byap') loadByAp();
   try { history.replaceState(null, '', name === 'create' ? '#' : '#' + name); } catch (e) {}
 }
 $('tabCreate').onclick = () => showTab('create');
 $('tabPending').onclick = () => showTab('pending');
-$('tabAwaitProof').onclick = () => showTab('awaitproof');
 $('tabVoucher').onclick = () => showTab('voucher');
 $('tabByAp').onclick = () => showTab('byap');
 $('btnCancelEdit').onclick = () => { editTarget = null; showTab(editReturnTab); };
@@ -1804,61 +1792,30 @@ $('pendingBody').addEventListener('click', (e) => {
   if (open) openDetailByKey(open.dataset.open, {canPay: true});
 });
 
-async function loadAwaitProof() {
-  $('awaitProofBody').innerHTML = `<tr><td colspan="8" class="empty">กำลังโหลด…</td></tr>`;
-  try {
-    awaitProofRows = await api('/vouchered?proof=awaiting');
-    renderAwaitProof();
-  } catch (e) {
-    $('awaitProofBody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`;
-  }
-}
-function filteredAwaitProof() {
-  const q = ($('afQ').value || '').trim().toLowerCase();
-  const billMonth = ($('afBillMonth').value || '').trim();
-  return awaitProofRows.filter(r => {
-    if (billMonth && remBillMonth(r) !== billMonth) return false;
-    if (!q) return true;
-    const hay = [r.acctno, r.acctname, r.noteno, r.voucno, voucDate(r), remarkSearchHay(r)].map(x => String(x||'').toLowerCase()).join(' ');
-    return hay.includes(q);
-  });
-}
-function renderAwaitProof() {
-  const all = filteredAwaitProof();
-  const pg = slicePage(all, awaitProofPage, PAGE_SIZE);
-  awaitProofPage = pg.page;
-  $('awaitProofEmpty').classList.toggle('hidden', pg.total !== 0);
-  $('awaitProofCount').textContent = pg.total ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ` : 'แสดง 0 รายการ';
-  $('awaitProofBody').innerHTML = pg.rows.map(r => `<tr>
-    <td data-label="เลขใบเสร็จรับเงิน"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
-    <td data-label="รหัสลูกหนี้">${esc(r.acctno)}</td>
-    <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
-    <td data-label="วันที่รับเงิน">${fmtDate(voucDate(r))}</td>
-    <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
-    <td class="num" data-label="ยอดรับ">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
-    <td data-label="วิธีรับชำระ">${esc(settleLabel(r.settle_method))}</td>
-    <td class="td-actions" data-label=""><button type="button" class="btn sm primary" data-open="${esc(keyOf(r))}" data-upload="1">แนบหลักฐาน</button></td>
-  </tr>`).join('');
-  renderPager($('awaitProofPager'), pg.page, pg.pages, p => { awaitProofPage = p; renderAwaitProof(); });
-}
-$('btnRefreshAwaitProof').onclick = loadAwaitProof;
-$('afQ').addEventListener('input', () => { awaitProofPage = 1; renderAwaitProof(); });
-$('afBillMonth')?.addEventListener('change', () => { awaitProofPage = 1; renderAwaitProof(); });
-$('awaitProofBody').addEventListener('click', (e) => {
-  const open = e.target.closest('[data-open]');
-  if (open) openDetailByKey(open.dataset.open, {awaitProof: true, canUpload: !!open.dataset.upload});
-});
-
 async function loadVouchers() {
-  $('voucherBody').innerHTML = `<tr><td colspan="8" class="empty">กำลังโหลด…</td></tr>`;
+  $('voucherBody').innerHTML = `<tr><td colspan="9" class="empty">กำลังโหลด…</td></tr>`;
   try {
-    voucherRows = await api('/vouchered?proof=done');
+    // All successful receives (with or without proof). Cash / RVI already stage=voucher.
+    voucherRows = await api('/vouchered?proof=all');
     renderVouchers();
   } catch (e) {
-    $('voucherBody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`;
+    $('voucherBody').innerHTML = `<tr><td colspan="9" class="err">${esc(e.message)}</td></tr>`;
   }
 }
 function voucDate(r) { return String(r.VOUCDATE || '').slice(0, 10); }
+function isAwaitProofRow(r) {
+  return !!(r && r.stage === 'await_proof');
+}
+function renderVoucherProofKpis() {
+  const awaiting = voucherRows.filter(isAwaitProofRow);
+  const done = voucherRows.filter(r => !isAwaitProofRow(r));
+  if ($('vkpiAll')) $('vkpiAll').textContent = `${voucherRows.length} รายการ`;
+  if ($('vkpiAwaiting')) $('vkpiAwaiting').textContent = `${awaiting.length} รายการ`;
+  if ($('vkpiDone')) $('vkpiDone').textContent = `${done.length} รายการ`;
+  document.querySelectorAll('#voucherProofKpis .kpi[data-proof]').forEach(el => {
+    el.classList.toggle('on', el.dataset.proof === voucherProofBucket);
+  });
+}
 function filteredVouchers() {
   const q = ($('vfQ').value || '').trim().toLowerCase();
   const from = ($('vfFrom').value || '').trim();
@@ -1866,6 +1823,8 @@ function filteredVouchers() {
   const method = $('vfMethod').value;
   const billMonth = ($('vfBillMonth').value || '').trim();
   let rows = voucherRows.filter(r => {
+    if (voucherProofBucket === 'awaiting' && !isAwaitProofRow(r)) return false;
+    if (voucherProofBucket === 'done' && isAwaitProofRow(r)) return false;
     const d = voucDate(r);
     if (from && (!d || d < from)) return false;
     if (to && (!d || d > to)) return false;
@@ -1880,7 +1839,23 @@ function filteredVouchers() {
   rows.sort((a, b) => String(voucDate(b)).localeCompare(String(voucDate(a))) || String(b.voucno||'').localeCompare(String(a.voucno||'')));
   return rows;
 }
+function voucherRowActions(r) {
+  const awaitP = isAwaitProofRow(r);
+  const skipProof = r.proof_required === false;
+  let uploadBtn = '';
+  if (WRITE_ENABLED && !skipProof) {
+    uploadBtn = awaitP
+      ? `<button type="button" class="btn sm primary" data-open="${esc(keyOf(r))}" data-upload="1">แนบหลักฐาน</button>`
+      : `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}" data-upload="1">อัปเดตรูป</button>`;
+  }
+  return `<div class="row-actions">
+      <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>
+      ${uploadBtn}
+      <button type="button" class="btn sm outline" data-print="${esc(keyOf(r))}">พิมพ์</button>
+    </div>`;
+}
 function renderVouchers() {
+  renderVoucherProofKpis();
   const all = filteredVouchers();
   const pg = slicePage(all, voucherPage, voucherPageSize);
   voucherPage = pg.page;
@@ -1889,7 +1864,7 @@ function renderVouchers() {
   $('voucherCount').textContent = pg.total
     ? `แสดง ${pg.start + 1} - ${pg.end} จาก ${pg.total} รายการ`
     : 'แสดง 0 รายการ';
-  $('voucherBody').innerHTML = pg.rows.map(r => `<tr>
+  $('voucherBody').innerHTML = pg.rows.map(r => `<tr class="${isAwaitProofRow(r) ? 'row-await-proof' : ''}">
     <td data-label="เลขใบเสร็จรับเงิน"><button type="button" class="linkish" data-open="${esc(keyOf(r))}">${esc(r.voucno || '—')}</button></td>
     <td data-label="รหัสลูกหนี้">${esc(r.acctno)}</td>
     <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
@@ -1897,30 +1872,40 @@ function renderVouchers() {
     <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
     <td class="num" data-label="ยอดรับ">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีรับชำระ">${esc(settleLabel(r.settle_method))}</td>
-    <td class="td-actions" data-label=""><div class="row-actions">
-      <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>
-      ${WRITE_ENABLED ? `<button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}" data-upload="1">อัปเดตรูป</button>` : ''}
-      <button type="button" class="btn sm outline" data-print="${esc(keyOf(r))}">พิมพ์</button>
-    </div></td>
+    <td data-label="สถานะ">${workflowBadge(r)}</td>
+    <td class="td-actions" data-label="">${voucherRowActions(r)}</td>
   </tr>`).join('');
   renderPager($('voucherPager'), pg.page, pg.pages, p => { voucherPage = p; renderVouchers(); });
 }
 function clearVoucherFilters() {
   $('vfQ').value = ''; $('vfFrom').value = ''; $('vfTo').value = '';
   $('vfMethod').value = ''; $('vfBillMonth').value = '';
+  voucherProofBucket = 'all';
   voucherPage = 1; renderVouchers();
 }
+$('btnRefreshVouchers')?.addEventListener('click', loadVouchers);
 $('btnClearVoucherFilters').onclick = clearVoucherFilters;
 $('vfSize').onchange = () => { voucherPageSize = Number($('vfSize').value || 10); voucherPage = 1; renderVouchers(); };
 ['vfQ','vfFrom','vfTo','vfMethod','vfBillMonth'].forEach(id => {
   const el = $(id);
   el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' || el.type === 'month' ? 'change' : 'input', () => { voucherPage = 1; renderVouchers(); });
 });
+document.querySelectorAll('#voucherProofKpis .kpi[data-proof]').forEach(btn => {
+  btn.onclick = () => { voucherProofBucket = btn.dataset.proof; voucherPage = 1; renderVouchers(); };
+});
 $('voucherBody').addEventListener('click', (e) => {
   const printBtn = e.target.closest('[data-print]');
   if (printBtn) { openDetailByKey(printBtn.dataset.print, {voucher: true, print: true}); return; }
   const open = e.target.closest('[data-open]');
-  if (open) openDetailByKey(open.dataset.open, {voucher: true, canUpload: !!open.dataset.upload});
+  if (open) {
+    const row = findRow(open.dataset.open) || voucherRows.find(r => keyOf(r) === open.dataset.open);
+    const awaitP = isAwaitProofRow(row);
+    openDetailByKey(open.dataset.open, {
+      voucher: !awaitP,
+      awaitProof: awaitP,
+      canUpload: !!open.dataset.upload || awaitP,
+    });
+  }
 });
 
 async function loadByAp() {
@@ -2011,7 +1996,7 @@ $('byApVendorQ').addEventListener('input', () => {
 });
 
 function findRow(key) {
-  const all = [...pendingRows, ...awaitProofRows, ...voucherRows, ...byApRows];
+  const all = [...pendingRows, ...voucherRows, ...byApRows];
   return all.find(r => keyOf(r) === key);
 }
 function thumbsHtml(images, opts) {
@@ -2625,12 +2610,14 @@ async function saveEditReceiptMeta() {
       throw new Error(j.error || j.detail || 'บันทึกไม่สำเร็จ');
     }
     try { $('dlgEditReceipt').close(); } catch (_) {}
-    await loadAwaitProof();
     await loadVouchers();
-    const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow))
-      || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow))
-      || detailRow;
-    openDetailByKey(keyOf(fresh), {voucher: true, canUpload: true});
+    const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || detailRow;
+    const awaitP = isAwaitProofRow(fresh);
+    openDetailByKey(keyOf(fresh), {
+      voucher: !awaitP,
+      awaitProof: awaitP,
+      canUpload: true,
+    });
   } catch (e) {
     if ($('editRcptMsg')) $('editRcptMsg').innerHTML = `<span class="err">${esc(e.message)}</span>`;
   } finally {
@@ -2694,9 +2681,8 @@ async function uploadProofFiles(files) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { alert(j.detail || j.error); return; }
   }
-  await loadAwaitProof();
   await loadVouchers();
-  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow));
+  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow));
   if (fresh) detailRow = fresh;
 
   let verifyResult = null;
@@ -2716,18 +2702,19 @@ async function uploadProofFiles(files) {
     return;
   }
 
-  if (fresh && fresh.has_proof) {
+  if (fresh && !isAwaitProofRow(fresh)) {
     if (verifyResult) {
       renderProofVerify(verifyResult);
-      openDetailByKey(keyOf(fresh), {awaitProof: true, canUpload: true, keepVerify: true});
+      openDetailByKey(keyOf(fresh), {voucher: true, canUpload: true, keepVerify: true});
       if (verifyResult.match) {
         setTimeout(() => completeProofFlow(fresh), 300);
       }
       return;
     }
+    voucherProofBucket = 'done';
     $('dlgDetail').close();
     showTab('voucher');
-    openDetailByKey(keyOf(fresh), {voucher: true});
+    openDetailByKey(keyOf(fresh), {voucher: true, canUpload: true});
   } else if (fresh) {
     openDetailByKey(keyOf(fresh), {awaitProof: true, canUpload: true});
   }
@@ -2744,14 +2731,13 @@ async function deleteProofImage(path) {
       : (j.detail || j.error || 'ลบไม่สำเร็จ'));
     return;
   }
-  await loadAwaitProof();
   await loadVouchers();
-  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow));
+  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow));
   if (fresh) detailRow = fresh;
-  const done = !!(detailRow.has_proof) || detailRow.stage === 'voucher';
-  openDetailByKey(keyOf(detailRow), done
-    ? {voucher: true, canUpload: true}
-    : {awaitProof: true, canUpload: true});
+  const awaitP = isAwaitProofRow(detailRow);
+  openDetailByKey(keyOf(detailRow), awaitP
+    ? {awaitProof: true, canUpload: true}
+    : {voucher: true, canUpload: true});
 }
 function tryCloseDetail() {
   if (proofPendingComplete && !proofCanComplete()) {
@@ -3038,7 +3024,8 @@ async function finishPaySuccess(res, method, opts) {
     || String(res.voucno || '').toUpperCase().startsWith('RVI')
     || String(res.voucno || '').toUpperCase().startsWith('PVN');
   clearPayProofPending();
-  setTimeout(() => { $('dlgPay').close(); showTab(skipProof ? 'voucher' : 'awaitproof'); }, 700);
+  voucherProofBucket = skipProof ? 'done' : 'awaiting';
+  setTimeout(() => { $('dlgPay').close(); showTab('voucher'); }, 700);
 }
 async function pollTigerVoucher(receiptId, method) {
   const rid = String(receiptId || '').trim();
@@ -3105,7 +3092,6 @@ $('btnConfirmPay').onclick = async () => {
       $('payMsg').innerHTML = '<p class="muted">กำลังแนบหลักฐาน…</p>';
       attachedProof = await uploadPayProofFiles(res.voucno, pendingProof);
       if (attachedProof) {
-        try { await loadAwaitProof(); } catch (_) {}
         try { await loadVouchers(); } catch (_) {}
       }
     }
@@ -3279,16 +3265,17 @@ function proofCanComplete() {
 function completeProofFlow(fresh) {
   if (!proofCanComplete()) return;
   proofPendingComplete = false;
+  voucherProofBucket = 'done';
   $('dlgDetail').close();
   showTab('voucher');
-  if (fresh) openDetailByKey(keyOf(fresh), {voucher: true});
+  if (fresh) openDetailByKey(keyOf(fresh), {voucher: true, canUpload: true});
 }
 
 $('proofMismatchAck')?.addEventListener('change', () => {
   if ($('btnProofDone')) $('btnProofDone').disabled = !proofCanComplete();
 });
 $('btnProofDone')?.addEventListener('click', () => {
-  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow)) || awaitProofRows.find(x => keyOf(x) === keyOf(detailRow));
+  const fresh = voucherRows.find(x => keyOf(x) === keyOf(detailRow));
   completeProofFlow(fresh);
 });
 
@@ -3528,7 +3515,7 @@ async function cancelNoteByKey(key, returnTab, opts) {
       editTarget = null;
       showEditPanel(false);
     }
-    await Promise.all([loadPending(), loadAwaitProof(), loadVouchers()]);
+    await Promise.all([loadPending(), loadVouchers()]);
     if (byApVendor?.acctno === row.acctno) await loadByAp();
     if (returnTab) showTab(returnTab === 'byap' ? 'byap' : 'pending');
     else showTab('pending');
@@ -3549,7 +3536,7 @@ initPayBankSelect();
 (function boot() {
   const h = (location.hash || '').replace('#','');
   if (h === 'pending') showTab('pending');
-  else if (h === 'awaitproof') showTab('awaitproof');
+  else if (h === 'awaitproof') showTab('awaitproof'); // redirects to voucher + awaiting filter
   else if (h === 'voucher' || h === 'vouchers') showTab('voucher');
   else if (h === 'byap') showTab('byap');
   else showTab('create');
