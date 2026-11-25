@@ -100,7 +100,7 @@ def _service_cell(svc: ServiceDef) -> dict:
             {
                 "type": "text",
                 "text": svc.label,
-                "size": "xs",
+                "size": "sm",
                 "color": _LABEL_COLOR,
                 "wrap": True,
                 "flex": 1,
@@ -151,7 +151,7 @@ def _help_footer(svc: ServiceDef) -> dict:
             {
                 "type": "text",
                 "text": svc.label,
-                "size": "xs",
+                "size": "sm",
                 "color": _HELP_COLOR,
                 "flex": 1,
                 "align": "start",
