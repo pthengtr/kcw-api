@@ -102,6 +102,14 @@ def test_ui_page_placeholders():
     assert "printPick" in html
     assert "saveDraft" in html
     assert "qKind" in html
+    # Search results: compact TAD / CNTAD / net summary above pick print.
+    assert "searchBillSummary" in html
+    assert "renderSearchSummaryHtml" in html
+    assert 'class="search-sum"' in html
+    assert "บิลขาย" in html
+    assert "บิลคืน" in html
+    assert "ยอดสุทธิ" in html
+    assert "searchBillSummary(bills)" in html
     # After a successful draft save, clear the form for the next order
     # instead of staying in edit mode (editDraftId + syncEditBanner).
     assert "clearSaleForm();" in html
