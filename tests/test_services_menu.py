@@ -53,13 +53,17 @@ def test_menu_is_categorized_two_column():
         ]
         assert 1 <= len(cells) <= 2
         assert all(c.get("flex") == 1 for c in cells)
+        assert all(c.get("layout") == "baseline" for c in cells)
         assert all(c["action"]["type"] == "message" for c in cells)
         for cell in cells:
+            # LINE rejects icon outside baseline boxes — menu would not appear.
+            assert cell.get("layout") == "baseline"
             icon = next(n for n in cell["contents"] if n.get("type") == "icon")
             assert icon["size"] == "xxs"
             assert icon["url"].endswith(".png")
             label = next(n for n in cell["contents"] if n.get("type") == "text")
             assert label.get("align") == "start"
+            assert "gravity" not in label  # invalid inside baseline boxes
 
     sections = line_menu_sections()
     assert [t for t, _ in sections] == ["สินค้า", "ขาย", "จัดซื้อ", "บัญชี"]
