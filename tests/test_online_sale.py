@@ -39,10 +39,10 @@ def test_line_commands_and_menu():
     assert "to_bill" not in matched
     from src.handlers.services_menu import handle_services_menu
 
+    from src.handlers.services_menu import iter_services_menu_buttons
+
     labels = [
-        c["action"]["label"]
-        for c in handle_services_menu()["contents"]["body"]["contents"]
-        if c.get("type") == "button"
+        c["action"]["label"] for c in iter_services_menu_buttons(handle_services_menu())
     ]
     assert "ขายออนไลน์" in labels
     assert "ใบเต็มออนไลน์" not in labels

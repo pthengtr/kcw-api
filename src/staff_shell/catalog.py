@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
 
 # Phase A: open to every known access_group used in ops.line_access.
 OPEN_GROUPS = frozenset({"admin", "exec", "staff", "user", "guest", "cash_approver"})
+
+# Display order for LINE Flex category sections (id → Thai title).
+MENU_CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("inventory", "สินค้าและสต็อก"),
+    ("warehouse", "คลังและจัดซื้อ"),
+    ("commerce", "ขายและการเงิน"),
+    ("tools", "เครื่องมือ"),
+)
 
 
 def _port(env_key: str, default: int) -> int:
@@ -32,6 +41,7 @@ class ServiceDef:
     hosts: frozenset[str]
     web: bool = True
     icon: str = "app"
+    category: str = "tools"
 
 
 # Web services shown in the waffle launcher (and also in LINE menu).
@@ -45,6 +55,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("STOCK_CHECK_LISTEN_PORT", 8787),
         hosts=frozenset({"HQ", "SYP"}),
         icon="stock",
+        category="inventory",
     ),
     ServiceDef(
         id="companion",
@@ -55,6 +66,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("COMPANION_LISTEN_PORT", 8000),
         hosts=frozenset({"HQ"}),
         icon="pay",
+        category="commerce",
     ),
     ServiceDef(
         id="parts9-explorer",
@@ -65,6 +77,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("PARTS9_EXPLORER_LISTEN_PORT", 8788),
         hosts=frozenset({"HQ", "SYP"}),
         icon="search",
+        category="inventory",
     ),
     ServiceDef(
         id="transfer",
@@ -75,6 +88,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("TRANSFER_LISTEN_PORT", 8792),
         hosts=frozenset({"HQ", "SYP"}),
         icon="transfer",
+        category="warehouse",
     ),
     ServiceDef(
         id="hq-po",
@@ -85,6 +99,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("HQ_PO_LISTEN_PORT", 8793),
         hosts=frozenset({"HQ"}),
         icon="po",
+        category="warehouse",
     ),
     ServiceDef(
         id="hq-receive",
@@ -95,6 +110,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("HQ_RECEIVE_LISTEN_PORT", 8795),
         hosts=frozenset({"HQ"}),
         icon="receive",
+        category="warehouse",
     ),
     ServiceDef(
         id="online-sale",
@@ -105,6 +121,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("ONLINE_SALE_LISTEN_PORT", 8796),
         hosts=frozenset({"HQ"}),
         icon="sale",
+        category="commerce",
     ),
     ServiceDef(
         id="pay-notes",
@@ -115,6 +132,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("PAY_NOTES_LISTEN_PORT", 8791),
         hosts=frozenset({"HQ"}),
         icon="notes",
+        category="commerce",
     ),
     ServiceDef(
         id="receive-notes",
@@ -125,13 +143,36 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("RECEIVE_NOTES_LISTEN_PORT", 8797),
         hosts=frozenset({"HQ"}),
         icon="ar",
+        category="commerce",
     ),
 )
 
 # Chat-only / help entries for LINE Flex (not in waffle).
-_LINE_ONLY: tuple[tuple[str, str], ...] = (
-    ("จัดการรูปสินค้า", "รูป"),
-    ("วิธีใช้ทั้งหมด", "help"),
+_LINE_ONLY: tuple[ServiceDef, ...] = (
+    ServiceDef(
+        id="product-image",
+        label="จัดการรูปสินค้า",
+        line_command="รูป",
+        app="",
+        path="",
+        port=0,
+        hosts=frozenset({"HQ", "SYP"}),
+        web=False,
+        icon="image",
+        category="tools",
+    ),
+    ServiceDef(
+        id="help",
+        label="วิธีใช้ทั้งหมด",
+        line_command="help",
+        app="",
+        path="",
+        port=0,
+        hosts=frozenset({"HQ", "SYP"}),
+        web=False,
+        icon="help",
+        category="tools",
+    ),
 )
 
 SERVICE_PERMISSIONS: dict[str, frozenset[str]] = {
@@ -192,11 +233,50 @@ def filter_web_services(
     return out
 
 
+def all_line_menu_services() -> tuple[ServiceDef, ...]:
+    """Web + chat-only entries shown on the LINE Flex services card."""
+    return WEB_SERVICES + _LINE_ONLY
+
+
 def line_menu_entries() -> list[tuple[str, str]]:
     """(label, message) pairs for the LINE Flex services card."""
-    entries = [(svc.label, svc.line_command) for svc in WEB_SERVICES]
-    entries.extend(_LINE_ONLY)
-    return entries
+    return [(svc.label, svc.line_command) for svc in all_line_menu_services()]
+
+
+def line_menu_sections() -> list[tuple[str, list[ServiceDef]]]:
+    """Category title → services, for a compact categorized Flex layout.
+
+    New services only need a ``category`` on ``ServiceDef`` (or ``_LINE_ONLY``)
+    that matches ``MENU_CATEGORIES``; empty categories are omitted.
+    """
+    by_cat: dict[str, list[ServiceDef]] = {cid: [] for cid, _ in MENU_CATEGORIES}
+    for svc in all_line_menu_services():
+        bucket = by_cat.get(svc.category)
+        if bucket is None:
+            by_cat.setdefault("tools", []).append(svc)
+        else:
+            bucket.append(svc)
+    sections: list[tuple[str, list[ServiceDef]]] = []
+    for cid, title in MENU_CATEGORIES:
+        items = by_cat.get(cid) or []
+        if items:
+            sections.append((title, items))
+    return sections
+
+
+def _normalize_cmd(text: str) -> str:
+    t = (text or "").strip().lower()
+    return re.sub(r"\s+", "", t)
+
+
+_LINE_CMD_TO_SERVICE_ID: dict[str, str] = {
+    _normalize_cmd(svc.line_command): svc.id for svc in all_line_menu_services()
+}
+
+
+def resolve_line_menu_service_id(text: str) -> str | None:
+    """Map a LINE message (menu tap or typed command) to a catalog service id."""
+    return _LINE_CMD_TO_SERVICE_ID.get(_normalize_cmd(text))
 
 
 def service_public_dict(svc: ServiceDef, *, current: bool = False) -> dict[str, Any]:

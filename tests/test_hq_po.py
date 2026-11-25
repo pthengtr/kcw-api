@@ -745,10 +745,10 @@ def test_line_command_and_menu():
     assert is_hq_po_command("สั่งซื้อ")
     assert is_hq_po_command("HQ PO")
     assert not is_hq_po_command("โอนสินค้า")
+    from src.handlers.services_menu import iter_services_menu_buttons
+
     labels = [
-        c["action"]["label"]
-        for c in handle_services_menu()["contents"]["body"]["contents"]
-        if c.get("type") == "button"
+        c["action"]["label"] for c in iter_services_menu_buttons(handle_services_menu())
     ]
     assert "สั่งซื้อ" in labels
     assert services_menu_handlers_match()["hq_po"]

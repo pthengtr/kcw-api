@@ -74,6 +74,8 @@ from src.handlers.services_menu import (
     is_services_menu_request,
     handle_services_menu,
 )
+from src.staff_shell.access_log import record_service_menu_usage
+from src.staff_shell.catalog import resolve_line_menu_service_id
 from src.handlers.expense_cash import (
     handle_expense_cash_admin_command,
     handle_expense_cash_intent,
@@ -126,6 +128,14 @@ def route_user_text(
 
     if is_services_menu_request(text):
         return handle_services_menu()
+
+    # Phase 2 prep: count menu taps / primary service commands per user.
+    menu_service_id = resolve_line_menu_service_id(text)
+    if menu_service_id and line_user_id:
+        record_service_menu_usage(
+            line_user_id=line_user_id,
+            service_id=menu_service_id,
+        )
 
     if is_help_request(user_text):
         return {"type": "text", "text": GREETING_MESSAGE}
