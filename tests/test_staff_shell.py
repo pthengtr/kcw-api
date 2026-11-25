@@ -63,11 +63,18 @@ def test_filter_web_services_by_site():
 def test_line_menu_sections_cover_catalog():
     sections = line_menu_sections()
     titles = [t for t, _ in sections]
-    assert titles == ["สินค้าและสต็อก", "คลังและจัดซื้อ", "ขายและการเงิน", "เครื่องมือ"]
+    assert titles == ["สินค้า", "ขาย", "จัดซื้อ", "บัญชี"]
+    by_title = {t: [s.id for s in svcs] for t, svcs in sections}
+    assert by_title["สินค้า"] == ["stock-check", "parts9-explorer", "product-image"]
+    assert by_title["ขาย"] == ["companion", "online-sale"]
+    assert by_title["จัดซื้อ"] == ["hq-po", "hq-receive", "transfer"]
+    assert by_title["บัญชี"] == ["pay-notes", "receive-notes"]
     ids = {svc.id for _t, svcs in sections for svc in svcs}
-    assert "transfer" in ids and "product-image" in ids and "help" in ids
+    assert "transfer" in ids and "product-image" in ids
+    assert "help" not in ids  # footer-only
     assert resolve_line_menu_service_id("โอนสินค้า") == "transfer"
     assert resolve_line_menu_service_id("รูป") == "product-image"
+    assert resolve_line_menu_service_id("help") == "help"
     assert resolve_line_menu_service_id("menu") is None
 
 

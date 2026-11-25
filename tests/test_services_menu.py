@@ -25,23 +25,54 @@ def test_menu_has_transfer_button():
 def test_menu_is_categorized_two_column():
     msg = handle_services_menu()
     body = msg["contents"]["body"]["contents"]
+    assert body[0]["text"] == "KCW Services"
+    assert not any(
+        c.get("type") == "text" and "กดเลือกบริการ" in (c.get("text") or "")
+        for c in body
+    )
     titles = [c["text"] for c in body if c.get("type") == "text" and c.get("size") == "xs"]
-    assert "สินค้าและสต็อก" in titles
-    assert "คลังและจัดซื้อ" in titles
-    assert "ขายและการเงิน" in titles
-    assert "เครื่องมือ" in titles
+    assert titles == ["สินค้า", "ขาย", "จัดซื้อ", "บัญชี"]
 
-    rows = [c for c in body if c.get("type") == "box" and c.get("layout") == "horizontal"]
-    assert rows, "expected horizontal button rows"
-    for row in rows:
-        buttons = [n for n in row["contents"] if n.get("type") == "button"]
-        assert 1 <= len(buttons) <= 2
-        assert all(b.get("flex") == 1 for b in buttons)
-        assert all(b["action"]["type"] == "message" for b in buttons)
+    # Grid rows: horizontal boxes whose children are tappable service cells.
+    grid_rows = [
+        c
+        for c in body
+        if c.get("type") == "box"
+        and c.get("layout") == "horizontal"
+        and any(
+            isinstance(n, dict) and n.get("backgroundColor") == "#F5F6F8"
+            for n in (c.get("contents") or [])
+        )
+    ]
+    assert grid_rows, "expected horizontal service rows"
+    for row in grid_rows:
+        cells = [
+            n
+            for n in row["contents"]
+            if isinstance(n, dict) and n.get("backgroundColor") == "#F5F6F8"
+        ]
+        assert 1 <= len(cells) <= 2
+        assert all(c.get("flex") == 1 for c in cells)
+        assert all(c["action"]["type"] == "message" for c in cells)
+        for cell in cells:
+            icon = next(n for n in cell["contents"] if n.get("type") == "icon")
+            assert icon["size"] == "xxs"
+            assert icon["url"].endswith(".png")
+            label = next(n for n in cell["contents"] if n.get("type") == "text")
+            assert label.get("align") == "start"
 
     sections = line_menu_sections()
+    assert [t for t, _ in sections] == ["สินค้า", "ขาย", "จัดซื้อ", "บัญชี"]
     assert all(services for _title, services in sections)
-    # Every menu button still launches the service command directly (no submenu).
+    # Help is footer-only, not a category grid item.
+    assert all(svc.id != "help" for _t, svcs in sections for svc in svcs)
+    # Every menu cell still launches the service command directly (no submenu).
     for _title, services in sections:
         for svc in services:
             assert svc.line_command
+
+    help_btns = [
+        b for b in iter_services_menu_buttons(msg) if b["action"]["text"] == "help"
+    ]
+    assert len(help_btns) == 1
+    assert help_btns[0]["action"]["label"] == "วิธีใช้ทั้งหมด"
