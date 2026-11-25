@@ -18,9 +18,10 @@ GRANT SELECT ON dbo.BPDET TO python_writer;
 GRANT INSERT ON dbo.PVMAS TO python_writer;
 GRANT UPDATE ON dbo.PIMAS TO python_writer;
 
--- Mark paid (voucher)
+-- Mark paid (voucher) + cancel await-proof payment (soft-cancel BPDET)
 GRANT UPDATE ON dbo.PVMAS TO python_writer;
 GRANT INSERT ON dbo.BPDET TO python_writer;
+GRANT UPDATE ON dbo.BPDET TO python_writer;
 GO
 
 -- Verify (run as python_writer or check HAS_PERMS_BY_NAME while impersonating):
@@ -32,5 +33,6 @@ GO
 --   HAS_PERMS_BY_NAME('dbo.PIMAS','OBJECT','SELECT') AS pi_sel,
 --   HAS_PERMS_BY_NAME('dbo.PIMAS','OBJECT','UPDATE') AS pi_upd,
 --   HAS_PERMS_BY_NAME('dbo.BPDET','OBJECT','SELECT') AS bp_sel,
---   HAS_PERMS_BY_NAME('dbo.BPDET','OBJECT','INSERT') AS bp_ins;
+--   HAS_PERMS_BY_NAME('dbo.BPDET','OBJECT','INSERT') AS bp_ins,
+--   HAS_PERMS_BY_NAME('dbo.BPDET','OBJECT','UPDATE') AS bp_upd;
 -- REVERT;

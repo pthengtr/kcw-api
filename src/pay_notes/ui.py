@@ -1113,7 +1113,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   </section>
 
   <section id="panelAwaitProof" class="panel">
-    <p class="panel-intro">ขั้นที่ 3 · บันทึกการจ่ายแล้ว · รออัปโหลดหลักฐาน</p>
+    <p class="panel-intro">ขั้นที่ 3 · บันทึกการจ่ายแล้ว · รออัปโหลดหลักฐาน · โอนไม่สำเร็จใช้ปุ่มยกเลิกการชำระ</p>
     <div class="card toolbar">
       <div class="field grow">
         <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg></span>
@@ -1363,8 +1363,27 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   <div class="dlg-foot">
     <button type="button" class="btn ghost" id="btnCloseDetail2">ปิด</button>
     <button type="button" class="btn danger hidden" id="detCancelNoteBtn">ยกเลิกใบวางบิล</button>
+    <button type="button" class="btn danger hidden" id="detCancelPayBtn">ยกเลิกการชำระ</button>
     <button type="button" class="btn outline" id="btnPrintDetail">พิมพ์</button>
     <button type="button" class="btn primary hidden" id="detPayBtn">บันทึกการจ่าย</button>
+  </div>
+</dialog>
+
+<dialog id="dlgCancelPay" class="dlg">
+  <div class="dlg-head">
+    <h2>ยกเลิกการชำระ</h2>
+    <button type="button" class="dlg-x" id="btnCloseCancelPay" aria-label="ปิด">×</button>
+  </div>
+  <div class="dlg-body">
+    <p id="cancelPayMeta" class="muted" style="margin:0 0 .75rem"></p>
+    <p class="hint" style="margin:0 0 .75rem">ใบสำคัญจ่ายเดิมจะถูกยกเลิก · ใบวางบิลและยอดค้างกลับไปหน้ารอชำระ · ระบุเหตุผลก่อนยืนยัน</p>
+    <label class="lbl" for="cancelPayReason">เหตุผลการยกเลิก <span style="color:var(--down)">*</span></label>
+    <textarea class="inp" id="cancelPayReason" rows="3" maxlength="500" placeholder="เช่น โอนเงินไม่สำเร็จ / ยอดผิด / เลือกบัญชีผิด" style="resize:vertical;min-height:4.5rem"></textarea>
+    <div id="cancelPayMsg"></div>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="btn ghost" id="btnCancelPayDlgClose">ปิด</button>
+    <button type="button" class="btn danger" id="btnConfirmCancelPay">ยืนยันยกเลิกการชำระ</button>
   </div>
 </dialog>
 
@@ -1910,7 +1929,10 @@ function renderAwaitProof() {
     <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
     <td class="num" data-label="ยอดจ่าย">${fmtMoney(r.NETAMT != null ? r.NETAMT : r.BILLAMT)}</td>
     <td data-label="วิธีชำระ">${esc(settleLabel(r.settle_method))}</td>
-    <td class="td-actions" data-label=""><button type="button" class="btn sm primary" data-open="${esc(keyOf(r))}" data-upload="1">แนบหลักฐาน</button></td>
+    <td class="td-actions" data-label=""><div class="row-actions">
+      <button type="button" class="btn sm primary" data-open="${esc(keyOf(r))}" data-upload="1">แนบหลักฐาน</button>
+      ${WRITE_ENABLED ? `<button type="button" class="btn sm danger" data-cancel-pay="${esc(keyOf(r))}">ยกเลิกการชำระ</button>` : ''}
+    </div></td>
   </tr>`).join('');
   renderPager($('awaitProofPager'), pg.page, pg.pages, p => { awaitProofPage = p; renderAwaitProof(); });
 }
@@ -1918,6 +1940,8 @@ $('btnRefreshAwaitProof').onclick = loadAwaitProof;
 $('afQ').addEventListener('input', () => { awaitProofPage = 1; renderAwaitProof(); });
 $('afBillMonth')?.addEventListener('change', () => { awaitProofPage = 1; renderAwaitProof(); });
 $('awaitProofBody').addEventListener('click', (e) => {
+  const cancelPay = e.target.closest('[data-cancel-pay]');
+  if (cancelPay) { openCancelPayByKey(cancelPay.dataset.cancelPay); return; }
   const open = e.target.closest('[data-open]');
   if (open) openDetailByKey(open.dataset.open, {awaitProof: true, canUpload: !!open.dataset.upload});
 });
@@ -2430,6 +2454,7 @@ async function openDetailByKey(key, opts) {
   $('detProofWrap').classList.toggle('hidden', !row.voucno);
   const isAwaitProof = row.stage === 'await_proof' || (!!row.voucno && !row.has_proof);
   const isDoneVoucher = row.stage === 'voucher' || !!row.has_proof;
+  $('detCancelPayBtn')?.classList.toggle('hidden', !(WRITE_ENABLED && isAwaitProof && !isDoneVoucher));
   const canUpload = WRITE_ENABLED && !!row.voucno && (opts.canUpload || isAwaitProof);
   $('detUploadWrap').classList.toggle('hidden', !canUpload);
   if ($('detUploadLabel')) {
@@ -2490,6 +2515,77 @@ $('detCancelNoteBtn')?.addEventListener('click', () => {
     closeDetail: true,
   });
 });
+$('detCancelPayBtn')?.addEventListener('click', () => {
+  if (!detailRow) return;
+  openCancelPayByKey(keyOf(detailRow), {closeDetail: true});
+});
+
+let cancelPayTarget = null;
+let cancelPayCloseDetail = false;
+function openCancelPayByKey(key, opts) {
+  opts = opts || {};
+  if (!WRITE_ENABLED) { alert('KSS write ปิดอยู่'); return; }
+  const row = findRow(key)
+    || awaitProofRows.find(r => keyOf(r) === key)
+    || pendingRows.find(r => keyOf(r) === key)
+    || (detailRow && keyOf(detailRow) === key ? detailRow : null);
+  if (!row) { alert('ไม่พบรายการ'); return; }
+  const isAwait = row.stage === 'await_proof' || (!!row.voucno && !row.has_proof);
+  if (!isAwait || row.has_proof) {
+    alert('ยกเลิกการชำระได้เฉพาะรายการที่รอแนบหลักฐาน');
+    return;
+  }
+  cancelPayTarget = row;
+  cancelPayCloseDetail = !!opts.closeDetail;
+  const label = notenoReuseMeta(row).display || row.noteno;
+  $('cancelPayMeta').textContent = `${row.acctno} · ใบวางบิล ${label} · ใบสำคัญจ่าย ${row.voucno || '—'}`;
+  $('cancelPayReason').value = '';
+  $('cancelPayMsg').innerHTML = '';
+  $('btnConfirmCancelPay').disabled = false;
+  if (opts.closeDetail) {
+    try { $('dlgDetail').close(); } catch (_) {}
+  }
+  $('dlgCancelPay').showModal();
+}
+function closeCancelPayDlg() {
+  try { $('dlgCancelPay').close(); } catch (_) {}
+  cancelPayTarget = null;
+  cancelPayCloseDetail = false;
+}
+$('btnCloseCancelPay')?.addEventListener('click', closeCancelPayDlg);
+$('btnCancelPayDlgClose')?.addEventListener('click', closeCancelPayDlg);
+$('btnConfirmCancelPay')?.addEventListener('click', async () => {
+  if (!cancelPayTarget || !WRITE_ENABLED) return;
+  const reason = ($('cancelPayReason').value || '').trim();
+  if (!reason) {
+    $('cancelPayMsg').innerHTML = '<p class="err">กรุณาระบุเหตุผลการยกเลิก</p>';
+    $('cancelPayReason').focus();
+    return;
+  }
+  $('btnConfirmCancelPay').disabled = true;
+  $('cancelPayMsg').innerHTML = '<p class="muted">กำลังยกเลิก…</p>';
+  try {
+    await api('/vouchers/cancel', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        acctno: cancelPayTarget.acctno,
+        noteno: cancelPayTarget.noteno,
+        reason,
+      }),
+    });
+    const acct = cancelPayTarget.acctno;
+    closeCancelPayDlg();
+    detailRow = null;
+    await Promise.all([loadPending(), loadAwaitProof(), loadVouchers()]);
+    if (byApVendor?.acctno === acct) await loadByAp();
+    showTab('pending');
+  } catch (e) {
+    $('btnConfirmCancelPay').disabled = false;
+    $('cancelPayMsg').innerHTML = `<p class="err">${esc(e.message || 'ยกเลิกไม่สำเร็จ')}</p>`;
+  }
+});
+
 async function deleteStoredBillImage(acctno, noteno, path) {
   if (!acctno || !noteno || !path) return null;
   if (!confirm('ลบรูปใบวางบิลนี้?')) return null;

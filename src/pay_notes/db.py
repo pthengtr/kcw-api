@@ -215,3 +215,32 @@ def list_reminders(client: Client) -> list[dict[str, Any]]:
         .execute()
     )
     return list(resp.data or [])
+
+
+def insert_payment_cancel(client: Client, row: dict[str, Any]) -> dict[str, Any]:
+    """Record a canceled await-proof payment voucher for audit history."""
+    resp = _table(client, "payment_cancel").insert(row).select("*").execute()
+    return _first_row(resp)
+
+
+def list_payment_cancels(
+    client: Client,
+    *,
+    acctno: str,
+    noteno: str,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return []
+    resp = (
+        _table(client, "payment_cancel")
+        .select("*")
+        .eq("acctno", acct)
+        .eq("noteno", note)
+        .order("canceled_at", desc=True)
+        .limit(max(1, min(int(limit or 20), 100)))
+        .execute()
+    )
+    return list(resp.data or [])

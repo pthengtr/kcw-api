@@ -20,8 +20,10 @@ from src.pay_notes.db import (
     get_pay_notes_supabase_client,
     get_reminder,
     get_vendor_bank,
+    insert_payment_cancel,
     insert_reminder,
     insert_vendor_bank,
+    list_payment_cancels,
     list_reminders,
     list_vendor_banks,
     patch_reminder,
@@ -67,6 +69,7 @@ from src.pay_notes.company_banks import (
 )
 from src.pay_notes.writer import (
     PayNoteWriteError,
+    cancel_awaiting_proof_payment,
     cancel_unvouchered_pay_note,
     create_pay_note,
     create_voucher,
@@ -280,6 +283,12 @@ class VoucherCreate(BaseModel):
     chkdate: str | None = None
     pay_bank: str = DEFAULT_PAY_BANK_KEY
     bank_gl: str | None = None  # legacy; prefer pay_bank
+
+
+class VoucherCancel(BaseModel):
+    acctno: str
+    noteno: str
+    reason: str
 
 
 def _parse_due(raw: str) -> str:
@@ -1174,6 +1183,144 @@ def api_create_voucher(request: Request, body: VoucherCreate):
         },
     )
     return {**result, "reminder": rem, "settle_method": method, "pay_bank": pay_acct["key"]}
+
+
+@router.post("/api/vouchers/cancel")
+def api_cancel_voucher(request: Request, body: VoucherCancel):
+    """Cancel an await-proof payment: soft-cancel BPDET, restore note to รอชำระ."""
+    ident, err = _require_api(request)
+    if err:
+        return err
+    settings = _settings()
+    acct = (body.acctno or "").strip()
+    note = (body.noteno or "").strip()
+    reason = (body.reason or "").strip()
+    if not acct or not note:
+        return JSONResponse({"error": "acctno and noteno required"}, status_code=400)
+    if not reason:
+        return JSONResponse(
+            {"error": "reason required", "code": "reason_required"},
+            status_code=400,
+        )
+    if len(reason) > 500:
+        return JSONResponse(
+            {"error": "reason too long (max 500)", "code": "validation"},
+            status_code=400,
+        )
+
+    client = get_pay_notes_supabase_client()
+    rem = get_reminder(client, acct, note)
+    if not rem:
+        return JSONResponse({"error": "reminder not found for this note"}, status_code=404)
+
+    header = get_note_header(settings.site, acct, note)
+    if not header:
+        return JSONResponse({"error": "note not found in KSS"}, status_code=404)
+    voucno = (header.get("voucno") or header.get("VOUCNO") or "").strip()
+    if not voucno or str(header.get("VOUCED") or "N").strip().upper() != "Y":
+        return JSONResponse(
+            {"error": "note is not vouchered", "code": "not_vouchered"},
+            status_code=409,
+        )
+
+    proofs = list_folder(client, payment_image_prefix(voucno))
+    if proofs:
+        return JSONResponse(
+            {
+                "error": "cannot cancel after proof is attached — remove from ใบสำคัญจ่าย only via support",
+                "code": "has_proof",
+            },
+            status_code=409,
+        )
+
+    try:
+        kss = cancel_awaiting_proof_payment(
+            settings=settings,
+            acctno=acct,
+            noteno=note,
+        )
+    except PayNoteWriteError as exc:
+        status = 409 if exc.code in (
+            "not_vouchered",
+            "already_done",
+            "already_posted",
+            "not_editable",
+        ) else 400
+        if exc.code == "write_disabled":
+            status = 403
+        if exc.code == "not_found":
+            status = 404
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=status)
+
+    canceled_voucno = str(kss.get("voucno") or voucno).strip()
+    history: dict[str, Any] | None = None
+    history_error: str | None = None
+    try:
+        history = insert_payment_cancel(
+            client,
+            {
+                "acctno": acct,
+                "noteno": note,
+                "voucno": canceled_voucno,
+                "reason": reason,
+                "canceled_by": (ident.display_name if ident else None),
+                "canceled_at": datetime.now(_BKK).isoformat(),
+                "snapshot": {
+                    "billamt": kss.get("billamt"),
+                    "discount": kss.get("discount"),
+                    "netamt": kss.get("netamt"),
+                    "voucdate": kss.get("voucdate"),
+                    "settle_method": rem.get("settle_method"),
+                    "pay_bank": rem.get("pay_bank"),
+                    "bpdet_canceled": kss.get("bpdet_canceled"),
+                },
+            },
+        )
+    except Exception as exc:
+        history_error = str(exc)
+
+    # Drop voucher-time payout stamp; intended settle_method from note create stays.
+    rem_patch: dict[str, Any] = {
+        "pay_bank": None,
+        "updated_at": datetime.now(_BKK).isoformat(),
+    }
+    # Keep intended transfer|cheque; clear cash-only voucher confirmation.
+    if str(rem.get("settle_method") or "").strip().lower() == "cash":
+        rem_patch["settle_method"] = "transfer"
+    try:
+        rem = patch_reminder(client, acct, note, rem_patch) or rem
+    except Exception:
+        pass
+
+    payload: dict[str, Any] = {
+        **kss,
+        "reason": reason,
+        "reminder": rem,
+        "history": history,
+        **_workflow_meta(),
+    }
+    if history_error:
+        payload["history_error"] = history_error
+        return JSONResponse(payload, status_code=500)
+    return payload
+
+
+@router.get("/api/vouchers/cancel-history")
+def api_voucher_cancel_history(
+    request: Request,
+    acctno: str = "",
+    noteno: str = "",
+):
+    """Cancellation history for a pay note (audit)."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        return JSONResponse({"error": "acctno and noteno required"}, status_code=400)
+    client = get_pay_notes_supabase_client()
+    return {"items": list_payment_cancels(client, acctno=acct, noteno=note)}
 
 
 @router.get("/api/vouchered")

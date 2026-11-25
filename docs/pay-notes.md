@@ -12,7 +12,7 @@ LINE command: `ชำระเจ้าหนี้` (aliases: `โน้ตจ�
 |-----|-------------|-----------|----------------|
 | 1. สร้าง | Create note (vendor, bills, discount, **pay method โอนเงิน/เช็ค**, images) | yes (new) | `PVMAS` INSERT + `PIMAS` stamp; `pay_note.reminder` |
 | 2. รอชำระ | Pending payment board; edit note; **delete a wrong bill image**; **cancel mistaken note**; record payment | **yes** (bills, discount, due, bank, pay method, remark, bill images); cancel = soft | unvouchered `PVMAS` + reminder |
-| 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `PVMAS`; `payment/{VOUCNO}/` images |
+| 3. รอแนบหลักฐาน | Vouchered, upload payment proof; **cancel payment** (failed transfer) with required reason → note returns to รอชำระ | proof upload; cancel restores unpaid note | vouchered `PVMAS`; soft-cancel `BPDET`; `pay_note.payment_cancel` history |
 | 4. ใบสำคัญจ่าย | Complete vouchers (proof attached); view / **update** bill + proof images | proof images only (must keep ≥1) | vouchered `PVMAS` with proof |
 | 5. ค้นหาตามเจ้าหนี้ | Browse all notes/vouchers per AP vendor | edit button when stage = รอชำระ | `GET /api/notes?acctno=` |
 
@@ -51,6 +51,9 @@ Requires `OPENAI_API_KEY` and `PAY_NOTES_AI_ENABLED=true` (default on when key i
 - `PATCH /api/banks?bank_id=` — edit that AP’s account in place (`acctno` must match)
 - `GET /api/bills?acctno=&noteno=` — bills for edit UI (attached + pickable)
 - `GET /api/vouchered?proof=awaiting|done|all` — vouchered board (removed: `/api/awaiting-proof`, `/api/paid`)
+- `POST /api/vouchers` — record payment (allocates `VOUCNO`, stamps `PIMAS`, inserts `BPDET`). **409/400** if already vouchered (`code: already_vouchered`)
+- `POST /api/vouchers/cancel` — **cancel await-proof payment only** (required `reason`): soft-cancel `BPDET` (`CANCELED='Y'`), clear `PVMAS`/`PIMAS` payment stamps, keep the note + reminder so it returns to รอชำระ for a new payment. Writes `pay_note.payment_cancel`. **409** if proof already attached (`has_proof`) or not vouchered
+- `GET /api/vouchers/cancel-history?acctno=&noteno=` — payment-cancel audit rows
 - `POST /api/images/bill` — upload a bill image for `acctno` + `noteno` (also used before the note is saved)
 - `DELETE /api/images/bill?acctno=&noteno=&path=` — remove one bill image, including the last one, while the note is still unvouchered (or not created yet). **409** after payment is recorded (`code: already_vouchered`)
 - `POST /api/images/payment` — upload/replace payment proof for a `voucno` (also allowed on completed vouchers)
@@ -84,7 +87,7 @@ SQL grants for `python_writer` (run on HQ `PARTS9` as admin, e.g. WinRM + `sqlcm
 
 `scripts/sql/grant_pay_notes_writer.sql`
 
-Supabase: schema `pay_note` (vendor_bank, reminder) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`, `20260827140000_pay_note_reminder_discount.sql` (`discount_mode` / `discount_input` / `discount_amount` on reminder), `20260828120000_pay_note_reminder_kbiz_datetime.sql` (`kbiz_datetime` optional on reminder), `20260831120000_pay_note_remark_structured.sql` (`bill_month` + `remark_extra` on reminder), `20260828100000_pay_note_reminder_settle.sql` + `20260911140000_pay_note_reminder_pay_method.sql` (`settle_method` intended at create: `transfer` | `cheque`; confirmed at voucher, may be `cash`), `20260908120000_pay_note_vendor_bank_from_party.sql` (one-time copy of `public.party_bank_info` into `pay_note.vendor_bank`).
+Supabase: schema `pay_note` (vendor_bank, reminder, payment_cancel) + image bucket paths under `public/pay_note/…`. Migrations `2026082712*_pay_note_*.sql`, `20260827140000_pay_note_reminder_discount.sql` (`discount_mode` / `discount_input` / `discount_amount` on reminder), `20260828120000_pay_note_reminder_kbiz_datetime.sql` (`kbiz_datetime` optional on reminder), `20260831120000_pay_note_remark_structured.sql` (`bill_month` + `remark_extra` on reminder), `20260828100000_pay_note_reminder_settle.sql` + `20260911140000_pay_note_reminder_pay_method.sql` (`settle_method` intended at create: `transfer` | `cheque`; confirmed at voucher, may be `cash`), `20260908120000_pay_note_vendor_bank_from_party.sql` (one-time copy of `public.party_bank_info` into `pay_note.vendor_bank`), `2026112514*_pay_note_payment_cancel*.sql` (await-proof payment cancel audit).
 
 Vendor banks live in `pay_note.vendor_bank`. `public.party_bank_info` is a one-time source only — pay-notes does not read it at runtime. PARTS9 has no bank columns.
 
@@ -119,7 +122,19 @@ Only for **รอชำระ** (unvouchered). Soft-cancel — never hard-delete
 3. Delete `pay_note.reminder`  
 4. Best-effort remove bill images under that note  
 
-Vouchered notes cannot be canceled via this API.
+Vouchered notes cannot be canceled via this API — use **ยกเลิกการชำระ** instead while still on รอแนบหลักฐาน.
+
+### Cancel payment (failed transfer / wrong payout)
+
+Only for **รอแนบหลักฐาน** (vouchered, no proof images). Restores the same bill note to **รอชำระ** without recreating it:
+
+1. Soft-cancel `BPDET` for that `VOUCNO` (`CANCELED='Y'` — keeps KSS history; prevents reuse as a live payment)  
+2. Clear `PIMAS.VOUCNO2` / `PAID` / `PAYSTAT` (bills stay stamped with `NOTENO`)  
+3. Clear `PVMAS` voucher fields (`VOUCED='N'`, empty `VOUCNO`, `JOURTYPE='NP'`, unpaid amounts)  
+4. Insert `pay_note.payment_cancel` with operator reason  
+5. New payment allocates a **new** `VOUCNO` (`next_voucno` reads MAX from both `PVMAS` and `BPDET` so the canceled number is never reused)
+
+Blocked once proof is attached, or if the voucher is `DONE`/`POSTED`.
 
 ### Vendor NOTENO reuse (`_1` suffix)
 
