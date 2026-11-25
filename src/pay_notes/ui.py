@@ -1844,8 +1844,6 @@ function renderPending() {
   $('pendingEmpty').classList.toggle('hidden', pg.total !== 0);
   $('pendingBody').innerHTML = pg.rows.map(r => {
     const st = pendingStatus(r);
-    const bank = ((r.reminder || {}).vendor_bank || {});
-    const bankname = `${bank.bank_name || ''} ${bank.bank_account_name || ''} # ${bank.bank_account_number || ''}`.trim();
     return `<tr>
       <td data-label="รหัสเจ้าหนี้">${esc(r.acctno)}</td>
       <td data-label="เลขใบวางบิล">${notenoCellHtml(r)}</td>
@@ -1857,10 +1855,6 @@ function renderPending() {
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="td-actions" data-label=""><div class="row-actions">
         <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>
-        <button type="button" class="btn sm primary"
-          data-pay-acct="${esc(r.acctno)}" data-pay-note="${esc(r.noteno)}"
-          data-pay-amt="${Number(r.BILLAMT||0)}" data-pay-disc="${Number((r.reminder||{}).discount_amount||0)}"
-          data-pay-bank="${esc(bankname)}">บันทึกการจ่าย</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -1884,11 +1878,6 @@ $('pfSort')?.addEventListener('change', () => {
   try { localStorage.setItem('kcw.pay_notes.pendingSort', pendingSortMode()); } catch (e) {}
 });
 $('pendingBody').addEventListener('click', (e) => {
-  const pay = e.target.closest('[data-pay-acct]');
-  if (pay) {
-    openPay(pay.dataset.payAcct, pay.dataset.payNote, pay.dataset.payAmt, pay.dataset.payDisc, pay.dataset.payBank || '');
-    return;
-  }
   const open = e.target.closest('[data-open]');
   if (open) openDetailByKey(open.dataset.open, {canPay: true});
 });
