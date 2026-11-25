@@ -12,7 +12,11 @@ from src.handlers.hq_po_entry import is_hq_po_command
 from src.handlers.hq_receive_entry import is_hq_receive_command
 from src.handlers.online_sale_entry import is_online_sale_command
 from src.handlers.transfer_entry import is_transfer_command
-from src.staff_shell.catalog import line_menu_entries
+from src.staff_shell.catalog import (
+    ServiceDef,
+    line_menu_entries,
+    line_menu_sections,
+)
 
 SERVICES_MENU_COMMANDS = {
     "menu",
@@ -39,14 +43,67 @@ def _msg_button(label: str, message: str) -> dict:
         "type": "button",
         "style": "secondary",
         "height": "sm",
-        "margin": "sm",
+        "flex": 1,
         "action": {"type": "message", "label": label[:40], "text": message},
     }
 
 
+def _category_header(title: str, *, first: bool) -> dict:
+    return {
+        "type": "text",
+        "text": title,
+        "size": "xs",
+        "weight": "bold",
+        "color": "#64748B",
+        "margin": "md" if not first else "sm",
+    }
+
+
+def _button_rows(services: list[ServiceDef]) -> list[dict]:
+    """Pack service buttons into horizontal pairs (2 columns)."""
+    rows: list[dict] = []
+    for i in range(0, len(services), 2):
+        pair = services[i : i + 2]
+        contents = [_msg_button(svc.label, svc.line_command) for svc in pair]
+        if len(contents) == 1:
+            contents.append({"type": "filler", "flex": 1})
+        rows.append(
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "spacing": "sm",
+                "margin": "sm",
+                "contents": contents,
+            }
+        )
+    return rows
+
+
 def handle_services_menu() -> dict:
-    """Flex card listing all KCW tool entry commands (tap sends message to bot)."""
-    buttons = [_msg_button(label, message) for label, message in line_menu_entries()]
+    """Compact categorized Flex card; each button sends the service command directly."""
+    body_contents: list[dict] = [
+        {
+            "type": "text",
+            "text": "เมนูบริการ",
+            "weight": "bold",
+            "size": "lg",
+            "color": "#111111",
+        },
+        {
+            "type": "text",
+            "text": "กดเลือกบริการที่ต้องการใช้",
+            "size": "sm",
+            "color": "#888888",
+            "wrap": True,
+            "margin": "sm",
+        },
+        {"type": "separator", "margin": "md"},
+    ]
+
+    for idx, (title, services) in enumerate(line_menu_sections()):
+        body_contents.append(_category_header(title, first=idx == 0))
+        body_contents.extend(_button_rows(services))
+
     return {
         "type": "flex",
         "altText": "เมนูบริการ KCW — กดเลือก",
@@ -56,28 +113,32 @@ def handle_services_menu() -> dict:
             "body": {
                 "type": "box",
                 "layout": "vertical",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": "เมนูบริการ",
-                        "weight": "bold",
-                        "size": "lg",
-                        "color": "#111111",
-                    },
-                    {
-                        "type": "text",
-                        "text": "กดเลือกบริการที่ต้องการใช้",
-                        "size": "sm",
-                        "color": "#888888",
-                        "wrap": True,
-                        "margin": "sm",
-                    },
-                    {"type": "separator", "margin": "md"},
-                    *buttons,
-                ],
+                "spacing": "none",
+                "paddingAll": "16px",
+                "contents": body_contents,
             },
         },
     }
+
+
+def iter_services_menu_buttons(msg: dict | None = None) -> list[dict]:
+    """Flatten button nodes from a Flex menu (nested 2-column rows)."""
+    root = msg if msg is not None else handle_services_menu()
+    body = (((root or {}).get("contents") or {}).get("body") or {}).get("contents") or []
+    out: list[dict] = []
+
+    def walk(nodes: list) -> None:
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            if node.get("type") == "button":
+                out.append(node)
+            nested = node.get("contents")
+            if isinstance(nested, list):
+                walk(nested)
+
+    walk(body)
+    return out
 
 
 def services_menu_button_messages() -> list[str]:
@@ -86,7 +147,7 @@ def services_menu_button_messages() -> list[str]:
 
 def services_menu_handlers_match() -> dict[str, bool]:
     checks = services_menu_button_messages()
-    # Order matches line_menu_entries(): web services then รูป, help.
+    # Order matches all_line_menu_services(): web services then รูป, help.
     return {
         "stock_check": is_stock_check_command(checks[0]),
         "companion": is_companion_command(checks[1]),

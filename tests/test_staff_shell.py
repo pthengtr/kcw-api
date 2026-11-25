@@ -17,12 +17,18 @@ from src.staff_shell.catalog import (
     filter_web_services,
     get_service,
     line_menu_entries,
+    line_menu_sections,
+    resolve_line_menu_service_id,
 )
 from src.staff_shell.ui import inject_shell, render_shell_html
 from src.staff_shell.urls import build_switch_url, rewrite_base_port
 from src.staff_shell.wiring import entry_source, wire_shell
 from src.stock_check.auth import StockCheckIdentity, verify_access_token
-from src.handlers.services_menu import handle_services_menu, services_menu_handlers_match
+from src.handlers.services_menu import (
+    handle_services_menu,
+    iter_services_menu_buttons,
+    services_menu_handlers_match,
+)
 
 
 SECRET = "test-staff-shell-secret"
@@ -52,6 +58,17 @@ def test_filter_web_services_by_site():
     assert "pay-notes" in hq and "hq-po" in hq and "companion" in hq
     assert "pay-notes" not in syp and "hq-po" not in syp and "companion" not in syp
     assert "transfer" in syp and "stock-check" in syp
+
+
+def test_line_menu_sections_cover_catalog():
+    sections = line_menu_sections()
+    titles = [t for t, _ in sections]
+    assert titles == ["สินค้าและสต็อก", "คลังและจัดซื้อ", "ขายและการเงิน", "เครื่องมือ"]
+    ids = {svc.id for _t, svcs in sections for svc in svcs}
+    assert "transfer" in ids and "product-image" in ids and "help" in ids
+    assert resolve_line_menu_service_id("โอนสินค้า") == "transfer"
+    assert resolve_line_menu_service_id("รูป") == "product-image"
+    assert resolve_line_menu_service_id("menu") is None
 
 
 def test_permissions_open_by_default():
@@ -193,16 +210,19 @@ def test_online_sale_page_hosts_shell_slot():
 
 def test_services_menu_still_matches_handlers():
     msg = handle_services_menu()
-    labels = [
-        c["action"]["label"]
-        for c in msg["contents"]["body"]["contents"]
-        if c.get("type") == "button"
-    ]
+    labels = [c["action"]["label"] for c in iter_services_menu_buttons(msg)]
     assert "โอนสินค้า" in labels
     assert "ชำระเจ้าหนี้" in labels
     assert "รับชำระลูกหนี้" in labels
     matched = services_menu_handlers_match()
     assert matched["transfer"] and matched["pay_notes"] and matched["receive_notes"] and matched["image"]
+
+
+def test_record_service_menu_usage_swallows_errors():
+    from src.staff_shell.access_log import record_service_menu_usage
+
+    with patch("src.db.engine.get_engine", side_effect=RuntimeError("boom")):
+        record_service_menu_usage(line_user_id="U1", service_id="transfer")
 
 
 def test_shell_routes_switch_and_logout():
