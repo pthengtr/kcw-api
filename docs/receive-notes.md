@@ -14,9 +14,8 @@ Template: [`pay-notes.md`](./pay-notes.md) — same Layout / Process / Function 
 |-----|-------------|-----------|----------------|
 | 1. สร้าง | Create note (debtor → bills → discount → save) | yes (new) | `RVMAS` INSERT + `SIMAS` stamp; `receive_note.note` |
 | 2. รอรับชำระ | Pending board; edit note; cancel mistaken note; record receive | yes while unvouchered | unvouchered `RVMAS` + overlay |
-| 3. รอแนบหลักฐาน | Vouchered, upload payment proof | no | vouchered `RVMAS`; `payment/{VOUCNO}/` images |
-| 4. ใบเสร็จรับเงิน | Complete vouchers (proof attached); issued after receive confirm | proof images; **แก้ไข** receive date / remark / bank | vouchered `RVMAS` + `BRDET` in place; `receive_note.receipt_edit_audit` |
-| 5. ค้นหาตามลูกหนี้ | Browse notes/vouchers per AR debtor | edit when รอรับชำระ; meta-edit when vouchered | `GET /api/notes?acctno=` |
+| 3. ใบเสร็จรับเงิน | All successful receives (with or without proof); filters ทั้งหมด / รอแนบหลักฐาน / เรียบร้อย; attach proof in place | proof images; **แก้ไข** receive date / remark / bank | vouchered `RVMAS` + `BRDET` in place; `receive_note.receipt_edit_audit`; `payment/{VOUCNO}/` images |
+| ค้นหาตามลูกหนี้ | Browse notes/vouchers per AR debtor | edit when รอรับชำระ; meta-edit when vouchered | `GET /api/notes?acctno=` |
 
 ### Tab 1 — create (differs from AP)
 
@@ -38,7 +37,7 @@ Template: [`pay-notes.md`](./pay-notes.md) — same Layout / Process / Function 
 
 Mixed VAT/Non-VAT bills → reject (`mixed_jourmode`). Voucher is **note-first only**; duplicate cut blocked (`already_vouchered`).
 
-**Proof skip:** `RVI…` vouchers and cash settles skip tab 3 (รอแนบหลักฐาน) and land on tab 4 (ใบเสร็จรับเงิน) immediately.
+**Proof skip:** `RVI…` vouchers and cash settles are **เรียบร้อย** on tab 3 (ใบเสร็จรับเงิน) without attaching proof. Transfer / cheque land on the same tab under filter **รอแนบหลักฐาน** until proof is uploaded.
 
 ### Tab 2 — รอรับชำระ
 
