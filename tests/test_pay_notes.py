@@ -262,9 +262,11 @@ def test_page_has_voucher_and_proof_tabs():
     assert 'id="detCancelPayBtn"' in html
     assert 'id="detEditNoteBtn"' in html
     assert 'id="detCancelNoteBtn"' in html
+    assert 'id="detPayBtn"' in html
     assert "foot-left" in html
     assert ">ดูรายละเอียด<" not in html
     assert 'data-open="${esc(keyOf(r))}">ดู</button>' in html
+    assert "data-pay-acct=" not in html
     assert "data-cancel-pay=" in html
     assert "/vouchers/cancel" in html
     assert "กรุณาระบุเหตุผลการยกเลิก" in html
