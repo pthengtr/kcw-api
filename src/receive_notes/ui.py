@@ -8,6 +8,7 @@ from src.receive_notes.company_banks import (
     DEFAULT_RECEIVE_BANK_KEY,
     list_company_receive_accounts,
 )
+from src.receive_notes.writer import RVI_ACCTNOS
 
 APP = "receive-notes"
 SESSION_COOKIE = "kcw_receive_notes"
@@ -46,6 +47,7 @@ def page(
         .replace("__INITIALS__", html_lib.escape(initials(who)))
         .replace("__COMPANY_PAY_JSON__", json.dumps(company_recv, ensure_ascii=False))
         .replace("__DEFAULT_PAY_BANK__", json.dumps(DEFAULT_RECEIVE_BANK_KEY))
+        .replace("__RVI_ACCTNOS_JSON__", json.dumps(sorted(RVI_ACCTNOS)))
     )
 
 
@@ -1162,6 +1164,23 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
       <label class="lbl" for="payBankSelect" id="payBankLabel">บัญชีที่รับเงิน</label>
       <select class="inp" id="payBankSelect"></select>
     </div>
+    <div id="payProofWrap" class="hidden" style="margin-top:.65rem">
+      <label class="lbl" id="payProofLabel">แนบหลักฐาน (ไม่บังคับ)</label>
+      <div class="drop-wrap" id="dropPayProofWrap">
+        <div class="drop" id="dropPayProof" tabindex="0">
+          <div style="font-size:1.4rem;margin-bottom:.25rem">☁</div>
+          <div id="payProofHint">แตะหรือคลิกเพื่อเลือกไฟล์ · หรือลากมาวาง</div>
+          <div class="date-hint">รองรับ JPG, PNG, PDF (ขนาดไม่เกิน 10 MB) · ไม่บังคับ</div>
+        </div>
+        <input id="payProofFiles" class="drop-file-input" type="file" accept="image/jpeg,image/png,image/jpg,application/pdf" multiple aria-label="เลือกไฟล์หลักฐาน"/>
+      </div>
+      <div style="margin-top:.45rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+        <label class="btn sm outline" for="payProofCamera" style="cursor:pointer">ถ่ายภาพ</label>
+        <input id="payProofCamera" class="hidden" type="file" accept="image/*" capture="environment" aria-label="ถ่ายภาพหลักฐาน"/>
+        <span class="date-hint">หรือเลือกไฟล์ด้านบน</span>
+      </div>
+      <div class="thumbs" id="payProofThumbs" style="margin-top:.45rem"></div>
+    </div>
     <div id="payMsg"></div>
   </div>
   <div class="dlg-foot">
@@ -1281,6 +1300,7 @@ const SITE = "__SITE__";
 const PAGE_SIZE = 10;
 const DUE_SOON_DAYS = 7;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const RVI_ACCTNOS = new Set(__RVI_ACCTNOS_JSON__);
 
 let picked = null;
 let payTarget = null;
@@ -1306,6 +1326,8 @@ let proofVerifyResult = null;
 let proofPendingComplete = false;
 let editTarget = null;
 let editReturnTab = 'pending';
+let payProofPending = [];
+let payProofObjectUrls = [];
 
 function $(id) { return document.getElementById(id); }
 function esc(s) {
@@ -2793,6 +2815,78 @@ async function initPayBankSelect() {
   fillReceiveBankSelect($('editReceiveBank'), editReceiveBankKey);
 }
 
+function isRviAcct(acctno) {
+  return RVI_ACCTNOS.has(String(acctno || '').trim().toUpperCase());
+}
+function revokePayProofObjectUrls() {
+  payProofObjectUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (_) {} });
+  payProofObjectUrls = [];
+}
+function clearPayProofPending() {
+  payProofPending = [];
+  revokePayProofObjectUrls();
+  if ($('payProofFiles')) $('payProofFiles').value = '';
+  if ($('payProofCamera')) $('payProofCamera').value = '';
+  renderPayProofThumbs();
+}
+function renderPayProofThumbs() {
+  const box = $('payProofThumbs');
+  if (!box) return;
+  revokePayProofObjectUrls();
+  if (!payProofPending.length) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = payProofPending.map((file, idx) => {
+    const name = esc(file.name || ('file-' + (idx + 1)));
+    const isPdf = /\.pdf$/i.test(file.name || '') || file.type === 'application/pdf';
+    let body = '';
+    if (isPdf) {
+      body = `<span class="file-chip">${name}</span>`;
+    } else {
+      const url = URL.createObjectURL(file);
+      payProofObjectUrls.push(url);
+      body = `<img src="${url}" alt="${name}"/>`;
+    }
+    return `<span class="thumb-item">${body}<button type="button" class="thumb-del" data-pay-proof-del="${idx}" title="ลบ" aria-label="ลบ">×</button></span>`;
+  }).join('');
+}
+function addPayProofFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  for (const file of files) {
+    if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); continue; }
+    payProofPending.push(file);
+  }
+  renderPayProofThumbs();
+}
+function updatePayProofVisibility() {
+  const wrap = $('payProofWrap');
+  if (!wrap) return;
+  const acct = payTarget && payTarget.acctno;
+  const show = (settleMethod === 'transfer' || settleMethod === 'cheque') && !isRviAcct(acct);
+  wrap.classList.toggle('hidden', !show);
+  if (!show) clearPayProofPending();
+}
+async function uploadPayProofFiles(voucno, files) {
+  const vo = String(voucno || '').trim();
+  if (!vo || !(files && files.length)) return false;
+  let any = false;
+  for (const file of files) {
+    if (file.size > MAX_FILE_BYTES) { alert(`${file.name} เกิน 10 MB`); continue; }
+    const fd = new FormData();
+    fd.append('voucno', vo);
+    fd.append('file', file);
+    const r = await fetch('/receive-notes/api/images/payment', {method:'POST', body: fd});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(j.detail || j.error || 'อัปโหลดหลักฐานไม่สำเร็จ');
+      return any;
+    }
+    any = true;
+  }
+  return any;
+}
 function setSettleMethod(method) {
   settleMethod = method === 'cheque' ? 'cheque' : (method === 'cash' ? 'cash' : 'transfer');
   ['transfer','cheque','cash'].forEach(m => {
@@ -2810,11 +2904,32 @@ function setSettleMethod(method) {
     $('payChkno').value = '';
     $('payChkno').dataset.auto = '1';
   }
+  updatePayProofVisibility();
 }
 $('settleTransfer').onclick = () => setSettleMethod('transfer');
 $('settleCheque').onclick = () => setSettleMethod('cheque');
 $('settleCash').onclick = () => setSettleMethod('cash');
 $('payChkno').addEventListener('input', () => { $('payChkno').dataset.auto = '0'; });
+wireDropZone($('dropPayProof'), $('payProofFiles'), async (files) => {
+  addPayProofFiles(files);
+});
+if ($('payProofCamera')) {
+  $('payProofCamera').onchange = (ev) => {
+    addPayProofFiles(ev.target.files);
+    ev.target.value = '';
+  };
+}
+if ($('payProofThumbs')) {
+  $('payProofThumbs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-pay-proof-del]');
+    if (!btn) return;
+    e.preventDefault();
+    const idx = Number(btn.dataset.payProofDel);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= payProofPending.length) return;
+    payProofPending.splice(idx, 1);
+    renderPayProofThumbs();
+  });
+}
 
 function applyPayDialogMode(isRefund, remain) {
   const refund = !!isRefund;
@@ -2855,6 +2970,7 @@ function openPay(acct, note, billamt, discount) {
   if ($('payBankSelect') && preferBank) $('payBankSelect').value = preferBank;
   $('payMsg').innerHTML = '';
   $('payChkno').dataset.auto = '1';
+  clearPayProofPending();
   const confirmBtn = $('btnConfirmPay');
   if (confirmBtn) { confirmBtn.dataset.busy = '0'; confirmBtn.disabled = false; }
   // Actual settle chosen at receive/refund time (default transfer).
@@ -2900,7 +3016,9 @@ function renderTigerAwaiting(res, { refund }) {
   html += `<p class="muted">รอเครื่องยืนยันจ่ายคืนเงินสด… (${st})</p>`;
   $('payMsg').innerHTML = html;
 }
-async function finishPaySuccess(res, method) {
+async function finishPaySuccess(res, method, opts) {
+  opts = opts || {};
+  const attachedProof = !!opts.attachedProof;
   const refund = !!(payTarget && payTarget.is_refund) || !!res.is_refund;
   const vouc = esc(res.voucno || '');
   if (refund && (res.partial || res.kss_deferred || !vouc)) {
@@ -2908,14 +3026,18 @@ async function finishPaySuccess(res, method) {
     $('payMsg').innerHTML =
       `<p class="ok">บันทึกคืนเงินแล้ว · ค้างคืน ${fmtMoney(remain)}` +
       (vouc ? ` · ${vouc}` : '') + `</p>`;
+    clearPayProofPending();
     setTimeout(() => { $('dlgPay').close(); showTab('pending'); }, 700);
     return;
   }
-  $('payMsg').innerHTML = `<p class="ok">บันทึกแล้ว · ${vouc || (refund ? 'ใบสำคัญจ่าย' : '')}</p>`;
-  const skipProof = res.proof_required === false
+  $('payMsg').innerHTML = `<p class="ok">บันทึกแล้ว · ${vouc || (refund ? 'ใบสำคัญจ่าย' : '')}` +
+    (attachedProof ? ' · แนบหลักฐานแล้ว' : '') + `</p>`;
+  const skipProof = attachedProof
+    || res.proof_required === false
     || method === 'cash'
     || String(res.voucno || '').toUpperCase().startsWith('RVI')
     || String(res.voucno || '').toUpperCase().startsWith('PVN');
+  clearPayProofPending();
   setTimeout(() => { $('dlgPay').close(); showTab(skipProof ? 'voucher' : 'awaitproof'); }, 700);
 }
 async function pollTigerVoucher(receiptId, method) {
@@ -2959,6 +3081,10 @@ $('btnConfirmPay').onclick = async () => {
     $('payMsg').innerHTML = '<p class="err">จำนวนเงินเกินยอดค้างคืน</p>'; return;
   }
   if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
+  const pendingProof = payProofPending.slice();
+  const canAttachNow = (settleMethod === 'transfer' || settleMethod === 'cheque')
+    && !isRviAcct(payTarget.acctno)
+    && pendingProof.length > 0;
   try {
     const res = await api('/vouchers', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -2974,7 +3100,16 @@ $('btnConfirmPay').onclick = async () => {
       pollTigerVoucher(res.receipt_id, settleMethod);
       return;
     }
-    await finishPaySuccess(res, settleMethod);
+    let attachedProof = false;
+    if (canAttachNow && res.voucno) {
+      $('payMsg').innerHTML = '<p class="muted">กำลังแนบหลักฐาน…</p>';
+      attachedProof = await uploadPayProofFiles(res.voucno, pendingProof);
+      if (attachedProof) {
+        try { await loadAwaitProof(); } catch (_) {}
+        try { await loadVouchers(); } catch (_) {}
+      }
+    }
+    await finishPaySuccess(res, settleMethod, { attachedProof });
   } catch (e) {
     stopTigerPoll();
     $('payMsg').innerHTML = `<p class="err">${esc(e.message)}</p>`;
