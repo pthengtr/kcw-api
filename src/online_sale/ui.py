@@ -60,10 +60,19 @@ table input.cell.price{width:7rem}
 .qty-with-unit{display:inline-flex;align-items:center;gap:6px}
 .unit-select{min-width:5.5rem;max-width:7.5rem;padding:6px 8px;border-radius:8px;font-weight:600}
 table select.unit-select{width:6.5rem;padding:5px 6px}
-.pick-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:12px 0 8px}
+.pick-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:8px 0}
 .pick-bar .count{color:var(--muted);font-size:13px}
+.search-sum{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin:0 0 4px;padding:6px 10px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.35}
+.search-sum .item{display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap}
+.search-sum .lbl{color:var(--muted);font-size:12px}
+.search-sum .val{font-weight:700;font-variant-numeric:tabular-nums}
+.search-sum .net .val{color:var(--ok)}
 iframe.toframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14px;background:#fff}
-@media(max-width:800px){input,select{width:100%}}
+@media(max-width:800px){
+  input,select{width:100%}
+  .search-sum{gap:4px 10px;padding:6px 8px;font-size:12px}
+  .search-sum .lbl{font-size:11px}
+}
 </style>
 </head>
 <body>
@@ -775,12 +784,36 @@ async function init() {
     count.textContent = nos.length ? `เลือกแล้ว ${nos.length} ฉบับร่าง` : 'เลือกฉบับร่างเพื่อพิมพ์ใบจัด';
     btn.disabled = nos.length === 0;
   }
+  /** TAD / CNTAD counts + net sales from current search hits (no drafts, canceled, or TO). */
+  function searchBillSummary(bills){
+    let tad = 0, cntad = 0, tadAmt = 0, cntadAmt = 0;
+    for (const b of bills || []) {
+      if (!b || b.canceled || b.status === 'canceled') continue;
+      if (b.kind === 'tad') {
+        tad += 1;
+        tadAmt += Number(b.aftertax || 0);
+      } else if (b.kind === 'cntad') {
+        cntad += 1;
+        cntadAmt += Math.abs(Number(b.aftertax || 0));
+      }
+    }
+    return { tad, cntad, net: tadAmt - cntadAmt };
+  }
+  function renderSearchSummaryHtml(bills){
+    const s = searchBillSummary(bills);
+    return `<div class="search-sum" id="searchSum" aria-live="polite">
+      <span class="item" title="จำนวนบิลขาย TAD (ไม่นับฉบับร่าง/ยกเลิก)"><span class="lbl">บิลขาย</span><span class="val">${s.tad}</span></span>
+      <span class="item" title="จำนวนบิลคืน CNTAD (ไม่นับยกเลิก)"><span class="lbl">บิลคืน</span><span class="val">${s.cntad}</span></span>
+      <span class="item net" title="ยอดขายสุทธิหลังหักยอดคืน (ไม่นับใบเต็ม TO)"><span class="lbl">ยอดสุทธิ</span><span class="val">${money(s.net)}</span></span>
+    </div>`;
+  }
   function renderSearchResults(bills, toDocs){
     const box = $('searchResults');
     state.searchBills = bills || [];
     if (!bills.length && !toDocs.length) { box.innerHTML='<p class="meta">ไม่พบรายการ</p>'; return; }
     const pickable = bills.filter(canPickDraft);
     box.innerHTML = `
+      ${renderSearchSummaryHtml(bills)}
       <div class="pick-bar">
         <button type="button" id="printPick" disabled>พิมพ์ใบจัดสินค้ารวม</button>
         <span class="count" id="pickCount">เลือกฉบับร่างเพื่อพิมพ์ใบจัด</span>
