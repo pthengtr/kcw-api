@@ -216,6 +216,16 @@ def test_ui_exports_and_tabs():
     assert 'class="drop-file-input"' in html
     assert 'id="detProofFiles" class="hidden"' not in html
     assert "แตะหรือคลิกเพื่อเลือกไฟล์" in html
+    # Optional proof attach on settle dialog (transfer/cheque only; not cash/RVI)
+    assert 'id="payProofWrap"' in html
+    assert 'id="payProofFiles"' in html
+    assert 'id="payProofCamera"' in html
+    assert 'capture="environment"' in html
+    assert "updatePayProofVisibility" in html
+    assert "uploadPayProofFiles" in html
+    assert "attachedProof" in html
+    assert "RVI_ACCTNOS" in html
+    assert "7LAZ1" in html
     # Negative BN/BNN → refund labels (same dialog / tabs, no new tab)
     assert "บันทึกและคืนเงินลูกค้า" in html
     assert "syncCreatePayButton" in html
