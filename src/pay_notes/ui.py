@@ -389,6 +389,7 @@ dialog.dlg:not([open]) { display:none !important; }
 .dlg-foot {
   display:flex; justify-content:flex-end; gap:.45rem; padding:0 1.1rem 1.1rem;
 }
+.dlg-foot .btn.foot-left { margin-right:auto; }
 .sum-box {
   display:grid; grid-template-columns:1fr 1fr; gap:.35rem 1.2rem;
   background:var(--acc-soft); border-radius:.7rem; padding:.85rem .95rem; margin:.4rem 0 1rem;
@@ -570,6 +571,7 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
   }
   .dlg-foot { flex-direction:column-reverse; }
   .dlg-foot .btn { width:100%; justify-content:center; }
+  .dlg-foot .btn.foot-left { margin-right:0; }
   .sec-title { flex-direction:column; align-items:flex-start; gap:.2rem; margin-bottom:.45rem; }
   .sec-title h2 { font-size:.95rem; }
   .sec-title .toolbar { width:100%; }
@@ -1361,9 +1363,10 @@ input[type="date"] { min-height:2.4rem; cursor:pointer; }
     </div>
   </div>
   <div class="dlg-foot">
+    <button type="button" class="btn danger foot-left hidden" id="detCancelNoteBtn">ยกเลิกใบวางบิล</button>
     <button type="button" class="btn ghost" id="btnCloseDetail2">ปิด</button>
-    <button type="button" class="btn danger hidden" id="detCancelNoteBtn">ยกเลิกใบวางบิล</button>
     <button type="button" class="btn danger hidden" id="detCancelPayBtn">ยกเลิกการชำระ</button>
+    <button type="button" class="btn outline hidden" id="detEditNoteBtn">แก้ไข</button>
     <button type="button" class="btn outline" id="btnPrintDetail">พิมพ์</button>
     <button type="button" class="btn primary hidden" id="detPayBtn">บันทึกการจ่าย</button>
   </div>
@@ -1853,9 +1856,7 @@ function renderPending() {
       <td data-label="หมายเหตุ">${esc(formatRemarkShort(r))}</td>
       <td data-label="สถานะ"><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="td-actions" data-label=""><div class="row-actions">
-        <button type="button" class="btn sm outline" data-edit="${esc(keyOf(r))}">แก้ไข</button>
-        <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดูรายละเอียด</button>
-        ${WRITE_ENABLED ? `<button type="button" class="btn sm danger" data-cancel="${esc(keyOf(r))}">ยกเลิก</button>` : ''}
+        <button type="button" class="btn sm outline" data-open="${esc(keyOf(r))}">ดู</button>
         <button type="button" class="btn sm primary"
           data-pay-acct="${esc(r.acctno)}" data-pay-note="${esc(r.noteno)}"
           data-pay-amt="${Number(r.BILLAMT||0)}" data-pay-disc="${Number((r.reminder||{}).discount_amount||0)}"
@@ -1883,10 +1884,6 @@ $('pfSort')?.addEventListener('change', () => {
   try { localStorage.setItem('kcw.pay_notes.pendingSort', pendingSortMode()); } catch (e) {}
 });
 $('pendingBody').addEventListener('click', (e) => {
-  const edit = e.target.closest('[data-edit]');
-  if (edit) { openEditNote(edit.dataset.edit, 'pending'); return; }
-  const cancel = e.target.closest('[data-cancel]');
-  if (cancel) { cancelNoteByKey(cancel.dataset.cancel, 'pending'); return; }
   const pay = e.target.closest('[data-pay-acct]');
   if (pay) {
     openPay(pay.dataset.payAcct, pay.dataset.payNote, pay.dataset.payAmt, pay.dataset.payDisc, pay.dataset.payBank || '');
@@ -2450,6 +2447,7 @@ async function openDetailByKey(key, opts) {
   if ($('detPayMethodView')) $('detPayMethodView').innerHTML = settleBadge(payMethod);
   if ($('detPayMethodWrap')) $('detPayMethodWrap').classList.remove('hidden');
   $('detPayBtn').classList.toggle('hidden', !(opts.canPay && canEditDue && WRITE_ENABLED));
+  $('detEditNoteBtn')?.classList.toggle('hidden', !canEditDue);
   $('detCancelNoteBtn')?.classList.toggle('hidden', !(canEditDue && WRITE_ENABLED));
   $('detProofWrap').classList.toggle('hidden', !row.voucno);
   const isAwaitProof = row.stage === 'await_proof' || (!!row.voucno && !row.has_proof);
@@ -2509,6 +2507,11 @@ $('detPayBtn').onclick = () => {
     `${bank.bank_name || ''} ${bank.bank_account_name || ''} # ${bank.bank_account_number || ''}`
   );
 };
+$('detEditNoteBtn')?.addEventListener('click', () => {
+  if (!detailRow) return;
+  $('dlgDetail').close();
+  openEditNote(keyOf(detailRow), detailRow.stage === 'pending' ? 'pending' : 'byap');
+});
 $('detCancelNoteBtn')?.addEventListener('click', () => {
   if (!detailRow) return;
   cancelNoteByKey(keyOf(detailRow), detailRow.stage === 'pending' ? 'pending' : 'byap', {
