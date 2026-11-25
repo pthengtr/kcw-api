@@ -257,6 +257,12 @@ def test_page_has_voucher_and_proof_tabs():
     assert "data-scan-idx" in html
     assert "ลบรูปใบวางบิลนี้?" in html
     assert "กด × เพื่อลบรูปที่แนบผิด" in html
+    assert "ยกเลิกการชำระ" in html
+    assert 'id="dlgCancelPay"' in html
+    assert 'id="detCancelPayBtn"' in html
+    assert "data-cancel-pay=" in html
+    assert "/vouchers/cancel" in html
+    assert "กรุณาระบุเหตุผลการยกเลิก" in html
 
 
 def test_workflow_meta():
@@ -554,6 +560,186 @@ def test_api_cancel_orphan_reminder_only():
     assert res.status_code == 200
     assert res.json()["canceled"] is True
     assert res.json()["reminder_deleted"] is True
+    cancel_m.assert_not_called()
+
+
+def test_cancel_awaiting_proof_payment_write_disabled():
+    settings = PayNotesSettings(pay_notes_write_enabled=False)
+    try:
+        from src.pay_notes.writer import cancel_awaiting_proof_payment
+
+        cancel_awaiting_proof_payment(settings=settings, acctno="7GP", noteno="X")
+        raised = False
+    except PayNoteWriteError as exc:
+        raised = True
+        assert exc.code == "write_disabled"
+    assert raised
+
+
+def test_api_cancel_voucher_requires_reason():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    with patch("app.routers.pay_notes._require_api", return_value=(ident, None)):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/vouchers/cancel",
+            json={"acctno": "7GP", "noteno": "N-001", "reason": "  "},
+        )
+    assert res.status_code == 400
+    assert res.json()["code"] == "reason_required"
+
+
+def test_api_cancel_voucher_success_returns_to_pending():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    header = {
+        "acctno": "7GP",
+        "noteno": "N-001",
+        "voucno": "KCPN6908-001",
+        "VOUCED": "Y",
+        "BILLAMT": 1000,
+    }
+    rem = {
+        "acctno": "7GP",
+        "noteno": "N-001",
+        "settle_method": "transfer",
+        "pay_bank": "ktb_44244",
+    }
+    kss = {
+        "acctno": "7GP",
+        "noteno": "N-001",
+        "voucno": "KCPN6908-001",
+        "voucdate": "2026-08-30",
+        "billamt": 1000.0,
+        "discount": 0.0,
+        "netamt": 1000.0,
+        "bpdet_canceled": 1,
+        "canceled": True,
+    }
+    history = {
+        "id": "h1",
+        "acctno": "7GP",
+        "noteno": "N-001",
+        "voucno": "KCPN6908-001",
+        "reason": "โอนไม่สำเร็จ",
+    }
+    patched_rem = {**rem, "pay_bank": None}
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_reminder", return_value=rem),
+        patch("app.routers.pay_notes.get_note_header", return_value=header),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.list_folder", return_value=[]),
+        patch(
+            "app.routers.pay_notes.cancel_awaiting_proof_payment",
+            return_value=kss,
+        ) as cancel_m,
+        patch("app.routers.pay_notes.insert_payment_cancel", return_value=history) as hist_m,
+        patch("app.routers.pay_notes.patch_reminder", return_value=patched_rem) as patch_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/vouchers/cancel",
+            json={"acctno": "7GP", "noteno": "N-001", "reason": "โอนไม่สำเร็จ"},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["canceled"] is True
+    assert body["stage"] == "pending"
+    assert body["is_editable"] is True
+    assert body["voucno"] == "KCPN6908-001"
+    assert body["history"]["reason"] == "โอนไม่สำเร็จ"
+    cancel_m.assert_called_once()
+    hist_m.assert_called_once()
+    assert hist_m.call_args.args[1]["reason"] == "โอนไม่สำเร็จ"
+    patch_m.assert_called_once()
+
+
+def test_api_cancel_voucher_rejects_when_proof_attached():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    header = {
+        "acctno": "7GP",
+        "noteno": "N-001",
+        "voucno": "KCPN6908-001",
+        "VOUCED": "Y",
+    }
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_reminder", return_value={"acctno": "7GP", "noteno": "N-001"}),
+        patch("app.routers.pay_notes.get_note_header", return_value=header),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch(
+            "app.routers.pay_notes.list_folder",
+            return_value=[{"path": "public/pay_note/payment/KCPN6908-001/slip.jpg"}],
+        ),
+        patch("app.routers.pay_notes.cancel_awaiting_proof_payment") as cancel_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/vouchers/cancel",
+            json={"acctno": "7GP", "noteno": "N-001", "reason": "โอนไม่สำเร็จ"},
+        )
+    assert res.status_code == 409
+    assert res.json()["code"] == "has_proof"
+    cancel_m.assert_not_called()
+
+
+def test_api_cancel_voucher_rejects_unvouchered_note():
+    from unittest.mock import MagicMock, patch
+
+    from fastapi.testclient import TestClient
+    from src.stock_check.auth import StockCheckIdentity
+
+    ident = StockCheckIdentity(
+        line_user_id="u1", display_name="Tester", branch="HQ", app="pay-notes"
+    )
+    header = {
+        "acctno": "7GP",
+        "noteno": "N-001",
+        "voucno": "",
+        "VOUCED": "N",
+    }
+    with (
+        patch("app.routers.pay_notes._require_api", return_value=(ident, None)),
+        patch("app.routers.pay_notes.get_reminder", return_value={"acctno": "7GP", "noteno": "N-001"}),
+        patch("app.routers.pay_notes.get_note_header", return_value=header),
+        patch("app.routers.pay_notes.get_pay_notes_supabase_client", return_value=MagicMock()),
+        patch("app.routers.pay_notes.cancel_awaiting_proof_payment") as cancel_m,
+    ):
+        from app.pay_notes_app import app
+
+        client = TestClient(app)
+        res = client.post(
+            "/pay-notes/api/vouchers/cancel",
+            json={"acctno": "7GP", "noteno": "N-001", "reason": "โอนไม่สำเร็จ"},
+        )
+    assert res.status_code == 409
+    assert res.json()["code"] == "not_vouchered"
     cancel_m.assert_not_called()
 
 

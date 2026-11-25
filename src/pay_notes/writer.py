@@ -411,10 +411,22 @@ def voucher_stem(jourmode: str, when: datetime | None = None) -> str:
 
 
 def next_voucno(conn, *, jourmode: str, when: datetime | None = None) -> str:
-    """Allocate next payment VOUCNO for the note's JOURMODE from live PVMAS."""
+    """Allocate next payment VOUCNO for the note's JOURMODE.
+
+    Uses MAX across PVMAS and BPDET so canceled await-proof vouchers (VOUCNO
+    cleared from PVMAS but kept on soft-canceled BPDET) are never reused.
+    """
     stem = voucher_stem(jourmode, when)
     row = conn.execute(
-        text("SELECT MAX(VOUCNO) AS max_no FROM dbo.PVMAS WHERE VOUCNO LIKE :pat"),
+        text(
+            """
+            SELECT MAX(v) AS max_no FROM (
+              SELECT LTRIM(RTRIM(VOUCNO)) AS v FROM dbo.PVMAS WHERE VOUCNO LIKE :pat
+              UNION ALL
+              SELECT LTRIM(RTRIM(VOUCNO)) AS v FROM dbo.BPDET WHERE VOUCNO LIKE :pat
+            ) x
+            """
+        ),
         {"pat": stem + "%"},
     ).mappings().first()
     max_no = (row or {}).get("max_no") or ""
@@ -585,4 +597,138 @@ def create_voucher(
         "discount": disc,
         "netamt": netamt,
         "bpdet_count": len(bpdet_lines),
+    }
+
+
+def cancel_awaiting_proof_payment(
+    *,
+    settings: PayNotesSettings,
+    acctno: str,
+    noteno: str,
+    engine: Engine | None = None,
+) -> dict[str, Any]:
+    """Undo a voucher that has no proof yet: soft-cancel BPDET, clear payment stamps.
+
+    Keeps the pay note (`PVMAS` + `PIMAS.NOTENO`) so it returns to รอชำระ and can
+    be paid again. Canceled BPDET rows remain for KSS history (CANCELED='Y').
+    """
+    if not settings.pay_notes_write_enabled:
+        raise PayNoteWriteError("PAY_NOTES_WRITE_ENABLED is false", code="write_disabled")
+
+    acct = (acctno or "").strip()
+    note = (noteno or "").strip()
+    if not acct or not note:
+        raise PayNoteWriteError("acctno and noteno required", code="validation")
+
+    write_eng = engine or _writer_engine(settings)
+    try:
+        with write_eng.begin() as conn:
+            header = conn.execute(
+                text(
+                    """
+                    SELECT TOP 1
+                      ID, VOUCED, VOUCNO, VOUCDATE, JOURTYPE, DISCOUNT, NETAMT,
+                      PAYAMT, CHKAMT, PAID, DONE, POSTED1, POSTED2, BILLAMT
+                    FROM dbo.PVMAS
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"acctno": acct, "noteno": note},
+            ).mappings().first()
+            if not header:
+                raise PayNoteWriteError("note not found in KSS", code="not_found")
+
+            voucno = str(header.get("VOUCNO") or "").strip()
+            vouced = str(header.get("VOUCED") or "N").strip().upper() == "Y"
+            if not vouced or not voucno:
+                raise PayNoteWriteError(
+                    "note is not vouchered — nothing to cancel",
+                    code="not_vouchered",
+                )
+            if str(header.get("DONE") or "N").strip().upper() == "Y":
+                raise PayNoteWriteError(
+                    "cannot cancel posted/done voucher",
+                    code="already_done",
+                )
+            if str(header.get("POSTED1") or "N").strip().upper() == "Y" or str(
+                header.get("POSTED2") or "N"
+            ).strip().upper() == "Y":
+                raise PayNoteWriteError(
+                    "cannot cancel posted voucher",
+                    code="already_posted",
+                )
+
+            # Soft-cancel payment instruments — keep rows for audit / duplicate VOUCNO guard.
+            bpdet = conn.execute(
+                text(
+                    """
+                    UPDATE dbo.BPDET
+                    SET CANCELED = 'Y'
+                    WHERE LTRIM(RTRIM(VOUCNO)) = :voucno
+                      AND ISNULL(CANCELED, 'N') <> 'Y'
+                    """
+                ),
+                {"voucno": voucno},
+            )
+            bpdet_canceled = int(bpdet.rowcount or 0)
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.PIMAS
+                    SET VOUCNO2 = '',
+                        VOUCDATE2 = NULL,
+                        PAID = 'N',
+                        PAYSTAT = ''
+                    WHERE LTRIM(RTRIM(ACCTNO)) = :acctno
+                      AND LTRIM(RTRIM(NOTENO)) = :noteno
+                      AND LTRIM(RTRIM(COALESCE(VOUCNO2, ''))) = :voucno
+                    """
+                ),
+                {"acctno": acct, "noteno": note, "voucno": voucno},
+            )
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE dbo.PVMAS
+                    SET VOUCED = 'N',
+                        VOUCDATE = NULL,
+                        VOUCNO = '',
+                        JOURTYPE = 'NP',
+                        DISCOUNT = NULL,
+                        NETAMT = NULL,
+                        PAYAMT = NULL,
+                        CHKAMT = NULL,
+                        PAID = 'N'
+                    WHERE ID = :id
+                      AND VOUCED = 'Y'
+                      AND LTRIM(RTRIM(COALESCE(VOUCNO, ''))) = :voucno
+                    """
+                ),
+                {"id": header["ID"], "voucno": voucno},
+            )
+    except PayNoteWriteError:
+        raise
+    except Exception as exc:
+        raise _map_write_exc(exc) from exc
+
+    voucd = header.get("VOUCDATE")
+    if isinstance(voucd, datetime):
+        voucdate = voucd.date().isoformat()
+    else:
+        voucdate = str(voucd)[:10] if voucd else None
+
+    return {
+        "acctno": acct,
+        "noteno": note,
+        "voucno": voucno,
+        "voucdate": voucdate,
+        "billamt": float(header.get("BILLAMT") or 0),
+        "discount": float(header.get("DISCOUNT") or 0),
+        "netamt": float(header.get("NETAMT") or 0),
+        "bpdet_canceled": bpdet_canceled,
+        "canceled": True,
     }
