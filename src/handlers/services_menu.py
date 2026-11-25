@@ -73,16 +73,18 @@ def _category_header(title: str, *, first: bool) -> dict:
 
 
 def _service_cell(svc: ServiceDef) -> dict:
-    """Left-aligned outline icon + label on a light gray tap target."""
+    """Left-aligned outline icon + label on a light gray tap target.
+
+    Icons are only valid inside baseline boxes (LINE Flex schema).
+    """
     return {
         "type": "box",
-        "layout": "horizontal",
+        "layout": "baseline",
         "flex": 1,
         "backgroundColor": _BTN_BG,
         "cornerRadius": "8px",
         "paddingAll": "10px",
         "spacing": "sm",
-        "alignItems": "center",
         "action": {
             "type": "message",
             "label": svc.label[:40],
@@ -102,7 +104,6 @@ def _service_cell(svc: ServiceDef) -> dict:
                 "color": _LABEL_COLOR,
                 "wrap": True,
                 "flex": 1,
-                "gravity": "center",
                 "align": "start",
             },
         ],
@@ -132,10 +133,9 @@ def _button_rows(services: list[ServiceDef]) -> list[dict]:
 def _help_footer(svc: ServiceDef) -> dict:
     return {
         "type": "box",
-        "layout": "horizontal",
+        "layout": "baseline",
         "margin": "lg",
         "spacing": "sm",
-        "alignItems": "center",
         "action": {
             "type": "message",
             "label": svc.label[:40],
@@ -153,7 +153,6 @@ def _help_footer(svc: ServiceDef) -> dict:
                 "text": svc.label,
                 "size": "xs",
                 "color": _HELP_COLOR,
-                "gravity": "center",
                 "flex": 1,
                 "align": "start",
             },
