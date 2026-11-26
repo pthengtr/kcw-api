@@ -419,7 +419,10 @@ def test_explorer_page_shows_location_bits():
     assert "detail-collapsed" in html
     assert "--shell-max:1560px" in html
     assert "clamp(280px, 38vw, 560px)" in html
-    assert "--detail-bg:#ffffff" in html
+    assert "--detail-bg:#f4f6f8" in html
+    assert "detail-stack" in html
+    assert "detail-card detail-card-main" in html
+    assert "Insight และประวัติ" in html
     assert 'class="shell"' in html
     # Results table: no OEM badge / unit column; unit stays beside stock qty.
     assert "nth-child(even)" in html

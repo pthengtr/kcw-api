@@ -40,7 +40,7 @@ html[data-theme="dark"] {
   color-scheme: dark;
   --bg:#0c1014; --header:rgba(12,16,20,.96); --card:#161d26; --line:#2a3542;
   --text:#e8eef4; --muted:#8b9aab; --heading:#c5d0da; --chip:#243040; --inset:#0a0e12;
-  --detail-bg:#161d26;
+  --detail-bg:#0c1014;
   --si:#7ec8ff; --pi:#f0c36e; --po:#9ad7b5; --pv:#d7a6ff; --rv:#8fe3d2;
   --st-pend-bg:#3a2a18; --st-ok-bg:#163328; --st-no-bg:#3a1c1c; --st-wait-bg:#2a3140;
 }
@@ -48,7 +48,7 @@ html[data-theme="light"] {
   color-scheme: light;
   --bg:#f4f6f8; --header:rgba(255,255,255,.96); --card:#ffffff; --line:#d5dde6;
   --text:#1b2430; --muted:#5b6b7c; --heading:#334155; --chip:#e8eef4; --inset:#eef2f6;
-  --detail-bg:#ffffff;
+  --detail-bg:#f4f6f8;
   --si:#1565c0; --pi:#b45309; --po:#0f7a4a; --pv:#7c3aed; --rv:#0f766e;
   --st-pend-bg:#fff3e0; --st-ok-bg:#e8f6ee; --st-no-bg:#fde8e8; --st-wait-bg:#e8eef4;
 }
@@ -354,6 +354,29 @@ label.chk input { margin:0; flex-shrink:0; }
 .kpi.ok .n { color:var(--ok); }
 .detail-overview { margin:0 0 .45rem; padding:0; background:transparent; border:0; }
 .detail-overview h2 { margin:0; letter-spacing:.01em; font-size:1.05rem; }
+.detail-stack { display:flex; flex-direction:column; gap:10px; }
+.detail-card {
+  background:var(--card); border:1px solid var(--line); border-radius:.65rem;
+  padding:.7rem .75rem;
+}
+.detail-card-title {
+  margin:0 0 .45rem; font-size:.82rem; font-weight:700; color:var(--heading);
+  letter-spacing:.01em;
+}
+.detail-card-sub h3 { margin:.55rem 0 .3rem; }
+.detail-card-sub h3:first-child { margin-top:0; }
+.detail-card-main h2 { margin:0; letter-spacing:.01em; font-size:1.05rem; }
+.detail-main-row {
+  display:grid; gap:.45rem .65rem; grid-template-columns:1fr; align-items:start;
+}
+@media (min-width:520px) {
+  .detail-main-row { grid-template-columns:minmax(0,1fr) auto; }
+  .detail-main-row > .photos-view {
+    grid-column:2; grid-row:1; justify-self:end; margin:0;
+  }
+}
+.detail-main-body { min-width:0; }
+.detail-main-body .prices { margin:.05rem 0 .3rem; }
 .detail-head {
   display:flex; flex-wrap:wrap; align-items:center; gap:.3rem .4rem; margin:0 0 .15rem;
 }
@@ -362,13 +385,6 @@ label.chk input { margin:0; flex-shrink:0; }
   display:flex; flex-wrap:wrap; gap:.05rem .65rem; font-size:.78rem; color:var(--muted); margin:0 0 .3rem;
 }
 .detail-facts-inline span .lbl { color:var(--heading); font-weight:600; margin-right:.2rem; }
-.detail-price-photo {
-  display:grid; gap:.3rem; margin:0 0 .35rem; grid-template-columns:1fr; align-items:start;
-}
-@media (min-width:520px) {
-  .detail-price-photo { grid-template-columns:minmax(0,1fr) auto; gap:.35rem .55rem; }
-}
-.detail-price-photo .prices { margin:0; }
 .detail-more {
   border-top:1px solid var(--line); padding-top:.3rem; margin:.25rem 0 .35rem;
 }
@@ -524,7 +540,8 @@ label.chk input { margin:0; flex-shrink:0; }
 .pi-ai p strong { color:var(--text); }
 .pi-foot { margin:.35rem 0 0; color:var(--muted); font-size:.68rem; text-align:center; line-height:1.4; }
 /* Insight / ประวัติ / สั่งซื้อ / ต้นทุน — aligned to hq-po trade history */
-.hist-panel { margin:0 0 .75rem; }
+.hist-panel { margin:0; }
+.detail-card .hist-tabs button { background:var(--inset); }
 .hist-chrome {
   display:flex; flex-wrap:wrap; gap:.45rem; align-items:center;
   justify-content:space-between; margin:0 0 .55rem;
@@ -2014,22 +2031,29 @@ function showP(i, opts) {
     fifo: opts.skipFetch ? (opts.fifo || null) : null
   };
   // Reorder/lot live under Tab การสั่งซื้อ — omit from main detail.
-  $("detail").innerHTML = "<div class='detail-overview'>"
+  // Right pane = 3 cards: main product / substitutes / insight+history.
+  $("detail").innerHTML = "<div class='detail-stack'>"
+    +"<div class='detail-card detail-card-main'>"
+    +"<div class='detail-main-row'>"
+    +"<div class='detail-main-body'>"
     +"<div class='detail-head'><h2>"+esc(p.bcode)+"</h2>"+waitBadge+oemBadge(p)
     +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
     +"</div>"
     +"<div class='detail-title'>"+esc(p.descr||"—")+"</div>"
     +(inlineFacts.length ? "<div class='detail-facts-inline'>"+inlineFacts.join("")+"</div>" : "")
-    +"<div class='detail-price-photo'>"
-    +"<div><div class='detail-sec-lbl'>ราคาขาย</div><div class='prices'>"+(fmtPrices(p.prices) || "<span class='meta'>—</span>")+"</div></div>"
-    +renderPhotosView(p)
-    +"</div>"
+    +"<div class='prices'>"+(fmtPrices(p.prices) || "<span class='meta'>—</span>")+"</div>"
     +stockHtml
-    +(moreFacts ? "<div class='detail-more'><div class='detail-sec-lbl'>รายละเอียดสินค้า</div>"+moreFacts+"</div>" : "")
+    +(moreFacts ? "<div class='detail-more'><div class='detail-sec-lbl'>รายละเอียดสินค้าอื่น ๆ</div>"+moreFacts+"</div>" : "")
     +"<div class='edit-bar'><button type='button' class='primary' id='manageProductBtn'>จัดการสินค้า</button></div>"
     +"</div>"
+    +renderPhotosView(p)
+    +"</div></div>"
+    +"<div class='detail-card detail-card-sub'>"
+    +"<div class='detail-card-title'>สินค้าทดแทน</div>"
     +"<div id='subPanel'></div>"
-    +"<div class='hist-panel'>"
+    +"</div>"
+    +"<div class='detail-card hist-panel'>"
+    +"<div class='detail-card-title'>Insight และประวัติ</div>"
     +"<div class='hist-chrome'>"
     +"<div class='toggle hist-site' id='histSite'>"
     +"<button type='button' id='histHq'>HQ</button>"
@@ -2043,6 +2067,7 @@ function showP(i, opts) {
     +(CAN_SEE_COST ? "<button type='button' data-hist-tab='cost'>ต้นทุน</button>" : "")
     +"</div>"
     +"<div id='histBody'></div>"
+    +"</div>"
     +"</div>";
   const manageBtn = $("manageProductBtn");
   if (manageBtn) manageBtn.onclick = () => openManageDlg(p, i);
@@ -2606,7 +2631,7 @@ function loadSubPanels(bcode) {
     }
     const peers = cat.peers || [];
     if (peers.length) {
-      html += "<h3>ทดแทนในกลุ่ม (ยืนยันแล้ว)</h3>"
+      html += "<h3>กลุ่มสินค้าทดแทน</h3>"
         + peers.map(p => peerLine(p, "กลุ่ม")).join("")
         + "<p class='meta'><a href='/parts9/substitutes?bcode="+encodeURIComponent(bcode)+"'>จัดการกลุ่ม</a></p>";
     } else if (!suggestions.length) {
