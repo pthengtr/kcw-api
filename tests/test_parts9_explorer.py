@@ -1183,3 +1183,13 @@ def test_explorer_page_has_product_edit_controls():
     assert "/parts9/api/products/" in html
     assert "function openNewProductDlg" in html
     assert "saveLQ" in html
+
+
+def test_explorer_page_has_photo_lightbox():
+    html = _explorer_html()
+    assert 'id="photo-overlay"' in html
+    assert "function openPhoto" in html
+    assert "function closePhoto" in html
+    assert "photo-thumb-btn" in html
+    assert "data-photo" in html
+    assert "ขยายรูปสินค้า" in html
