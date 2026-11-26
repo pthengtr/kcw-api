@@ -106,6 +106,8 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .stock-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px}
 .low-edit{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;font-weight:650}
 .low-in{width:64px;min-height:32px;font-size:14px;padding:4px 6px}
+.manage-menu .low-edit{width:100%;justify-content:space-between;box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--blue-deep)}
+.manage-menu .low-in{width:72px;min-height:34px}
 .thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
 .thumb{width:40px;height:40px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
 .thumb-empty{display:none}
@@ -824,7 +826,8 @@ function productTools(row){
   const dismiss = canStamp
     ? `<button type="button" class="peer-btn warn" data-dismiss="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">นำออก</button>`
     : "";
-  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${cancel}${dismiss}</div></details>`;
+  const lowEdit = lowStockEdit(row);
+  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${lowEdit}${cancel}${dismiss}</div></details>`;
   return {
     actions: `<div class="line-actions">${manage}${tradeButton(row.bcode)}</div>`,
     extra: `<div class="col-extra"><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div></div>`,
@@ -946,15 +949,19 @@ function qtyCell(row){
   const unitLabel = units ? "" : `<span class="meta">${esc(selectedUnit(row))}</span>`;
   return `<div class="qty-edit"><div class="qty-row"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/>${unitLabel}${units}</div>${draftStatusHtml(row)}</div>`;
 }
-function lowStockControl(row){
+function lowStockLabel(row){
   if(row.hq_qtymin == null || row.hq_qtymin === "") return "";
   const L = Number(row.hq_qtymin);
   if(!Number.isFinite(L)) return "";
   if(L < 0) return `<span>L${esc(qtyText(L))}</span>`;
-  if(STAMP && row.bcode){
-    return `<label class="low-edit">L <input class="qty-in low-in" data-l="${esc(row.bcode)}" data-lkey="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(L))}" aria-label="สต็อกต่ำ ${esc(row.bcode||"")}"/></label>`;
-  }
   return `<span>L ${esc(qtyText(L))}</span>`;
+}
+function lowStockEdit(row){
+  if(!STAMP || !row || !row.bcode) return "";
+  if(row.hq_qtymin == null || row.hq_qtymin === "") return "";
+  const L = Number(row.hq_qtymin);
+  if(!Number.isFinite(L) || L < 0) return "";
+  return `<label class="manage-item low-edit">แก้ไขค่า L <input class="qty-in low-in" data-l="${esc(row.bcode)}" data-lkey="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(L))}" aria-label="สต็อกต่ำ ${esc(row.bcode||"")}"/></label>`;
 }
 function stockRecovered(row){
   const hq = Number(row.hq_qtyoh2);
@@ -972,7 +979,7 @@ function stockLineHtml(row){
       ? ` · ${esc(qtyText(Number(row.company_qtyoh2) / packs))} ${esc(ui2)}` : "";
     bits.push(`<span>คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}${packText}${incomingText}</span>`);
   }
-  const low = lowStockControl(row);
+  const low = lowStockLabel(row);
   if(low) bits.push(low);
   if(stockRecovered(row)) bits.push(`<span class="stock-ok">HQ ถึง L แล้ว</span>`);
   if(!bits.length) return "";
@@ -993,7 +1000,7 @@ function stockCellHtml(row){
     }
     if(extra.length) bits.push(`<div class="meta">${extra.join(" · ")}</div>`);
   }
-  const low = lowStockControl(row);
+  const low = lowStockLabel(row);
   if(low) bits.push(`<div class="meta stock-row">${low}</div>`);
   if(stockRecovered(row)) bits.push(`<div class="meta stock-ok">HQ ถึง L แล้ว</div>`);
   if(!bits.length) return `<div class="col-stock"><span class="meta">—</span></div>`;
