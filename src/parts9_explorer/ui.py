@@ -391,22 +391,20 @@ label.chk input { margin:0; flex-shrink:0; }
 .detail-sec-lbl {
   margin:.3rem 0 .15rem; font-size:.7rem; font-weight:700; color:var(--muted);
 }
-.stock-kpis { display:grid; grid-template-columns:1fr 1fr; gap:.35rem; margin:.1rem 0 0; }
+.stock-kpis { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; margin:.1rem 0 0; }
+@media (min-width:520px) { .stock-kpis { grid-template-columns:repeat(3,1fr); } }
 .stock-kpi {
-  background:var(--inset); border:1px solid var(--line); border-radius:.5rem;
-  padding:.4rem .5rem;
+  background:var(--inset); border:1px solid var(--line); border-radius:.6rem;
+  padding:.55rem .6rem; min-width:0;
 }
-.stock-kpi .n { font-size:1.1rem; font-weight:750; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
-.stock-kpi .l { font-size:.68rem; color:var(--muted); margin-top:0; font-weight:650; }
+.stock-kpi .n { font-size:.95rem; font-weight:750; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
+.stock-kpi .l { font-size:.7rem; color:var(--muted); margin-bottom:.12rem; font-weight:650; }
 .stock-kpi .u { font-size:.7rem; font-weight:500; color:var(--muted); margin-left:.2rem; }
 .stock-kpi .loc {
   font-size:.78rem; color:var(--heading); font-weight:650; margin-top:.18rem; line-height:1.3;
+  overflow-wrap:anywhere;
 }
 .stock-kpi.flag { border-color:var(--pend); }
-.stock-total {
-  margin:.28rem 0 0; font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.35;
-}
-.stock-total .lbl { color:var(--heading); font-weight:650; margin-right:.25rem; }
 .badge.oem-y { background:var(--st-ok-bg); color:var(--ok); }
 .badge.oem-n { background:var(--st-wait-bg); color:var(--muted); }
 .photos-view { display:flex; gap:.3rem; overflow-x:auto; margin:0; }
@@ -567,8 +565,8 @@ label.chk input { margin:0; flex-shrink:0; }
   background:var(--acc); color:#fff; border-color:var(--acc);
 }
 .hist-tabs button[hidden] { display:none !important; }
-.ikpis,.istock { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; margin:.35rem 0 .55rem; }
-@media (min-width:520px) { .istock { grid-template-columns:repeat(3,1fr);} .ikpis { grid-template-columns:repeat(3,1fr);} }
+.ikpis { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; margin:.35rem 0 .55rem; }
+@media (min-width:520px) { .ikpis { grid-template-columns:repeat(3,1fr);} }
 .ikpi {
   background:var(--inset); border:1px solid var(--line); border-radius:.6rem; padding:.55rem .6rem;
 }
@@ -1993,11 +1991,8 @@ function showP(i, opts) {
     stockHtml += "<div class='stock-kpis'>"
       +stockCard("HQ", qtyHq, locHq, !!p.do_not_restock)
       +stockCard("SYP", qtySyp, locSyp, false)
+      +stockCard("รวมบริษัท", qtyTotal, "", false)
       +"</div>";
-    if (qtyTotal != null) {
-      stockHtml += "<p class='stock-total'><span class='lbl'>รวมบริษัท</span>"
-        +esc(qty(qtyTotal)+(p.ui1 ? " "+p.ui1 : ""))+"</p>";
-    }
   } else {
     stockHtml += "<div class='stock-kpis'>"
       +stockCard("QTYOH2", p.qtyoh2, p.location || "", !!p.do_not_restock)
@@ -2579,8 +2574,6 @@ function insightHtml(ins, live) {
     +"<div class='hist-rec-sub'>"+esc(summaryMain)
     +(aiText && aiText !== recText ? " · "+esc(aiText.slice(0, 160)) : "")
     +"</div></div>"
-    +"<h3>สต็อกคงเหลือ</h3>"
-    +"<div class='istock'>"+kpi("HQ", qtyWithUnit(qtyHq, unit))+kpi("SYP", qtyWithUnit(qtySyp, unit))+kpi("รวมบริษัท", qtyWithUnit(qtyTotal, unit))+"</div>"
     +"<h3>ยอดขายเฉลี่ย</h3>"
     +"<div class='ikpis'>"+kpi("เฉลี่ย 3 เดือน", qtyWithUnit(avg3, unit))+kpi("เฉลี่ย 12 เดือน", qtyWithUnit(avg12, unit))+"</div>"
     +"<h3>จุดสั่ง / Safety Stock</h3>"
