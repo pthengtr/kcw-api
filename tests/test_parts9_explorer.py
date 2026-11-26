@@ -445,10 +445,11 @@ def test_explorer_page_shows_location_bits():
     assert "text-overflow:ellipsis" not in html.split(".cell-stock .loc")[1].split("}")[0]
     assert "stockCellHtml" in html
     assert "display:block" in html
-    assert "stock-total" in html
+    assert "stock-total" not in html
     assert "price-main" in html
     assert 'class=\'num\'>ราคาขาย</th><th>หน่วย</th>' not in html
-    assert "stockCard(\"รวมบริษัท\"" not in html
+    assert "stockCard(\"รวมบริษัท\"" in html
+    assert "@media (min-width:520px) { .stock-kpis { grid-template-columns:repeat(3,1fr); } }" in html
     assert "+oemBadge(p)" not in html.split("function showP")[0]
     # Reorder/lot stay in order tab, not main detail overview.
     assert "omit from main detail" in html or "Tab การสั่งซื้อ" in html
@@ -704,6 +705,10 @@ def test_explorer_page_has_insight_v12_layout():
     assert "hist-rec" in html
     assert "ibars" in html
     assert "สต็อกคงเหลือ" in html
+    # Stock boxes live in main product detail only — not duplicated in Insight.
+    insight_fn = html.split("function insightHtml", 1)[1].split("function fmtSuggestEvidence", 1)[0]
+    assert '<h3>สต็อกคงเหลือ</h3>' not in insight_fn
+    assert "class='istock'" not in insight_fn
     assert "Safety Stock" in html
     assert "L ที่ตั้งไว้" in html
     assert "จุดสั่งแนะนำ" in html
