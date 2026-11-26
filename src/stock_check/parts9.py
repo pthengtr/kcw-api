@@ -181,14 +181,16 @@ def update_product_location(
         raise ValueError("product not found")
     loc1 = normalize_location1(location1)
     eng = engine or get_parts9_engine(writer=True)
+    # Match hq-receive / explorer writers: nvarchar BCODE compare so Thai bins stick.
+    where_bcode = "LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode"
     try:
         with eng.begin() as conn:
             result = conn.execute(
                 text(
-                    """
+                    f"""
                     UPDATE dbo.ICMAS
                     SET LOCATION1 = :location1
-                    WHERE LTRIM(RTRIM(BCODE)) = :bcode
+                    WHERE {where_bcode}
                     """
                 ),
                 {"bcode": code, "location1": loc1 or None},
@@ -196,7 +198,7 @@ def update_product_location(
             if result.rowcount < 1:
                 raise ValueError("product not found")
             row = conn.execute(
-                text(_PRODUCT_SELECT + " WHERE LTRIM(RTRIM(BCODE)) = :bcode"),
+                text(_PRODUCT_SELECT + f" WHERE {where_bcode}"),
                 {"bcode": code},
             ).mappings().first()
     except ValueError:
@@ -210,7 +212,17 @@ def update_product_location(
         raise RuntimeError(f"PARTS9 location update failed: {msg}") from exc
     if not row:
         raise ValueError("product not found")
-    return _row_to_product(row)
+    # Re-read via the caller’s usual reader path so a failed/rolled-back write
+    # cannot look like success when PARTS9 search / ICMAS still show the old bin.
+    verified = get_product_by_bcode(code, engine=get_parts9_engine(writer=False))
+    if not verified:
+        raise ValueError("product not found")
+    got = (verified.location1 or "").strip()
+    if got != loc1:
+        raise RuntimeError(
+            f"ICMAS LOCATION1 did not persist (wanted {loc1 or '—'}, got {got or '—'})"
+        )
+    return verified
 
 
 def lookup_products(query: str, *, limit: int = 20, engine: Engine | None = None) -> list[ProductRow]:

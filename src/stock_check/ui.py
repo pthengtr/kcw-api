@@ -981,7 +981,7 @@ def product_page(
         <form method="post" action="/stock-check/product/{escape(item['bcode'])}/location" id="loc-edit-form">
           <input type="hidden" name="source" value="{escape(source)}"/>
           <label>Location ใหม่</label>
-          <input type="text" name="location1" maxlength="10" autocomplete="off"
+          <input type="text" name="location1" id="loc-edit-input" maxlength="20" autocomplete="off"
             value="{escape(loc1)}" placeholder="เช่น OB-2-12.3"/>
           <p class="hint">อัปเดตที่เก็บในระบบสาขานี้เท่านั้น — ไม่กระทบจำนวนสต็อกหรือผลนับ</p>
           <div class="grid2" style="margin-top:12px">
@@ -1014,6 +1014,7 @@ def product_page(
       </div>
       <form method="post" action="/stock-check/product/{escape(item['bcode'])}/submit" id="count-form">
         <input type="hidden" name="source" value="{escape(source)}"/>
+        <input type="hidden" name="location1" id="count-location1" value="{escape(loc1)}"/>
         <input type="hidden" name="diff_dir" id="diff-dir" value="minus"/>
         <div id="panel-total">
           <label>นับได้กี่ชิ้น</label>
@@ -1050,19 +1051,25 @@ def product_page(
       var editBtn = document.getElementById("loc-edit-btn");
       var editPanel = document.getElementById("loc-edit-panel");
       var editCancel = document.getElementById("loc-edit-cancel");
+      var locEditInput = document.getElementById("loc-edit-input");
+      var countLocInput = document.getElementById("count-location1");
+      function syncCountLocation() {{
+        if (locEditInput && countLocInput) countLocInput.value = locEditInput.value;
+      }}
       function setLocEditOpen(open) {{
         if (!editPanel || !editBtn) return;
         editPanel.hidden = !open;
         editBtn.setAttribute("aria-expanded", open ? "true" : "false");
-        if (open) {{
-          var input = editPanel.querySelector("input[name=location1]");
-          if (input) {{ input.focus(); input.select(); }}
-        }}
+        if (open && locEditInput) {{ locEditInput.focus(); locEditInput.select(); }}
       }}
       if (editBtn) editBtn.addEventListener("click", function () {{
         setLocEditOpen(editPanel.hidden);
       }});
       if (editCancel) editCancel.addEventListener("click", function () {{ setLocEditOpen(false); }});
+      if (locEditInput) {{
+        locEditInput.addEventListener("input", syncCountLocation);
+        locEditInput.addEventListener("change", syncCountLocation);
+      }}
 
       var card = document.getElementById("count-card");
       if (!card) return;
@@ -1120,6 +1127,7 @@ def product_page(
       if (amount) amount.addEventListener("input", updatePreview);
 
       document.getElementById("count-form").addEventListener("submit", function (ev) {{
+        syncCountLocation();
         var mark = ev.submitter && ev.submitter.name === "mark_correct";
         if (mark) return;
         if (mode === "total") {{
