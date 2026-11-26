@@ -81,6 +81,7 @@ def test_reclaim_stale_running_age_filter():
 
     assert worker.reclaim_stale_running(engine, max_age_minutes=12) == []
     select_sql = str(conn.execute.call_args_list[0].args[0])
-    assert "make_interval" in select_sql
+    assert "interval '1 minute'" in select_sql
+    assert "make_interval" not in select_sql
     params = conn.execute.call_args_list[0].args[1]
     assert params["mins"] == 12.0

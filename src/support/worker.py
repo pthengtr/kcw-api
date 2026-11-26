@@ -124,7 +124,8 @@ def reclaim_stale_running(
         params: dict[str, Any] = {}
         reason = "worker startup reclaim of leftover running ticket"
     else:
-        age_filter = "and claimed_at < now() - make_interval(mins => :mins)"
+        # Avoid make_interval(mins => :mins) — `=>` clashes with SQLAlchemy binds.
+        age_filter = "and claimed_at < now() - (:mins * interval '1 minute')"
         params = {"mins": age}
         reason = f"stale running > {age:g}m (worker reclaim)"
 
