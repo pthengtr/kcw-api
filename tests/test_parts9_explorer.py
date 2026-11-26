@@ -417,6 +417,10 @@ def test_explorer_page_shows_location_bits():
     assert "กลุ่มสินค้า (CODE1)" in html
     assert "toggleDetailPane" in html
     assert "detail-collapsed" in html
+    assert "--shell-max:1560px" in html
+    assert "minmax(0,3fr) minmax(280px,2fr)" in html
+    assert "--detail-bg:#ffffff" in html
+    assert 'class="shell"' in html
     # Reorder/lot stay in order tab, not main detail overview.
     assert "omit from main detail" in html or "Tab การสั่งซื้อ" in html
     assert 'overview-block\'><h3>จุดสั่ง / ล็อต</h3>' not in html
