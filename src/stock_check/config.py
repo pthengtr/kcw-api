@@ -58,7 +58,8 @@ class StockCheckSettings(BaseSettings):
     )
     public_base_url: str = Field(default="", validation_alias="PUBLIC_BASE_URL")
 
-    # TSC TE310 (raw TSPL :9100). Same layout as transfer receive stickers.
+    # TSC barcode printer (raw TSPL :9100). Same layout as transfer receive stickers.
+    # SYP: ttp244pro on KSS-PC (USB + :9100 bridge). HQ may use te310.
     stock_check_sticker_printer_model: str = Field(
         default="te310",
         validation_alias="STOCK_CHECK_STICKER_PRINTER_MODEL",

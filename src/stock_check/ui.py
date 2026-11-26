@@ -1007,7 +1007,7 @@ def product_page(
       <form method="post" action="/stock-check/product/{escape(item['bcode'])}/print-sticker"
         id="print-sticker-form" style="margin-top:14px">
         <input type="hidden" name="source" value="{escape(source)}"/>
-        <label>พิมพ์บาร์โค้ด (TSC TE310)</label>
+        <label>พิมพ์บาร์โค้ด (TSC TTP-244 Pro)</label>
         <div class="grid2" style="align-items:end">
           <div>
             <label style="margin:0 0 6px;font-size:.82rem">จำนวนดวง</label>
@@ -1016,7 +1016,7 @@ def product_page(
           </div>
           <button type="submit" class="secondary" id="print-sticker-btn">พิมพ์บาร์โค้ด</button>
         </div>
-        <p class="hint" style="margin-top:8px">ส่ง TSPL ตรงเข้าเครื่อง TE310 บน LAN — เลย์เอาต์เดียวกับรับโอน</p>
+        <p class="hint" style="margin-top:8px">ส่ง TSPL ตรงเข้าเครื่อง TTP-244 Pro บน LAN — เลย์เอาต์เดียวกับรับโอน</p>
       </form>
     </div>
     <div class="card" id="count-card" data-system-qty="{qty}">
