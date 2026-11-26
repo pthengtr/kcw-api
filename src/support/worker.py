@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import time
 import traceback
+from typing import Any
 
 from dotenv import load_dotenv
 from sqlalchemy import text
@@ -33,6 +35,15 @@ load_dotenv()
 WORKER_NAME = os.getenv("SUPPORT_WORKER_NAME", "hq-ubuntu-server")
 POLL_SECONDS = float(os.getenv("SUPPORT_POLL_SECONDS", "8"))
 IDLE_SECONDS = float(os.getenv("SUPPORT_IDLE_SECONDS", "15"))
+# Reclaim running tickets older than this (minutes). Default above agent timeout
+# so a healthy long run is not stolen mid-flight.
+_AGENT_TIMEOUT_MIN = int(os.getenv("SUPPORT_AGENT_TIMEOUT_SEC", str(45 * 60))) / 60.0
+STALE_RUNNING_MINUTES = float(
+    os.getenv("SUPPORT_STALE_RUNNING_MINUTES", str(max(50.0, _AGENT_TIMEOUT_MIN + 5.0)))
+)
+
+# In-flight ticket for graceful SIGTERM/SIGINT requeue (single worker).
+_inflight: dict[str, Any] = {"ticket_id": None, "engine": None}
 
 
 def _row_to_dict(row) -> dict | None:
@@ -46,6 +57,130 @@ def _row_to_dict(row) -> dict | None:
         except Exception:
             data["target_meta"] = {}
     return data
+
+
+def requeue_running_ticket(
+    engine,
+    ticket_id: str,
+    *,
+    reason: str,
+) -> bool:
+    """Move a stuck/interrupted running ticket back to pending so it can retry."""
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                update public.support_tickets
+                set status = 'pending',
+                    claimed_at = null,
+                    finished_at = null,
+                    error_message = null,
+                    updated_at = now()
+                where id = cast(:id as uuid)
+                  and status = 'running'
+                returning id
+                """
+            ),
+            {"id": ticket_id},
+        ).mappings().first()
+        if not row:
+            return False
+        conn.execute(
+            text(
+                """
+                insert into public.support_ticket_events
+                  (ticket_id, event_type, comment, meta)
+                values (
+                  cast(:id as uuid),
+                  'requeued',
+                  :comment,
+                  cast(:meta as jsonb)
+                )
+                """
+            ),
+            {
+                "id": ticket_id,
+                "comment": reason[:2000],
+                "meta": json.dumps({"worker": WORKER_NAME, "reason": reason[:500]}),
+            },
+        )
+    return True
+
+
+def reclaim_stale_running(
+    engine,
+    *,
+    all_running: bool = False,
+    max_age_minutes: float | None = None,
+) -> list[str]:
+    """Requeue running tickets left behind by a killed/restarted worker.
+
+    - ``all_running``: used on startup (single HQ worker; nothing else owns them).
+    - otherwise: only tickets with ``claimed_at`` older than ``max_age_minutes``.
+    """
+    age = STALE_RUNNING_MINUTES if max_age_minutes is None else float(max_age_minutes)
+    if all_running:
+        age_filter = ""
+        params: dict[str, Any] = {}
+        reason = "worker startup reclaim of leftover running ticket"
+    else:
+        age_filter = "and claimed_at < now() - make_interval(mins => :mins)"
+        params = {"mins": age}
+        reason = f"stale running > {age:g}m (worker reclaim)"
+
+    sql = text(
+        f"""
+        with stale as (
+            select id
+            from public.support_tickets
+            where status = 'running'
+              {age_filter}
+            order by claimed_at nulls first
+            for update skip locked
+        )
+        update public.support_tickets t
+        set status = 'pending',
+            claimed_at = null,
+            finished_at = null,
+            error_message = null,
+            updated_at = now()
+        from stale s
+        where t.id = s.id
+        returning t.id
+        """
+    )
+    requeued: list[str] = []
+    with engine.begin() as conn:
+        rows = conn.execute(sql, params).mappings().all()
+        for row in rows:
+            tid = str(row["id"])
+            requeued.append(tid)
+            conn.execute(
+                text(
+                    """
+                    insert into public.support_ticket_events
+                      (ticket_id, event_type, comment, meta)
+                    values (
+                      cast(:id as uuid),
+                      'requeued',
+                      :comment,
+                      cast(:meta as jsonb)
+                    )
+                    """
+                ),
+                {
+                    "id": tid,
+                    "comment": reason[:2000],
+                    "meta": json.dumps(
+                        {
+                            "worker": WORKER_NAME,
+                            "reason": reason[:500],
+                            "all_running": all_running,
+                        }
+                    ),
+                },
+            )
+    return requeued
 
 
 def claim_next_ticket(engine) -> dict | None:
@@ -380,6 +515,8 @@ def process_ticket(engine, ticket: dict) -> None:
         f"target={target_source}/{ticket['target_id']}"
     )
 
+    _inflight["ticket_id"] = ticket_id
+    _inflight["engine"] = engine
     try:
         sb = get_supabase_client()
         paths = list(ticket.get("attachment_paths") or [])
@@ -396,6 +533,7 @@ def process_ticket(engine, ticket: dict) -> None:
         print(f"[support] failed {ticket_id}: {exc}\n{traceback.format_exc()}")
         mark_failed(engine, ticket_id, str(exc))
     finally:
+        _inflight["ticket_id"] = None
         cleanup_attachments(ticket_id)
         if kind != "data_query" and target_source in ("kcw-api", "kcw-v2"):
             try:
@@ -404,11 +542,46 @@ def process_ticket(engine, ticket: dict) -> None:
                 print(f"[support] worktree cleanup warning: {cleanup_err}")
 
 
+def _install_stop_handlers() -> None:
+    def _on_stop(signum: int, _frame) -> None:
+        name = signal.Signals(signum).name if signum else str(signum)
+        tid = _inflight.get("ticket_id")
+        eng = _inflight.get("engine")
+        print(f"[support] received {name}; shutting down")
+        if tid and eng is not None:
+            try:
+                if requeue_running_ticket(
+                    eng,
+                    str(tid),
+                    reason=f"worker interrupted by {name}",
+                ):
+                    print(f"[support] requeued in-flight ticket {tid}")
+            except Exception as exc:
+                print(f"[support] failed to requeue {tid} on stop: {exc}")
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _on_stop)
+    signal.signal(signal.SIGINT, _on_stop)
+
+
 def main() -> None:
     print(f"[support] worker starting as {WORKER_NAME}")
+    _install_stop_handlers()
     engine = get_engine()
+    _inflight["engine"] = engine
+
+    # Single HQ worker: anything left in running after a crash/restart is orphaned.
+    startup = reclaim_stale_running(engine, all_running=True)
+    if startup:
+        print(f"[support] startup requeued {len(startup)} running ticket(s): {startup}")
+
     while True:
         try:
+            stale = reclaim_stale_running(engine)
+            if stale:
+                print(
+                    f"[support] requeued {len(stale)} stale running ticket(s): {stale}"
+                )
             ticket = claim_next_ticket(engine)
             if not ticket or not ticket.get("id"):
                 time.sleep(IDLE_SECONDS)
@@ -419,6 +592,8 @@ def main() -> None:
                 # Already marked failed inside process_ticket when possible.
                 pass
             time.sleep(POLL_SECONDS)
+        except SystemExit:
+            raise
         except KeyboardInterrupt:
             print("[support] shutting down")
             break

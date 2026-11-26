@@ -101,17 +101,16 @@ else
   systemctl --user start kcw-worker.service
 fi
 
-# Support worker: bounce so ticket-agent code updates take effect.
-# Skip when intentionally mid-ticket: SKIP_SUPPORT_WORKER_RESTART=1.
+# Support worker: do NOT bounce on every deploy — mid-ticket SIGTERM left
+# tickets stuck in status=running (claim only picks pending). Opt in with
+# RESTART_SUPPORT_WORKER=1 when support-worker code itself changed.
+# Legacy: SKIP_SUPPORT_WORKER_RESTART=1 still means "leave running".
 if systemctl --user cat kcw-support-worker.service &>/dev/null; then
-  if [[ "${SKIP_SUPPORT_WORKER_RESTART:-}" == "1" ]]; then
-    if systemctl --user is-active --quiet kcw-support-worker.service; then
-      echo "kcw-support-worker left running (SKIP_SUPPORT_WORKER_RESTART=1)"
-    else
-      systemctl --user start kcw-support-worker.service
-    fi
-  elif systemctl --user is-active --quiet kcw-support-worker.service; then
+  if [[ "${RESTART_SUPPORT_WORKER:-}" == "1" && "${SKIP_SUPPORT_WORKER_RESTART:-}" != "1" ]]; then
     systemctl --user restart kcw-support-worker.service
+    echo "kcw-support-worker restarted (RESTART_SUPPORT_WORKER=1)"
+  elif systemctl --user is-active --quiet kcw-support-worker.service; then
+    echo "kcw-support-worker left running (set RESTART_SUPPORT_WORKER=1 to bounce)"
   else
     systemctl --user start kcw-support-worker.service
   fi
