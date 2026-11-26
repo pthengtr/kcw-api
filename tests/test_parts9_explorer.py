@@ -284,6 +284,18 @@ def test_parse_oem_mcode_and_code1():
     assert parse_query("KCPN6901-12").kind == "document"
     assert parse_query("PO6905-392").want_product is False
 
+    # Warehouse bins that share SI-looking prefixes must stay product searches
+    # (e.g. LOCATION1=3T-1-1 — bare startswith("3T") used to route these to SI).
+    loc = parse_query("3T-1-1")
+    assert loc.kind == "product"
+    assert loc.want_product is True
+    assert loc.doc_kind is None
+    assert loc.text_terms == ["3T-1-1"]
+    assert infer_doc_kind("3T-1-1") is None
+    assert parse_query("TF-2-3").kind == "product"
+    assert parse_query("8K69-0013225").kind == "document"
+    assert parse_query("3T69-0013225").doc_kind == "si"
+
 
 def test_product_search_matches_pcode_mcode_and_code1():
     from src.parts9_explorer.search import _term_match_sql
