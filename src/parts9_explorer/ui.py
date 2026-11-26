@@ -224,8 +224,8 @@ main {
 .thumb { width:64px; height:64px; object-fit:cover; border-radius:.45rem; background:var(--inset); flex-shrink:0; }
 /* Desktop product table */
 .results-table-wrap {
+  /* Avoid overflow-x here — it makes this wrap the sticky scrollport so th top:1.6rem covers row 1. */
   display:none; width:100%; max-width:100%; min-width:0;
-  overflow-x:auto; -webkit-overflow-scrolling:touch;
 }
 .results-cards { display:flex; flex-direction:column; gap:.35rem; }
 @media (min-width:880px) {
