@@ -542,6 +542,10 @@ def test_page_defaults_vendor_view():
     assert "function productMeta" in html
     assert "function stockCellHtml" in html
     assert "--line-cols:" in html
+    assert ".lines-table.mode-hold,.lines-table.mode-order" in html
+    head_fn = html.split("function linesHead", 1)[1].split("function linesTable", 1)[0]
+    assert 'mode === "hold" || mode === "order"' in head_fn
+    assert 'col-stock">คงเหลือ' in head_fn
     vendor_title_fn = html.split("function vendorTitle", 1)[1].split("function vendorTitleTip", 1)[0]
     assert "name · ${code}" not in vendor_title_fn
     assert "return code;" in vendor_title_fn
@@ -558,11 +562,13 @@ def test_page_defaults_vendor_view():
     assert "linesTable(\"pick\"" in html
     assert "linesTable(\"hold\"" in html
     assert "linesTable(\"order\"" in html
+    orders_fn = html.split("function renderOrders", 1)[1].split("async function loadOrders", 1)[0]
+    assert "stockCellHtml(" not in orders_fn
     hold_vendor = html.split("function holdLineHtml", 1)[1].split("function renderHold", 1)[0]
     assert "companyStatusCellHtml" in hold_vendor
     assert "vendor_name + \" · \" + row.vendor" not in hold_vendor
     assert "productCellHtml(row)" in hold_vendor
-    assert "stockCellHtml(row)" in hold_vendor
+    assert "stockCellHtml(row)" not in hold_vendor
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
