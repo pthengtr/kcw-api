@@ -533,6 +533,7 @@ def test_page_defaults_vendor_view():
     assert "บริษัท / สถานะ" in html
     assert "คงเหลือ</span>" in html
     assert "จำนวนสั่ง" in html
+    assert ".col-company .flag[hidden],.col-company .flag:empty{display:none}" in html
     assert "function vendorTitle" in html
     assert "function vendorTitleTip" in html
     assert "vendor-short" in html
