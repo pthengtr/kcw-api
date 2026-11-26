@@ -7,7 +7,8 @@
   <script>
     (function () {
       try {
-        var raw = localStorage.getItem("kcw.companion.ui.v7")
+        var raw = localStorage.getItem("kcw.companion.ui.v8")
+          || localStorage.getItem("kcw.companion.ui.v7")
           || localStorage.getItem("kcw.companion.ui.v6")
           || localStorage.getItem("kcw.companion.ui.v5");
         var theme = null;
@@ -336,7 +337,113 @@
     .btn-cloud-qr { background: var(--qr-phone); color: var(--on-qr); }
     .btn-force { background: var(--ok-bg); color: var(--ok-fg); }
     .btn-cancel { background: var(--danger); color: var(--btn-cancel-text); }
-    .btn-refresh, .btn-theme { background: var(--btn-secondary); color: var(--text); min-width: var(--touch); }
+    .btn-refresh, .btn-theme, .btn-back { background: var(--btn-secondary); color: var(--text); min-width: var(--touch); }
+    .btn-back[hidden] { display: none !important; }
+    .hub-view {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      padding: 1.25rem 1rem 2rem;
+      max-width: 28rem;
+      margin: 0 auto;
+      width: 100%;
+      min-width: 0;
+      animation: hubIn 0.22s ease;
+    }
+    .hub-view[hidden],
+    .mode-view[hidden] { display: none !important; }
+    @keyframes hubIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    .hub-intro {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .hub-tiles {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      margin-top: 1.15rem;
+    }
+    .hub-tile {
+      text-align: left;
+      padding: 1.15rem 1.2rem;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      min-height: 5.75rem;
+      width: 100%;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 0.3rem;
+      transition: transform 0.14s ease, border-color 0.14s ease;
+      box-shadow: var(--shadow);
+    }
+    .hub-tile:active { transform: scale(0.985); }
+    .hub-tile-cash { border-left: 4px solid var(--accent); }
+    .hub-tile-qr { border-left: 4px solid var(--qr-phone); }
+    .hub-tile-cn { border-left: 4px solid var(--warn); }
+    .hub-tile-top {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .hub-tile-title {
+      font-size: 1.12rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .hub-tile-sub {
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+    .hub-tile-badge {
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      background: var(--pill);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .hub-tile-badge.has-work {
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+    }
+    .mode-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.55rem 1rem;
+      border-bottom: 1px solid var(--line);
+      flex: 0 0 auto;
+    }
+    .mode-bar[data-process="cash"] { box-shadow: inset 0 -2px 0 var(--accent); }
+    .mode-bar[data-process="qr"] { box-shadow: inset 0 -2px 0 var(--qr-phone); }
+    .mode-bar[data-process="cn"] { box-shadow: inset 0 -2px 0 var(--warn); }
+    .mode-bar-title { font-weight: 700; font-size: 0.98rem; }
+    .mode-bar-sub { color: var(--muted); font-size: 0.82rem; }
+    .mode-block-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 0.45rem 0.75rem;
+      border-radius: 8px;
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1.35;
+      text-align: left;
+    }
     .btn-hopper {
       background: var(--btn-secondary);
       color: var(--text);
@@ -942,9 +1049,10 @@
         <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
         KCW Tiger Pay Companion
       </h1>
-      <div class="muted">บิลเงินสด POS → ตู้ Tiger · QR หน้าตู้</div>
+      <div class="muted" id="headerSubtitle">เลือกเมนูการชำระ — เงินสด / QR ออนไลน์ / CN</div>
     </div>
     <div class="header-actions">
+      <button class="btn-back" id="backBtn" type="button" hidden aria-label="กลับเมนู">กลับเมนู</button>
       <button class="btn-hopper" id="hopperBtn" type="button" aria-label="สถานะเงินทอน" title="สถานะเงินทอน">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="16" cy="16" r="6"/></svg>
         <span class="hopper-dot" id="hopperDot" hidden></span>
@@ -954,11 +1062,43 @@
     </div>
   </header>
   <div id="message"></div>
-  <main>
+  <section class="hub-view" id="hubView" aria-label="เมนู Companion">
+    <p class="hub-intro">แยกคิวชัดเจน: เงินสดใช้ตู้ · QR ไป Tiger backoffice (ไม่ค้างตู้) · CN จ่ายคืนที่ตู้</p>
+    <div class="hub-tiles">
+      <button type="button" class="hub-tile hub-tile-cash" data-process="cash">
+        <div class="hub-tile-top">
+          <span class="hub-tile-title">เงินสดเข้าตู้</span>
+          <span class="hub-tile-badge" id="hubBadgeCash">—</span>
+        </div>
+        <span class="hub-tile-sub">ส่งบิลให้ลูกค้าจ่ายเงินสดที่ตู้ Tiger</span>
+      </button>
+      <button type="button" class="hub-tile hub-tile-qr" data-process="qr">
+        <div class="hub-tile-top">
+          <span class="hub-tile-title">QR ออนไลน์</span>
+          <span class="hub-tile-badge" id="hubBadgeQr">—</span>
+        </div>
+        <span class="hub-tile-sub">สร้าง QR จาก Tiger backoffice — ไม่ใช้คิวตู้</span>
+      </button>
+      <button type="button" class="hub-tile hub-tile-cn" data-process="cn">
+        <div class="hub-tile-top">
+          <span class="hub-tile-title">CN / คืนเงิน</span>
+          <span class="hub-tile-badge" id="hubBadgeCn">—</span>
+        </div>
+        <span class="hub-tile-sub">สร้าง voucher จ่ายคืนเงินสดที่ตู้</span>
+      </button>
+    </div>
+  </section>
+  <main class="mode-view" id="modeView" hidden>
     <section class="panel bills-panel">
+      <div class="mode-bar" id="modeBar" data-process="cash">
+        <div>
+          <div class="mode-bar-title" id="modeBarTitle">เงินสดเข้าตู้</div>
+          <div class="mode-bar-sub" id="modeBarSub">ส่งบิลไปตู้ — รอลูกค้าใส่เงิน</div>
+        </div>
+      </div>
       <h2>
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
-        บิล POS ที่เปิดอยู่
+        <span id="billsPanelTitle">บิล POS ที่เปิดอยู่</span>
       </h2>
       <div class="toolbar">
         <div class="seg" role="group" aria-label="โหมดรายการบิล">
@@ -1039,13 +1179,31 @@
     </section>
   </main>
   <script>
-    const STORAGE_KEY = "kcw.companion.ui.v7";
-    /**
-     * Cloud QR (QR ออนไลน์) companion button — off while the process is redesigned.
-     * Keep send-cloud-qr handlers, dialog copy, CSS, and backend cloud_qr_* as reference;
-     * flip to true to restore the third button.
-     */
-    const CLOUD_QR_UI_ENABLED = false;
+    const STORAGE_KEY = "kcw.companion.ui.v8";
+    const PROCESS_MODES = ["cash", "qr", "cn"];
+    const PROCESS_META = {
+      cash: {
+        title: "เงินสดเข้าตู้",
+        sub: "ส่งบิลไปตู้ — รอลูกค้าใส่เงิน ยังไม่ถือว่าชำระจนกว่าตู้ยืนยัน",
+        header: "เงินสด → ตู้ Tiger",
+        billsTitle: "บิลเงินสด (เข้าตู้)",
+        emptyTimeline: "ยังไม่มีรายการชำระ กด「ส่งเงินสด」",
+      },
+      qr: {
+        title: "QR ออนไลน์",
+        sub: "สร้าง QR จาก Tiger backoffice — ไม่ใช้คิวตู้",
+        header: "QR ออนไลน์ → Tiger backoffice",
+        billsTitle: "บิล QR ออนไลน์",
+        emptyTimeline: "ยังไม่มี QR กด「สร้าง QR ออนไลน์」",
+      },
+      cn: {
+        title: "CN / คืนเงิน",
+        sub: "สร้าง voucher จ่ายคืนเงินสดที่ตู้",
+        header: "CN / คืนเงิน → ตู้ Tiger",
+        billsTitle: "บิล CN / คืนเงิน",
+        emptyTimeline: "ยังไม่มี voucher กด「สร้าง voucher / จ่ายคืน」",
+      },
+    };
     const STATUS_FILTER_KEYS = ["all", "unsent", "pending", "success", "cancelled"];
     const STATUS_TAB_LABELS = {
       all: "ทั้งหมด",
@@ -1140,6 +1298,7 @@
       theme: systemTheme(),
       statusFilter: "all",
       billSearch: "",
+      processMode: null,
       timelineFilters: {
         request: true,
         response: true,
@@ -1147,6 +1306,30 @@
         polling: true,
       },
     });
+
+    function normalizeProcessMode(value) {
+      return PROCESS_MODES.includes(value) ? value : null;
+    }
+
+    function processModeFromUrl() {
+      try {
+        const raw = new URLSearchParams(window.location.search).get("mode");
+        return normalizeProcessMode(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function syncProcessModeUrl(processMode) {
+      try {
+        const url = new URL(window.location.href);
+        if (processMode) url.searchParams.set("mode", processMode);
+        else url.searchParams.delete("mode");
+        window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+      } catch (_) {
+        /* ignore */
+      }
+    }
 
     function limitOptionsForMode(mode) {
       return LIMIT_OPTIONS_BY_MODE[mode === "today" ? "today" : "latest"];
@@ -1192,6 +1375,7 @@
       try {
         const raw =
           localStorage.getItem(STORAGE_KEY) ||
+          localStorage.getItem("kcw.companion.ui.v7") ||
           localStorage.getItem("kcw.companion.ui.v6") ||
           localStorage.getItem("kcw.companion.ui.v5") ||
           localStorage.getItem("kcw.companion.ui.v4") ||
@@ -1206,6 +1390,7 @@
           theme: normalizeTheme(parsed.theme),
           statusFilter: normalizeStatusFilter(parsed),
           billSearch: typeof parsed.billSearch === "string" ? parsed.billSearch : "",
+          processMode: normalizeProcessMode(parsed.processMode),
           timelineFilters: {
             request: parsed.timelineFilters?.request !== false,
             response: parsed.timelineFilters?.response !== false,
@@ -1225,6 +1410,7 @@
         theme: state.theme,
         statusFilter: state.statusFilter,
         billSearch: state.billSearch,
+        processMode: state.processMode,
         timelineFilters: state.timelineFilters,
       }));
     }
@@ -1244,6 +1430,7 @@
       theme: prefs.theme,
       statusFilter: prefs.statusFilter,
       billSearch: prefs.billSearch || "",
+      processMode: processModeFromUrl() ?? prefs.processMode ?? null,
       timelineFilters: prefs.timelineFilters,
       events: [],
       expandedPayload: new Set(),
@@ -1369,19 +1556,41 @@
       }
       state.statusByBillId = nextMap;
       state.statusSnapshotReady = true;
-      if (!transitions.length) return;
+      // Hub and cross-mode screens must not steal confirmation dialogs.
+      if (!state.processMode || !transitions.length) return;
+      const modeTransitions = transitions.filter((t) => transitionBelongsToMode(t.bill));
+      if (!modeTransitions.length) return;
       // Prefer the selected bill if several settle in one poll tick.
-      const chosen = transitions.find((t) => t.bill.id === state.selectedBillId) || transitions[0];
+      const chosen = modeTransitions.find((t) => t.bill.id === state.selectedBillId) || modeTransitions[0];
       const billNo = chosen.bill.bill_number;
+      const kind = attemptKind(chosen.bill);
       if (chosen.status === "success" || chosen.status === "used") {
         closeQrDialog();
-        showAlertDialog({
-          type: "success",
-          title: isPayoutBill(chosen.bill) ? "จ่ายคืนสำเร็จ" : "ชำระเงินสำเร็จ",
-          message: isPayoutBill(chosen.bill)
-            ? `บิล ${billNo} จ่ายคืนเงินสดผ่าน voucher เรียบร้อยแล้ว`
-            : `บิล ${billNo} ชำระผ่าน Tiger Pay เรียบร้อยแล้ว`,
-        });
+        if (kind === "voucher" || isPayoutBill(chosen.bill)) {
+          showAlertDialog({
+            type: "success",
+            title: "จ่ายคืนสำเร็จ",
+            message: `บิล ${billNo} — ตู้จ่ายเงินสดผ่าน voucher แล้ว`,
+          });
+        } else if (kind === "cloud_qr") {
+          showAlertDialog({
+            type: "success",
+            title: "ชำระ QR สำเร็จ",
+            message: `บิล ${billNo} — Tiger backoffice ยืนยันชำระแล้ว`,
+          });
+        } else if (kind === "cash") {
+          showAlertDialog({
+            type: "success",
+            title: "ชำระเงินสดสำเร็จ",
+            message: `บิล ${billNo} — ตู้ยืนยันรับเงินแล้ว`,
+          });
+        } else {
+          showAlertDialog({
+            type: "success",
+            title: "ชำระสำเร็จ",
+            message: `บิล ${billNo} ชำระเรียบร้อยแล้ว`,
+          });
+        }
       } else if (chosen.status === "cancelled" || chosen.status === "expired") {
         closeQrDialog();
         showAlertDialog({
@@ -1602,6 +1811,159 @@
       return bill?.kind === "payout" || bill?.payment_type === "voucher";
     }
 
+    function isCollectBill(bill) {
+      return !isPayoutBill(bill);
+    }
+
+    function attemptKind(bill) {
+      if (!bill) return null;
+      if (isPayoutBill(bill) || bill.payment_type === "voucher") return "voucher";
+      if (bill.payment_type === "cloud_qr") return "cloud_qr";
+      if (bill.payment_type === "qr") return "qr";
+      if (bill.payment_type === "cash") return "cash";
+      return null;
+    }
+
+    function billBelongsInMode(bill, processMode = state.processMode) {
+      if (processMode === "cn") return isPayoutBill(bill);
+      if (processMode === "cash" || processMode === "qr") return isCollectBill(bill);
+      return false;
+    }
+
+    function modeOwnsAttempt(bill, processMode = state.processMode) {
+      const kind = attemptKind(bill);
+      if (!bill?.payment_attempt_active && !bill?.payment_attempt_id) return true;
+      if (processMode === "cash") return kind === "cash";
+      if (processMode === "qr") return kind === "cloud_qr";
+      if (processMode === "cn") return kind === "voucher";
+      return false;
+    }
+
+    function transitionBelongsToMode(bill, processMode = state.processMode) {
+      const kind = attemptKind(bill);
+      if (processMode === "cash") return kind === "cash";
+      if (processMode === "qr") return kind === "cloud_qr";
+      if (processMode === "cn") return kind === "voucher" || isPayoutBill(bill);
+      return false;
+    }
+
+    function modeBills(processMode = state.processMode) {
+      if (!processMode) return [];
+      return state.bills.filter((b) => billBelongsInMode(b, processMode));
+    }
+
+    function crossModeBlockChip(bill) {
+      const kind = attemptKind(bill);
+      if (kind === "cloud_qr") {
+        return `<span class="mode-block-chip">กำลังชำระ QR ออนไลน์ — เปิดเมนู QR</span>`;
+      }
+      if (kind === "cash") {
+        return `<span class="mode-block-chip">กำลังชำระเงินสดที่ตู้ — เปิดเมนูเงินสด</span>`;
+      }
+      if (kind === "qr") {
+        return `<span class="mode-block-chip">QR หน้าตู้ (เลิกใช้ในเมนูนี้) — ยกเลิกจากประวัติได้เมื่อเปิดรายการเดิม</span>`;
+      }
+      if (kind === "voucher") {
+        return `<span class="mode-block-chip">กำลังคืนเงิน CN — เปิดเมนู CN</span>`;
+      }
+      return `<span class="mode-block-chip">รายการอื่นกำลังดำเนินการ</span>`;
+    }
+
+    function hubWorkCount(processMode) {
+      let n = 0;
+      for (const bill of state.bills) {
+        if (!billBelongsInMode(bill, processMode)) continue;
+        const bucket = billStatusBucket(bill);
+        if (bucket === "unsent") {
+          n += 1;
+          continue;
+        }
+        if (bucket !== "pending") continue;
+        const kind = attemptKind(bill);
+        if (processMode === "cash" && kind === "cash") n += 1;
+        else if (processMode === "qr" && kind === "cloud_qr") n += 1;
+        else if (processMode === "cn" && (kind === "voucher" || isPayoutBill(bill))) n += 1;
+      }
+      return n;
+    }
+
+    function syncHubBadges() {
+      const map = {
+        cash: document.getElementById("hubBadgeCash"),
+        qr: document.getElementById("hubBadgeQr"),
+        cn: document.getElementById("hubBadgeCn"),
+      };
+      for (const [mode, el] of Object.entries(map)) {
+        if (!el) continue;
+        const n = hubWorkCount(mode);
+        el.textContent = n > 0 ? `${n} รายการ` : "ว่าง";
+        el.classList.toggle("has-work", n > 0);
+      }
+    }
+
+    function enterProcessMode(processMode, { persist = true } = {}) {
+      const next = normalizeProcessMode(processMode);
+      if (!next) return;
+      state.processMode = next;
+      state.statusSnapshotReady = false;
+      closeQrDialog();
+      closeAlertDialog();
+      syncProcessModeUrl(next);
+      if (persist) savePrefs();
+      syncProcessShell();
+      syncToolbar();
+      renderBills();
+      maybeStartPolling();
+    }
+
+    function leaveProcessMode() {
+      state.processMode = null;
+      state.selectedBillId = null;
+      state.selectedAttemptId = null;
+      state.events = [];
+      state.statusSnapshotReady = false;
+      closeQrDialog();
+      closeAlertDialog();
+      if (state.pollTimer) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+      }
+      syncProcessModeUrl(null);
+      savePrefs();
+      syncProcessShell();
+      syncHubBadges();
+      const timeline = document.getElementById("timeline");
+      if (timeline) timeline.innerHTML = `<li class="empty">เลือกเมนูแล้วเลือกบิล</li>`;
+    }
+
+    function syncProcessShell() {
+      const hub = document.getElementById("hubView");
+      const modeView = document.getElementById("modeView");
+      const backBtn = document.getElementById("backBtn");
+      const subtitle = document.getElementById("headerSubtitle");
+      const onHub = !state.processMode;
+      if (hub) hub.hidden = !onHub;
+      if (modeView) modeView.hidden = onHub;
+      if (backBtn) backBtn.hidden = onHub;
+      const meta = PROCESS_META[state.processMode];
+      if (subtitle) {
+        subtitle.textContent = onHub
+          ? "เลือกเมนูการชำระ — เงินสด / QR ออนไลน์ / CN"
+          : (meta?.header || "");
+      }
+      if (!onHub && meta) {
+        const bar = document.getElementById("modeBar");
+        const title = document.getElementById("modeBarTitle");
+        const sub = document.getElementById("modeBarSub");
+        const billsTitle = document.getElementById("billsPanelTitle");
+        if (bar) bar.dataset.process = state.processMode;
+        if (title) title.textContent = meta.title;
+        if (sub) sub.textContent = meta.sub;
+        if (billsTitle) billsTitle.textContent = meta.billsTitle;
+      }
+      syncHubBadges();
+    }
+
     function billMatchesSearch(bill, query) {
       const q = String(query || "").trim().toLowerCase();
       if (!q) return true;
@@ -1626,7 +1988,7 @@
     }
 
     function searchedBills() {
-      return state.bills.filter((b) => billMatchesSearch(b, state.billSearch));
+      return modeBills().filter((b) => billMatchesSearch(b, state.billSearch));
     }
 
     function statusCounts(bills) {
@@ -1835,8 +2197,15 @@
       const cancelLabel = cancelLoading ? busyLabel("cancel")
         : `${ICONS.cancel}<span class="btn-text-full"> ยกเลิก</span><span class="btn-text-short"> ยกเลิก</span>`;
       const cancelBusyAttr = cancelLoading ? ` class="btn-cancel btn-busy" aria-busy="true"` : ` class="btn-cancel"`;
+      const cancelAction = isPayoutBill(bill) ? "cancel-voucher" : "cancel";
+      const cancelBtn = `
+          <button${cancelBusyAttr} type="button" data-action="${cancelAction}" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
+        `;
 
-      if (isPayoutBill(bill)) {
+      if (state.processMode === "cn") {
+        if (!isPayoutBill(bill)) {
+          return crossModeBlockChip(bill);
+        }
         const voucherLoading = isSendLoading(bill.id, "voucher");
         const alreadyCompleted = bill.tiger_payment_status === "used";
         const createDisabled = bill.payment_attempt_active || alreadyCompleted
@@ -1855,83 +2224,79 @@
         const voucherBusyAttr = voucherLoading ? ` class="btn-send btn-busy" aria-busy="true"` : ` class="btn-send"`;
         return `
           <button${voucherBusyAttr} type="button" data-action="create-voucher" data-id="${bill.id}" ${voucherDisabled ? "disabled" : ""}>${voucherLabel}</button>
-          <button${cancelBusyAttr} type="button" data-action="cancel-voucher" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
+          ${cancelBtn}
         `;
       }
 
-      const cashLoading = isSendLoading(bill.id, "cash");
-      const qrLoading = isSendLoading(bill.id, "qr");
-      const cloudQrLoading = isSendLoading(bill.id, "cloud_qr");
-      // Completed only when companion recorded success — not legacy POS PAID.
+      const kind = attemptKind(bill);
       const alreadyCompleted = bill.tiger_payment_status === "success"
         || bill.tiger_payment_status === "C";
-      const paidMethodLabel = bill.payment_type === "cloud_qr"
+      const paidMethodLabel = kind === "cloud_qr"
         ? "ชำระแล้ว (QR ออนไลน์)"
-        : bill.payment_type === "qr"
+        : kind === "qr"
           ? "ชำระแล้ว (QR หน้าตู้)"
-          : bill.payment_type === "cash"
+          : kind === "cash"
             ? "ชำระแล้ว (เงินสด)"
             : "ชำระแล้ว";
+
       if (alreadyCompleted) {
+        const owned = (state.processMode === "cash" && kind === "cash")
+          || (state.processMode === "qr" && kind === "cloud_qr");
+        if (!owned && kind) {
+          return `<span class="mode-block-chip">${paidMethodLabel}</span>`;
+        }
         return `
           <button class="btn-send" type="button" disabled>${ICONS.check}<span class="btn-text-full"> ${paidMethodLabel}</span><span class="btn-text-short"> ชำระแล้ว</span></button>
         `;
       }
-      const anySendLoading = cashLoading || qrLoading || cloudQrLoading;
-      const sendDisabled = bill.payment_attempt_active
-        || actionBlocked(anySendLoading);
-      const cashDisabled = sendDisabled || cashLoading;
-      const showQr = bill.payment_type === "qr" && bill.payment_attempt_id;
-      const showCloudQr = bill.payment_type === "cloud_qr" && bill.payment_attempt_id;
-      const cashLabel = cashLoading
-        ? busyLabel("cash")
-        : `${ICONS.send}<span class="btn-text-full"> ส่งเงินสด / บิล VAT</span><span class="btn-text-short"> เงินสด/VAT</span>`;
-      const qrLabel = qrLoading
-        ? busyLabel("qr")
-        : showQr && bill.payment_attempt_active
-          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR หน้าตู้</span><span class="btn-text-short"> ดู QR หน้าตู้</span>`
-          : `${ICONS.qr}<span class="btn-text-full"> QR หน้าตู้</span><span class="btn-text-short"> QR หน้าตู้</span>`;
-      const cloudQrLabel = cloudQrLoading
-        ? busyLabel("cloud_qr")
-        : showCloudQr && bill.payment_attempt_active
-          ? `${ICONS.qr}<span class="btn-text-full"> ดู QR ออนไลน์</span><span class="btn-text-short"> ดู QR ออนไลน์</span>`
-          : `${ICONS.qr}<span class="btn-text-full"> QR ออนไลน์</span><span class="btn-text-short"> QR ออนไลน์</span>`;
-      const qrDisabled = showQr && bill.payment_attempt_active
-        ? actionBlocked(false)
-        : (sendDisabled || qrLoading);
-      const cloudQrDisabled = showCloudQr && bill.payment_attempt_active
-        ? actionBlocked(false)
-        : (sendDisabled || cloudQrLoading);
-      const cashBusyAttr = cashLoading ? ` class="btn-send btn-busy" aria-busy="true"` : ` class="btn-send"`;
-      const qrBusyAttr = qrLoading ? ` class="btn-qr btn-busy" aria-busy="true"` : ` class="btn-qr"`;
-      const cloudQrBusyAttr = cloudQrLoading
-        ? ` class="btn-cloud-qr btn-busy" aria-busy="true"`
-        : ` class="btn-cloud-qr"`;
-      const showForce = state.canForceComplete
-        && bill.payment_attempt_active
-        && bill.payment_attempt_id
-        && bill.tiger_payment_status === "pendingapproval"
-        && bill.payment_type !== "cloud_qr";
-      const forceLoading = isForceLoading(bill.payment_attempt_id);
-      const forceDisabled = !showForce || actionBlocked(forceLoading) || forceLoading;
-      const forceLabel = forceLoading
-        ? busyLabel("force")
-        : `${ICONS.check}<span class="btn-text-full"> ตั้งเป็นสำเร็จ</span><span class="btn-text-short"> สำเร็จ</span>`;
-      const forceBusyAttr = forceLoading ? ` class="btn-force btn-busy" aria-busy="true"` : ` class="btn-force"`;
-      const forceBtn = showForce
-        ? `<button${forceBusyAttr} type="button" data-action="force-success" data-attempt="${bill.payment_attempt_id || ""}" ${forceDisabled ? "disabled" : ""}>${forceLabel}</button>`
-        : "";
-      // Cloud QR button gated — implementation kept below / in handlers for redesign.
-      const cloudQrBtn = CLOUD_QR_UI_ENABLED
-        ? `<button${cloudQrBusyAttr} type="button" data-action="send-cloud-qr" data-id="${bill.id}" ${cloudQrDisabled ? "disabled" : ""}>${cloudQrLabel}</button>`
-        : "";
-      return `
-        <button${cashBusyAttr} type="button" data-action="send-cash" data-id="${bill.id}" ${cashDisabled ? "disabled" : ""}>${cashLabel}</button>
-        <button${qrBusyAttr} type="button" data-action="send-qr" data-id="${bill.id}" ${qrDisabled ? "disabled" : ""}>${qrLabel}</button>
-        ${cloudQrBtn}
-        ${forceBtn}
-        <button${cancelBusyAttr} type="button" data-action="cancel" data-attempt="${bill.payment_attempt_id || ""}" ${cancelDisabled ? "disabled" : ""}>${cancelLabel}</button>
-      `;
+
+      if (bill.payment_attempt_active && !modeOwnsAttempt(bill)) {
+        return crossModeBlockChip(bill);
+      }
+
+      if (state.processMode === "cash") {
+        const cashLoading = isSendLoading(bill.id, "cash");
+        const sendDisabled = bill.payment_attempt_active
+          || actionBlocked(cashLoading) || cashLoading;
+        const cashLabel = cashLoading
+          ? busyLabel("cash")
+          : `${ICONS.send}<span class="btn-text-full"> ส่งเงินสด</span><span class="btn-text-short"> ส่งเงินสด</span>`;
+        const cashBusyAttr = cashLoading ? ` class="btn-send btn-busy" aria-busy="true"` : ` class="btn-send"`;
+        if (bill.payment_attempt_active && kind === "cash") {
+          return `
+            <button class="btn-send" type="button" disabled>${ICONS.send}<span class="btn-text-full"> รอที่ตู้…</span><span class="btn-text-short"> รอที่ตู้</span></button>
+            ${cancelBtn}
+          `;
+        }
+        return `
+          <button${cashBusyAttr} type="button" data-action="send-cash" data-id="${bill.id}" ${sendDisabled ? "disabled" : ""}>${cashLabel}</button>
+          ${cancelBtn}
+        `;
+      }
+
+      if (state.processMode === "qr") {
+        const cloudQrLoading = isSendLoading(bill.id, "cloud_qr");
+        const showCloudQr = kind === "cloud_qr" && !!bill.payment_attempt_id;
+        const sendDisabled = (bill.payment_attempt_active && !showCloudQr)
+          || actionBlocked(cloudQrLoading) || cloudQrLoading;
+        const cloudQrLabel = cloudQrLoading
+          ? busyLabel("cloud_qr")
+          : showCloudQr && bill.payment_attempt_active
+            ? `${ICONS.qr}<span class="btn-text-full"> ดู QR ออนไลน์</span><span class="btn-text-short"> ดู QR</span>`
+            : `${ICONS.qr}<span class="btn-text-full"> สร้าง QR ออนไลน์</span><span class="btn-text-short"> สร้าง QR</span>`;
+        const cloudQrDisabled = showCloudQr && bill.payment_attempt_active
+          ? actionBlocked(false)
+          : sendDisabled;
+        const cloudQrBusyAttr = cloudQrLoading
+          ? ` class="btn-cloud-qr btn-busy" aria-busy="true"`
+          : ` class="btn-cloud-qr"`;
+        return `
+          <button${cloudQrBusyAttr} type="button" data-action="send-cloud-qr" data-id="${bill.id}" ${cloudQrDisabled ? "disabled" : ""}>${cloudQrLabel}</button>
+          ${cancelBtn}
+        `;
+      }
+
+      return `<span class="mode-block-chip">เลือกเมนูก่อน</span>`;
     }
 
     function bindActionButtons(root, bill) {
@@ -2021,9 +2386,9 @@
                 });
               } else {
                 showAlertDialog({
-                  type: "success",
-                  title: "ส่งชำระสำเร็จ",
-                  message: `ส่งบิล ${bill.bill_number} ไปยังเครื่อง Tiger Pay แล้ว\nรอลูกค้าชำระที่เครื่อง`,
+                  type: "info",
+                  title: "ส่งไปที่ตู้แล้ว",
+                  message: `ส่งบิล ${bill.bill_number} ไปยังตู้ Tiger แล้ว\nรอลูกค้าใส่เงิน — ยังไม่ถือว่าชำระ`,
                 });
               }
             } else if (action === "force-success") {
@@ -2092,9 +2457,8 @@
       if (state.selectedAttemptId) loadTimeline(state.selectedAttemptId, { payout: isPayoutBill(bill) });
       else {
         state.events = [];
-        document.getElementById("timeline").innerHTML = isPayoutBill(bill)
-          ? `<li class="empty">ยังไม่มี voucher กด「สร้าง voucher / จ่ายคืน」</li>`
-          : `<li class="empty">ยังไม่มีรายการชำระ กด「ส่งเงินสด / บิล VAT」หรือ「QR หน้าตู้」</li>`;
+        const meta = PROCESS_META[state.processMode];
+        document.getElementById("timeline").innerHTML = `<li class="empty">${meta?.emptyTimeline || "ยังไม่มีรายการชำระ"}</li>`;
       }
     }
 
@@ -2355,6 +2719,7 @@
         }
         maybeNotifyStatusTransitions(state.bills);
         syncToolbar();
+        syncHubBadges();
         renderBills();
         refreshHopperIcon().catch(() => {});
         if (state.selectedAttemptId) {
@@ -2407,18 +2772,28 @@
     }
 
     function maybeStartPolling() {
-      const anyActive = state.bills.some((b) => b.payment_attempt_active);
-      if (anyActive && !state.pollTimer) {
+      const scope = state.processMode ? modeBills() : [];
+      const anyActive = !!state.openQrAttemptId
+        || scope.some((b) => b.payment_attempt_active && modeOwnsAttempt(b));
+      if (state.processMode && anyActive && !state.pollTimer) {
         // 3s is enough for till UX; tighter polling stacked slow Tiger voucher shows.
         state.pollTimer = setInterval(async () => {
           try { await loadBills(); } catch (err) { setMessage(err.message || String(err)); }
         }, 3000);
-      } else if (!anyActive && state.pollTimer) {
+      } else if ((!state.processMode || !anyActive) && state.pollTimer) {
         clearInterval(state.pollTimer);
         state.pollTimer = null;
       }
     }
 
+    document.getElementById("backBtn").onclick = () => {
+      leaveProcessMode();
+    };
+    document.getElementById("hubView").addEventListener("click", (event) => {
+      const tile = event.target.closest("[data-process]");
+      if (!tile || !document.getElementById("hubView").contains(tile)) return;
+      enterProcessMode(tile.getAttribute("data-process"));
+    });
     document.getElementById("hopperBtn").onclick = () => {
       openHopperDialog().catch(() => {});
     };
@@ -2555,6 +2930,7 @@
     }
 
     applyTheme(state.theme);
+    syncProcessShell();
     syncToolbar();
     loadSession()
       .then(() => loadBills({ showRefresh: true }))
