@@ -430,7 +430,9 @@ def test_explorer_page_shows_location_bits():
     assert ".results-table .col-pcode { width:8rem; }" in html
     assert ".results-table .col-mcode { width:8.5rem; }" in html
     assert ".results-table .col-stock { width:7rem; }" in html
-    assert "-webkit-line-clamp:2" in html
+    # 2-line clip via max-height — never display:-webkit-box on td (breaks columns).
+    assert "max-height:2.7em" in html
+    assert "display:-webkit-box" not in html
     assert "display:block; color:var(--muted)" in html
     # Stock location must wrap fully — never ellipsis-clipped.
     assert ".cell-stock .loc" in html
