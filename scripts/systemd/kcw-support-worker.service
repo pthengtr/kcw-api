@@ -15,7 +15,10 @@ Environment=SUPPORT_WORKER_NAME=hq-ubuntu-server
 ExecStart=%h/projects/kcw-api/.venv/bin/python -m src.support.worker
 Restart=always
 RestartSec=5
-TimeoutStopSec=30
+# Give the worker time to requeue the in-flight ticket on SIGTERM.
+TimeoutStopSec=90
+KillMode=mixed
+KillSignal=SIGTERM
 
 StandardOutput=journal
 StandardError=journal
