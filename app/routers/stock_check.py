@@ -407,6 +407,7 @@ def submit_product(
     request: Request,
     bcode: str,
     source: str = Form("batch"),
+    location1: str | None = Form(None),
     counted_qty: str = Form(""),
     difference: str = Form(""),
     diff_amount: str = Form(""),
@@ -419,6 +420,10 @@ def submit_product(
     if err:
         return err
     try:
+        # Location is edited on the product card (pencil) but operators often hit
+        # count-save next — persist LOCATION1 first so ICMAS / PARTS9 search match.
+        if location1 is not None:
+            service.update_location(session=user, bcode=bcode, location1=location1)
         kwargs = {
             "session": user,
             "bcode": bcode,

@@ -1117,7 +1117,72 @@ def test_product_page_has_location_edit_control():
     html = product_page(user={"display_name": "T", "line_user_id": "U1"}, item=item)
     assert 'id="loc-edit-btn"' in html
     assert 'id="loc-edit-panel"' in html
+    assert 'id="loc-edit-input"' in html
+    assert 'id="count-location1"' in html
     assert 'name="location1"' in html
+    assert "syncCountLocation" in html
     assert "OB-2-12.3" in html
     assert "ประวัติแก้ Location" in html
     assert "Alice" in html
+
+
+def test_update_product_location_verifies_reader_reread(monkeypatch):
+    """Writer must not report success if a fresh reader still sees the old bin."""
+    from src.stock_check import parts9 as parts9_mod
+    from src.stock_check.parts9 import ProductRow, update_product_location
+
+    written_row = {
+        "BCODE": "15015151",
+        "DESCR": "bearing",
+        "PCODE": "",
+        "MCODE": "",
+        "MODEL": "",
+        "LOCATION1": "0ป-6-20",
+        "LOCATION2": "",
+        "QTYOH2": 3.0,
+        "UI1": "หน่วย",
+        "MTP2": 1.0,
+        "CANCELED": "N",
+        "QTYMIN": 0,
+    }
+    stale = ProductRow(
+        bcode="15015151",
+        descr="bearing",
+        pcode="",
+        mcode="",
+        location1="0ป-6-21",
+        location2="",
+        qtyoh2=3.0,
+        ui1="หน่วย",
+        mtp2=1.0,
+        canceled="N",
+    )
+
+    class _Result:
+        rowcount = 1
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return written_row
+
+    class _Conn:
+        def execute(self, *_a, **_k):
+            return _Result()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    class _Eng:
+        def begin(self):
+            return _Conn()
+
+    monkeypatch.setattr(parts9_mod, "get_parts9_engine", lambda writer=False: _Eng())
+    monkeypatch.setattr(parts9_mod, "get_product_by_bcode", lambda bcode, engine=None: stale)
+
+    with pytest.raises(RuntimeError, match="did not persist"):
+        update_product_location("15015151", location1="0ป-6-20", engine=_Eng())
