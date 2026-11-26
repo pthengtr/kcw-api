@@ -1690,6 +1690,7 @@ function showP(i, opts) {
     +renderPhotosView(p)
     +"<div class='edit-bar'><button type='button' class='primary' id='manageProductBtn'>จัดการสินค้า</button></div>"
     +"</div>"
+    +"<div id='subPanel'></div>"
     +"<div class='hist-panel'>"
     +"<div class='hist-chrome'>"
     +"<div class='toggle hist-site' id='histSite'>"
@@ -1704,8 +1705,7 @@ function showP(i, opts) {
     +(CAN_SEE_COST ? "<button type='button' data-hist-tab='cost'>ต้นทุน</button>" : "")
     +"</div>"
     +"<div id='histBody'></div>"
-    +"</div>"
-    +"<div id='subPanel'></div>";
+    +"</div>";
   const manageBtn = $("manageProductBtn");
   if (manageBtn) manageBtn.onclick = () => openManageDlg(p, i);
   const live = {
