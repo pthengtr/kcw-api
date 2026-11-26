@@ -84,7 +84,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .col-qty{text-align:right}
 .col-qty .unit-pick{justify-content:flex-end;flex-wrap:nowrap}
 .col-qty .qty-edit{width:100%}
-.col-stock .recs{margin-top:4px;justify-content:flex-start}
+.col-qty .recs{margin-top:4px;justify-content:flex-end}
 .col-acts .line-actions{margin-top:0;justify-content:flex-end;flex-direction:column;align-items:stretch}
 .col-acts .manage{width:100%}
 .col-acts .manage > summary,.col-acts .peer-btn{width:100%;justify-content:center}
@@ -924,7 +924,7 @@ function stockLineHtml(row){
   if(!bits.length) return "";
   return `<div class="meta stock-row">${bits.join("")}</div>`;
 }
-function stockCellHtml(row, {recs=false}={}){
+function stockCellHtml(row){
   const bits = [];
   if(row.hq_qtyoh2 != null || row.syp_qtyoh2 != null || row.company_qtyoh2 != null){
     bits.push(`<div class="stock-pair"><div><span class="lbl">HQ</span>${esc(qtyText(row.hq_qtyoh2))}</div><div><span class="lbl">SYP</span>${esc(qtyText(row.syp_qtyoh2))}</div></div>`);
@@ -942,7 +942,6 @@ function stockCellHtml(row, {recs=false}={}){
   const low = lowStockControl(row);
   if(low) bits.push(`<div class="meta stock-row">${low}</div>`);
   if(stockRecovered(row)) bits.push(`<div class="meta stock-ok">HQ ถึง L แล้ว</div>`);
-  if(recs) bits.push(recHtml(row));
   if(!bits.length) return `<div class="col-stock"><span class="meta">—</span></div>`;
   return `<div class="col-stock">${bits.join("")}</div>`;
 }
@@ -958,8 +957,8 @@ function lineHtml(row, mode){
     ${checkCol}
     ${productCellHtml(row)}
     ${companyStatusCellHtml(row, [orderAdviceHtml(row), flagHtml(row), priorHtml(row)])}
-    ${stockCellHtml(row, {recs:true})}
-    <div class="col-qty">${qtyCell(row)}</div>
+    ${stockCellHtml(row)}
+    <div class="col-qty">${qtyCell(row)}${recHtml(row)}</div>
     <div class="col-acts">${tools.actions || ""}</div>
     ${tools.extra || ""}
   </div>`;
