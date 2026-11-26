@@ -175,12 +175,12 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .peer-btn{border-radius:10px;margin-top:6px}
 .line-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;align-items:flex-start}
 .line-actions .peer-btn{margin-top:0}
-.manage{margin:0;min-width:0}
+.manage{margin:0;min-width:0;position:relative}
 .manage > summary{list-style:none;min-height:34px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:3px 9px;font-size:12px;font-weight:650;color:var(--blue-deep);cursor:pointer;display:inline-flex;align-items:center;gap:4px;user-select:none}
 .manage > summary::-webkit-details-marker{display:none}
 .manage > summary::after{content:"▾";font-size:11px;color:var(--muted)}
 .manage[open] > summary::after{content:"▴"}
-.manage-menu{display:flex;flex-direction:column;gap:4px;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fff;min-width:min(240px,70vw)}
+.manage-menu{display:flex;flex-direction:column;gap:4px;margin:0;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fff;min-width:min(240px,70vw);position:fixed;z-index:35;box-shadow:0 10px 28px rgba(15,23,42,.16)}
 .manage-menu .peer-btn,.manage-item{margin:0;width:100%;text-align:left;border-radius:8px}
 .manage-menu .peer-btn.warn{color:var(--warn);border-color:#fdba74;background:#fff}
 .view-hint{margin:0;padding:0 2px;color:var(--muted);font-size:12px;line-height:1.4;width:100%}
@@ -641,6 +641,47 @@ function tradeButton(bcode){
   const code = String(bcode || "").trim();
   if(!code) return "";
   return `<button type="button" class="peer-btn" data-trade="${esc(code)}">Insight / ประวัติ</button>`;
+}
+function clearManagePlace(details){
+  if(!details) return;
+  details.classList.remove("drop-up");
+  const menu = details.querySelector(".manage-menu");
+  if(!menu) return;
+  menu.style.top = "";
+  menu.style.left = "";
+  menu.style.width = "";
+}
+function closeManageMenus(except){
+  document.querySelectorAll("details.manage[open]").forEach(el => {
+    if(el === except) return;
+    el.removeAttribute("open");
+    clearManagePlace(el);
+  });
+}
+function placeManageMenu(details){
+  if(!details || !details.open) return;
+  const menu = details.querySelector(".manage-menu");
+  const summary = details.querySelector("summary");
+  if(!menu || !summary) return;
+  const gap = 4;
+  const pad = 8;
+  const maxW = Math.min(240, window.innerWidth - pad * 2);
+  menu.style.width = Math.max(summary.offsetWidth, Math.min(maxW, Math.max(menu.scrollWidth, 180))) + "px";
+  const width = menu.offsetWidth;
+  const rect = summary.getBoundingClientRect();
+  const mh = menu.offsetHeight;
+  const spaceBelow = window.innerHeight - rect.bottom - gap;
+  const spaceAbove = rect.top - gap;
+  const openUp = mh > spaceBelow && spaceAbove > spaceBelow;
+  details.classList.toggle("drop-up", openUp);
+  let left = rect.right - width;
+  left = Math.max(pad, Math.min(left, window.innerWidth - width - pad));
+  menu.style.left = left + "px";
+  if(openUp){
+    menu.style.top = Math.max(pad, rect.top - gap - mh) + "px";
+  }else{
+    menu.style.top = Math.min(rect.bottom + gap, Math.max(pad, window.innerHeight - mh - pad)) + "px";
+  }
 }
 function viewHintText(view){
   return view === "product"
@@ -2297,6 +2338,16 @@ document.getElementById("doneQ").oninput = (e) => {
     renderOrders();
   }
 };
+document.addEventListener("toggle", (e) => {
+  const details = e.target;
+  if(!(details instanceof HTMLElement) || !details.classList.contains("manage")) return;
+  if(details.open){
+    closeManageMenus(details);
+    placeManageMenu(details);
+  }else{
+    clearManagePlace(details);
+  }
+}, true);
 document.addEventListener("click", (e) => {
   const shot = e.target.closest("[data-photo]");
   if(shot){
@@ -2304,10 +2355,15 @@ document.addEventListener("click", (e) => {
     return;
   }
   if(e.target.id === "photo" || e.target.closest("#photoClose")) closePhoto();
+  if(!e.target.closest("details.manage")) closeManageMenus();
 });
 document.addEventListener("keydown", (e) => {
-  if(e.key === "Escape"){ closePhoto(); closePoDialog(); }
+  if(e.key === "Escape"){ closeManageMenus(); closePhoto(); closePoDialog(); }
 });
+window.addEventListener("resize", () => {
+  document.querySelectorAll("details.manage[open]").forEach(placeManageMenu);
+});
+window.addEventListener("scroll", () => closeManageMenus(), true);
 document.getElementById("holdList").onclick = (e) => {
   const trade = e.target.closest("[data-trade]");
   if(trade){ openTrade(trade.getAttribute("data-trade") || ""); return; }
