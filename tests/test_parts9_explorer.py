@@ -408,10 +408,18 @@ def test_explorer_page_shows_location_bits():
     assert "insightHtml" in html
     assert "สต็อกคงเหลือ" in html
     assert "productCardHtml" in html
+    assert "productResultsHtml" in html
+    assert "results-table" in html
+    assert "card compact" in html
     assert "ราคาขาย 1" in html
     assert "ชื่อบริษัท" in html
     assert "หน่วยใหญ่" in html
     assert "กลุ่มสินค้า (CODE1)" in html
+    assert "toggleDetailPane" in html
+    assert "detail-collapsed" in html
+    # Reorder/lot stay in order tab, not main detail overview.
+    assert "omit from main detail" in html or "Tab การสั่งซื้อ" in html
+    assert 'overview-block\'><h3>จุดสั่ง / ล็อต</h3>' not in html
 
 
 def test_explorer_page_uses_hq_syp_labels():

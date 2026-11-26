@@ -149,25 +149,105 @@ button.primary:disabled { opacity:.45; cursor:not-allowed; }
 .ap-filters button.on { background:var(--acc); border-color:var(--acc); color:var(--on-acc); }
 .ap-line { cursor:pointer; }
 .ap-line:hover { background:var(--inset); }
-main { display:grid; grid-template-columns:1fr; max-width:1180px; margin:0 auto; }
-@media (min-width:880px) { main { grid-template-columns: minmax(280px,40%) 1fr; min-height:calc(100vh - 9rem);} .list{border-right:1px solid var(--line);} }
-.list, .detail { padding:.75rem 1rem 2rem; }
-.card { display:flex; gap:.75rem; padding:.7rem; margin-bottom:.5rem; background:var(--card); border:1px solid var(--line); border-radius:.7rem; text-align:left; width:100%; cursor:pointer; color:inherit; }
-.card.active { outline:2px solid var(--acc); }
+main { display:grid; grid-template-columns:1fr; max-width:none; margin:0; min-height:calc(100vh - 8rem); }
+@media (min-width:880px) {
+  main {
+    grid-template-columns:minmax(0,1.65fr) minmax(300px,.9fr);
+    height:calc(100vh - var(--hdr-h, 9.5rem));
+    min-height:0;
+  }
+  main.detail-collapsed { grid-template-columns:1fr; }
+  main.detail-collapsed .detail { display:none; }
+  main.detail-collapsed .list { border-right:0; }
+  .list { border-right:1px solid var(--line); overflow:auto; min-height:0; }
+  .detail { overflow:auto; min-height:0; }
+}
+.list, .detail { padding:.55rem .75rem 1.5rem; }
+.list-toolbar {
+  display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+  margin:0 0 .4rem; position:sticky; top:0; z-index:3;
+  background:var(--bg); padding:.1rem 0 .3rem;
+}
+.list-toolbar .meta { margin:0; }
+.detail-toggle { display:none; font-size:.78rem; padding:.35rem .6rem; white-space:nowrap; }
+@media (min-width:880px) { .detail-toggle { display:inline-flex; } }
+.card {
+  display:flex; gap:.75rem; padding:.7rem; margin-bottom:.5rem;
+  background:var(--card); border:1px solid var(--line); border-radius:.65rem;
+  text-align:left; width:100%; cursor:pointer; color:inherit;
+}
+.card.active, .result-sel.active {
+  outline:2px solid var(--acc);
+  background:color-mix(in srgb, var(--acc) 10%, var(--card));
+}
 .card .card-body { min-width:0; flex:1; }
 .card .card-name { font-size:.9rem; line-height:1.35; margin:.1rem 0 .2rem; }
 .card .card-line { font-size:.78rem; color:var(--muted); line-height:1.4; margin:.05rem 0; }
 .card .card-line .lbl { color:var(--heading); font-weight:600; }
 .card .card-price { font-size:.84rem; font-weight:700; color:var(--text); margin:.2rem 0 .1rem; font-variant-numeric:tabular-nums; }
 .card .card-stock { font-size:.78rem; color:var(--muted); line-height:1.4; margin:.05rem 0; font-variant-numeric:tabular-nums; }
+.card .card-stock .lbl { color:var(--heading); font-weight:600; }
 .thumb { width:64px; height:64px; object-fit:cover; border-radius:.45rem; background:var(--inset); flex-shrink:0; }
+/* Desktop product table */
+.results-table-wrap { display:none; width:100%; }
+.results-cards { display:flex; flex-direction:column; gap:.35rem; }
+@media (min-width:880px) {
+  .results-table-wrap { display:block; }
+  .results-cards { display:none; }
+}
+.results-table {
+  width:100%; border-collapse:separate; border-spacing:0; font-size:.78rem;
+}
+.results-table th, .results-table td {
+  border-bottom:1px solid var(--line); padding:.38rem .32rem; text-align:left; vertical-align:top;
+}
+.results-table th {
+  position:sticky; top:1.6rem; z-index:2;
+  background:var(--bg); color:var(--muted); font-weight:650; font-size:.7rem;
+  white-space:nowrap; letter-spacing:.01em;
+}
+.results-table .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.results-table tr.result-sel { cursor:pointer; }
+.results-table tr.result-sel:hover td { background:var(--inset); }
+.results-table tr.result-sel.active td {
+  background:color-mix(in srgb, var(--acc) 14%, var(--card));
+}
+.results-table tr.result-sel.active { outline:none; }
+.results-table .cell-code { font-weight:700; white-space:nowrap; }
+.results-table .cell-name { max-width:13rem; line-height:1.3; }
+.results-table .cell-stock { font-variant-numeric:tabular-nums; line-height:1.3; white-space:nowrap; }
+.results-table .cell-stock .loc { display:block; color:var(--muted); font-size:.68rem; }
+/* Mobile / tablet compact cards */
+.card.compact {
+  display:grid; grid-template-columns:1fr auto; gap:.15rem .55rem;
+  padding:.5rem .6rem; margin:0; border-radius:.5rem;
+}
+.card.compact .c-head {
+  grid-column:1 / -1; display:flex; align-items:center; gap:.3rem; flex-wrap:wrap;
+  font-size:.82rem;
+}
+.card.compact .card-name {
+  grid-column:1 / -1; font-size:.84rem; font-weight:600; margin:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3;
+}
+.card.compact .c-meta { font-size:.72rem; color:var(--muted); line-height:1.35; min-width:0; }
+.card.compact .c-price {
+  font-size:.9rem; font-weight:750; font-variant-numeric:tabular-nums;
+  text-align:right; align-self:start; white-space:nowrap;
+}
+.card.compact .c-stock {
+  grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:.2rem .45rem;
+  margin-top:.12rem; font-size:.74rem; font-variant-numeric:tabular-nums; line-height:1.3;
+}
+.card.compact .c-stock .lbl { font-weight:650; color:var(--heading); }
+.card.compact .c-stock .loc { color:var(--muted); }
 .meta { font-size:.8rem; color:var(--muted); }
-.kv-line { font-size:.84rem; color:var(--text); line-height:1.45; margin:.12rem 0; }
+.kv-line { font-size:.82rem; color:var(--text); line-height:1.4; margin:.08rem 0; }
 .kv-line .lbl { color:var(--muted); font-weight:600; margin-right:.25rem; }
-.prices { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.25rem; }
+.prices { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.2rem; }
 .prices span { font-size:.75rem; background:var(--inset); padding:.12rem .35rem; border-radius:.35rem; }
-.photos { display:flex; gap:.4rem; overflow-x:auto; margin:.6rem 0; }
-.photos img { height:140px; border-radius:.5rem; background:var(--inset); }
+.photos { display:flex; gap:.4rem; overflow-x:auto; margin:.5rem 0; }
+.photos img { height:120px; border-radius:.45rem; background:var(--inset); }
 table { width:100%; border-collapse:collapse; font-size:.84rem; }
 th, td { border-bottom:1px solid var(--line); padding:.35rem .25rem; text-align:left; vertical-align:top; }
 td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
@@ -176,51 +256,49 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 label.chk { font-size:.8rem; color:var(--muted); display:flex; gap:.35rem; align-items:center; }
 .kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:.45rem; margin:.2rem 0 .8rem; }
 @media (min-width:560px) { .kpis { grid-template-columns:repeat(4,1fr);} }
-.kpi { background:var(--card); border:1px solid var(--line); border-radius:.65rem; padding:.65rem .7rem; }
-.kpi .n { font-size:1.25rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; }
+.kpi { background:var(--card); border:1px solid var(--line); border-radius:.55rem; padding:.55rem .65rem; }
+.kpi .n { font-size:1.2rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; }
 .kpi .l { font-size:.72rem; color:var(--muted); margin-top:.1rem; }
 .kpi.warn .n { color:var(--pend); }
 .kpi.ok .n { color:var(--ok); }
-.detail-overview {
-  background:var(--card); border:1px solid var(--line); border-radius:.85rem;
-  padding:.85rem .9rem .95rem; margin:0 0 .75rem;
+.detail-overview { margin:0 0 .55rem; padding:0; background:transparent; border:0; }
+.detail-overview h2 { margin:0; letter-spacing:.01em; font-size:1.05rem; }
+.detail-head {
+  display:flex; flex-wrap:wrap; align-items:center; gap:.3rem .4rem; margin:0 0 .2rem;
 }
-.detail-overview h2 { margin:.05rem 0 .35rem; letter-spacing:.01em; }
-.detail-overview .descr { font-size:.95rem; line-height:1.4; margin:0 0 .35rem; }
-.detail-overview .meta { margin:.12rem 0; line-height:1.4; }
-.detail-overview .prices { margin:.45rem 0 .15rem; }
-.detail-overview .photos { margin:.55rem 0 .2rem; }
-.overview-grid {
-  display:grid; gap:.55rem; margin:.45rem 0 .15rem;
-  grid-template-columns:1fr;
+.detail-title { font-size:.95rem; font-weight:600; line-height:1.35; margin:0 0 .3rem; }
+.detail-facts-inline {
+  display:flex; flex-wrap:wrap; gap:.1rem .7rem; font-size:.8rem; color:var(--muted); margin:0 0 .45rem;
 }
-@media (min-width:640px) {
-  .overview-grid { grid-template-columns:1.2fr 1fr; }
+.detail-facts-inline span .lbl { color:var(--heading); font-weight:600; margin-right:.2rem; }
+.detail-price-photo {
+  display:grid; gap:.5rem; margin:0 0 .5rem; grid-template-columns:1fr; align-items:start;
 }
-.overview-block {
-  background:var(--inset); border:1px solid var(--line); border-radius:.65rem;
-  padding:.55rem .65rem;
+@media (min-width:520px) {
+  .detail-price-photo { grid-template-columns:minmax(0,1fr) auto; }
 }
-.overview-block h3 {
-  margin:0 0 .35rem; font-size:.72rem; font-weight:700; color:var(--muted);
-  letter-spacing:.02em; text-transform:none;
+.detail-price-photo .prices { margin:0; }
+.detail-more {
+  border-top:1px solid var(--line); padding-top:.4rem; margin:.35rem 0 .45rem;
 }
-.overview-block .meta { margin:.08rem 0; }
-.stock-kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:.45rem; margin:.35rem 0 0; }
+.detail-sec-lbl {
+  margin:.45rem 0 .2rem; font-size:.72rem; font-weight:700; color:var(--muted);
+}
+.stock-kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:.35rem; margin:.15rem 0 0; }
 @media (min-width:520px) { .stock-kpis { grid-template-columns:repeat(3,1fr);} }
 .stock-kpi {
-  background:var(--inset); border:1px solid var(--line); border-radius:.6rem;
-  padding:.55rem .65rem;
+  background:var(--inset); border:1px solid var(--line); border-radius:.5rem;
+  padding:.45rem .55rem;
 }
-.stock-kpi .n { font-size:1.15rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
-.stock-kpi .l { font-size:.7rem; color:var(--muted); margin-top:.18rem; }
-.stock-kpi .u { font-size:.72rem; font-weight:500; color:var(--muted); margin-left:.2rem; }
-.stock-kpi .loc { font-size:.72rem; color:var(--muted); margin-top:.2rem; line-height:1.3; }
+.stock-kpi .n { font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
+.stock-kpi .l { font-size:.68rem; color:var(--muted); margin-top:.1rem; }
+.stock-kpi .u { font-size:.7rem; font-weight:500; color:var(--muted); margin-left:.2rem; }
+.stock-kpi .loc { font-size:.7rem; color:var(--muted); margin-top:.15rem; line-height:1.3; }
 .stock-kpi.flag { border-color:var(--pend); }
 .badge.oem-y { background:var(--st-ok-bg); color:var(--ok); }
 .badge.oem-n { background:var(--st-wait-bg); color:var(--muted); }
-.photos-view { display:flex; gap:.4rem; overflow-x:auto; margin:.55rem 0 .15rem; }
-.photos-view img { height:120px; border-radius:.5rem; background:var(--inset); }
+.photos-view { display:flex; gap:.35rem; overflow-x:auto; margin:0; }
+.photos-view img { height:88px; border-radius:.4rem; background:var(--inset); }
 /* Product Insight dashboard — aligned to kcw_product_insight_dashboard_v12 reference */
 .insight-wrap { margin:0 0 .75rem; }
 .pi-head {
@@ -467,6 +545,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
       <p class="search-summary" id="searchSummary" aria-live="polite"></p>
     </div>
     <div class="brand-actions">
+      <button type="button" class="detail-toggle" id="detailToggle" onclick="toggleDetailPane()">ซ่อนรายละเอียด</button>
       <button type="button" class="search-toggle" id="searchToggle" aria-expanded="true" aria-controls="searchPanel">ซ่อน</button>
       <button type="button" class="theme" id="themeBtn" aria-label="สลับธีม">มืด</button>
     </div>
@@ -542,7 +621,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
   </div>
   </div>
 </header>
-<main>
+<main id="mainPane">
   <section class="list" id="list"><div class="empty">เลือกประเภทด้านบน แล้วพิมพ์ค้นหา</div></section>
   <section class="detail" id="detail"></section>
 </main>
@@ -702,35 +781,124 @@ function branchStockLocLine(branch, qtyVal, loc, unit) {
   if (locText) bits.push(locText);
   return "<div class='card-stock'><span class='lbl'>"+esc(branch)+"</span> "+esc(bits.join(" · "))+"</div>";
 }
-function productCardHtml(p, i) {
-  const src = (p.photos && p.photos[0]) || "";
-  const thumb = src
-    ? "<img class='thumb' src='"+esc(src)+"' alt='' onerror='imgErr(this)'/>"
-    : "";
-  const price1 = (p.prices && p.prices.PRICE1 != null) ? p.prices.PRICE1 : null;
+function productStockFields(p) {
   const unit = String(p.ui1 || "").trim();
   const qtyHq = p.qtyoh2_hq != null ? p.qtyoh2_hq : (String(p.site||"").toUpperCase()==="HQ" ? p.qtyoh2 : null);
   const qtySyp = p.qtyoh2_syp != null ? p.qtyoh2_syp : (String(p.site||"").toUpperCase()==="SYP" ? p.qtyoh2 : null);
   const locHq = (p.location_hq || "").trim();
   const locSyp = (p.location_syp || "").trim();
-  let stockLines = branchStockLocLine("HQ", qtyHq, locHq, unit)
-    + branchStockLocLine("SYP", qtySyp, locSyp, unit);
-  if (!stockLines && p.qtyoh2 != null) {
-    stockLines = "<div class='card-stock'><span class='lbl'>คงเหลือ</span> "+esc(qty(p.qtyoh2)+(unit ? " "+unit : ""))+"</div>";
-  }
-  const brandModel = [p.model, p.brand].filter(Boolean).join(" / ");
+  const price1 = (p.prices && p.prices.PRICE1 != null) ? p.prices.PRICE1 : null;
+  return { unit: unit, qtyHq: qtyHq, qtySyp: qtySyp, locHq: locHq, locSyp: locSyp, price1: price1 };
+}
+function stockCellHtml(qtyVal, loc, unit) {
+  const hasQty = qtyVal != null && qtyVal !== "";
+  const locText = String(loc || "").trim();
+  if (!hasQty && !locText) return "—";
+  const q = hasQty ? (qty(qtyVal) + (unit ? " "+esc(unit) : "")) : "—";
+  return q + (locText ? "<span class='loc'>"+esc(locText)+"</span>" : "");
+}
+function compactStockHtml(branch, qtyVal, loc, unit) {
+  const hasQty = qtyVal != null && qtyVal !== "";
+  const locText = String(loc || "").trim();
+  if (!hasQty && !locText) return "";
+  return "<div><span class='lbl'>"+esc(branch)+"</span> "
+    + (hasQty ? esc(qty(qtyVal)+(unit ? " "+unit : "")) : "—")
+    + (locText ? " <span class='loc'>"+esc(locText)+"</span>" : "")
+    + "</div>";
+}
+function markActiveResult(i) {
+  document.querySelectorAll(".result-sel").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
+  if (i == null) return;
+  document.querySelectorAll('.result-sel[data-pi="'+i+'"]').forEach(el => el.classList.add("active"));
+  const legacy = document.getElementById("c"+i);
+  if (legacy) legacy.classList.add("active");
+}
+function productRowHtml(p, i) {
+  const s = productStockFields(p);
+  const priceTxt = s.price1 != null ? Number(s.price1).toLocaleString("th-TH") : "—";
+  return "<tr class='result-sel' data-pi='"+i+"' onclick='showP("+i+")'>"
+    +"<td class='cell-code'>"+esc(p.bcode)+oemBadge(p)
+    +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")+"</td>"
+    +"<td class='cell-name'>"+esc(p.descr||"—")+"</td>"
+    +"<td>"+esc(p.model||"")+"</td>"
+    +"<td>"+esc(p.brand||"")+"</td>"
+    +"<td>"+esc(p.pcode||"")+"</td>"
+    +"<td>"+esc(p.mcode||"")+"</td>"
+    +"<td class='num'>"+priceTxt+"</td>"
+    +"<td>"+esc(s.unit||"")+"</td>"
+    +"<td class='cell-stock'>"+stockCellHtml(s.qtyHq, s.locHq, s.unit)+"</td>"
+    +"<td class='cell-stock'>"+stockCellHtml(s.qtySyp, s.locSyp, s.unit)+"</td>"
+    +"</tr>";
+}
+function productCardHtml(p, i) {
+  const s = productStockFields(p);
+  const metaBits = [];
+  if (p.model) metaBits.push(p.model);
+  if (p.brand) metaBits.push(p.brand);
   const codes = [];
-  if (p.pcode) codes.push(p.pcode);
-  if (p.mcode) codes.push(p.mcode);
-  return "<button class='card' id='c"+i+"' onclick='showP("+i+")'>"+thumb
-    +"<div class='card-body'><strong>"+esc(p.bcode)+"</strong>"+oemBadge(p)
-    +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
+  if (p.pcode) codes.push("แท้ "+p.pcode);
+  if (p.mcode) codes.push("โรงงาน "+p.mcode);
+  let stock = compactStockHtml("HQ", s.qtyHq, s.locHq, s.unit)
+    + compactStockHtml("SYP", s.qtySyp, s.locSyp, s.unit);
+  if (!stock && p.qtyoh2 != null) {
+    stock = "<div><span class='lbl'>คงเหลือ</span> "+esc(qty(p.qtyoh2)+(s.unit ? " "+s.unit : ""))+"</div>";
+  }
+  // Keep "ราคาขาย 1" label for list price (PRICE1) so staff recognize the field.
+  const priceHtml = s.price1 != null
+    ? "<div class='c-price'>ราคาขาย 1 "+Number(s.price1).toLocaleString("th-TH")+"</div>"
+    : "<div class='c-price'>—</div>";
+  return "<button type='button' class='card compact result-sel' data-pi='"+i+"' id='c"+i+"' onclick='showP("+i+")'>"
+    +"<div class='c-head'><strong>"+esc(p.bcode)+"</strong>"+oemBadge(p)
+    +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")+"</div>"
     +"<div class='card-name'>"+esc(p.descr||"—")+"</div>"
-    +cardLine("รุ่น / ยี่ห้อ", brandModel)
-    +cardLine("เบอร์แท้ / เบอร์โรงงาน", codes.join(" / "))
-    +(price1 != null ? "<div class='card-price'>ราคาขาย 1 "+Number(price1).toLocaleString("th-TH")+"</div>" : "")
-    +stockLines
-    +"</div></button>";
+    +"<div class='c-meta'>"
+    +(metaBits.length ? esc(metaBits.join(" · ")) : "")
+    +(metaBits.length && codes.length ? "<br/>" : "")
+    +(codes.length ? esc(codes.join(" · ")) : "")
+    +"</div>"
+    +priceHtml
+    +(stock ? "<div class='c-stock'>"+stock+"</div>" : "")
+    +"</button>";
+}
+function productResultsHtml(products) {
+  if (!products || !products.length) return "";
+  const rows = products.map((p, i) => productRowHtml(p, i)).join("");
+  const cards = products.map((p, i) => productCardHtml(p, i)).join("");
+  return "<div class='results-table-wrap'><table class='results-table'>"
+    +"<thead><tr>"
+    +"<th>รหัส</th><th>ชื่อสินค้า</th><th>รุ่น</th><th>ยี่ห้อ</th>"
+    +"<th>เบอร์แท้</th><th>เบอร์โรงงาน</th><th class='num'>ราคาขาย</th><th>หน่วย</th>"
+    +"<th>HQ</th><th>SYP</th>"
+    +"</tr></thead><tbody>"+rows+"</tbody></table></div>"
+    +"<div class='results-cards'>"+cards+"</div>";
+}
+function listToolbarHtml(nProducts) {
+  const label = nProducts
+    ? ("สินค้า "+nProducts.toLocaleString("th-TH")+" รายการ")
+    : "";
+  return "<div class='list-toolbar'><div class='meta' id='listCount'>"+esc(label)+"</div></div>";
+}
+let detailCollapsed = false;
+const DETAIL_COLLAPSE_KEY = "kcw.parts9.detailCollapsed";
+function setDetailCollapsed(v) {
+  detailCollapsed = !!v;
+  const main = $("mainPane");
+  if (main) main.classList.toggle("detail-collapsed", detailCollapsed);
+  try { localStorage.setItem(DETAIL_COLLAPSE_KEY, detailCollapsed ? "1" : "0"); } catch (e) {}
+  const btn = $("detailToggle");
+  if (btn) btn.textContent = detailCollapsed ? "แสดงรายละเอียด" : "ซ่อนรายละเอียด";
+}
+function toggleDetailPane() {
+  setDetailCollapsed(!detailCollapsed);
+  if (!detailCollapsed && detailCtx && detailCtx.idx != null) {
+    markActiveResult(detailCtx.idx);
+  }
+}
+function syncHdrHeight() {
+  const hdr = $("hdr");
+  if (!hdr) return;
+  document.documentElement.style.setProperty("--hdr-h", hdr.offsetHeight + "px");
 }
 function imgErr(el) { el.style.display="none"; }
 const SEARCH_PANEL_KEY = "kcw.parts9.searchPanel";
@@ -763,6 +931,7 @@ function setSearchPanelOpen(open) {
     hdr.classList.remove("search-collapsed");
     btn.setAttribute("aria-expanded", "true");
     btn.textContent = "ซ่อน";
+    syncHdrHeight();
     return;
   }
   const show = !!open;
@@ -771,6 +940,7 @@ function setSearchPanelOpen(open) {
   btn.textContent = show ? "ซ่อน" : "ค้นหา";
   updateSearchSummary();
   try { localStorage.setItem(SEARCH_PANEL_KEY, show ? "1" : "0"); } catch (e) {}
+  syncHdrHeight();
 }
 function collapseSearchPanelIfMobile() {
   if (isMobileLayout()) setSearchPanelOpen(false);
@@ -966,6 +1136,7 @@ function render(data, opts) {
     return;
   }
   let html = "";
+  if (products.length) html += listToolbarHtml(products.length);
   if (SUMMARY && KIND === "iclow") {
     html += "<button class='card' onclick='showSummary()'><div><strong>สรุปค้างรับ "+esc(SUMMARY.site||"")+"</strong>"
       +"<div class='meta'>ค้างรับ "+esc((SUMMARY.totals||{}).pending_lines)+" บรรทัด · "
@@ -984,15 +1155,14 @@ function render(data, opts) {
       +"<strong>"+esc(d.docno || h.BILLNO||h.DOCNO||h.VOUCNO||h.NOTENO||"")+"</strong>"
       +"<div class='meta'>"+esc(extra)+" · "+esc(when)+esc(noteBit)+"</div></div></button>";
   });
-  products.forEach((p,i) => {
-    html += productCardHtml(p, i);
-  });
+  html += productResultsHtml(products);
   $("list").innerHTML = html || "<div class='empty'>ไม่พบ</div>";
   if (KIND === "iclow" && SUMMARY && !DOCS.length) showSummary();
   else if (DOCS.length && !products.length) showDoc(0);
   else if (products[0]) showP(0);
   else if (DOCS.length) showDoc(0);
   updateSearchSummary();
+  syncHdrHeight();
   // Only collapse on explicit search submit / Enter — not live typing debounce.
   if (opts && opts.collapse && (products.length || DOCS.length || SUMMARY)) collapseSearchPanelIfMobile();
 }
@@ -1180,6 +1350,7 @@ function renderApDetail() {
     +"</div></div>";
 }
 function showSummary() {
+  markActiveResult(null);
   document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
   const s = SUMMARY;
   if (!s) return;
@@ -1207,6 +1378,7 @@ function showSummary() {
 function showDoc(i) {
   const doc = DOCS[i];
   if (!doc) return;
+  markActiveResult(null);
   document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
   const el = document.getElementById("d"+i); if (el) el.classList.add("active");
   const h = doc.header || {};
@@ -1614,8 +1786,8 @@ function showP(i, opts) {
   opts = opts || {};
   const p = ITEMS[i];
   if (!p) return;
-  document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
-  const el = document.getElementById("c"+i); if (el) el.classList.add("active");
+  markActiveResult(i);
+  if (detailCollapsed && !isMobileLayout()) setDetailCollapsed(false);
   const sizes = p.size_display || "";
   const locHq = (p.location_hq || "").trim();
   const locSyp = (p.location_syp || "").trim();
@@ -1634,7 +1806,7 @@ function showP(i, opts) {
       +(locText ? "<div class='loc'>ที่เก็บ "+esc(locText)+"</div>" : "")
       +"</div>";
   }
-  let stockHtml = "<h3 style='margin:.55rem 0 .2rem;font-size:.72rem;color:var(--muted)'>สต็อกคงเหลือ</h3>";
+  let stockHtml = "<div class='detail-sec-lbl'>สต็อกคงเหลือ</div>";
   if (qtyHq != null || qtySyp != null || locHq || locSyp) {
     stockHtml += "<div class='stock-kpis'>"
       +stockCard("HQ", qtyHq, locHq, false)
@@ -1655,9 +1827,10 @@ function showP(i, opts) {
   const packLine = (ui2 && mtp2 != null)
     ? kvLine("จำนวนบรรจุ", qty(mtp2) + (p.ui1 ? " "+p.ui1 : "") + " / "+ui2)
     : "";
-  const detailFacts = kvLine("ยี่ห้อ", p.brand)
-    + kvLine("รุ่น", p.model)
-    + kvLine("ชื่อบริษัท", companyName(p))
+  const inlineFacts = [];
+  if (p.model) inlineFacts.push("<span><span class='lbl'>รุ่น</span>"+esc(p.model)+"</span>");
+  if (p.brand) inlineFacts.push("<span><span class='lbl'>ยี่ห้อ</span>"+esc(p.brand)+"</span>");
+  const moreFacts = kvLine("ชื่อบริษัท", companyName(p))
     + (p.oem_label ? kvLine("สถานะ", p.oem_label) : "")
     + kvLine("เบอร์แท้", p.pcode)
     + kvLine("เบอร์โรงงาน", p.mcode)
@@ -1672,22 +1845,19 @@ function showP(i, opts) {
     movement: opts.skipFetch ? (opts.movement || null) : null,
     fifo: opts.skipFetch ? (opts.fifo || null) : null
   };
+  // Reorder/lot live under Tab การสั่งซื้อ — omit from main detail.
   $("detail").innerHTML = "<div class='detail-overview'>"
-    +"<h2>"+esc(p.bcode)+waitBadge+oemBadge(p)+"</h2>"
-    +"<div class='descr'>"+esc(p.descr)
+    +"<div class='detail-head'><h2>"+esc(p.bcode)+"</h2>"+waitBadge+oemBadge(p)
     +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")
     +"</div>"
-    +"<div class='overview-grid'>"
-    +"<div class='overview-block'><h3>รายละเอียดสินค้า</h3>"
-    +(detailFacts || "<div class='meta'>—</div>")
-    +"</div>"
-    +"<div class='overview-block'><h3>ราคาขาย</h3><div class='prices'>"+(fmtPrices(p.prices) || "<span class='meta'>—</span>")+"</div></div>"
-    +"<div class='overview-block'><h3>จุดสั่ง / ล็อต</h3>"
-    +"<div class='meta'>L ที่ตั้งไว้ "+esc(p.qtymin != null ? p.qtymin : "—")
-    +" · ล็อตสั่ง "+esc(p.qtyget != null ? p.qtyget : "—")+"</div></div>"
+    +"<div class='detail-title'>"+esc(p.descr||"—")+"</div>"
+    +(inlineFacts.length ? "<div class='detail-facts-inline'>"+inlineFacts.join("")+"</div>" : "")
+    +"<div class='detail-price-photo'>"
+    +"<div><div class='detail-sec-lbl'>ราคาขาย</div><div class='prices'>"+(fmtPrices(p.prices) || "<span class='meta'>—</span>")+"</div></div>"
+    +renderPhotosView(p)
     +"</div>"
     +stockHtml
-    +renderPhotosView(p)
+    +(moreFacts ? "<div class='detail-more'><div class='detail-sec-lbl'>รายละเอียดสินค้า</div>"+moreFacts+"</div>" : "")
     +"<div class='edit-bar'><button type='button' class='primary' id='manageProductBtn'>จัดการสินค้า</button></div>"
     +"</div>"
     +"<div id='subPanel'></div>"
@@ -1708,6 +1878,10 @@ function showP(i, opts) {
     +"</div>";
   const manageBtn = $("manageProductBtn");
   if (manageBtn) manageBtn.onclick = () => openManageDlg(p, i);
+  if (isMobileLayout() && !opts.skipFetch) {
+    const detailEl = $("detail");
+    if (detailEl) detailEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const live = {
     qtyHq: qtyHq, qtySyp: qtySyp, ui1: p.ui1, doNotRestock: !!p.do_not_restock,
     descr: p.descr || "", bcode: p.bcode, qtymin: p.qtymin, qtyget: p.qtyget
@@ -2341,6 +2515,7 @@ $("searchToggle").addEventListener("click", () => {
 window.addEventListener("resize", () => {
   if (!isMobileLayout()) setSearchPanelOpen(true);
   else updateSearchSummary();
+  syncHdrHeight();
 });
 $("site").addEventListener("change", () => {
   updateSearchSummary();
@@ -2398,9 +2573,14 @@ initCode1Select();
 toggleSearchChrome();
 drawModes();
 updateSearchSummary();
+syncHdrHeight();
 try {
   if (isMobileLayout() && localStorage.getItem(SEARCH_PANEL_KEY) === "0") setSearchPanelOpen(false);
 } catch (e) {}
+try {
+  if (!isMobileLayout() && localStorage.getItem(DETAIL_COLLAPSE_KEY) === "1") setDetailCollapsed(true);
+} catch (e) {}
+window.addEventListener("load", syncHdrHeight);
 
 function closeNewProductDlg() {
   const el = $("newProductDlg");
