@@ -522,6 +522,24 @@ def test_page_defaults_vendor_view():
     assert "วันที่สั่ง" in html
     assert 'class="po-lines"' in html
     assert "รายการสินค้า" in html
+    assert "function linesTable" in html
+    assert "lines-table" in html
+    assert "col-item" in html
+    assert "col-status" in html
+    assert "col-qty" in html
+    assert "col-acts" in html
+    assert "เจ้าหนี้ / สถานะ" in html
+    assert "เจ้าสั่ง / สถานะ" in html
+    line_fn = html.split("function lineHtml", 1)[1].split("function selectAllHtml", 1)[0]
+    assert "col-item" in line_fn
+    assert "col-status" in line_fn
+    assert "productTools(row)" in line_fn
+    assert "tools.actions" in line_fn
+    assert "tools.extra" in line_fn
+    assert "linesTable(\"product\"" in html
+    assert "linesTable(\"pick\"" in html
+    assert "linesTable(\"hold\"" in html
+    assert "linesTable(\"order\"" in html
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
