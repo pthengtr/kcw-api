@@ -547,7 +547,9 @@ def test_page_defaults_vendor_view():
     line_fn = html.split("function lineHtml", 1)[1].split("function selectAllHtml", 1)[0]
     assert "productCellHtml(row)" in line_fn
     assert "companyStatusCellHtml(row" in line_fn
-    assert "stockCellHtml(row, {recs:true})" in line_fn
+    assert "stockCellHtml(row)" in line_fn
+    assert "stockCellHtml(row, {recs:true})" not in line_fn
+    assert "${qtyCell(row)}${recHtml(row)}" in line_fn
     assert "productTools(row)" in line_fn
     assert "tools.actions" in line_fn
     assert "tools.extra" in line_fn
