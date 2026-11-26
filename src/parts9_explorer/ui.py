@@ -394,7 +394,30 @@ label.chk input { margin:0; flex-shrink:0; }
 .badge.oem-y { background:var(--st-ok-bg); color:var(--ok); }
 .badge.oem-n { background:var(--st-wait-bg); color:var(--muted); }
 .photos-view { display:flex; gap:.3rem; overflow-x:auto; margin:0; }
-.photos-view img { height:76px; border-radius:.35rem; background:var(--inset); }
+.photos-view img { height:76px; border-radius:.35rem; background:var(--inset); display:block; }
+.photo-thumb-btn {
+  padding:0; border:0; background:transparent; border-radius:.35rem;
+  cursor:zoom-in; line-height:0; flex:none;
+}
+.photo-thumb-btn:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+.photo-slot img[data-photo] { cursor:zoom-in; }
+#photo-overlay {
+  position:fixed; inset:0; z-index:60;
+  background:rgba(0,0,0,.78);
+  display:flex; align-items:center; justify-content:center;
+  padding:3rem 1rem 1rem;
+}
+#photo-overlay[hidden] { display:none; }
+#photo-overlay img {
+  max-width:min(960px,100%); max-height:calc(100vh - 5.5rem);
+  object-fit:contain; border-radius:.55rem; background:var(--card);
+}
+#photo-close {
+  position:absolute; top:.75rem; right:.75rem; min-height:2.4rem;
+  width:auto; border:0; border-radius:.5rem; background:var(--card);
+  color:var(--acc); font-weight:700; padding:.45rem .85rem;
+  box-shadow:0 1px 4px rgba(0,0,0,.25); cursor:pointer;
+}
 /* Product Insight dashboard — aligned to kcw_product_insight_dashboard_v12 reference */
 .insight-wrap { margin:0 0 .75rem; }
 .pi-head {
@@ -723,6 +746,10 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
   <section class="list" id="list"><div class="empty">เลือกประเภทด้านบน แล้วพิมพ์ค้นหา</div></section>
   <section class="detail" id="detail"></section>
 </main>
+<div id="photo-overlay" hidden>
+  <button type="button" id="photo-close">ปิด</button>
+  <img id="photo-img" alt="รูปสินค้า"/>
+</div>
 <script>
 const $ = (id) => document.getElementById(id);
 const CAN_SEE_COST = __CAN_SEE_COST__;
@@ -1013,7 +1040,26 @@ function syncHdrHeight() {
   if (!hdr) return;
   document.documentElement.style.setProperty("--hdr-h", hdr.offsetHeight + "px");
 }
-function imgErr(el) { el.style.display="none"; }
+function imgErr(el) {
+  el.style.display = "none";
+  const btn = el.closest && el.closest(".photo-thumb-btn");
+  if (btn) btn.style.display = "none";
+}
+function openPhoto(url) {
+  const overlay = $("photo-overlay");
+  const img = $("photo-img");
+  if (!overlay || !img || !url) return;
+  img.alt = "รูปสินค้า";
+  img.src = url;
+  overlay.hidden = false;
+}
+function closePhoto() {
+  const overlay = $("photo-overlay");
+  const img = $("photo-img");
+  if (!overlay || overlay.hidden) return;
+  overlay.hidden = true;
+  if (img) img.removeAttribute("src");
+}
 const SEARCH_PANEL_KEY = "kcw.parts9.searchPanel";
 function isMobileLayout() { return window.matchMedia("(max-width:879px)").matches; }
 function searchSummaryText() {
@@ -1651,18 +1697,24 @@ async function apiJson(url, opts) {
 function renderPhotosView(p) {
   const photos = (p.photos || []).filter(Boolean);
   if (!photos.length) return "";
-  return "<div class='photos-view'>"+photos.map(url =>
-    "<img src='"+esc(bustPhoto(url))+"' alt='' onerror='imgErr(this)'/>"
-  ).join("")+"</div>";
+  return "<div class='photos-view'>"+photos.map(url => {
+    const src = bustPhoto(url);
+    return "<button type='button' class='photo-thumb-btn' data-photo='"+esc(src)+"' aria-label='ขยายรูปสินค้า'>"
+      +"<img src='"+esc(src)+"' alt='' onerror='imgErr(this)'/>"
+      +"</button>";
+  }).join("")+"</div>";
 }
 function renderPhotoManage(p) {
   const photos = p.photos || [];
   const slots = [];
   for (let i = 1; i <= 5; i++) {
     const url = photos[i - 1] || "";
+    const src = url ? bustPhoto(url) : "";
     slots.push(
       "<div class='photo-slot' data-slot='"+i+"'>"
-      +(url ? "<img src='"+esc(bustPhoto(url))+"' onerror='imgErr(this)'/>" : "<div class='meta' style='height:5.5rem;display:flex;align-items:center;justify-content:center'>ว่าง</div>")
+      +(url
+        ? "<img src='"+esc(src)+"' data-photo='"+esc(src)+"' alt='' onerror='imgErr(this)' title='คลิกเพื่อขยาย'/>"
+        : "<div class='meta' style='height:5.5rem;display:flex;align-items:center;justify-content:center'>ว่าง</div>")
       +"<div class='slot-lbl'>รูป "+i+"</div>"
       +"<input type='file' accept='image/*' data-upload-slot='"+i+"'/>"
       +(url ? "<button type='button' data-del-slot='"+i+"'>ลบ</button>" : "")
@@ -2570,6 +2622,19 @@ $("modes").addEventListener("click", (ev) => {
   if (b) setKind(b.dataset.k);
 });
 document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (!t) return;
+  const shot = t.closest ? t.closest("[data-photo]") : null;
+  if (shot) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    openPhoto(shot.getAttribute("data-photo") || "");
+    return;
+  }
+  if (t.id === "photo-overlay" || t.id === "photo-close" || (t.closest && t.closest("#photo-close"))) {
+    closePhoto();
+    return;
+  }
   if (ev.target.closest("#histHq")) {
     if (!histBcode || histSite === "hq") return;
     histSite = "hq";
@@ -2767,6 +2832,9 @@ function openNewProductDlg() {
 }
 const newProductBtn = $("newProductBtn");
 if (newProductBtn) newProductBtn.addEventListener("click", openNewProductDlg);
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") closePhoto();
+});
 </script>
 </body>
 </html>
