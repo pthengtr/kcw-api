@@ -1004,6 +1004,20 @@ def product_page(
         <div class="stat"><b>{_fmt_ts(item.get('last_audited_at'))}</b><span>ตรวจล่าสุด</span></div>
         <div class="stat"><b>{escape(source)}</b><span>ที่มา</span></div>
       </div>
+      <form method="post" action="/stock-check/product/{escape(item['bcode'])}/print-sticker"
+        id="print-sticker-form" style="margin-top:14px">
+        <input type="hidden" name="source" value="{escape(source)}"/>
+        <label>พิมพ์บาร์โค้ด (TSC TE310)</label>
+        <div class="grid2" style="align-items:end">
+          <div>
+            <label style="margin:0 0 6px;font-size:.82rem">จำนวนดวง</label>
+            <input type="number" name="qty" id="print-sticker-qty" value="1" min="1" max="50"
+              inputmode="numeric" autocomplete="off"/>
+          </div>
+          <button type="submit" class="secondary" id="print-sticker-btn">พิมพ์บาร์โค้ด</button>
+        </div>
+        <p class="hint" style="margin-top:8px">ส่ง TSPL ตรงเข้าเครื่อง TE310 บน LAN — เลย์เอาต์เดียวกับรับโอน</p>
+      </form>
     </div>
     <div class="card" id="count-card" data-system-qty="{qty}">
       <div class="section-title" style="margin:0 0 4px">บันทึกการนับ</div>
