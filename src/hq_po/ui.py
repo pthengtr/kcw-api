@@ -71,6 +71,9 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
   --line-cols:minmax(180px,2.6fr) minmax(96px,1fr) minmax(88px,0.95fr) minmax(118px,0.95fr) minmax(104px,auto);
   display:grid;grid-template-columns:28px var(--line-cols);gap:8px;padding:8px 10px;align-items:start;
 }
+.lines-table.mode-hold,.lines-table.mode-order{
+  --line-cols:minmax(220px,3fr) minmax(130px,1.35fr) minmax(100px,0.9fr) minmax(112px,auto);
+}
 .lines-head{background:#f8fafc;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:650;line-height:1.3}
 .lines-table.mode-product .lines-head,.lines-table.mode-hold .lines-head,.lines-table.mode-order .lines-head,.line.plain{grid-template-columns:var(--line-cols)}
 .line{border-top:1px solid var(--line)}
@@ -291,6 +294,14 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
       "product qty"
       "company company"
       "stock stock"
+      "acts acts"
+      "extra extra";
+  }
+  .lines-table.mode-hold .line.plain,
+  .lines-table.mode-order .line.plain{
+    grid-template-areas:
+      "product qty"
+      "company company"
       "acts acts"
       "extra extra";
   }
@@ -782,7 +793,8 @@ function linesHead(mode){
   const check = mode === "pick" ? `<span class="col-check" aria-hidden="true"></span>` : "";
   const company = mode === "order" ? "บริษัท / สถานะรับ"
     : "บริษัท / สถานะ";
-  return `<div class="lines-head">${check}<span class="col-product">สินค้า</span><span class="col-company">${company}</span><span class="col-stock">คงเหลือ</span><span class="col-qty">จำนวนสั่ง</span><span class="col-acts">จัดการ</span></div>`;
+  const stock = (mode === "hold" || mode === "order") ? "" : `<span class="col-stock">คงเหลือ</span>`;
+  return `<div class="lines-head">${check}<span class="col-product">สินค้า</span><span class="col-company">${company}</span>${stock}<span class="col-qty">จำนวนสั่ง</span><span class="col-acts">จัดการ</span></div>`;
 }
 function linesTable(mode, body){
   if(!body) return "";
@@ -1601,7 +1613,7 @@ function renderOrders(){
       };
       const unit = String(line.ui || "").trim();
       const qty = `<div class="qty">${esc(qtyText(line.qty))}${unit ? `<span class="meta">${esc(unit)}</span>` : ""}</div>`;
-      return `<div class="line plain">${productCellHtml(line)}${companyStatusCellHtml(vendorRow, [`<div class="meta">${esc(rec.label||"")}${pi}</div>`], {freshText:false})}${stockCellHtml(line)}<div class="col-qty">${qty}</div>${acts}</div>`;
+      return `<div class="line plain">${productCellHtml(line)}${companyStatusCellHtml(vendorRow, [`<div class="meta">${esc(rec.label||"")}${pi}</div>`], {freshText:false})}<div class="col-qty">${qty}</div>${acts}</div>`;
     }).join("");
     const anyReceived = (order.lines||[]).some(line => (line.receive||{}).received);
     const cancel = STAMP && !anyReceived && order.receive_label!=="รับแล้ว"
@@ -1912,7 +1924,6 @@ function holdLineHtml(row){
   return `<div class="line plain">
     ${productCellHtml(row)}
     ${company}
-    ${stockCellHtml(row)}
     <div class="col-qty">${qty}</div>
     <div class="col-acts">${acts}</div>
   </div>`;
