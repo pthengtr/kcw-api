@@ -68,7 +68,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .select-all input{margin:0;flex:none}
 .lines-table{width:100%;border-top:1px solid var(--line);overflow-x:auto;-webkit-overflow-scrolling:touch}
 .lines-head,.line{
-  --line-cols:40px minmax(120px,2.2fr) minmax(92px,1.05fr) minmax(52px,0.7fr) minmax(88px,1.05fr) minmax(78px,0.9fr) 92px minmax(112px,auto);
+  --line-cols:minmax(180px,2.6fr) minmax(96px,1fr) minmax(88px,0.95fr) minmax(118px,0.95fr) minmax(104px,auto);
   display:grid;grid-template-columns:28px var(--line-cols);gap:8px;padding:8px 10px;align-items:start;
 }
 .lines-head{background:#f8fafc;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:650;line-height:1.3}
@@ -76,23 +76,27 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .line{border-top:1px solid var(--line)}
 .line + .line{border-top:1px solid var(--line)}
 .col-check{padding-top:2px}
-.col-thumb,.col-name,.col-codes,.col-vendor,.col-status,.col-stock,.col-qty,.col-acts{min-width:0}
-.col-thumb{padding-top:1px}
-.col-status{font-weight:650}
-.col-vendor .vendor-short{color:var(--blue-deep);font-size:13px;font-weight:700;margin:0;line-height:1.3}
+.col-product,.col-company,.col-stock,.col-qty,.col-acts{min-width:0}
+.col-company{font-weight:650}
+.col-company .vendor-short{color:var(--blue-deep);font-size:13px;font-weight:700;margin:0;line-height:1.3}
+.col-company .line-rec,.col-company .flag,.col-company .meta{display:block}
+.col-company .line-rec + .flag,.col-company .flag + .flag,.col-company .meta + .meta,.col-company .vendor-short + .line-rec,.col-company .vendor-short + .flag,.col-company .vendor-short + .meta{margin-top:3px}
 .col-qty{text-align:right}
-.col-qty .unit-pick,.col-qty .recs{justify-content:flex-end}
+.col-qty .unit-pick{justify-content:flex-end;flex-wrap:nowrap}
 .col-qty .qty-edit{width:100%}
+.col-stock .recs{margin-top:4px;justify-content:flex-start}
 .col-acts .line-actions{margin-top:0;justify-content:flex-end;flex-direction:column;align-items:stretch}
 .col-acts .manage{width:100%}
 .col-acts .manage > summary,.col-acts .peer-btn{width:100%;justify-content:center}
 .col-extra{grid-column:1 / -1;min-width:0}
 .col-extra:not(:has(.peers:not([hidden]))){display:none}
+.product-main{display:flex;gap:8px;align-items:flex-start;min-width:0}
+.product-text{min-width:0;flex:1}
 .line .code{font-weight:600;font-size:13px;line-height:1.3;overflow-wrap:anywhere}
 .sku{display:inline-block;background:var(--blue-soft);color:var(--blue-deep);border-radius:6px;padding:0 6px;font-size:12px;font-weight:700;margin-right:4px;vertical-align:1px}
 .line .meta{color:var(--muted);font-size:12px;margin-top:1px;line-height:1.3;overflow-wrap:anywhere}
-.col-codes .meta,.col-stock .meta{margin-top:0}
-.col-codes .meta + .meta,.col-stock .meta + .meta,.stock-pair + .meta{margin-top:2px}
+.col-stock .meta{margin-top:0}
+.col-stock .meta + .meta,.stock-pair + .meta{margin-top:2px}
 .stock-pair{display:grid;gap:1px;font-size:12px;font-weight:700;color:var(--blue-deep);font-variant-numeric:tabular-nums;line-height:1.25}
 .stock-pair .lbl{color:var(--muted);font-weight:650;margin-right:4px}
 .stock-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px}
@@ -100,7 +104,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .low-in{width:64px;min-height:32px;font-size:14px;padding:4px 6px}
 .thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
 .thumb{width:40px;height:40px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
-.thumb-empty{display:block;width:40px;height:40px;border-radius:8px;background:#e2e8f0}
+.thumb-empty{display:none}
 .line-rec{display:inline-block;margin-top:2px;border-radius:8px;padding:2px 6px;font-size:11px;font-weight:700;line-height:1.3;background:var(--blue-wash);color:var(--blue-deep)}
 .line-rec.ok{background:var(--ok-bg);color:var(--ok)}
 .line-rec.warn{background:var(--warn-bg);color:var(--warn)}
@@ -144,13 +148,15 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .itable .num{text-align:right;font-variant-numeric:tabular-nums}
 .hist-top button{min-height:36px;border:0;background:transparent;color:var(--blue);font-weight:700}
 .ai{color:var(--blue);font-size:12px;margin-top:6px;padding:6px 8px;background:var(--blue-wash);border-radius:8px;line-height:1.4}
-.qty{text-align:right;font-weight:700;font-size:15px;color:var(--blue-deep);white-space:nowrap}
+.qty{display:inline-flex;align-items:baseline;justify-content:flex-end;gap:4px;flex-wrap:nowrap;font-weight:700;font-size:15px;color:var(--blue-deep);white-space:nowrap}
+.qty .meta{margin-top:0;white-space:nowrap}
 .line button.ghost{display:inline-flex;align-items:center;margin-top:0;min-height:34px;background:#fff;color:var(--warn);border:1px solid #fdba74;border-radius:10px;padding:5px 10px;font-size:13px;font-weight:650}
 .recs{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
 .rec{border:1px solid var(--line);background:#fff;color:var(--blue-deep);border-radius:999px;padding:3px 7px;font-size:12px;font-weight:650}
 .rec.off{border:0;background:transparent;color:var(--muted);padding:3px 0}
 .qty-edit{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
-.qty-edit .qty-row{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.qty-edit .qty-row{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex-wrap:nowrap;white-space:nowrap}
+.qty-edit .qty-row .meta{margin-top:0;white-space:nowrap}
 .qty-in{width:76px;min-height:36px;border:1px solid var(--line);border-radius:10px;padding:5px 7px;font-size:16px;font-weight:700;text-align:right;color:var(--blue-deep);background:#fff}
 .qty-in:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .draft-status{font-size:11px;font-weight:650;line-height:1.2;color:var(--muted);min-height:14px;text-align:right}
@@ -159,7 +165,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .flag.draft-stale{background:var(--warn-bg);color:var(--warn)}
 .vendor-pick{display:flex;flex-direction:column;gap:4px;margin-top:4px;font-size:12px;color:var(--muted);font-weight:650}
 .vendor-pick select{width:100%;max-width:100%;min-height:36px;border:1px solid var(--line);border-radius:10px;padding:5px 8px;font:650 14px Prompt,"Noto Sans Thai",sans-serif;color:var(--text);background:#fff}
-.unit-pick{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.unit-pick{display:inline-flex;flex-wrap:nowrap;gap:4px;margin:0;align-items:center}
 .unit-pick button,.peer-btn{min-height:34px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:650;color:var(--blue-deep)}
 .unit-pick button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .peer-btn{border-radius:10px;margin-top:6px}
@@ -268,40 +274,37 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 @media (max-width:999px){
   .lines-head{display:none}
   .line,.line.plain{
-    grid-template-columns:28px 40px minmax(0,1fr) auto;
+    grid-template-columns:28px minmax(0,1fr) auto;
     grid-template-areas:
-      "check thumb name qty"
-      "check thumb codes qty"
-      "check thumb vendor status"
-      "stock stock stock stock"
-      "acts acts acts acts"
-      "extra extra extra extra";
-    gap:4px 8px;
-    padding:10px;
-  }
-  .line.plain{
-    grid-template-columns:40px minmax(0,1fr) auto;
-    grid-template-areas:
-      "thumb name qty"
-      "thumb codes qty"
-      "thumb vendor status"
+      "check product qty"
+      "check company company"
       "stock stock stock"
       "acts acts acts"
       "extra extra extra";
+    gap:6px 8px;
+    padding:10px;
+  }
+  .line.plain{
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:
+      "product qty"
+      "company company"
+      "stock stock"
+      "acts acts"
+      "extra extra";
   }
   .col-check{grid-area:check}
-  .col-thumb{grid-area:thumb}
-  .col-name{grid-area:name}
-  .col-codes{grid-area:codes}
-  .col-vendor{grid-area:vendor}
-  .col-status{grid-area:status}
-  .col-stock{grid-area:stock}
+  .col-product{grid-area:product}
+  .col-company{grid-area:company}
+  .col-stock{grid-area:stock;padding-top:2px}
   .col-qty{grid-area:qty;align-self:start}
   .col-acts{grid-area:acts}
   .col-extra{grid-area:extra}
-  .col-acts .line-actions{justify-content:flex-start}
-  .col-stock{padding-top:2px}
-  .thumb,.thumb-empty{width:40px;height:40px}
+  .col-acts .line-actions{justify-content:flex-start;flex-direction:row;flex-wrap:wrap}
+  .col-acts .manage{width:auto}
+  .col-acts .manage > summary,.col-acts .peer-btn{width:auto}
+  .col-qty .unit-pick{justify-content:flex-end}
+  .thumb{width:36px;height:36px}
   .qty-in{width:68px;min-height:34px;font-size:15px}
   .stock-pair{grid-template-columns:1fr 1fr;max-width:220px}
 }
@@ -581,10 +584,11 @@ function moneyText(n){
 function thumbHtml(row){
   if(!row || !row.photo) return "";
   const label = String(row.bcode || "").trim();
-  return `<button type="button" class="thumb-btn" data-photo="${esc(row.photo)}" aria-label="ดูรูปเต็ม${label ? " " + esc(label) : ""}"><img class="thumb" alt="" loading="lazy" src="${esc(row.photo)}" onerror="this.closest('button').outerHTML='<span class=&quot;thumb thumb-empty&quot; aria-hidden=&quot;true&quot;></span>'"/></button>`;
+  return `<button type="button" class="thumb-btn" data-photo="${esc(row.photo)}" aria-label="ดูรูปเต็ม${label ? " " + esc(label) : ""}"><img class="thumb" alt="" loading="lazy" src="${esc(row.photo)}" onerror="this.closest('button').remove()"/></button>`;
 }
 function thumbCell(row){
-  return `<div class="col-thumb">${thumbHtml(row) || '<span class="thumb thumb-empty" aria-hidden="true"></span>'}</div>`;
+  const thumb = thumbHtml(row);
+  return thumb ? `<div class="col-thumb">${thumb}</div>` : "";
 }
 function openPhoto(src){
   const url = String(src || "").trim();
@@ -651,37 +655,39 @@ function productMeta(row){
   if(cost) bits.push("ทุน " + cost);
   return bits.length ? `<div class="meta">${bits.join(" · ")}</div>` : "";
 }
-function nameCellHtml(row, extras){
-  const model = String(row.model || "").trim();
-  const brand = String(row.brand || "").trim();
-  const price = moneyText(row.price);
-  const cost = moneyText(row.cost);
-  const bits = [];
-  if(brand) bits.push("ยี่ห้อ " + esc(brand));
-  if(price) bits.push("ราคา " + price);
-  if(cost) bits.push("ทุน " + cost);
-  const more = bits.length ? `<div class="meta">${bits.join(" · ")}</div>` : "";
+function productCellHtml(row, extras){
   const last = row.last_date
     ? `<div class="meta">เคยสั่ง ${esc(row.last_date)}${Number(row.bills) > 0 ? " · " + esc(String(row.bills)) + " บิล" : ""}</div>`
     : "";
-  return `<div class="col-name"><div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>${model ? `<div class="meta">รุ่น ${esc(model)}</div>` : ""}${more}${last}${extras || ""}</div>`;
+  const thumb = thumbHtml(row);
+  return `<div class="col-product"><div class="product-main">${thumb}<div class="product-text"><div class="code"><span class="sku">${esc(row.bcode||"—")}</span>${esc(row.descr||"")}</div>${productMeta(row)}${last}${extras || ""}</div></div></div>`;
+}
+function nameCellHtml(row, extras){
+  return productCellHtml(row, extras);
 }
 function codesCellHtml(row){
-  const pcode = String(row.pcode || "").trim();
-  const mcode = String(row.mcode || "").trim();
-  if(!pcode && !mcode) return `<div class="col-codes"><span class="meta">—</span></div>`;
-  return `<div class="col-codes">${pcode ? `<div class="meta">แท้ ${esc(pcode)}</div>` : ""}${mcode ? `<div class="meta">โรง ${esc(mcode)}</div>` : ""}</div>`;
+  return productMeta(row);
 }
-function vendorCellHtml(row, {freshText=true}={}){
+function vendorLabelHtml(row, {freshText=true}={}){
   const tip = vendorTitleTip(row);
   const fresh = freshText && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
   const blocked = row && row.vendor_blocked ? " · ไม่มีสินค้า" : "";
   const label = vendorTitle(row) || "—";
-  return `<div class="col-vendor"><div class="meta vendor-short" data-vendor-label${tip ? ` title="${esc(tip)}"` : ""}>${esc(label)}${fresh}${blocked}</div></div>`;
+  return `<div class="meta vendor-short" data-vendor-label${tip ? ` title="${esc(tip)}"` : ""}>${esc(label)}${fresh}${blocked}</div>`;
+}
+function vendorCellHtml(row, {freshText=true}={}){
+  return `<div class="col-company">${vendorLabelHtml(row, {freshText})}</div>`;
+}
+function companyStatusCellHtml(row, statusBits, {freshText=true, fallbackVendor=""}={}){
+  const vendor = row && (String(row.vendor || "").trim() || String(row.vendor_name || "").trim())
+    ? vendorLabelHtml(row, {freshText})
+    : (fallbackVendor || `<div class="meta vendor-short">—</div>`);
+  const status = (statusBits || []).filter(Boolean).join("");
+  return `<div class="col-company">${vendor}${status || `<span class="meta">—</span>`}</div>`;
 }
 function statusCellHtml(bits){
   const body = (bits || []).filter(Boolean).join("") || `<span class="meta">—</span>`;
-  return `<div class="col-status">${body}</div>`;
+  return `<div class="col-company">${body}</div>`;
 }
 function supplierLabel(s){
   const name = String(s.name || "").trim();
@@ -773,10 +779,9 @@ function productTools(row){
 }
 function linesHead(mode){
   const check = mode === "pick" ? `<span class="col-check" aria-hidden="true"></span>` : "";
-  const status = mode === "hold" ? "สถานะ"
-    : mode === "order" ? "สถานะรับ"
-    : "สถานะ";
-  return `<div class="lines-head">${check}<span class="col-thumb">รูป</span><span class="col-name">ชื่อสินค้า/รุ่น</span><span class="col-codes">เบอร์แท้/เบอร์โรงงาน</span><span class="col-vendor">บริษัท (รหัสบริษัท)</span><span class="col-status">${status}</span><span class="col-stock">คงเหลือ HQ/SYP</span><span class="col-qty">จำนวนสั่ง</span><span class="col-acts">จัดการ</span></div>`;
+  const company = mode === "order" ? "บริษัท / สถานะรับ"
+    : "บริษัท / สถานะ";
+  return `<div class="lines-head">${check}<span class="col-product">สินค้า</span><span class="col-company">${company}</span><span class="col-stock">คงเหลือ</span><span class="col-qty">จำนวนสั่ง</span><span class="col-acts">จัดการ</span></div>`;
 }
 function linesTable(mode, body){
   if(!body) return "";
@@ -880,9 +885,12 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pagehide", flushPendingDrafts);
 function qtyCell(row){
   if(!(row.confirmable && STAMP)){
-    return `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;
+    const unit = String(row.ui || "").trim();
+    return `<div class="qty">${esc(qtyText(row.qty))}${unit ? `<span class="meta">${esc(unit)}</span>` : ""}</div>`;
   }
-  return `<div class="qty-edit"><div class="qty-row"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/><span class="meta">${esc(selectedUnit(row))}</span></div>${draftStatusHtml(row)}</div>`;
+  const units = unitHtml(row);
+  const unitLabel = units ? "" : `<span class="meta">${esc(selectedUnit(row))}</span>`;
+  return `<div class="qty-edit"><div class="qty-row"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/>${unitLabel}${units}</div>${draftStatusHtml(row)}</div>`;
 }
 function lowStockControl(row){
   if(row.hq_qtymin == null || row.hq_qtymin === "") return "";
@@ -916,7 +924,7 @@ function stockLineHtml(row){
   if(!bits.length) return "";
   return `<div class="meta stock-row">${bits.join("")}</div>`;
 }
-function stockCellHtml(row){
+function stockCellHtml(row, {recs=false}={}){
   const bits = [];
   if(row.hq_qtyoh2 != null || row.syp_qtyoh2 != null || row.company_qtyoh2 != null){
     bits.push(`<div class="stock-pair"><div><span class="lbl">HQ</span>${esc(qtyText(row.hq_qtyoh2))}</div><div><span class="lbl">SYP</span>${esc(qtyText(row.syp_qtyoh2))}</div></div>`);
@@ -934,6 +942,7 @@ function stockCellHtml(row){
   const low = lowStockControl(row);
   if(low) bits.push(`<div class="meta stock-row">${low}</div>`);
   if(stockRecovered(row)) bits.push(`<div class="meta stock-ok">HQ ถึง L แล้ว</div>`);
+  if(recs) bits.push(recHtml(row));
   if(!bits.length) return `<div class="col-stock"><span class="meta">—</span></div>`;
   return `<div class="col-stock">${bits.join("")}</div>`;
 }
@@ -947,13 +956,10 @@ function lineHtml(row, mode){
   const checkCol = pick ? `<div class="col-check">${check}</div>` : "";
   return `<div class="line${pick ? "" : " plain"}${pick && row.picked ? " picked" : ""}${recovered}" id="line-${esc(rowKey(row))}">
     ${checkCol}
-    ${thumbCell(row)}
-    ${nameCellHtml(row)}
-    ${codesCellHtml(row)}
-    ${vendorCellHtml(row)}
-    ${statusCellHtml([orderAdviceHtml(row), flagHtml(row), priorHtml(row)])}
-    ${stockCellHtml(row)}
-    <div class="col-qty">${qtyCell(row)}${unitHtml(row)}${recHtml(row)}</div>
+    ${productCellHtml(row)}
+    ${companyStatusCellHtml(row, [orderAdviceHtml(row), flagHtml(row), priorHtml(row)])}
+    ${stockCellHtml(row, {recs:true})}
+    <div class="col-qty">${qtyCell(row)}</div>
     <div class="col-acts">${tools.actions || ""}</div>
     ${tools.extra || ""}
   </div>`;
@@ -1593,7 +1599,9 @@ function renderOrders(){
         vendor: order.vendor_acctno || line.vendor || "",
         vendor_name: order.vendor_name || line.vendor_name || "",
       };
-      return `<div class="line plain">${thumbCell(line)}${nameCellHtml(line)}${codesCellHtml(line)}${vendorCellHtml(vendorRow, {freshText:false})}${statusCellHtml([`<div class="meta">${esc(rec.label||"")}${pi}</div>`])}${stockCellHtml(line)}<div class="col-qty"><div class="qty">${esc(qtyText(line.qty))}<div class="meta">${esc(line.ui||"")}</div></div></div>${acts}</div>`;
+      const unit = String(line.ui || "").trim();
+      const qty = `<div class="qty">${esc(qtyText(line.qty))}${unit ? `<span class="meta">${esc(unit)}</span>` : ""}</div>`;
+      return `<div class="line plain">${productCellHtml(line)}${companyStatusCellHtml(vendorRow, [`<div class="meta">${esc(rec.label||"")}${pi}</div>`], {freshText:false})}${stockCellHtml(line)}<div class="col-qty">${qty}</div>${acts}</div>`;
     }).join("");
     const anyReceived = (order.lines||[]).some(line => (line.receive||{}).received);
     const cancel = STAMP && !anyReceived && order.receive_label!=="รับแล้ว"
@@ -1607,7 +1615,7 @@ function renderOrders(){
     const open = doneQuery() ? " open" : "";
     const body = lines
       ? linesTable("order", lines)
-      : '<div class="line plain"><div class="col-name"><div class="meta">ไม่มีรายการสินค้า</div></div></div>';
+      : '<div class="line plain"><div class="col-product"><div class="meta">ไม่มีรายการสินค้า</div></div></div>';
     const linesBlock = `<details class="po-lines"${open}><summary>รายการสินค้า ${n} รายการ</summary>${body}</details>`;
     return `<div class="card"><h2><span class="title">${esc(order.docno)} · ${esc(title)}${whenHtml}</span><span class="badge ${badge}">${esc(order.receive_label||"")}</span></h2>${linesBlock}${actions}</div>`;
   }).join("");
@@ -1881,7 +1889,8 @@ function holdLineHtml(row){
   const timing = when || age
     ? `<div class="meta">${esc(when)}${when && age ? " · " : ""}${age ? `<span class="badge wait">${esc(age)}</span>` : ""}</div>`
     : "";
-  const qty = `<div class="qty">${esc(qtyText(row.qty))}<div class="meta">${esc(row.ui||"")}</div></div>`;
+  const unit = String(row.ui || "").trim();
+  const qty = `<div class="qty">${esc(qtyText(row.qty))}${unit ? `<span class="meta">${esc(unit)}</span>` : ""}</div>`;
   const acts = !STAMP
     ? `<div class="line-actions">${tradeButton(row.bcode)}</div>`
     : (() => {
@@ -1892,15 +1901,17 @@ function holdLineHtml(row){
         const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="switch">เปลี่ยนเจ้าสั่ง</button><button type="button" class="peer-btn" data-release="${esc(id)}" data-kind="reorder">สั่งย้ำเจ้าเดิม</button>${drop}${noStock}</div></details>`;
         return `<div class="line-actions">${manage}${tradeButton(row.bcode)}</div>`;
       })();
-  const vendor = String(row.vendor || "").trim()
-    ? vendorCellHtml(row, {freshText:false})
-    : `<div class="col-vendor"><div class="meta vendor-short">ไม่ระบุเจ้าหนี้</div></div>`;
+  const company = companyStatusCellHtml(
+    row,
+    [timing],
+    {
+      freshText: false,
+      fallbackVendor: `<div class="meta vendor-short">ไม่ระบุเจ้าหนี้</div>`,
+    },
+  );
   return `<div class="line plain">
-    ${thumbCell(row)}
-    ${nameCellHtml(row)}
-    ${codesCellHtml(row)}
-    ${vendor}
-    ${statusCellHtml([timing])}
+    ${productCellHtml(row)}
+    ${company}
     ${stockCellHtml(row)}
     <div class="col-qty">${qty}</div>
     <div class="col-acts">${acts}</div>

@@ -524,48 +524,41 @@ def test_page_defaults_vendor_view():
     assert "รายการสินค้า" in html
     assert "function linesTable" in html
     assert "lines-table" in html
-    assert "col-thumb" in html
-    assert "col-name" in html
-    assert "col-codes" in html
-    assert "col-vendor" in html
-    assert "col-status" in html
+    assert "col-product" in html
+    assert "col-company" in html
     assert "col-stock" in html
     assert "col-qty" in html
     assert "col-acts" in html
-    assert "ชื่อสินค้า/รุ่น" in html
-    assert "เบอร์แท้/เบอร์โรงงาน" in html
-    assert "บริษัท (รหัสบริษัท)" in html
-    assert "คงเหลือ HQ/SYP" in html
+    assert "สินค้า</span>" in html
+    assert "บริษัท / สถานะ" in html
+    assert "คงเหลือ</span>" in html
+    assert "จำนวนสั่ง" in html
     assert "function vendorTitle" in html
     assert "function vendorTitleTip" in html
     assert "vendor-short" in html
-    assert "function thumbCell" in html
-    assert "function nameCellHtml" in html
-    assert "function codesCellHtml" in html
+    assert "function productCellHtml" in html
+    assert "function companyStatusCellHtml" in html
+    assert "function productMeta" in html
     assert "function stockCellHtml" in html
     assert "--line-cols:" in html
     vendor_title_fn = html.split("function vendorTitle", 1)[1].split("function vendorTitleTip", 1)[0]
     assert "name · ${code}" not in vendor_title_fn
     assert "return code;" in vendor_title_fn
     line_fn = html.split("function lineHtml", 1)[1].split("function selectAllHtml", 1)[0]
-    assert "thumbCell(row)" in line_fn
-    assert "nameCellHtml(row)" in line_fn
-    assert "codesCellHtml(row)" in line_fn
-    assert "vendorCellHtml(row)" in line_fn
-    assert "statusCellHtml(" in line_fn
-    assert "stockCellHtml(row)" in line_fn
+    assert "productCellHtml(row)" in line_fn
+    assert "companyStatusCellHtml(row" in line_fn
+    assert "stockCellHtml(row, {recs:true})" in line_fn
     assert "productTools(row)" in line_fn
     assert "tools.actions" in line_fn
     assert "tools.extra" in line_fn
-    assert "recHtml(row)" in line_fn
     assert "linesTable(\"product\"" in html
     assert "linesTable(\"pick\"" in html
     assert "linesTable(\"hold\"" in html
     assert "linesTable(\"order\"" in html
     hold_vendor = html.split("function holdLineHtml", 1)[1].split("function renderHold", 1)[0]
-    assert "vendor-short" in hold_vendor or "vendorCellHtml" in hold_vendor
+    assert "companyStatusCellHtml" in hold_vendor
     assert "vendor_name + \" · \" + row.vendor" not in hold_vendor
-    assert "thumbCell(row)" in hold_vendor
+    assert "productCellHtml(row)" in hold_vendor
     assert "stockCellHtml(row)" in hold_vendor
 
 
