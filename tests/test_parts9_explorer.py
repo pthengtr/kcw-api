@@ -426,7 +426,10 @@ def test_explorer_page_shows_location_bits():
     assert "cell-price" in html
     assert "cell-pcode" in html
     assert "cell-mcode" in html
-    assert "min-width:6.5rem" in html
+    assert "min-width:58rem" in html
+    assert ".results-table .col-pcode { width:8rem; }" in html
+    assert ".results-table .col-mcode { width:8.5rem; }" in html
+    assert "overflow:hidden; text-overflow:ellipsis" in html
     assert "stock-total" in html
     assert "price-main" in html
     assert 'class=\'num\'>ราคาขาย</th><th>หน่วย</th>' not in html
