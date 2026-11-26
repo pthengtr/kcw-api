@@ -164,6 +164,55 @@ def get_product_by_bcode(bcode: str, engine: Engine | None = None) -> ProductRow
     return _row_to_product(row)
 
 
+def normalize_location1(value: str | None) -> str:
+    """ICMAS.LOCATION1 is short (≤10 chars in PARTS9 / writers)."""
+    return (value or "").strip()[:10]
+
+
+def update_product_location(
+    bcode: str,
+    *,
+    location1: str,
+    engine: Engine | None = None,
+) -> ProductRow:
+    """Update ICMAS.LOCATION1 only — never touches QTYOH2 / stock fields."""
+    code = (bcode or "").strip()
+    if not code:
+        raise ValueError("product not found")
+    loc1 = normalize_location1(location1)
+    eng = engine or get_parts9_engine(writer=True)
+    try:
+        with eng.begin() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    UPDATE dbo.ICMAS
+                    SET LOCATION1 = :location1
+                    WHERE LTRIM(RTRIM(BCODE)) = :bcode
+                    """
+                ),
+                {"bcode": code, "location1": loc1 or None},
+            )
+            if result.rowcount < 1:
+                raise ValueError("product not found")
+            row = conn.execute(
+                text(_PRODUCT_SELECT + " WHERE LTRIM(RTRIM(BCODE)) = :bcode"),
+                {"bcode": code},
+            ).mappings().first()
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        if "permission" in msg.lower() or "denied" in msg.lower() or "424" in msg:
+            raise RuntimeError(
+                "PARTS9 write denied — grant writer login (UPDATE ICMAS LOCATION1)"
+            ) from exc
+        raise RuntimeError(f"PARTS9 location update failed: {msg}") from exc
+    if not row:
+        raise ValueError("product not found")
+    return _row_to_product(row)
+
+
 def lookup_products(query: str, *, limit: int = 20, engine: Engine | None = None) -> list[ProductRow]:
     q = (query or "").strip()
     if not q:
