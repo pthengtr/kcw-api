@@ -410,6 +410,8 @@ def test_page_defaults_vendor_view():
     assert "/sales" in html
     assert "ควรสั่งเพิ่ม" in html
     assert "manage-menu" in html
+    assert "function placeManageMenu" in html
+    assert "position:fixed" in html.split(".manage-menu{", 1)[1].split("}", 1)[0]
     assert "data-cancel-waiting=" in html
     assert "data-dismiss=" in html
     tools_fn = html.split("function productTools", 1)[1].split("function qtyCell", 1)[0]
