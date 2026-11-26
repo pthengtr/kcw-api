@@ -100,8 +100,10 @@ def infer_doc_kind(docno: str) -> str | None:
         return "rv"
     if u.startswith("PI"):
         return "pi"
+    # SI bill prefixes need trailing alnum (same rule as _DOC_HINT) so warehouse
+    # bins like 3T-1-1 / TF-2-3 are not mistaken for sales invoices.
     if u.startswith(("SA", "3SA", "8K", "3T", "TD", "TR", "TF", "TAD", "CN", "DN")):
-        return "si"
+        return "si" if _DOC_HINT.match(compact) else None
     return None
 
 
