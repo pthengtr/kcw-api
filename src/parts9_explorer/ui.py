@@ -228,9 +228,10 @@ main {
 }
 .results-table {
   width:100%; border-collapse:separate; border-spacing:0; font-size:.78rem;
+  table-layout:fixed;
 }
 .results-table th, .results-table td {
-  border-bottom:1px solid var(--line); padding:.38rem .32rem; text-align:left; vertical-align:top;
+  border-bottom:1px solid var(--line); padding:.36rem .3rem; text-align:left; vertical-align:top;
 }
 .results-table th {
   position:sticky; top:1.6rem; z-index:2;
@@ -239,15 +240,34 @@ main {
 }
 .results-table .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .results-table tr.result-sel { cursor:pointer; }
+.results-table tbody tr.result-sel:nth-child(even) td {
+  background:color-mix(in srgb, var(--text) 3.5%, var(--bg));
+}
 .results-table tr.result-sel:hover td { background:var(--inset); }
 .results-table tr.result-sel.active td {
   background:color-mix(in srgb, var(--acc) 14%, var(--card));
 }
 .results-table tr.result-sel.active { outline:none; }
-.results-table .cell-code { font-weight:700; white-space:nowrap; }
-.results-table .cell-name { max-width:13rem; line-height:1.3; }
-.results-table .cell-stock { font-variant-numeric:tabular-nums; line-height:1.3; white-space:nowrap; }
-.results-table .cell-stock .loc { display:block; color:var(--muted); font-size:.68rem; }
+.results-table .col-code { width:6.4rem; }
+.results-table .col-name { width:22%; }
+.results-table .col-model { width:8%; }
+.results-table .col-brand { width:7%; }
+.results-table .col-pcode { width:9%; }
+.results-table .col-mcode { width:9%; }
+.results-table .col-price { width:5.6rem; }
+.results-table .col-stock { width:11%; }
+.results-table .cell-code { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.results-table .cell-name { line-height:1.3; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.results-table .cell-price {
+  font-weight:750; font-size:.88rem; color:var(--text); font-variant-numeric:tabular-nums;
+}
+.results-table .cell-stock {
+  font-variant-numeric:tabular-nums; line-height:1.3; white-space:nowrap; font-weight:650;
+}
+.results-table .cell-stock .qty { font-size:.84rem; }
+.results-table .cell-stock .loc {
+  display:block; color:var(--heading); font-size:.72rem; font-weight:650; margin-top:.08rem;
+}
 /* Mobile / tablet compact cards */
 .card.compact {
   display:grid; grid-template-columns:1fr auto; gap:.15rem .55rem;
@@ -255,7 +275,7 @@ main {
 }
 .card.compact .c-head {
   grid-column:1 / -1; display:flex; align-items:center; gap:.3rem; flex-wrap:wrap;
-  font-size:.82rem;
+  font-size:.82rem; font-weight:700;
 }
 .card.compact .card-name {
   grid-column:1 / -1; font-size:.84rem; font-weight:600; margin:0;
@@ -275,8 +295,13 @@ main {
 .meta { font-size:.8rem; color:var(--muted); }
 .kv-line { font-size:.82rem; color:var(--text); line-height:1.4; margin:.08rem 0; }
 .kv-line .lbl { color:var(--muted); font-weight:600; margin-right:.25rem; }
-.prices { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.2rem; }
+.prices { display:flex; flex-wrap:wrap; gap:.25rem .3rem; margin-top:.15rem; align-items:baseline; }
 .prices span { font-size:.75rem; background:var(--inset); padding:.12rem .35rem; border-radius:.35rem; }
+.prices .price-main {
+  flex:1 1 100%; font-size:1.2rem; font-weight:750; font-variant-numeric:tabular-nums;
+  background:transparent; padding:.05rem 0; color:var(--text); line-height:1.2;
+}
+.prices .price-sec { font-size:.72rem; color:var(--muted); }
 .photos { display:flex; gap:.4rem; overflow-x:auto; margin:.5rem 0; }
 .photos img { height:120px; border-radius:.45rem; background:var(--inset); }
 table { width:100%; border-collapse:collapse; font-size:.84rem; }
@@ -296,44 +321,49 @@ label.chk input { margin:0; flex-shrink:0; }
 .kpi .l { font-size:.72rem; color:var(--muted); margin-top:.1rem; }
 .kpi.warn .n { color:var(--pend); }
 .kpi.ok .n { color:var(--ok); }
-.detail-overview { margin:0 0 .55rem; padding:0; background:transparent; border:0; }
+.detail-overview { margin:0 0 .45rem; padding:0; background:transparent; border:0; }
 .detail-overview h2 { margin:0; letter-spacing:.01em; font-size:1.05rem; }
 .detail-head {
-  display:flex; flex-wrap:wrap; align-items:center; gap:.3rem .4rem; margin:0 0 .2rem;
+  display:flex; flex-wrap:wrap; align-items:center; gap:.3rem .4rem; margin:0 0 .15rem;
 }
-.detail-title { font-size:.95rem; font-weight:600; line-height:1.35; margin:0 0 .3rem; }
+.detail-title { font-size:.95rem; font-weight:600; line-height:1.3; margin:0 0 .2rem; }
 .detail-facts-inline {
-  display:flex; flex-wrap:wrap; gap:.1rem .7rem; font-size:.8rem; color:var(--muted); margin:0 0 .45rem;
+  display:flex; flex-wrap:wrap; gap:.05rem .65rem; font-size:.78rem; color:var(--muted); margin:0 0 .3rem;
 }
 .detail-facts-inline span .lbl { color:var(--heading); font-weight:600; margin-right:.2rem; }
 .detail-price-photo {
-  display:grid; gap:.5rem; margin:0 0 .5rem; grid-template-columns:1fr; align-items:start;
+  display:grid; gap:.3rem; margin:0 0 .35rem; grid-template-columns:1fr; align-items:start;
 }
 @media (min-width:520px) {
-  .detail-price-photo { grid-template-columns:minmax(0,1fr) auto; }
+  .detail-price-photo { grid-template-columns:minmax(0,1fr) auto; gap:.35rem .55rem; }
 }
 .detail-price-photo .prices { margin:0; }
 .detail-more {
-  border-top:1px solid var(--line); padding-top:.4rem; margin:.35rem 0 .45rem;
+  border-top:1px solid var(--line); padding-top:.3rem; margin:.25rem 0 .35rem;
 }
 .detail-sec-lbl {
-  margin:.45rem 0 .2rem; font-size:.72rem; font-weight:700; color:var(--muted);
+  margin:.3rem 0 .15rem; font-size:.7rem; font-weight:700; color:var(--muted);
 }
-.stock-kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:.35rem; margin:.15rem 0 0; }
-@media (min-width:520px) { .stock-kpis { grid-template-columns:repeat(3,1fr);} }
+.stock-kpis { display:grid; grid-template-columns:1fr 1fr; gap:.35rem; margin:.1rem 0 0; }
 .stock-kpi {
   background:var(--inset); border:1px solid var(--line); border-radius:.5rem;
-  padding:.45rem .55rem;
+  padding:.4rem .5rem;
 }
-.stock-kpi .n { font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
-.stock-kpi .l { font-size:.68rem; color:var(--muted); margin-top:.1rem; }
+.stock-kpi .n { font-size:1.1rem; font-weight:750; font-variant-numeric:tabular-nums; letter-spacing:.01em; line-height:1.2; }
+.stock-kpi .l { font-size:.68rem; color:var(--muted); margin-top:0; font-weight:650; }
 .stock-kpi .u { font-size:.7rem; font-weight:500; color:var(--muted); margin-left:.2rem; }
-.stock-kpi .loc { font-size:.7rem; color:var(--muted); margin-top:.15rem; line-height:1.3; }
+.stock-kpi .loc {
+  font-size:.78rem; color:var(--heading); font-weight:650; margin-top:.18rem; line-height:1.3;
+}
 .stock-kpi.flag { border-color:var(--pend); }
+.stock-total {
+  margin:.28rem 0 0; font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.35;
+}
+.stock-total .lbl { color:var(--heading); font-weight:650; margin-right:.25rem; }
 .badge.oem-y { background:var(--st-ok-bg); color:var(--ok); }
 .badge.oem-n { background:var(--st-wait-bg); color:var(--muted); }
-.photos-view { display:flex; gap:.35rem; overflow-x:auto; margin:0; }
-.photos-view img { height:88px; border-radius:.4rem; background:var(--inset); }
+.photos-view { display:flex; gap:.3rem; overflow-x:auto; margin:0; }
+.photos-view img { height:76px; border-radius:.35rem; background:var(--inset); }
 /* Product Insight dashboard — aligned to kcw_product_insight_dashboard_v12 reference */
 .insight-wrap { margin:0 0 .75rem; }
 .pi-head {
@@ -760,7 +790,19 @@ function qty(v) {
 }
 function fmtPrices(p) {
   if (!p) return "";
-  return Object.entries(p).map(([k,v]) => `<span>${esc(colTh(k))} ${Number(v).toLocaleString("th-TH")}</span>`).join("");
+  const entries = Object.entries(p);
+  const main = entries.find(([k]) => k === "PRICE1");
+  const rest = entries.filter(([k]) => k !== "PRICE1");
+  let html = "";
+  if (main) {
+    // Match list-card wording so staff recognize PRICE1 as ราคาขาย 1.
+    html += "<span class='price-main'>ราคาขาย 1 "
+      +Number(main[1]).toLocaleString("th-TH")+"</span>";
+  }
+  html += rest.map(([k,v]) =>
+    "<span class='price-sec'>"+esc(colTh(k))+" "+Number(v).toLocaleString("th-TH")+"</span>"
+  ).join("");
+  return html;
 }
 function codeBits(p) {
   const bits = [];
@@ -832,7 +874,8 @@ function stockCellHtml(qtyVal, loc, unit) {
   const locText = String(loc || "").trim();
   if (!hasQty && !locText) return "—";
   const q = hasQty ? (qty(qtyVal) + (unit ? " "+esc(unit) : "")) : "—";
-  return q + (locText ? "<span class='loc'>"+esc(locText)+"</span>" : "");
+  return "<span class='qty'>"+q+"</span>"
+    + (locText ? "<span class='loc'>"+esc(locText)+"</span>" : "");
 }
 function compactStockHtml(branch, qtyVal, loc, unit) {
   const hasQty = qtyVal != null && qtyVal !== "";
@@ -855,15 +898,14 @@ function productRowHtml(p, i) {
   const s = productStockFields(p);
   const priceTxt = s.price1 != null ? Number(s.price1).toLocaleString("th-TH") : "—";
   return "<tr class='result-sel' data-pi='"+i+"' onclick='showP("+i+")'>"
-    +"<td class='cell-code'>"+esc(p.bcode)+oemBadge(p)
+    +"<td class='cell-code'>"+esc(p.bcode)
     +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")+"</td>"
     +"<td class='cell-name'>"+esc(p.descr||"—")+"</td>"
     +"<td>"+esc(p.model||"")+"</td>"
     +"<td>"+esc(p.brand||"")+"</td>"
     +"<td>"+esc(p.pcode||"")+"</td>"
     +"<td>"+esc(p.mcode||"")+"</td>"
-    +"<td class='num'>"+priceTxt+"</td>"
-    +"<td>"+esc(s.unit||"")+"</td>"
+    +"<td class='num cell-price'>"+priceTxt+"</td>"
     +"<td class='cell-stock'>"+stockCellHtml(s.qtyHq, s.locHq, s.unit)+"</td>"
     +"<td class='cell-stock'>"+stockCellHtml(s.qtySyp, s.locSyp, s.unit)+"</td>"
     +"</tr>";
@@ -886,7 +928,7 @@ function productCardHtml(p, i) {
     ? "<div class='c-price'>ราคาขาย 1 "+Number(s.price1).toLocaleString("th-TH")+"</div>"
     : "<div class='c-price'>—</div>";
   return "<button type='button' class='card compact result-sel' data-pi='"+i+"' id='c"+i+"' onclick='showP("+i+")'>"
-    +"<div class='c-head'><strong>"+esc(p.bcode)+"</strong>"+oemBadge(p)
+    +"<div class='c-head'><strong>"+esc(p.bcode)+"</strong>"
     +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")+"</div>"
     +"<div class='card-name'>"+esc(p.descr||"—")+"</div>"
     +"<div class='c-meta'>"
@@ -904,9 +946,11 @@ function productResultsHtml(products) {
   const cards = products.map((p, i) => productCardHtml(p, i)).join("");
   return "<div class='results-table-wrap'><table class='results-table'>"
     +"<thead><tr>"
-    +"<th>รหัส</th><th>ชื่อสินค้า</th><th>รุ่น</th><th>ยี่ห้อ</th>"
-    +"<th>เบอร์แท้</th><th>เบอร์โรงงาน</th><th class='num'>ราคาขาย</th><th>หน่วย</th>"
-    +"<th>HQ</th><th>SYP</th>"
+    +"<th class='col-code'>รหัส</th><th class='col-name'>ชื่อสินค้า</th>"
+    +"<th class='col-model'>รุ่น</th><th class='col-brand'>ยี่ห้อ</th>"
+    +"<th class='col-pcode'>เบอร์แท้</th><th class='col-mcode'>เบอร์โรงงาน</th>"
+    +"<th class='num col-price'>ราคาขาย</th>"
+    +"<th class='col-stock'>HQ</th><th class='col-stock'>SYP</th>"
     +"</tr></thead><tbody>"+rows+"</tbody></table></div>"
     +"<div class='results-cards'>"+cards+"</div>";
 }
@@ -1846,16 +1890,19 @@ function showP(i, opts) {
   let stockHtml = "<div class='detail-sec-lbl'>สต็อกคงเหลือ</div>";
   if (qtyHq != null || qtySyp != null || locHq || locSyp) {
     stockHtml += "<div class='stock-kpis'>"
-      +stockCard("HQ", qtyHq, locHq, false)
+      +stockCard("HQ", qtyHq, locHq, !!p.do_not_restock)
       +stockCard("SYP", qtySyp, locSyp, false)
-      +stockCard("รวมบริษัท", qtyTotal, "", !!p.do_not_restock)
       +"</div>";
+    if (qtyTotal != null) {
+      stockHtml += "<p class='stock-total'><span class='lbl'>รวมบริษัท</span>"
+        +esc(qty(qtyTotal)+(p.ui1 ? " "+p.ui1 : ""))+"</p>";
+    }
   } else {
     stockHtml += "<div class='stock-kpis'>"
       +stockCard("QTYOH2", p.qtyoh2, p.location || "", !!p.do_not_restock)
       +"</div>";
   }
-  if (p.do_not_restock) stockHtml += "<p class='meta' style='margin:.35rem 0 0'>ไม่สั่งเพิ่ม (L-1)</p>";
+  if (p.do_not_restock) stockHtml += "<p class='meta' style='margin:.25rem 0 0'>ไม่สั่งเพิ่ม (L-1)</p>";
   const waitBadge = (p.waiting && p.waiting.iclow_id)
     ? " <span class='badge to_order'>รอสั่ง #"+esc(p.waiting.iclow_id)+"</span>"
     : "";
@@ -1867,8 +1914,8 @@ function showP(i, opts) {
   const inlineFacts = [];
   if (p.model) inlineFacts.push("<span><span class='lbl'>รุ่น</span>"+esc(p.model)+"</span>");
   if (p.brand) inlineFacts.push("<span><span class='lbl'>ยี่ห้อ</span>"+esc(p.brand)+"</span>");
+  // OEM badge stays in detail-head only; skip duplicate "สถานะ" line.
   const moreFacts = kvLine("ชื่อบริษัท", companyName(p))
-    + (p.oem_label ? kvLine("สถานะ", p.oem_label) : "")
     + kvLine("เบอร์แท้", p.pcode)
     + kvLine("เบอร์โรงงาน", p.mcode)
     + kvLine("ชื่อย่อ", p.acode)
