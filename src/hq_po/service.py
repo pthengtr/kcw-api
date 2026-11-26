@@ -118,8 +118,10 @@ def incoming_payload() -> dict[str, Any]:
     except Exception:
         names = {}
     items = [_incoming_item(row, names) for row in rows]
+    from src.hq_po.suggest import attach_catalog
     from src.hq_po.vendor_link import annotate_markable
 
+    attach_catalog(items)
     annotate_markable(items, vendor_of=lambda row: row.get("vendor"))
     return {"items": items}
 
@@ -1265,6 +1267,9 @@ def _attach_receive(orders: list[dict[str, Any]]) -> list[dict[str, Any]]:
             order["receive_label"] = "ค้างรับ"
     lines = [line for order in orders for line in (order.get("lines") or [])]
     attach_catalog(lines)
+    for line in lines:
+        if not line.get("photo"):
+            line["photo"] = thumb_url(str(line.get("bcode") or ""))
     from src.hq_po.vendor_link import annotate_markable
 
     def _line_vendor(line: dict[str, Any]) -> str:
