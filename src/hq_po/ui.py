@@ -80,6 +80,7 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .col-company{font-weight:650}
 .col-company .vendor-short{color:var(--blue-deep);font-size:13px;font-weight:700;margin:0;line-height:1.3}
 .col-company .line-rec,.col-company .flag,.col-company .meta{display:block}
+.col-company .flag[hidden],.col-company .flag:empty{display:none}
 .col-company .line-rec + .flag,.col-company .flag + .flag,.col-company .meta + .meta,.col-company .vendor-short + .line-rec,.col-company .vendor-short + .flag,.col-company .vendor-short + .meta{margin-top:3px}
 .col-qty{text-align:right}
 .col-qty .unit-pick{justify-content:flex-end;flex-wrap:nowrap}
