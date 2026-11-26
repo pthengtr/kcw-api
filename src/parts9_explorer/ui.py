@@ -223,64 +223,65 @@ main {
 .card .card-stock .lbl { color:var(--heading); font-weight:600; }
 .thumb { width:64px; height:64px; object-fit:cover; border-radius:.45rem; background:var(--inset); flex-shrink:0; }
 /* Desktop product table */
-.results-table-wrap { display:none; width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.results-table-wrap {
+  display:none; width:100%; max-width:100%; min-width:0;
+  overflow-x:auto; -webkit-overflow-scrolling:touch;
+}
 .results-cards { display:flex; flex-direction:column; gap:.35rem; }
 @media (min-width:880px) {
   .results-table-wrap { display:block; }
   .results-cards { display:none; }
 }
 .results-table {
-  width:100%; min-width:52rem; border-collapse:separate; border-spacing:0; font-size:.78rem;
+  /* min-width = sum of fixed cols + name floor so table-layout:fixed never crushes เบอร์แท้/โรงงาน. */
+  width:100%; min-width:58rem; border-collapse:separate; border-spacing:0; font-size:.78rem;
   table-layout:fixed;
 }
 .results-table th, .results-table td {
-  border-bottom:1px solid var(--line); padding:.32rem .28rem; text-align:left; vertical-align:middle;
+  border-bottom:1px solid var(--line); padding:.3rem .32rem; text-align:left; vertical-align:middle;
+  /* Clip every cell so long codes/headers never paint over the next column. */
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35;
 }
 .results-table th {
   position:sticky; top:1.6rem; z-index:2;
-  background:var(--bg); color:var(--muted); font-weight:600; font-size:.7rem;
-  white-space:nowrap; letter-spacing:.01em;
+  background:var(--bg); color:var(--muted); font-weight:500; font-size:.7rem;
+  letter-spacing:.01em;
 }
-.results-table .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.results-table .num { text-align:right; font-variant-numeric:tabular-nums; }
 .results-table tr.result-sel { cursor:pointer; }
-.results-table tbody tr.result-sel:nth-child(even) td {
+/* Soft zebra on the row itself so the tint runs edge-to-edge. */
+.results-table tbody tr.result-sel:nth-child(even) {
   background:color-mix(in srgb, var(--text) 3%, var(--bg));
 }
+.results-table tbody tr.result-sel:nth-child(even) td { background:transparent; }
 .results-table tr.result-sel:hover td { background:var(--inset); }
 .results-table tr.result-sel.active td {
   background:color-mix(in srgb, var(--acc) 14%, var(--card));
 }
 .results-table tr.result-sel.active { outline:none; }
-/* Column mins sized for typical PARTS9 codes; name absorbs leftover width. */
-.results-table .col-code { width:5.75rem; min-width:5.25rem; }
-.results-table .col-name { width:auto; min-width:8.5rem; }
-.results-table .col-model { width:5.5rem; min-width:4.75rem; }
-.results-table .col-brand { width:4.25rem; min-width:3.5rem; }
-.results-table .col-pcode { width:7.25rem; min-width:6.5rem; }
-.results-table .col-mcode { width:7.25rem; min-width:6.5rem; }
-.results-table .col-price { width:5rem; min-width:4.5rem; }
-.results-table .col-stock { width:5.75rem; min-width:5rem; }
-.results-table .cell-clip {
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35;
-}
-.results-table .cell-code { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.results-table .cell-name {
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35; font-weight:400;
-}
+/* Fixed widths only (min-width is ignored under table-layout:fixed). Name takes leftover. */
+.results-table .col-code { width:5.5rem; }
+.results-table .col-name { width:auto; }
+.results-table .col-model { width:5.25rem; }
+.results-table .col-brand { width:4.25rem; }
+.results-table .col-pcode { width:8rem; }
+.results-table .col-mcode { width:8.5rem; }
+.results-table .col-price { width:4.75rem; }
+.results-table .col-stock { width:5.25rem; }
+.results-table .cell-code { font-weight:500; }
+.results-table .cell-name { font-weight:400; }
 .results-table .cell-pcode, .results-table .cell-mcode {
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35;
   font-variant-numeric:tabular-nums; font-weight:400;
 }
 .results-table .cell-price {
-  font-weight:650; font-size:.86rem; color:var(--text); font-variant-numeric:tabular-nums;
+  font-weight:600; font-size:.86rem; color:var(--text); font-variant-numeric:tabular-nums;
 }
 .results-table .cell-stock {
-  font-variant-numeric:tabular-nums; line-height:1.25; white-space:nowrap; font-weight:400;
+  font-variant-numeric:tabular-nums; font-weight:400;
 }
-.results-table .cell-stock .qty { font-size:.82rem; font-weight:600; }
+.results-table .cell-stock .qty { font-size:.82rem; font-weight:500; }
 .results-table .cell-stock .loc {
-  display:block; color:var(--muted); font-size:.7rem; font-weight:400; margin-top:.04rem;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  color:var(--muted); font-size:.7rem; font-weight:400; margin-left:.2rem;
 }
 /* Mobile / tablet compact cards */
 .card.compact {
@@ -888,8 +889,9 @@ function stockCellHtml(qtyVal, loc, unit) {
   const locText = String(loc || "").trim();
   if (!hasQty && !locText) return "—";
   const q = hasQty ? (qty(qtyVal) + (unit ? " "+esc(unit) : "")) : "—";
+  // Keep qty + location on one line so rows stay even height and cells don't spill.
   return "<span class='qty'>"+q+"</span>"
-    + (locText ? "<span class='loc'>"+esc(locText)+"</span>" : "");
+    + (locText ? " <span class='loc'>"+esc(locText)+"</span>" : "");
 }
 function compactStockHtml(branch, qtyVal, loc, unit) {
   const hasQty = qtyVal != null && qtyVal !== "";
