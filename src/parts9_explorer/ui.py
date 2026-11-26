@@ -314,8 +314,15 @@ main {
 }
 .card.compact .c-meta { font-size:.72rem; color:var(--muted); line-height:1.35; min-width:0; }
 .card.compact .c-price {
-  font-size:.9rem; font-weight:650; font-variant-numeric:tabular-nums;
+  display:flex; flex-direction:column; align-items:flex-end; gap:.05rem;
   text-align:right; align-self:start; white-space:nowrap;
+  font-variant-numeric:tabular-nums; line-height:1.2;
+}
+.card.compact .c-price-lbl {
+  font-size:.68rem; font-weight:400; color:var(--muted);
+}
+.card.compact .c-price-val {
+  font-size:.95rem; font-weight:700; color:var(--text);
 }
 .card.compact .c-stock {
   grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:.2rem .45rem;
@@ -998,8 +1005,10 @@ function productCardHtml(p, i) {
     stock = "<div><span class='lbl'>คงเหลือ</span> "+esc(qty(p.qtyoh2)+(s.unit ? " "+s.unit : ""))+"</div>";
   }
   // Keep "ราคาขาย 1" label for list price (PRICE1) so staff recognize the field.
+  // Mobile card: label + amount on separate lines (small muted / bold larger), right-aligned.
   const priceHtml = s.price1 != null
-    ? "<div class='c-price'>ราคาขาย 1 "+Number(s.price1).toLocaleString("th-TH")+"</div>"
+    ? "<div class='c-price'><span class='c-price-lbl'>ราคาขาย 1</span>"
+      +"<span class='c-price-val'>"+Number(s.price1).toLocaleString("th-TH")+"</span></div>"
     : "<div class='c-price'>—</div>";
   return "<button type='button' class='card compact result-sel' data-pi='"+i+"' id='c"+i+"' onclick='showP("+i+")'>"
     +"<div class='c-head'><strong>"+esc(p.bcode)+"</strong>"
