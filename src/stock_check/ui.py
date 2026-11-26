@@ -228,6 +228,21 @@ def page(
       background: var(--accent-2);
       box-shadow: 0 0 0 4px var(--accent-soft);
     }}
+    .loc-row {{
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }}
+    button.loc-edit {{
+      width: auto; min-width: 36px; padding: 6px 8px; margin: 0;
+      background: var(--accent-soft); color: var(--accent);
+      box-shadow: none; border-radius: 10px; line-height: 0;
+      display: inline-grid; place-items: center;
+    }}
+    button.loc-edit svg {{ display: block; }}
+    #loc-edit-panel {{
+      margin-top: 12px; padding-top: 12px;
+      border-top: 1px dashed var(--line);
+    }}
+    #loc-edit-panel .grid2 button {{ width: 100%; }}
     .bcode {{
       font-family: "Prompt", ui-monospace, monospace;
       font-weight: 600; font-size: 1.05rem;
@@ -752,6 +767,34 @@ def _rejection_history_html(rejections: list[dict[str, Any]] | None) -> str:
     return "".join(bits)
 
 
+def _location_history_html(edits: list[dict[str, Any]] | None) -> str:
+    rows = list(edits or [])
+    if not rows:
+        return ""
+    bits = ["<div class='section-title' style='margin-top:12px'>ประวัติแก้ Location</div>"]
+    for row in rows:
+        old_loc = (row.get("old_location1") or "").strip() or "—"
+        new_loc = (row.get("new_location1") or "").strip() or "—"
+        bits.append(
+            "<div class='muted' style='margin-top:6px;font-size:.84rem'>"
+            f"<b style='color:var(--ink)'>{escape(old_loc)}</b> → "
+            f"<b style='color:var(--accent)'>{escape(new_loc)}</b>"
+            f"<div style='margin-top:2px'>"
+            f"{escape(row.get('edited_by_name') or '')} · {_fmt_ts(row.get('edited_at'))}"
+            "</div></div>"
+        )
+    return "".join(bits)
+
+
+_PENCIL_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" '
+    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'
+    "</svg>"
+)
+
+
 def _product_card_html(item: dict[str, Any], *, href: str, flag: str = "") -> str:
     loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
     badge = _pool_badge_html(item)
@@ -890,9 +933,12 @@ def product_page(
     user: dict[str, Any],
     item: dict[str, Any],
     source: str = "batch",
+    flash: str | None = None,
+    error: str | None = None,
     browser_entry_url: str | None = None,
 ) -> str:
-    loc = " / ".join(x for x in [item.get("location1"), item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
+    loc1 = str(item.get("location1") or "").strip()
+    loc = " / ".join(x for x in [loc1, item.get("location2")] if x) or "ไม่ระบุที่เก็บ"
     qty = float(item.get("qtyoh2", 0) or 0)
     qty_disp = _fmt_qty(qty)
     badge = _pool_badge_html(item)
@@ -911,12 +957,40 @@ def product_page(
         block_banner = (
             f"<div class='flash err' style='margin-bottom:12px'>{escape(block_reason)}{link}</div>"
         )
+    flash_bits = ""
+    if flash:
+        flash_bits += f"<div class='flash' style='margin-bottom:12px'>{escape(flash)}</div>"
+    if error:
+        flash_bits += f"<div class='flash err' style='margin-bottom:12px'>{escape(error)}</div>"
+    loc_history = _location_history_html(item.get("location_edits"))
     disabled_attr = " disabled" if blocked else ""
     body = f"""
     <div class="card soft">
       {badge_row}
+      {flash_bits}
       {block_banner}
-      <div class="loc">{escape(loc)}</div>
+      <div class="loc-row">
+        <div class="loc" id="loc-display">{escape(loc)}</div>
+        <button type="button" class="loc-edit" id="loc-edit-btn"
+          aria-label="แก้ไข Location" aria-expanded="false" aria-controls="loc-edit-panel">
+          {_PENCIL_SVG}
+        </button>
+      </div>
+      <div id="loc-edit-panel" hidden>
+        <div class="muted" style="margin:0 0 8px">Location เดิม: <b style="color:var(--ink)">{escape(loc1 or 'ไม่ระบุที่เก็บ')}</b></div>
+        <form method="post" action="/stock-check/product/{escape(item['bcode'])}/location" id="loc-edit-form">
+          <input type="hidden" name="source" value="{escape(source)}"/>
+          <label>Location ใหม่</label>
+          <input type="text" name="location1" maxlength="10" autocomplete="off"
+            value="{escape(loc1)}" placeholder="เช่น OB-2-12.3"/>
+          <p class="hint">อัปเดตที่เก็บในระบบสาขานี้เท่านั้น — ไม่กระทบจำนวนสต็อกหรือผลนับ</p>
+          <div class="grid2" style="margin-top:12px">
+            <button type="button" class="ghost" id="loc-edit-cancel">ยกเลิก</button>
+            <button type="submit">บันทึก Location</button>
+          </div>
+        </form>
+      </div>
+      {loc_history}
       <div class="prod-head">
         {_thumb_html(item, size="lg")}
         <div class="prod-meta">
@@ -973,6 +1047,23 @@ def product_page(
     </div>
     <script>
     (function () {{
+      var editBtn = document.getElementById("loc-edit-btn");
+      var editPanel = document.getElementById("loc-edit-panel");
+      var editCancel = document.getElementById("loc-edit-cancel");
+      function setLocEditOpen(open) {{
+        if (!editPanel || !editBtn) return;
+        editPanel.hidden = !open;
+        editBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        if (open) {{
+          var input = editPanel.querySelector("input[name=location1]");
+          if (input) {{ input.focus(); input.select(); }}
+        }}
+      }}
+      if (editBtn) editBtn.addEventListener("click", function () {{
+        setLocEditOpen(editPanel.hidden);
+      }});
+      if (editCancel) editCancel.addEventListener("click", function () {{ setLocEditOpen(false); }});
+
       var card = document.getElementById("count-card");
       if (!card) return;
       var systemQty = parseFloat(card.getAttribute("data-system-qty") || "0") || 0;

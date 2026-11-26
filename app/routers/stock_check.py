@@ -361,9 +361,45 @@ def product(request: Request, bcode: str, source: str = "batch"):
             user=user,
             item=item,
             source=source,
+            flash=request.query_params.get("ok"),
+            error=request.query_params.get("err"),
             browser_entry_url=_browser_entry_url(user),
         )
     )
+
+
+@router.post("/product/{bcode}/location")
+def update_product_location(
+    request: Request,
+    bcode: str,
+    location1: str = Form(""),
+    source: str = Form("batch"),
+):
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    src = source if source in {"batch", "ondemand", "manual"} else "ondemand"
+    try:
+        result = service.update_location(
+            session=user,
+            bcode=bcode,
+            location1=location1,
+        )
+        if result.get("unchanged"):
+            msg = "Location เดิมอยู่แล้ว"
+        else:
+            new_loc = (result.get("location1") or "").strip() or "ไม่ระบุที่เก็บ"
+            msg = f"อัปเดต Location เป็น {new_loc}"
+        return RedirectResponse(
+            url=f"/stock-check/product/{_q(bcode)}?source={_q(src)}&ok={_q(msg)}",
+            status_code=303,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(
+            url=f"/stock-check/product/{_q(bcode)}?source={_q(src)}&err={_q(exc)}",
+            status_code=303,
+        )
 
 
 @router.post("/product/{bcode}/submit")

@@ -118,6 +118,21 @@ CREATE TABLE IF NOT EXISTS work_outbox (
   last_error TEXT,
   attempts INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS location_edits (
+  id TEXT PRIMARY KEY,
+  bcode TEXT NOT NULL,
+  old_location1 TEXT,
+  new_location1 TEXT,
+  old_location2 TEXT,
+  new_location2 TEXT,
+  edited_by_line_user_id TEXT NOT NULL,
+  edited_by_name TEXT NOT NULL,
+  edited_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS location_edits_bcode_idx
+  ON location_edits(bcode, edited_at DESC);
 """
 
 
@@ -145,6 +160,28 @@ class LocalStore:
         draft_cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(drafts)").fetchall()}
         if "edit_count" not in draft_cols:
             conn.execute("ALTER TABLE drafts ADD COLUMN edit_count INTEGER NOT NULL DEFAULT 0")
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS location_edits (
+              id TEXT PRIMARY KEY,
+              bcode TEXT NOT NULL,
+              old_location1 TEXT,
+              new_location1 TEXT,
+              old_location2 TEXT,
+              new_location2 TEXT,
+              edited_by_line_user_id TEXT NOT NULL,
+              edited_by_name TEXT NOT NULL,
+              edited_at REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS location_edits_bcode_idx
+              ON location_edits(bcode, edited_at DESC)
+            """
+        )
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -580,6 +617,62 @@ class LocalStore:
         for row in rows:
             grouped.setdefault(row["draft_id"], []).append(dict(row))
         return grouped
+
+    def record_location_edit(
+        self,
+        *,
+        bcode: str,
+        old_location1: str | None,
+        new_location1: str | None,
+        old_location2: str | None,
+        new_location2: str | None,
+        edited_by_line_user_id: str,
+        edited_by_name: str,
+        edited_at: float | None = None,
+    ) -> str:
+        item_id = str(uuid.uuid4())
+        ts = edited_at if edited_at is not None else time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO location_edits (
+                  id, bcode, old_location1, new_location1,
+                  old_location2, new_location2,
+                  edited_by_line_user_id, edited_by_name, edited_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item_id,
+                    bcode,
+                    old_location1,
+                    new_location1,
+                    old_location2,
+                    new_location2,
+                    edited_by_line_user_id,
+                    edited_by_name,
+                    ts,
+                ),
+            )
+        return item_id
+
+    def list_location_edits(
+        self, bcode: str, *, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        code = (bcode or "").strip()
+        if not code:
+            return []
+        lim = max(1, min(int(limit), 50))
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM location_edits
+                WHERE bcode = ?
+                ORDER BY edited_at DESC
+                LIMIT ?
+                """,
+                (code, lim),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def get_draft(self, draft_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:

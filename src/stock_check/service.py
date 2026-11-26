@@ -12,9 +12,11 @@ from src.stock_check.db_local import LocalStore
 from src.stock_check.parts9 import (
     get_product_by_bcode,
     get_products_by_bcodes,
+    normalize_location1,
     sync_qtyoh2_for_bcodes,
     list_stock_movements,
     lookup_products,
+    update_product_location,
 )
 from src.stock_check.sa_writer import Parts9WriteError, post_stock_adjustment
 
@@ -262,6 +264,7 @@ class StockCheckService:
             return None
         audit = self.store.get_local_audits([product.bcode]).get(product.bcode)
         card = self._product_card(product, audit)
+        card["location_edits"] = self.store.list_location_edits(product.bcode, limit=5)
         if session_id:
             self.bump_leases(session_id)
             for row in self.store.list_leases_for_session(session_id):
@@ -270,6 +273,51 @@ class StockCheckService:
                     break
             card.update(self._submission_flags(product.bcode, session_id))
         return card
+
+    def update_location(
+        self,
+        *,
+        session: dict[str, Any],
+        bcode: str,
+        location1: str,
+    ) -> dict[str, Any]:
+        """Fix ICMAS LOCATION1 for this branch only. Does not touch stock, counts, or leases."""
+        product = get_product_by_bcode(bcode)
+        if not product:
+            raise ValueError("ไม่พบสินค้า")
+        new_loc = normalize_location1(location1)
+        old_loc = (product.location1 or "").strip()
+        if new_loc == old_loc:
+            return {
+                "ok": True,
+                "unchanged": True,
+                "bcode": product.bcode,
+                "location1": old_loc,
+                "location2": product.location2,
+            }
+        if not self.settings.pos_mssql_writer_username:
+            raise RuntimeError("ยังไม่ได้ตั้งค่า writer สำหรับแก้ Location")
+        updated = update_product_location(product.bcode, location1=new_loc)
+        self.store.record_location_edit(
+            bcode=product.bcode,
+            old_location1=old_loc,
+            new_location1=(updated.location1 or "").strip(),
+            old_location2=product.location2 or "",
+            new_location2=product.location2 or "",
+            edited_by_line_user_id=self._line_id(session),
+            edited_by_name=str(session.get("display_name") or ""),
+        )
+        session_id = str(session.get("id") or "").strip()
+        if session_id:
+            self.bump_leases(session_id)
+        return {
+            "ok": True,
+            "unchanged": False,
+            "bcode": updated.bcode,
+            "location1": updated.location1,
+            "location2": updated.location2,
+            "qtyoh2": updated.qtyoh2,
+        }
 
     def lookup(self, query: str, *, session_id: str | None = None) -> list[dict[str, Any]]:
         self.expire()

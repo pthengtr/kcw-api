@@ -992,3 +992,132 @@ def test_qty_display_is_fixed_point_not_scientific():
     )
     assert "+1000" in html
     assert "e+" not in html.lower()
+
+
+def test_normalize_location1_clips_to_ten():
+    from src.stock_check.parts9 import normalize_location1
+
+    assert normalize_location1("  OB-2-12.3  ") == "OB-2-12.3"
+    assert normalize_location1("ABCDEFGHIJK") == "ABCDEFGHIJ"
+    assert normalize_location1(None) == ""
+
+
+def test_location_edit_history_local_store(tmp_path: Path):
+    store = LocalStore(tmp_path / "loc.sqlite3")
+    edit_id = store.record_location_edit(
+        bcode="P1",
+        old_location1="OB-2-12.3",
+        new_location1="OB-2-12.4",
+        old_location2="",
+        new_location2="",
+        edited_by_line_user_id="U1",
+        edited_by_name="Alice",
+        edited_at=1_700_000_000,
+    )
+    assert edit_id
+    rows = store.list_location_edits("P1")
+    assert len(rows) == 1
+    assert rows[0]["old_location1"] == "OB-2-12.3"
+    assert rows[0]["new_location1"] == "OB-2-12.4"
+    assert rows[0]["edited_by_name"] == "Alice"
+    assert store.list_location_edits("OTHER") == []
+
+
+def test_update_location_writes_icmas_and_keeps_stock_and_queue(tmp_path: Path, monkeypatch):
+    from src.stock_check.config import StockCheckSettings
+    from src.stock_check.service import StockCheckService
+
+    store = LocalStore(tmp_path / "loc_svc.sqlite3")
+    now = time.time()
+    sid = store.create_session(line_user_id="U1", display_name="Alice", is_approver=False, now=now)
+    store.claim_leases(session_id=sid, bcodes=["P1"], lease_ttl=300, now=now)
+    draft_id = store.create_draft(
+        _pending_draft(location1="OB-2-12.3", counted_qty=8.0, variance=-2.0)
+    )
+    product = ProductRow(
+        bcode="P1",
+        descr="Test",
+        pcode="",
+        mcode="",
+        location1="OB-2-12.3",
+        location2="",
+        qtyoh2=10.0,
+        ui1="ชิ้น",
+        mtp2=1.0,
+        canceled="N",
+    )
+    updated = ProductRow(
+        bcode="P1",
+        descr="Test",
+        pcode="",
+        mcode="",
+        location1="OB-2-12.4",
+        location2="",
+        qtyoh2=10.0,
+        ui1="ชิ้น",
+        mtp2=1.0,
+        canceled="N",
+    )
+    monkeypatch.setattr("src.stock_check.service.get_product_by_bcode", lambda bcode: product)
+    monkeypatch.setattr(
+        "src.stock_check.service.update_product_location",
+        lambda bcode, location1: updated,
+    )
+    settings = StockCheckSettings.model_construct(
+        stock_check_branch="HQ",
+        pos_mssql_writer_username="writer",
+        pos_mssql_writer_password="x",
+        stock_check_lease_idle_seconds=300,
+    )
+    svc = StockCheckService(settings=settings, store=store)
+
+    session = {"id": sid, "line_user_id": "U1", "display_name": "Alice"}
+    result = svc.update_location(session=session, bcode="P1", location1="OB-2-12.4")
+    assert result["ok"] is True
+    assert result["unchanged"] is False
+    assert result["location1"] == "OB-2-12.4"
+    assert result["qtyoh2"] == 10.0
+
+    history = store.list_location_edits("P1")
+    assert len(history) == 1
+    assert history[0]["old_location1"] == "OB-2-12.3"
+    assert history[0]["new_location1"] == "OB-2-12.4"
+    assert history[0]["edited_by_line_user_id"] == "U1"
+
+    # Stock-count draft + lease queue unchanged.
+    draft = store.get_draft(draft_id)
+    assert draft is not None
+    assert draft["location1"] == "OB-2-12.3"
+    assert draft["counted_qty"] == 8.0
+    assert draft["variance"] == -2.0
+    assert draft["status"] == "pending"
+    assert store.active_leased_bcodes() == {"P1"}
+
+
+def test_product_page_has_location_edit_control():
+    from src.stock_check.ui import product_page
+
+    item = {
+        "bcode": "P1",
+        "descr": "bearing",
+        "model": "",
+        "location1": "OB-2-12.3",
+        "location2": "",
+        "qtyoh2": 4,
+        "last_audited_at": None,
+        "location_edits": [
+            {
+                "old_location1": "OB-2-12.2",
+                "new_location1": "OB-2-12.3",
+                "edited_by_name": "Alice",
+                "edited_at": 1_700_000_000,
+            }
+        ],
+    }
+    html = product_page(user={"display_name": "T", "line_user_id": "U1"}, item=item)
+    assert 'id="loc-edit-btn"' in html
+    assert 'id="loc-edit-panel"' in html
+    assert 'name="location1"' in html
+    assert "OB-2-12.3" in html
+    assert "ประวัติแก้ Location" in html
+    assert "Alice" in html
