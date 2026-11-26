@@ -59,12 +59,9 @@ def resubmitted_ack(*, short_code: int) -> str:
 
 
 def approved_text(*, short_code: int, amount: int, voucher_num: str | None) -> str:
-    code_line = f"\nรหัส voucher: {voucher_num}" if voucher_num else ""
-    return (
-        f"ผ่านแล้วครับ! คำขอ #{short_code} ({amount:,} บาท){code_line}\n"
-        "นี่ QR ไปถอนที่ตู้ Tiger ได้เลย\n"
-        "อย่าทำหายกลางทางนะ 😄"
-    )
+    """Compact approval notice; voucher code lives on the QR image, not in text."""
+    _ = voucher_num
+    return f"อนุมัติ #{short_code} ({amount:,}฿) แล้ว — สแกน QR ที่ตู้ Tiger ได้เลย"
 
 
 def rejected_text(*, short_code: int, admin_note: str) -> str:
@@ -77,10 +74,7 @@ def rejected_text(*, short_code: int, admin_note: str) -> str:
 
 
 def approve_ok(*, short_code: int) -> str:
-    return (
-        f"อนุมัติ #{short_code} เรียบร้อยแล้วนะ 😊\n"
-        "จ๋าส่ง QR ให้คนขอเบิกแล้ว ✅"
-    )
+    return f"อนุมัติ #{short_code} แล้ว — ส่ง QR ให้ผู้ขอแล้ว"
 
 
 def approved_peer_notice(
@@ -92,11 +86,7 @@ def approved_peer_notice(
 ) -> str:
     who = (reviewer_name or "แอดมิน").strip() or "แอดมิน"
     req = (requester_name or "ผู้ขอ").strip() or "ผู้ขอ"
-    return (
-        f"{who} อนุมัติคำขอ #{short_code} แล้วครับ "
-        f"({amount:,} บาท · {req})\n"
-        "ส่ง QR ให้ผู้ขอแล้ว ✅"
-    )
+    return f"{who} อนุมัติ #{short_code} แล้ว ({amount:,}฿ · {req})"
 
 
 def needs_info_ok(*, short_code: int) -> str:
