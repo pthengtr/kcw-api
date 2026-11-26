@@ -67,12 +67,14 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .select-all{display:flex;align-items:center;gap:8px;min-height:44px;padding:10px 12px;border-top:1px solid var(--line);background:#fff;font-size:14px;font-weight:650;color:var(--blue-deep)}
 .select-all input{margin:0;flex:none}
 .lines-table{width:100%;border-top:1px solid var(--line)}
-.lines-head{display:grid;grid-template-columns:28px minmax(0,2fr) minmax(0,1.3fr) 108px auto;gap:8px;padding:7px 10px;background:#f8fafc;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:650;line-height:1.3}
-.lines-table.mode-product .lines-head,.lines-table.mode-hold .lines-head,.lines-table.mode-order .lines-head,.line.plain{grid-template-columns:minmax(0,2fr) minmax(0,1.3fr) 108px auto}
-.line{display:grid;grid-template-columns:28px minmax(0,2fr) minmax(0,1.3fr) 108px auto;gap:8px;padding:7px 10px;border-top:1px solid var(--line);align-items:start}
+.lines-head{display:grid;grid-template-columns:28px minmax(0,2.4fr) minmax(64px,0.55fr) 96px auto;gap:8px;padding:7px 10px;background:#f8fafc;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:650;line-height:1.3}
+.lines-table.mode-product .lines-head,.lines-table.mode-hold .lines-head,.lines-table.mode-order .lines-head,.line.plain{grid-template-columns:minmax(0,2.4fr) minmax(64px,0.55fr) 96px auto}
+.line{display:grid;grid-template-columns:28px minmax(0,2.4fr) minmax(64px,0.55fr) 96px auto;gap:8px;padding:7px 10px;border-top:1px solid var(--line);align-items:start}
 .line + .line{border-top:1px solid var(--line)}
 .col-check{padding-top:2px}
 .col-item,.col-status,.col-qty,.col-acts{min-width:0}
+.col-status{font-weight:650}
+.col-status .vendor-short{color:var(--blue-deep);font-size:13px;font-weight:700;margin-top:0}
 .col-qty{text-align:right}
 .col-acts .line-actions{margin-top:0;justify-content:flex-end}
 .col-extra{grid-column:1 / -1;min-width:0}
@@ -443,13 +445,19 @@ function qtyText(n){
   return Math.abs(v-Math.round(v))<1e-9 ? String(Math.round(v)) : String(Math.round(v*100)/100);
 }
 function vendorTitle(row){
-  const name = row.vendor_name || "";
-  const code = row.vendor || "";
+  const code = String(row.vendor || "").trim();
   if(!code){
     const raw = String(row.vendor_raw || "").trim();
     return raw ? `ต้องเลือกเจ้าหนี้ · เดิม ${raw}` : "ต้องเลือกเจ้าหนี้";
   }
-  return name ? `${name} · ${code}` : code;
+  // Short creditor code only (e.g. KKK); full name stays in title tip.
+  return code;
+}
+function vendorTitleTip(row){
+  const name = String(row.vendor_name || "").trim();
+  const code = String(row.vendor || "").trim();
+  if(name && code && name !== code) return `${name} · ${code}`;
+  return name || code || "";
 }
 function haystack(row){
   row._hay = [row.bcode, row.descr, row.model, row.pcode, row.mcode, row.brand, row.vendor, row.vendor_name, row.vendor_raw].join(" ").toLowerCase();
@@ -860,7 +868,8 @@ function lineHtml(row, mode){
     ? `<input type="checkbox" data-key="${esc(rowKey(row))}" data-vendor="${esc(row.vendor||"")}" aria-label="เลือก ${esc(row.bcode||"")}"${row.picked ? " checked" : ""}/>`
     : `<input type="checkbox" disabled/>`);
   const fresh = !pick && vendorFresh(row) ? " · เจ้าหนี้ใหม่" : "";
-  const vendorLine = pick ? "" : `<div class="meta" data-vendor-label>${esc(vendorTitle(row))}${fresh}</div>`;
+  const tip = vendorTitleTip(row);
+  const vendorLine = pick ? "" : `<div class="meta vendor-short" data-vendor-label${tip ? ` title="${esc(tip)}"` : ""}>${esc(vendorTitle(row))}${fresh}</div>`;
   const tools = productTools(row);
   const recovered = stockRecovered(row) ? " recovered" : "";
   const checkCol = pick ? `<div class="col-check">${check}</div>` : "";
@@ -1095,7 +1104,10 @@ function renderList(){
       host.innerHTML = `<div class="card" style="padding:12px"><div class="meta">ไม่พบในรายการรอสั่ง</div>${addProductControl("primary")}</div>${vendorHitHtml()}`;
     } else {
       host.innerHTML = groups.length
-        ? groups.map(g => `<button type="button" class="vendor-card" data-open-vendor="${esc(g.vendor)}"><span class="title">${esc(vendorTitle(g))}</span><span class="badge">${g.lines.length}</span></button>`).join("")
+        ? groups.map(g => {
+            const tip = vendorTitleTip(g);
+            return `<button type="button" class="vendor-card" data-open-vendor="${esc(g.vendor)}"${tip ? ` title="${esc(tip)}"` : ""}><span class="title">${esc(vendorTitle(g))}</span><span class="badge">${g.lines.length}</span></button>`;
+          }).join("")
         : `<div class="empty">ไม่มีรายการ</div>${addProductControl("vendor")}`;
     }
     syncDock();
@@ -1104,9 +1116,10 @@ function renderList(){
   }
   const lines = items.filter(row => sameVendor(row, state.vendorKey, state.vendorName) && match(row));
   const named = state.items.find(row => sameVendor(row, state.vendorKey, state.vendorName));
-  const title = state.vendorName
-    ? (state.vendorName + (state.vendorKey ? " · " + state.vendorKey : ""))
-    : (named ? vendorTitle(named) : (state.vendorKey || "ต้องเลือกเจ้าหนี้"));
+  const title = state.vendorKey
+    || (named ? vendorTitle(named) : "")
+    || state.vendorName
+    || "ต้องเลือกเจ้าหนี้";
   const waiting = lines.filter(row => row.source !== "insight" && row.source !== "history");
   const ai = lines.filter(row => row.source === "insight");
   const past = lines.filter(row => row.source === "history");
@@ -1524,7 +1537,7 @@ function renderOrders(){
       ? `<button type="button" class="ghost" data-cancel="${esc(order.order_id)}">ยกเลิกใบนี้</button>` : "";
     const reprint = `<button type="button" data-sheet="${esc(order.order_id)}">พิมพ์</button>`;
     const actions = `<div class="actions">${reprint}${cancel}</div>`;
-    const title = order.vendor_name || order.vendor_acctno || "ไม่ระบุเจ้าหนี้";
+    const title = order.vendor_acctno || order.vendor_name || "ไม่ระบุเจ้าหนี้";
     const when = orderDateText(order.ordered_at);
     const whenHtml = when ? `<span class="when">วันที่สั่ง ${esc(when)}</span>` : "";
     const n = orderVisibleLines(order).length;
@@ -1802,7 +1815,11 @@ function holdLineHtml(row){
   const id = row.iclow_id;
   const when = [row.docdate, row.docno].filter(Boolean).join(" · ");
   const age = ageText(ageDays(row.docdate));
-  const vendor = `<div class="meta">${esc(row.vendor_name ? row.vendor_name + " · " + row.vendor : (row.vendor || "ไม่ระบุเจ้าหนี้"))}</div>`;
+  const vendorCode = String(row.vendor || "").trim() || "ไม่ระบุเจ้าหนี้";
+  const vendorTip = row.vendor_name && row.vendor
+    ? `${row.vendor_name} · ${row.vendor}`
+    : String(row.vendor_name || "");
+  const vendor = `<div class="meta vendor-short"${vendorTip ? ` title="${esc(vendorTip)}"` : ""}>${esc(vendorCode)}</div>`;
   const timing = when || age
     ? `<div class="meta">${esc(when)}${when && age ? " · " : ""}${age ? `<span class="badge wait">${esc(age)}</span>` : ""}</div>`
     : "";

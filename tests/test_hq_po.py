@@ -530,16 +530,27 @@ def test_page_defaults_vendor_view():
     assert "col-acts" in html
     assert "เจ้าหนี้ / สถานะ" in html
     assert "เจ้าสั่ง / สถานะ" in html
+    assert "function vendorTitle" in html
+    assert "function vendorTitleTip" in html
+    assert "vendor-short" in html
+    assert "minmax(0,2.4fr) minmax(64px,0.55fr) 96px auto" in html
+    vendor_title_fn = html.split("function vendorTitle", 1)[1].split("function vendorTitleTip", 1)[0]
+    assert "name · ${code}" not in vendor_title_fn
+    assert "return code;" in vendor_title_fn
     line_fn = html.split("function lineHtml", 1)[1].split("function selectAllHtml", 1)[0]
     assert "col-item" in line_fn
     assert "col-status" in line_fn
     assert "productTools(row)" in line_fn
     assert "tools.actions" in line_fn
     assert "tools.extra" in line_fn
+    assert "vendorTitleTip(row)" in line_fn
     assert "linesTable(\"product\"" in html
     assert "linesTable(\"pick\"" in html
     assert "linesTable(\"hold\"" in html
     assert "linesTable(\"order\"" in html
+    hold_vendor = html.split("function holdLineHtml", 1)[1].split("function renderHold", 1)[0]
+    assert "vendor-short" in hold_vendor
+    assert "vendor_name + \" · \" + row.vendor" not in hold_vendor
 
 
 def test_suggest_returns_iclow_without_waiting_for_insight_scan(monkeypatch):
