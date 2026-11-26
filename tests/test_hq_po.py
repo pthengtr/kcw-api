@@ -1427,6 +1427,14 @@ def test_page_confirms_before_removing_a_waiting_line():
     assert "data-block-ordered" in html
     assert "/hq-po/api/iclow/" in html
     assert "data-l=" in html
+    assert "แก้ไขค่า L" in html
+    assert "function lowStockEdit" in html
+    assert "function lowStockLabel" in html
+    assert "lowStockEdit(row)" in html.split("function productTools", 1)[1].split("function linesHead", 1)[0]
+    assert "data-l=" in html.split("function lowStockEdit", 1)[1].split("function stockRecovered", 1)[0]
+    assert "data-l=" not in html.split("function lowStockLabel", 1)[1].split("function lowStockEdit", 1)[0]
+    assert "data-l=" not in html.split("function stockCellHtml", 1)[1].split("function lineHtml", 1)[0]
+    assert "HQ ถึง L แล้ว" in html.split("function stockCellHtml", 1)[1].split("function lineHtml", 1)[0]
     assert "/hq-po/api/products/" in html
     assert "qtymin" in html
     assert "ต้องมากกว่า 0" in html
