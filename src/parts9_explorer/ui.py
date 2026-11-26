@@ -248,16 +248,23 @@ main {
 }
 .results-table .num { text-align:right; font-variant-numeric:tabular-nums; }
 .results-table tr.result-sel { cursor:pointer; }
-/* Soft zebra on the row itself so the tint runs edge-to-edge. */
-.results-table tbody tr.result-sel:nth-child(even) {
+/* Soft zebra on the row itself so the tint runs edge-to-edge.
+   Exclude .active — zebra used to beat .active (higher specificity via
+   tbody + :nth-child), so even rows lost the blue selection highlight. */
+.results-table tbody tr.result-sel:nth-child(even):not(.active) {
   background:color-mix(in srgb, var(--text) 3%, var(--bg));
 }
-.results-table tbody tr.result-sel:nth-child(even) td { background:transparent; }
-.results-table tr.result-sel:hover td { background:var(--inset); }
-.results-table tr.result-sel.active td {
+.results-table tbody tr.result-sel:nth-child(even):not(.active) td { background:transparent; }
+.results-table tr.result-sel:hover:not(.active) td { background:var(--inset); }
+/* Active must win over zebra/hover for every row (odd and even). */
+.results-table tbody tr.result-sel.active td,
+.results-table tbody tr.result-sel.active:hover td {
   background:color-mix(in srgb, var(--acc) 14%, var(--card));
 }
-.results-table tr.result-sel.active { outline:none; }
+.results-table tbody tr.result-sel.active {
+  outline:none;
+  background:color-mix(in srgb, var(--acc) 14%, var(--card));
+}
 /* Fixed widths only (min-width is ignored under table-layout:fixed). Name takes leftover. */
 .results-table .col-code { width:5.75rem; }
 .results-table .col-name { width:auto; }
