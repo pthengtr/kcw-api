@@ -412,6 +412,8 @@ def test_explorer_page_shows_location_bits():
     assert "results-table" in html
     assert "card compact" in html
     assert "ราคาขาย 1" in html
+    assert "c-price-lbl" in html
+    assert "c-price-val" in html
     assert "ชื่อบริษัท" in html
     assert "หน่วยใหญ่" in html
     assert "กลุ่มสินค้า (CODE1)" in html
