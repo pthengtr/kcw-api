@@ -455,6 +455,76 @@ def submit_product(
         return RedirectResponse(url=f"/stock-check/?err={_q(exc)}", status_code=303)
 
 
+@router.post("/product/{bcode}/print-sticker")
+def print_product_sticker(
+    request: Request,
+    bcode: str,
+    qty: str = Form("1"),
+    source: str = Form("batch"),
+):
+    """Send one (or a few) TSPL barcode stickers to the shop TSC TE310."""
+    from src.stock_check.sticker import print_product_sticker as _print
+
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    src = source if source in {"batch", "ondemand", "manual"} else "ondemand"
+    try:
+        copies = int(float(str(qty or "1").replace(",", ".")))
+    except (TypeError, ValueError):
+        copies = 1
+    try:
+        result = _print(bcode, qty=copies)
+        msg = f"ส่งพิมพ์ {result['copies']} ดวง → TE310 ({result['host']})"
+        if user.get("id"):
+            service.bump_leases(str(user["id"]))
+        return RedirectResponse(
+            url=f"/stock-check/product/{_q(bcode)}?source={_q(src)}&ok={_q(msg)}",
+            status_code=303,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(
+            url=f"/stock-check/product/{_q(bcode)}?source={_q(src)}&err={_q(exc)}",
+            status_code=303,
+        )
+
+
+@router.post("/product/{bcode}/print-sticker")
+def print_product_sticker_route(
+    request: Request,
+    bcode: str,
+    qty: str = Form("1"),
+    source: str = Form("batch"),
+):
+    """Send one (or a few) TSPL barcode stickers to the shop TSC TE310."""
+    from src.stock_check.sticker import print_product_sticker as _print
+
+    service = _service()
+    user, err = _require_user(request, service)
+    if err:
+        return err
+    src = source if source in {"batch", "ondemand", "manual"} else "ondemand"
+    try:
+        copies = int(float(str(qty or "1").replace(",", ".")))
+    except (TypeError, ValueError):
+        copies = 1
+    try:
+        result = _print(bcode, qty=copies)
+        msg = f"ส่งพิมพ์ {result['copies']} ดวง → TE310 ({result['host']})"
+        if user.get("id"):
+            service.bump_leases(str(user["id"]))
+        return RedirectResponse(
+            url=f"/stock-check/product/{_q(bcode)}?source={_q(src)}&ok={_q(msg)}",
+            status_code=303,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(
+            url=f"/stock-check/product/{_q(bcode)}?source={_q(src)}&err={_q(exc)}",
+            status_code=303,
+        )
+
+
 @router.post("/product/{bcode}/skip")
 def skip_product(request: Request, bcode: str):
     service = _service()

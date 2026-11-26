@@ -1124,6 +1124,55 @@ def test_product_page_has_location_edit_control():
     assert "OB-2-12.3" in html
     assert "ประวัติแก้ Location" in html
     assert "Alice" in html
+    assert 'id="print-sticker-form"' in html
+    assert "/stock-check/product/P1/print-sticker" in html
+    assert "พิมพ์บาร์โค้ด" in html
+
+
+def test_print_product_sticker_sends_tspl(monkeypatch):
+    from src.stock_check import sticker as sticker_mod
+
+    monkeypatch.setattr(
+        sticker_mod,
+        "fetch_sticker_catalog",
+        lambda bcodes, engine=None: {
+            "12052328": {
+                "bcode": "12052328",
+                "descr": "ไส้กรอง",
+                "brand": "OT",
+                "model": "BT50",
+                "ui1": "อัน",
+                "location1": "E6-3-9",
+                "location2": "",
+                "mcode": "FL-2137",
+                "pcode": "JU2Z6",
+                "vendor": "7SSY1",
+                "costnet": 12.5,
+                "price1": 45.0,
+            }
+        },
+    )
+    sent: dict = {}
+
+    def _fake_send(payload, *, host, port, timeout=8.0):
+        sent["payload"] = payload
+        sent["host"] = host
+        sent["port"] = port
+
+    monkeypatch.setattr(sticker_mod, "send_tspl", _fake_send)
+    monkeypatch.setenv("STOCK_CHECK_STICKER_PRINTER_HOST", "192.168.1.59")
+    monkeypatch.setenv("STOCK_CHECK_STICKER_PRINTER_MODEL", "te310")
+    from src.stock_check.config import clear_stock_check_settings_cache
+
+    clear_stock_check_settings_cache()
+    result = sticker_mod.print_product_sticker("12052328", qty=2)
+    assert result["status"] == "sent"
+    assert result["host"] == "192.168.1.59"
+    assert result["copies"] == 2
+    assert sent["payload"].startswith(b"SIZE 102 mm,35 mm")
+    assert sent["host"] == "192.168.1.59"
+    assert sent["port"] == 9100
+    clear_stock_check_settings_cache()
 
 
 def test_update_product_location_verifies_reader_reread(monkeypatch):

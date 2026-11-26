@@ -58,6 +58,20 @@ class StockCheckSettings(BaseSettings):
     )
     public_base_url: str = Field(default="", validation_alias="PUBLIC_BASE_URL")
 
+    # TSC TE310 (raw TSPL :9100). Same layout as transfer receive stickers.
+    stock_check_sticker_printer_model: str = Field(
+        default="te310",
+        validation_alias="STOCK_CHECK_STICKER_PRINTER_MODEL",
+    )
+    stock_check_sticker_printer_host: str = Field(
+        default="",
+        validation_alias="STOCK_CHECK_STICKER_PRINTER_HOST",
+    )
+    stock_check_sticker_printer_port: int = Field(
+        default=9100,
+        validation_alias="STOCK_CHECK_STICKER_PRINTER_PORT",
+    )
+
     # Reuse companion MSSQL reader settings.
     # HQ default is Windows name KSS (LAN only, not Tailscale).
     # SYP boxes must use kss-pc (see _syp_sql_host) — never HQ KSS.
