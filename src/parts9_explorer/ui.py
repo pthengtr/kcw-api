@@ -233,19 +233,18 @@ main {
   .results-cards { display:none; }
 }
 .results-table {
-  /* min-width = sum of fixed cols + name floor so table-layout:fixed never crushes เบอร์แท้/โรงงาน. */
-  width:100%; min-width:58rem; border-collapse:separate; border-spacing:0; font-size:.78rem;
+  /* min-width = sum of fixed cols + name floor so table-layout:fixed never crushes เบอร์แท้/โรงงาน/HQ/SYP. */
+  width:100%; min-width:62rem; border-collapse:separate; border-spacing:0; font-size:.78rem;
   table-layout:fixed;
 }
 .results-table th, .results-table td {
-  border-bottom:1px solid var(--line); padding:.3rem .32rem; text-align:left; vertical-align:middle;
-  /* Clip every cell so long codes/headers never paint over the next column. */
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35;
+  border-bottom:1px solid var(--line); padding:.36rem .34rem; text-align:left; vertical-align:top;
+  line-height:1.35;
 }
 .results-table th {
   position:sticky; top:1.6rem; z-index:2;
   background:var(--bg); color:var(--muted); font-weight:500; font-size:.7rem;
-  letter-spacing:.01em;
+  letter-spacing:.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .results-table .num { text-align:right; font-variant-numeric:tabular-nums; }
 .results-table tr.result-sel { cursor:pointer; }
@@ -260,14 +259,22 @@ main {
 }
 .results-table tr.result-sel.active { outline:none; }
 /* Fixed widths only (min-width is ignored under table-layout:fixed). Name takes leftover. */
-.results-table .col-code { width:5.5rem; }
+.results-table .col-code { width:5.75rem; }
 .results-table .col-name { width:auto; }
-.results-table .col-model { width:5.25rem; }
-.results-table .col-brand { width:4.25rem; }
+.results-table .col-model { width:5.5rem; }
+.results-table .col-brand { width:4.5rem; }
 .results-table .col-pcode { width:8rem; }
 .results-table .col-mcode { width:8.5rem; }
 .results-table .col-price { width:4.75rem; }
-.results-table .col-stock { width:5.25rem; }
+.results-table .col-stock { width:7rem; }
+/* Text cells may wrap to 2 lines; clip overflow so neighbors stay clear. */
+.results-table .cell-code, .results-table .cell-name,
+.results-table .cell-model, .results-table .cell-brand,
+.results-table .cell-pcode, .results-table .cell-mcode,
+.results-table .cell-clip {
+  overflow:hidden; word-break:break-word; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+}
 .results-table .cell-code { font-weight:500; }
 .results-table .cell-name { font-weight:400; }
 .results-table .cell-pcode, .results-table .cell-mcode {
@@ -275,13 +282,15 @@ main {
 }
 .results-table .cell-price {
   font-weight:600; font-size:.86rem; color:var(--text); font-variant-numeric:tabular-nums;
+  white-space:nowrap;
 }
 .results-table .cell-stock {
-  font-variant-numeric:tabular-nums; font-weight:400;
+  font-variant-numeric:tabular-nums; font-weight:400; white-space:normal; overflow:visible;
 }
-.results-table .cell-stock .qty { font-size:.82rem; font-weight:500; }
+.results-table .cell-stock .qty { display:block; font-size:.82rem; font-weight:500; }
 .results-table .cell-stock .loc {
-  color:var(--muted); font-size:.7rem; font-weight:400; margin-left:.2rem;
+  display:block; color:var(--muted); font-size:.7rem; font-weight:400; margin-top:.06rem;
+  white-space:normal; overflow:visible; word-break:break-word; overflow-wrap:anywhere;
 }
 /* Mobile / tablet compact cards */
 .card.compact {
@@ -889,9 +898,9 @@ function stockCellHtml(qtyVal, loc, unit) {
   const locText = String(loc || "").trim();
   if (!hasQty && !locText) return "—";
   const q = hasQty ? (qty(qtyVal) + (unit ? " "+esc(unit) : "")) : "—";
-  // Keep qty + location on one line so rows stay even height and cells don't spill.
+  // Line 1: on-hand qty; line 2: full location (CSS .loc { display:block }, no ellipsis).
   return "<span class='qty'>"+q+"</span>"
-    + (locText ? " <span class='loc'>"+esc(locText)+"</span>" : "");
+    + (locText ? "<span class='loc'>"+esc(locText)+"</span>" : "");
 }
 function compactStockHtml(branch, qtyVal, loc, unit) {
   const hasQty = qtyVal != null && qtyVal !== "";
