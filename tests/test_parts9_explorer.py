@@ -418,12 +418,15 @@ def test_explorer_page_shows_location_bits():
     assert "toggleDetailPane" in html
     assert "detail-collapsed" in html
     assert "--shell-max:1560px" in html
-    assert "minmax(0,3fr) minmax(280px,2fr)" in html
+    assert "clamp(280px, 38vw, 560px)" in html
     assert "--detail-bg:#ffffff" in html
     assert 'class="shell"' in html
     # Results table: no OEM badge / unit column; unit stays beside stock qty.
     assert "nth-child(even)" in html
     assert "cell-price" in html
+    assert "cell-pcode" in html
+    assert "cell-mcode" in html
+    assert "min-width:6.5rem" in html
     assert "stock-total" in html
     assert "price-main" in html
     assert 'class=\'num\'>ราคาขาย</th><th>หน่วย</th>' not in html

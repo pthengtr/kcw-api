@@ -57,7 +57,9 @@ body { margin:0; font-family: Prompt, ui-sans-serif, system-ui, sans-serif; back
 header { position:sticky; top:0; z-index:5; background:var(--header); border-bottom:1px solid var(--line); padding:.45rem .75rem .5rem; }
 .shell {
   width:100%; max-width:var(--shell-max); margin-left:auto; margin-right:auto;
+  min-width:0;
 }
+header .shell { overflow-x:clip; }
 .brand { display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin:0 0 .35rem; }
 .brand-title { flex:1; min-width:0; }
 .brand-actions { display:flex; gap:.3rem; align-items:center; flex-shrink:0; }
@@ -66,8 +68,8 @@ header.search-collapsed .search-summary { display:block; }
 button.search-toggle { font-size:.78rem; padding:.35rem .55rem; white-space:nowrap; }
 h1 { font-size:.95rem; margin:0; letter-spacing:.02em; font-weight:650; }
 .row { display:flex; gap:.35rem; flex-wrap:wrap; align-items:center; }
-.search-form { display:grid; gap:.35rem; align-items:end; grid-template-columns:1fr; }
-.search-main { min-width:0; width:100%; display:flex; flex-direction:column; gap:.3rem; }
+.search-form { display:grid; gap:.35rem; align-items:end; grid-template-columns:minmax(0,1fr); max-width:100%; }
+.search-main { min-width:0; width:100%; max-width:100%; display:flex; flex-direction:column; gap:.3rem; }
 .search-main #productFilters { display:none; }
 .search-main.mode-product #productFilters { display:grid; }
 .product-filters { gap:.3rem; grid-template-columns:1fr; width:100%; }
@@ -77,9 +79,9 @@ h1 { font-size:.95rem; margin:0; letter-spacing:.02em; font-weight:650; }
 .search-main #codeSizePanel { display:none; }
 .search-main.mode-code-size #q { display:none; }
 .search-main.mode-code-size #codeSizePanel { display:flex; }
-.search-actions { display:flex; flex-wrap:wrap; gap:.3rem; align-items:center; }
+.search-actions { display:flex; flex-wrap:wrap; gap:.3rem; align-items:center; max-width:100%; }
 #site { min-width:4.25rem; max-width:5.25rem; flex:0 0 auto; }
-#searchBtn { flex:1; min-width:4.75rem; }
+#searchBtn { flex:1; min-width:4.75rem; white-space:nowrap; }
 #newProductBtn { white-space:nowrap; flex:0 0 auto; }
 input[type=search], .field-inp, #code1, #site, #searchBtn {
   font: inherit; font-size:var(--field-font); line-height:1.25;
@@ -179,15 +181,16 @@ main {
 }
 @media (min-width:880px) {
   main {
-    grid-template-columns:minmax(0,3fr) minmax(280px,2fr);
+    /* Flexible list/detail: list fills leftover; detail scales with viewport (~32–42%). */
+    grid-template-columns:minmax(0,1fr) clamp(280px, 38vw, 560px);
     height:calc(100vh - var(--hdr-h, 8.5rem));
     min-height:0;
   }
   main.detail-collapsed { grid-template-columns:1fr; }
   main.detail-collapsed .detail { display:none; }
   main.detail-collapsed .list { border-right:0; }
-  .list { border-right:1px solid var(--line); overflow:auto; min-height:0; }
-  .detail { overflow:auto; min-height:0; }
+  .list { border-right:1px solid var(--line); overflow:auto; min-height:0; min-width:0; }
+  .detail { overflow:auto; min-height:0; min-width:0; }
 }
 .list, .detail { padding:.5rem .7rem 1.25rem; }
 .detail { background:var(--detail-bg); }
@@ -220,53 +223,64 @@ main {
 .card .card-stock .lbl { color:var(--heading); font-weight:600; }
 .thumb { width:64px; height:64px; object-fit:cover; border-radius:.45rem; background:var(--inset); flex-shrink:0; }
 /* Desktop product table */
-.results-table-wrap { display:none; width:100%; }
+.results-table-wrap { display:none; width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
 .results-cards { display:flex; flex-direction:column; gap:.35rem; }
 @media (min-width:880px) {
   .results-table-wrap { display:block; }
   .results-cards { display:none; }
 }
 .results-table {
-  width:100%; border-collapse:separate; border-spacing:0; font-size:.78rem;
+  width:100%; min-width:52rem; border-collapse:separate; border-spacing:0; font-size:.78rem;
   table-layout:fixed;
 }
 .results-table th, .results-table td {
-  border-bottom:1px solid var(--line); padding:.36rem .3rem; text-align:left; vertical-align:top;
+  border-bottom:1px solid var(--line); padding:.32rem .28rem; text-align:left; vertical-align:middle;
 }
 .results-table th {
   position:sticky; top:1.6rem; z-index:2;
-  background:var(--bg); color:var(--muted); font-weight:650; font-size:.7rem;
+  background:var(--bg); color:var(--muted); font-weight:600; font-size:.7rem;
   white-space:nowrap; letter-spacing:.01em;
 }
 .results-table .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .results-table tr.result-sel { cursor:pointer; }
 .results-table tbody tr.result-sel:nth-child(even) td {
-  background:color-mix(in srgb, var(--text) 3.5%, var(--bg));
+  background:color-mix(in srgb, var(--text) 3%, var(--bg));
 }
 .results-table tr.result-sel:hover td { background:var(--inset); }
 .results-table tr.result-sel.active td {
   background:color-mix(in srgb, var(--acc) 14%, var(--card));
 }
 .results-table tr.result-sel.active { outline:none; }
-.results-table .col-code { width:6.4rem; }
-.results-table .col-name { width:22%; }
-.results-table .col-model { width:8%; }
-.results-table .col-brand { width:7%; }
-.results-table .col-pcode { width:9%; }
-.results-table .col-mcode { width:9%; }
-.results-table .col-price { width:5.6rem; }
-.results-table .col-stock { width:11%; }
-.results-table .cell-code { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.results-table .cell-name { line-height:1.3; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+/* Column mins sized for typical PARTS9 codes; name absorbs leftover width. */
+.results-table .col-code { width:5.75rem; min-width:5.25rem; }
+.results-table .col-name { width:auto; min-width:8.5rem; }
+.results-table .col-model { width:5.5rem; min-width:4.75rem; }
+.results-table .col-brand { width:4.25rem; min-width:3.5rem; }
+.results-table .col-pcode { width:7.25rem; min-width:6.5rem; }
+.results-table .col-mcode { width:7.25rem; min-width:6.5rem; }
+.results-table .col-price { width:5rem; min-width:4.5rem; }
+.results-table .col-stock { width:5.75rem; min-width:5rem; }
+.results-table .cell-clip {
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35;
+}
+.results-table .cell-code { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.results-table .cell-name {
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35; font-weight:400;
+}
+.results-table .cell-pcode, .results-table .cell-mcode {
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35;
+  font-variant-numeric:tabular-nums; font-weight:400;
+}
 .results-table .cell-price {
-  font-weight:750; font-size:.88rem; color:var(--text); font-variant-numeric:tabular-nums;
+  font-weight:650; font-size:.86rem; color:var(--text); font-variant-numeric:tabular-nums;
 }
 .results-table .cell-stock {
-  font-variant-numeric:tabular-nums; line-height:1.3; white-space:nowrap; font-weight:650;
+  font-variant-numeric:tabular-nums; line-height:1.25; white-space:nowrap; font-weight:400;
 }
-.results-table .cell-stock .qty { font-size:.84rem; }
+.results-table .cell-stock .qty { font-size:.82rem; font-weight:600; }
 .results-table .cell-stock .loc {
-  display:block; color:var(--heading); font-size:.72rem; font-weight:650; margin-top:.08rem;
+  display:block; color:var(--muted); font-size:.7rem; font-weight:400; margin-top:.04rem;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
 }
 /* Mobile / tablet compact cards */
 .card.compact {
@@ -275,22 +289,22 @@ main {
 }
 .card.compact .c-head {
   grid-column:1 / -1; display:flex; align-items:center; gap:.3rem; flex-wrap:wrap;
-  font-size:.82rem; font-weight:700;
+  font-size:.82rem; font-weight:600;
 }
 .card.compact .card-name {
-  grid-column:1 / -1; font-size:.84rem; font-weight:600; margin:0;
+  grid-column:1 / -1; font-size:.84rem; font-weight:400; margin:0;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3;
 }
 .card.compact .c-meta { font-size:.72rem; color:var(--muted); line-height:1.35; min-width:0; }
 .card.compact .c-price {
-  font-size:.9rem; font-weight:750; font-variant-numeric:tabular-nums;
+  font-size:.9rem; font-weight:650; font-variant-numeric:tabular-nums;
   text-align:right; align-self:start; white-space:nowrap;
 }
 .card.compact .c-stock {
   grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:.2rem .45rem;
   margin-top:.12rem; font-size:.74rem; font-variant-numeric:tabular-nums; line-height:1.3;
 }
-.card.compact .c-stock .lbl { font-weight:650; color:var(--heading); }
+.card.compact .c-stock .lbl { font-weight:600; color:var(--heading); }
 .card.compact .c-stock .loc { color:var(--muted); }
 .meta { font-size:.8rem; color:var(--muted); }
 .kv-line { font-size:.82rem; color:var(--text); line-height:1.4; margin:.08rem 0; }
@@ -898,13 +912,13 @@ function productRowHtml(p, i) {
   const s = productStockFields(p);
   const priceTxt = s.price1 != null ? Number(s.price1).toLocaleString("th-TH") : "—";
   return "<tr class='result-sel' data-pi='"+i+"' onclick='showP("+i+")'>"
-    +"<td class='cell-code'>"+esc(p.bcode)
+    +"<td class='cell-code' title='"+esc(p.bcode||"")+"'>"+esc(p.bcode)
     +(p.do_not_restock?" <span class='badge'>ไม่สั่งเพิ่ม</span>":"")+"</td>"
-    +"<td class='cell-name'>"+esc(p.descr||"—")+"</td>"
-    +"<td>"+esc(p.model||"")+"</td>"
-    +"<td>"+esc(p.brand||"")+"</td>"
-    +"<td>"+esc(p.pcode||"")+"</td>"
-    +"<td>"+esc(p.mcode||"")+"</td>"
+    +"<td class='cell-name' title='"+esc(p.descr||"")+"'>"+esc(p.descr||"—")+"</td>"
+    +"<td class='cell-clip cell-model' title='"+esc(p.model||"")+"'>"+esc(p.model||"")+"</td>"
+    +"<td class='cell-clip cell-brand' title='"+esc(p.brand||"")+"'>"+esc(p.brand||"")+"</td>"
+    +"<td class='cell-pcode' title='"+esc(p.pcode||"")+"'>"+esc(p.pcode||"")+"</td>"
+    +"<td class='cell-mcode' title='"+esc(p.mcode||"")+"'>"+esc(p.mcode||"")+"</td>"
     +"<td class='num cell-price'>"+priceTxt+"</td>"
     +"<td class='cell-stock'>"+stockCellHtml(s.qtyHq, s.locHq, s.unit)+"</td>"
     +"<td class='cell-stock'>"+stockCellHtml(s.qtySyp, s.locSyp, s.unit)+"</td>"
