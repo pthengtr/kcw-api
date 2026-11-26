@@ -423,6 +423,9 @@ def test_explorer_page_shows_location_bits():
     assert 'class="shell"' in html
     # Results table: no OEM badge / unit column; unit stays beside stock qty.
     assert "nth-child(even)" in html
+    # Selected row highlight must beat zebra (even rows) — :not(.active) on zebra.
+    assert "nth-child(even):not(.active)" in html
+    assert "tr.result-sel.active td" in html
     assert "cell-price" in html
     assert "cell-pcode" in html
     assert "cell-mcode" in html
