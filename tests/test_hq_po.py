@@ -543,6 +543,10 @@ def test_page_defaults_vendor_view():
     assert "function stockCellHtml" in html
     assert "--line-cols:" in html
     assert ".lines-table.mode-hold,.lines-table.mode-order" in html
+    assert "minmax(160px,1.55fr)" in html
+    assert ".badge{flex:none;font-size:12px;font-weight:650;border-radius:999px;padding:3px 8px;background:var(--blue-soft);color:var(--blue-deep);white-space:nowrap}" in html
+    assert 'class="badge wait"' in html
+    assert 'return "ค้าง " + days + " วัน"' in html
     head_fn = html.split("function linesHead", 1)[1].split("function linesTable", 1)[0]
     assert 'mode === "hold" || mode === "order"' in head_fn
     assert 'col-stock">คงเหลือ' in head_fn
