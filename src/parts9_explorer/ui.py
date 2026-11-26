@@ -267,13 +267,13 @@ main {
 .results-table .col-mcode { width:8.5rem; }
 .results-table .col-price { width:4.75rem; }
 .results-table .col-stock { width:7rem; }
-/* Text cells may wrap to 2 lines; clip overflow so neighbors stay clear. */
+/* Wrap up to ~2 lines without changing td display — webkit-box on td breaks table columns. */
 .results-table .cell-code, .results-table .cell-name,
 .results-table .cell-model, .results-table .cell-brand,
 .results-table .cell-pcode, .results-table .cell-mcode,
 .results-table .cell-clip {
   overflow:hidden; word-break:break-word; overflow-wrap:anywhere;
-  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  max-height:2.7em; /* 2 × line-height 1.35; keeps table-cell layout intact */
 }
 .results-table .cell-code { font-weight:500; }
 .results-table .cell-name { font-weight:400; }
@@ -285,12 +285,12 @@ main {
   white-space:nowrap;
 }
 .results-table .cell-stock {
-  font-variant-numeric:tabular-nums; font-weight:400; white-space:normal; overflow:visible;
+  font-variant-numeric:tabular-nums; font-weight:400; white-space:normal; overflow:hidden;
 }
 .results-table .cell-stock .qty { display:block; font-size:.82rem; font-weight:500; }
 .results-table .cell-stock .loc {
   display:block; color:var(--muted); font-size:.7rem; font-weight:400; margin-top:.06rem;
-  white-space:normal; overflow:visible; word-break:break-word; overflow-wrap:anywhere;
+  white-space:normal; word-break:break-word; overflow-wrap:anywhere;
 }
 /* Mobile / tablet compact cards */
 .card.compact {
