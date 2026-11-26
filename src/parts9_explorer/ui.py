@@ -695,7 +695,7 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
   <div class="search-panel" id="searchPanel">
   <form class="search-form" id="f" onsubmit="go(event); return false;">
     <div class="search-main">
-      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัส / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ นมฮPT / ที่เก็บ / I K ซีล / PO เลขบิล" autofocus />
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="รหัสสินค้า / เบอร์แท้ / เบอร์โรงงาน / ชื่อย่อ ACODE / ที่เก็บ / I K C ซีล 31 46 / ยี่ห้อ" autofocus />
       <div class="product-filters" id="productFilters">
         <label class="field" id="categoryField" for="category">
           <span class="field-lbl">หมวดสินค้า</span>
@@ -745,8 +745,8 @@ h3 { font-size:.95rem; margin:1rem 0 .35rem; color:var(--heading); }
     </div>
   </form>
   <div class="modes" id="modes">
-    <button type="button" data-k="all" class="on">ทั้งหมด</button>
-    <button type="button" data-k="product">สินค้า</button>
+    <button type="button" data-k="all">ทั้งหมด</button>
+    <button type="button" data-k="product" class="on">สินค้า</button>
     <button type="button" data-k="code_size">รหัส+ขนาด</button>
     <button type="button" data-k="si">SI บิลขาย</button>
     <button type="button" data-k="pi">PI บิลซื้อ</button>
@@ -841,7 +841,7 @@ const SORT_LABELS = {
   qty_desc: "คงเหลือมาก→น้อย",
   qty: "คงเหลือน้อย→มาก",
 };
-let KIND = "all";
+let KIND = "product";
 let ITEMS = [];
 let DOCS = [];
 let SUMMARY = null;
