@@ -18,7 +18,34 @@ def _amount_int(row: dict[str, Any]) -> int:
         return 0
 
 
+def _meta_row(label: str, value: str) -> dict:
+    """Label + value row for Minimal Classic body sections."""
+    return {
+        "type": "box",
+        "layout": "baseline",
+        "spacing": "sm",
+        "contents": [
+            {
+                "type": "text",
+                "text": label,
+                "size": "xs",
+                "color": "#64748B",
+                "flex": 2,
+            },
+            {
+                "type": "text",
+                "text": value[:500] or "-",
+                "size": "sm",
+                "color": "#1F2937",
+                "wrap": True,
+                "flex": 5,
+            },
+        ],
+    }
+
+
 def admin_flex_card(row: dict[str, Any]) -> dict:
+    """Approver Flex card — Minimal Classic: amount-first, compact actions."""
     short = int(row.get("short_code") or 0)
     rid = str(row.get("id") or "")
     name = (row.get("requester_name") or "ไม่ระบุ").strip()
@@ -35,49 +62,44 @@ def admin_flex_card(row: dict[str, Any]) -> dict:
         "altText": f"คำขอเบิก #{short} {amount:,} บาท",
         "contents": {
             "type": "bubble",
-            "size": "mega",
+            "size": "kilo",
             "body": {
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "sm",
+                "paddingAll": "16px",
                 "contents": [
                     {
                         "type": "text",
                         "text": f"คำขอเบิก #{short}",
+                        "size": "xs",
                         "weight": "bold",
-                        "size": "lg",
-                    },
-                    {
-                        "type": "text",
-                        "text": f"{name} · {status}",
-                        "size": "sm",
-                        "color": "#64748b",
+                        "color": "#64748B",
                     },
                     {
                         "type": "text",
                         "text": f"{amount:,} บาท",
                         "weight": "bold",
-                        "size": "xl",
-                        "margin": "md",
+                        "size": "xxl",
+                        "color": "#111111",
                     },
-                    {
-                        "type": "text",
-                        "text": body_reason[:500] or "-",
-                        "size": "sm",
-                        "wrap": True,
-                        "margin": "md",
-                    },
+                    {"type": "separator", "margin": "md"},
+                    _meta_row("ผู้ขอ", name),
+                    _meta_row("รายการ", body_reason or "-"),
+                    _meta_row("สถานะ", status),
                 ],
             },
             "footer": {
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "sm",
+                "paddingAll": "12px",
                 "contents": [
                     {
                         "type": "button",
                         "style": "primary",
-                        "color": "#059669",
+                        "height": "sm",
+                        "color": "#166534",
                         "action": {
                             "type": "postback",
                             "label": "อนุมัติ",
@@ -86,25 +108,37 @@ def admin_flex_card(row: dict[str, Any]) -> dict:
                         },
                     },
                     {
-                        "type": "button",
-                        "style": "secondary",
-                        "action": {
-                            "type": "postback",
-                            "label": "ขอข้อมูลเพิ่ม",
-                            "data": f"expense_cash:needs_info:{rid}",
-                            "displayText": f"ส่งกลับ {short}",
-                        },
-                    },
-                    {
-                        "type": "button",
-                        "style": "secondary",
-                        "color": "#dc2626",
-                        "action": {
-                            "type": "postback",
-                            "label": "ปฏิเสธ",
-                            "data": f"expense_cash:reject:{rid}",
-                            "displayText": f"ปฏิเสธ {short}",
-                        },
+                        "type": "box",
+                        "layout": "horizontal",
+                        "spacing": "sm",
+                        "contents": [
+                            {
+                                "type": "button",
+                                "style": "link",
+                                "height": "sm",
+                                "flex": 1,
+                                "color": "#64748B",
+                                "action": {
+                                    "type": "postback",
+                                    "label": "ขอข้อมูลเพิ่ม",
+                                    "data": f"expense_cash:needs_info:{rid}",
+                                    "displayText": f"ส่งกลับ {short}",
+                                },
+                            },
+                            {
+                                "type": "button",
+                                "style": "link",
+                                "height": "sm",
+                                "flex": 1,
+                                "color": "#B91C1C",
+                                "action": {
+                                    "type": "postback",
+                                    "label": "ปฏิเสธ",
+                                    "data": f"expense_cash:reject:{rid}",
+                                    "displayText": f"ปฏิเสธ {short}",
+                                },
+                            },
+                        ],
                     },
                 ],
             },
