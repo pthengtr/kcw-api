@@ -32,7 +32,7 @@ def _row_to_cloud_qr(row: Any) -> dict[str, Any]:
             mapping[key] = float(value)
     if mapping.get("id") is not None:
         mapping["id"] = str(mapping["id"])
-    for key in ("created_at", "updated_at", "last_polled_at", "paid_at"):
+    for key in ("created_at", "updated_at", "last_polled_at", "paid_at", "announced_at"):
         value = mapping.get(key)
         if isinstance(value, datetime):
             mapping[key] = value.isoformat()
@@ -319,4 +319,46 @@ def update_cloud_qr_payment(
     )
     with engine.begin() as conn:
         row = conn.execute(sql, params).first()
+    return _row_to_cloud_qr(row) if row else None
+
+
+def claim_next_cloud_qr_announce(
+    engine: Engine,
+    *,
+    worker_id: str,
+    lookback_hours: float = 24.0,
+) -> dict[str, Any] | None:
+    """Claim one paid cloud QR that has not been announced yet.
+
+    Uses ``FOR UPDATE SKIP LOCKED`` so two till speakers do not double-speak.
+    """
+    cleaned = str(worker_id or "").strip() or "announce"
+    hours = max(0.1, float(lookback_hours))
+    sql = text(
+        """
+        with next_row as (
+            select id
+            from tiger_pay.cloud_qr_payment
+            where status = 'C'
+              and announced_at is null
+              and coalesce(paid_at, created_at)
+                  > now() - (:lookback_hours * interval '1 hour')
+            order by coalesce(paid_at, created_at) asc
+            for update skip locked
+            limit 1
+        )
+        update tiger_pay.cloud_qr_payment as pay
+        set announced_at = now(),
+            announced_by = :worker_id,
+            updated_at = now()
+        from next_row
+        where pay.id = next_row.id
+        returning pay.*
+        """
+    )
+    with engine.begin() as conn:
+        row = conn.execute(
+            sql,
+            {"worker_id": cleaned[:120], "lookback_hours": hours},
+        ).first()
     return _row_to_cloud_qr(row) if row else None
