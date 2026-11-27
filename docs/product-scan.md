@@ -35,8 +35,9 @@ Quick-reply actions used:
 | Variable | Example | Purpose |
 |----------|---------|---------|
 | `PRODUCT_SCAN_SESSION_TTL_SECONDS` | `600` | How long the scan session stays open |
-| `LINE_CHANNEL_SECRET` | … | Webhook signature verification |
-| `LINE_CHANNEL_ACCESS_TOKEN` | … | Download image content + Reply API |
+| `LINE_CHANNEL_SECRET` | … | Webhook signature verification (primary OA) |
+| `LINE_CHANNEL_ACCESS_TOKEN` | … | Download image content + Reply API (primary OA) |
+| `LINE_CHANNEL_SECRET_2` / `LINE_CHANNEL_ACCESS_TOKEN_2` | … | Optional second OA during migration |
 
 System dependency for barcode decode: `libzbar0` (Debian/Ubuntu) or Nix `zbar`
 so `pyzbar` can load. Railway installs these via `nixpacks.toml`.
