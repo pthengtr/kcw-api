@@ -126,6 +126,21 @@ def test_multicast_with_two_channels_fans_out(monkeypatch):
     assert pushed == ["U1", "U2"]
 
 
+def test_outbound_prefers_secondary_as_new(monkeypatch):
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-a")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-a")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET_2", "sec-b")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN_2", "tok-b")
+
+    channel = line_bot.outbound_line_channel("new")
+    assert channel is not None
+    assert channel.access_token == "tok-b"
+
+    legacy = line_bot.outbound_line_channel("legacy")
+    assert legacy is not None
+    assert legacy.access_token == "tok-a"
+
+
 def test_fetch_display_name_tries_both_tokens(monkeypatch):
     monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-a")
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-a")

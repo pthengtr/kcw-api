@@ -92,6 +92,49 @@ def use_line_channel(channel: LineChannel | None):
         _active_access_token.reset(reset)
 
 
+def find_line_channel(name: str | None) -> LineChannel | None:
+    """Resolve a channel by name, slot alias, or 1-based index."""
+    channels = configured_line_channels()
+    if not channels:
+        return None
+    want = (name or "").strip().lower()
+    if not want:
+        return None
+    if want in {"1", "primary", "default"}:
+        return channels[0]
+    if want in {"2", "secondary"}:
+        return channels[1] if len(channels) > 1 else channels[0]
+    for channel in channels:
+        if channel.name.lower() == want:
+            return channel
+    return None
+
+
+def outbound_line_channel(preference: str | None = None) -> LineChannel | None:
+    """Pick the Messaging API channel for proactive push/multicast.
+
+    ``preference`` (or the caller-provided env) may be a channel name, ``primary``,
+    ``secondary``, ``new``, ``legacy``, or ``1``/``2``. When unset and two
+    channels are configured, prefers secondary — the usual slot for a new OA
+    added beside the legacy primary during migration.
+    """
+    channels = configured_line_channels()
+    if not channels:
+        return None
+    want = (preference or "").strip().lower()
+    if want in {"new"}:
+        # Convention: secondary is the newly added OA when dual-configured.
+        return channels[1] if len(channels) > 1 else channels[0]
+    if want in {"legacy", "old"}:
+        return channels[0]
+    found = find_line_channel(want) if want else None
+    if found:
+        return found
+    if len(channels) > 1:
+        return channels[1]
+    return channels[0]
+
+
 def _channel_secret() -> str:
     # Read at call time. CLI jobs load .env after this module is imported.
     channels = configured_line_channels()
