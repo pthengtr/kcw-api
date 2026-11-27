@@ -277,9 +277,16 @@ def _orphan_voucher_bill_rows(
         return []
 
     rows: list[dict[str, Any]] = []
+    from src.expense_cash.tiger import is_expense_cash_pos_bill_id
+
     for attempt in attempts:
         bill_id = str(attempt.get("pos_bill_id") or "")
         if not bill_id or bill_id in seen_bill_ids:
+            continue
+        # LINE expense-cash reuses tiger_pay.voucher_attempt with a synthetic
+        # bill id; keep those off the till CN list (orphan path is for POS
+        # non-KCN returns only).
+        if is_expense_cash_pos_bill_id(bill_id):
             continue
         seen_bill_ids.add(bill_id)
         status = str(attempt.get("status") or "")

@@ -28,6 +28,7 @@ logger = logging.getLogger("kcw.expense_cash.tiger")
 
 QR_BUCKET = os.getenv("SUPABASE_IMAGE_BUCKET", "pictures")
 QR_FOLDER = "expense-cash"
+EXPENSE_CASH_POS_BILL_PREFIX = "expense-cash:"
 
 
 class ExpenseCashTigerError(Exception):
@@ -38,7 +39,12 @@ class ExpenseCashTigerError(Exception):
 
 
 def expense_cash_pos_bill_id(request_id: str) -> str:
-    return f"expense-cash:{request_id}"
+    return f"{EXPENSE_CASH_POS_BILL_PREFIX}{request_id}"
+
+
+def is_expense_cash_pos_bill_id(pos_bill_id: str | None) -> bool:
+    """True for LINE expense-cash synthetic bill ids (not POS CN)."""
+    return str(pos_bill_id or "").startswith(EXPENSE_CASH_POS_BILL_PREFIX)
 
 
 def _supabase():

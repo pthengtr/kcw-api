@@ -392,7 +392,13 @@ def companion_active_payments(request: Request) -> dict:
     _require_companion_user(request)
     engine = get_engine()
     attempts = repos.list_active_payment_attempts(engine)
-    vouchers = voucher_repos.list_active_voucher_attempts(engine)
+    from src.expense_cash.tiger import is_expense_cash_pos_bill_id
+
+    vouchers = [
+        row
+        for row in voucher_repos.list_active_voucher_attempts(engine)
+        if not is_expense_cash_pos_bill_id(row.get("pos_bill_id"))
+    ]
     try:
         cloud_qr = cloud_qr_repos.list_active_cloud_qr_payments(engine)
     except Exception:

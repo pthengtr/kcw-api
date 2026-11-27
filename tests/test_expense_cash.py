@@ -286,7 +286,12 @@ def test_postback_prefix():
 
 
 def test_synthetic_pos_bill_id():
+    from src.expense_cash.tiger import is_expense_cash_pos_bill_id
+
     assert expense_cash_pos_bill_id("uuid-here") == "expense-cash:uuid-here"
+    assert is_expense_cash_pos_bill_id("expense-cash:uuid-here")
+    assert not is_expense_cash_pos_bill_id("574142")
+    assert not is_expense_cash_pos_bill_id(None)
 
 
 def test_expense_commands_use_cash_approver_group_not_admin_exec():
