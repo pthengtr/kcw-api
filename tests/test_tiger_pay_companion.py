@@ -927,3 +927,38 @@ def test_row_to_bill_skips_nan_aftertax():
     row2 = row.copy()
     row2["AFTERTAX"] = Decimal("NaN")
     assert row_to_bill(row2, kind="collect") is None
+
+
+def test_row_to_bill_classifies_part9_cash_vs_chk_tender():
+    import pandas as pd
+    from decimal import Decimal
+    from src.companion.bill_mapping import row_to_bill
+
+    base = {
+        "ID": "1",
+        "BILLNO": "8K69-001",
+        "AFTERTAX": "100.00",
+        "BILLDATE": "2026-09-17",
+        "BILLTIME": "10:00:00",
+        "PAID": "N",
+        "CASHED": "Y",
+        "SALE": "x",
+    }
+    cash = row_to_bill(pd.Series({**base, "CASHAMT": "100", "CHKAMT": "0"}), kind="collect")
+    assert cash is not None
+    assert cash.cash_amt == Decimal("100")
+    assert cash.chk_amt == Decimal("0")
+    assert cash.pos_tender() == "cash"
+    assert cash.to_dict()["pos_tender"] == "cash"
+
+    chk = row_to_bill(pd.Series({**base, "CASHAMT": "", "CHKAMT": "100"}), kind="collect")
+    assert chk is not None
+    assert chk.pos_tender() == "chk"
+
+    mixed = row_to_bill(pd.Series({**base, "CASHAMT": "40", "CHKAMT": "60"}), kind="collect")
+    assert mixed is not None
+    assert mixed.pos_tender() == "mixed"
+
+    unknown = row_to_bill(pd.Series(base), kind="collect")
+    assert unknown is not None
+    assert unknown.pos_tender() == "unknown"

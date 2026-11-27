@@ -60,6 +60,8 @@ def test_list_mssql_bills_uses_sql_and_maps_rows():
                 "PAID": "N",
                 "CASHED": "Y",
                 "SALE": "alice",
+                "CASHAMT": "250.00",
+                "CHKAMT": "0",
             },
             {
                 "ID": "106",
@@ -70,6 +72,8 @@ def test_list_mssql_bills_uses_sql_and_maps_rows():
                 "PAID": "N",
                 "CASHED": "Y",
                 "SALE": "frank",
+                "CASHAMT": "0",
+                "CHKAMT": "77.00",
             },
         ]
     )
@@ -88,9 +92,12 @@ def test_list_mssql_bills_uses_sql_and_maps_rows():
     assert bills[0].bill_number == "B2607140001"
     assert bills[0].amount == Decimal("250.00")
     assert bills[0].salesperson == "alice"
+    assert bills[0].pos_tender() == "cash"
     sql_text = str(mocked.call_args.args[0])
     assert "NOT LIKE 'TF%'" in sql_text
     assert "CASHED" in sql_text
+    assert "[CASHAMT]" in sql_text
+    assert "[CHKAMT]" in sql_text
     assert "[dbo].[SalesBills]" in sql_text
     assert "GETDATE()" not in sql_text
 

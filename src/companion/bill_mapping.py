@@ -24,6 +24,12 @@ REQUIRED_COLUMNS = (
     "CASHED",
 )
 
+# Optional Part9 tender columns (SIMAS). Not required so older CSV dumps still load.
+OPTIONAL_TENDER_COLUMNS = (
+    "CASHAMT",
+    "CHKAMT",
+)
+
 
 def normalize_flag(value: object) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -127,6 +133,25 @@ def _parse_aftertax(value: object) -> Decimal | None:
     return amount
 
 
+def _parse_tender_amount(value: object) -> Decimal | None:
+    """Parse Part9 CASHAMT/CHKAMT; blank/missing → None (unknown, not zero)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, Decimal):
+        amount = value
+    else:
+        text = blank(value)
+        if not text:
+            return None
+        try:
+            amount = Decimal(text)
+        except (InvalidOperation, AttributeError, TypeError, ValueError):
+            return None
+    if not amount.is_finite():
+        return None
+    return amount
+
+
 def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
     amount = _parse_aftertax(row.get("AFTERTAX"))
     if amount is None:
@@ -172,6 +197,8 @@ def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
     pos_status = blank(row.get("PAID")) or "unknown"
     salesperson_raw = blank(row.get("SALE"))
     salesperson = salesperson_raw or None
+    cash_amt = _parse_tender_amount(row.get("CASHAMT"))
+    chk_amt = _parse_tender_amount(row.get("CHKAMT"))
 
     return PosBill(
         id=bill_id,
@@ -181,6 +208,8 @@ def row_to_bill(row: pd.Series, *, kind: str | None = None) -> PosBill | None:
         pos_status=pos_status,
         salesperson=salesperson,
         kind=resolved_kind,
+        cash_amt=cash_amt,
+        chk_amt=chk_amt,
     )
 
 

@@ -19,11 +19,33 @@ class PosBill:
     pos_status: str = "open"
     salesperson: str | None = None
     kind: str = "collect"  # collect | payout
+    # Part9 SIMAS tenders — Companion cash vs QR lists split on these.
+    cash_amt: Decimal | None = None
+    chk_amt: Decimal | None = None
+
+    def pos_tender(self) -> str:
+        """Classify Part9 tender: cash | chk | mixed | unknown."""
+        cash = self.cash_amt is not None and self.cash_amt > 0
+        chk = self.chk_amt is not None and self.chk_amt > 0
+        if cash and chk:
+            return "mixed"
+        if cash:
+            return "cash"
+        if chk:
+            return "chk"
+        return "unknown"
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
         payload["amount"] = float(self.amount)
         payload["created_at"] = self.created_at.isoformat()
+        payload["cash_amt"] = (
+            float(self.cash_amt) if self.cash_amt is not None else None
+        )
+        payload["chk_amt"] = (
+            float(self.chk_amt) if self.chk_amt is not None else None
+        )
+        payload["pos_tender"] = self.pos_tender()
         return payload
 
 
