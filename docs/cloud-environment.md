@@ -145,7 +145,7 @@ Do not commit real values.
 - `LINE_CHANNEL_ACCESS_TOKEN`
 - `LINE_CHANNEL_SECRET_2` / `LINE_CHANNEL_ACCESS_TOKEN_2` (optional second OA; same `/line-webhook`)
 - `LINE_CHANNEL_NAME` / `LINE_CHANNEL_NAME_2` (optional labels for logs)
-- `EXPENSE_CASH_LINE_CHANNEL` (optional; default `new` → secondary when dual OA; expense-cash pushes only)
+- `EXPENSE_CASH_LINE_CHANNEL` (optional; default `all` fan-out; or `new`/`primary`/`secondary` to pin)
 - `PRODUCT_SCAN_SESSION_TTL_SECONDS` (optional, default `600`)
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`

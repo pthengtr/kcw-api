@@ -101,7 +101,41 @@ def test_notify_admins_skips_requester_and_uses_multicast():
         push.assert_not_called()
 
 
-def test_notify_admins_binds_new_line_channel(monkeypatch):
+def test_notify_admins_fans_out_to_both_line_channels(monkeypatch):
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-old")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-old")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET_2", "sec-new")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN_2", "tok-new")
+    monkeypatch.delenv("EXPENSE_CASH_LINE_CHANNEL", raising=False)
+
+    engine = MagicMock()
+    row = {
+        "id": "req-1",
+        "short_code": 44,
+        "amount": 10,
+        "reason": "ค่าขนส่ง",
+        "status": "pending",
+        "requester_line_user_id": "U_requester",
+    }
+    tokens: list[str] = []
+
+    def fake_push(to, messages):
+        import src.bot.line_bot as line_bot
+
+        tokens.append(line_bot._access_token())
+
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=[PHU_LINE_USER_ID],
+        ),
+        patch("src.expense_cash.notify.push_line_messages", side_effect=fake_push),
+    ):
+        assert notify_admins_new_request(engine, row) is True
+    assert tokens == ["tok-old", "tok-new"]
+
+
+def test_notify_admins_can_pin_new_channel(monkeypatch):
     monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-old")
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-old")
     monkeypatch.setenv("LINE_CHANNEL_SECRET_2", "sec-new")
@@ -117,12 +151,12 @@ def test_notify_admins_binds_new_line_channel(monkeypatch):
         "status": "pending",
         "requester_line_user_id": "U_requester",
     }
-    captured = {}
+    tokens: list[str] = []
 
     def fake_multi(ids, messages):
         import src.bot.line_bot as line_bot
 
-        captured["token"] = line_bot._access_token()
+        tokens.append(line_bot._access_token())
         return ids
 
     with (
@@ -136,7 +170,7 @@ def test_notify_admins_binds_new_line_channel(monkeypatch):
         ),
     ):
         assert notify_admins_new_request(engine, row) is True
-    assert captured["token"] == "tok-new"
+    assert tokens == ["tok-new"]
 
 
 def test_notify_admins_falls_back_when_multicast_fails():

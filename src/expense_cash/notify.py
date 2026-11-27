@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 
 from sqlalchemy.engine import Engine
 
 from src.bot.line_bot import (
     LineChannel,
+    configured_line_channels,
     multicast_line_messages,
     outbound_line_channel,
     push_line_messages,
@@ -19,27 +19,76 @@ from src.expense_cash import copy, repos
 logger = logging.getLogger("kcw.expense_cash.notify")
 
 
-def _expense_line_channel() -> LineChannel | None:
-    """Always push expense-cash notifies on the configured (new) OA.
+def _expense_line_channels() -> list[LineChannel]:
+    """Channels that should receive expense-cash pushes.
+
+    Default ``all`` fans out to every configured OA so approvers who only
+    added v1 still get Flex, and dual users see it on both chats.
 
     Set ``EXPENSE_CASH_LINE_CHANNEL`` to ``new`` / ``secondary`` / ``primary``
-    or a ``LINE_CHANNEL_NAME`` label. Default with two channels: secondary.
+    (or a ``LINE_CHANNEL_NAME``) to pin a single OA.
     """
     pref = (
         os.getenv("EXPENSE_CASH_LINE_CHANNEL")
         or os.getenv("LINE_OUTBOUND_CHANNEL")
-        or "new"
-    )
-    return outbound_line_channel(pref)
+        or "all"
+    ).strip().lower()
+    channels = configured_line_channels()
+    if not channels:
+        return []
+    if pref in {"all", "both", "*"}:
+        return channels
+    chosen = outbound_line_channel(pref)
+    return [chosen] if chosen else channels
 
 
-@contextmanager
-def _on_expense_channel() -> Iterator[LineChannel | None]:
-    channel = _expense_line_channel()
-    if channel:
-        logger.info("expense-cash LINE channel=%s", channel.name)
-    with use_line_channel(channel):
-        yield channel
+def _deliver_messages(ids: list[str], messages: list[dict]) -> int:
+    """Deliver to each recipient on each expense channel. Returns success count."""
+    if not ids or not messages:
+        return 0
+
+    channels = _expense_line_channels()
+    if not channels:
+        # No channel objects (misconfig) — last-resort unbound push.
+        delivered = 0
+        try:
+            multicast_line_messages(ids, messages)
+            return len(ids)
+        except Exception:
+            logger.exception("Unbound multicast expense notify failed; per-user push")
+        for uid in ids:
+            try:
+                push_line_messages(uid, messages)
+                delivered += 1
+            except Exception:
+                logger.exception("Failed expense push to %s", uid)
+        return delivered
+
+    delivered = 0
+    for channel in channels:
+        logger.info("expense-cash LINE channel=%s recipients=%s", channel.name, len(ids))
+        with use_line_channel(channel):
+            # Multicast only when a single OA is targeted — mixed friendship on
+            # a second OA makes multicast fail the whole batch.
+            if len(channels) == 1:
+                try:
+                    multicast_line_messages(ids, messages)
+                    delivered += len(ids)
+                    continue
+                except Exception:
+                    logger.exception(
+                        "Multicast expense notify failed on %s; per-user push",
+                        channel.name,
+                    )
+            for uid in ids:
+                try:
+                    push_line_messages(uid, messages)
+                    delivered += 1
+                except Exception:
+                    logger.exception(
+                        "Failed expense push on %s to %s", channel.name, uid
+                    )
+    return delivered
 
 
 def _amount_int(row: dict[str, Any]) -> int:
@@ -212,34 +261,20 @@ def notify_admins_new_request(
         return False
 
     msg = admin_flex_card(row)
-    with _on_expense_channel():
-        try:
-            multicast_line_messages(ids, [msg])
-            return True
-        except Exception:
-            logger.exception(
-                "Multicast admin notify failed for #%s; falling back to per-user push",
-                row.get("short_code"),
-            )
-
-        delivered = 0
-        for uid in ids:
-            try:
-                push_line_messages(uid, [msg])
-                delivered += 1
-            except Exception:
-                logger.exception("Failed to push admin notify to %s", uid)
-        return delivered > 0
+    delivered = _deliver_messages(ids, [msg])
+    if delivered == 0:
+        logger.warning(
+            "No expense-cash admin notify delivered for #%s",
+            row.get("short_code"),
+        )
+    return delivered > 0
 
 
 def notify_requester_text(line_user_id: str, text: str) -> None:
     if not line_user_id:
         return
-    with _on_expense_channel():
-        try:
-            push_line_messages(line_user_id, [{"type": "text", "text": text[:5000]}])
-        except Exception:
-            logger.exception("Failed to push requester text")
+    if _deliver_messages([line_user_id], [{"type": "text", "text": text[:5000]}]) == 0:
+        logger.warning("Failed to push requester text to %s", line_user_id)
 
 
 def notify_requester_approved(
@@ -268,11 +303,8 @@ def notify_requester_approved(
                 "previewImageUrl": qr_image_url,
             }
         )
-    with _on_expense_channel():
-        try:
-            push_line_messages(line_user_id, messages)
-        except Exception:
-            logger.exception("Failed to push approved QR")
+    if _deliver_messages([line_user_id], messages) == 0:
+        logger.warning("Failed to push approved QR to %s", line_user_id)
 
 
 def _peer_notify_enabled() -> bool:
@@ -304,17 +336,5 @@ def notify_other_approvers_approved(
         requester_name=(row.get("requester_name") or None),
     )
     msg = {"type": "text", "text": text[:5000]}
-    with _on_expense_channel():
-        try:
-            multicast_line_messages(ids, [msg])
-            return
-        except Exception:
-            logger.exception(
-                "Multicast peer-approve notify failed for #%s; falling back",
-                short,
-            )
-        for uid in ids:
-            try:
-                push_line_messages(uid, [msg])
-            except Exception:
-                logger.exception("Failed to push peer-approve notify to %s", uid)
+    if _deliver_messages(ids, [msg]) == 0:
+        logger.warning("No peer-approve notify delivered for #%s", short)
