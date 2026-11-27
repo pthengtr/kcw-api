@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.companion.bill_mapping import (
+    OPTIONAL_TENDER_COLUMNS,
     REQUIRED_COLUMNS,
     frames_to_bills,
     is_excluded_bill_number,
@@ -33,6 +34,9 @@ def _load_cash_frame(csv_path: Path) -> pd.DataFrame:
     usecols = list(REQUIRED_COLUMNS)
     if "SALE" in available:
         usecols.append("SALE")
+    for col in OPTIONAL_TENDER_COLUMNS:
+        if col in available:
+            usecols.append(col)
 
     frame = pd.read_csv(csv_path, usecols=usecols, dtype=str, keep_default_na=False)
     frame = frame[frame["CASHED"].map(normalize_flag) == "Y"].copy()

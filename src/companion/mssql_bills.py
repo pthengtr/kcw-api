@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from src.companion.bill_mapping import (
+    OPTIONAL_TENDER_COLUMNS,
     REQUIRED_COLUMNS,
     frames_to_bills,
     row_to_bill,
@@ -64,7 +65,8 @@ def clear_mssql_engine_cache() -> None:
 def _select_columns_sql() -> str:
     # Same shape as the SIMAS CSV export; SALE is optional at the app layer
     # but expected on the bill-header table/view (NULL is fine).
-    cols = list(REQUIRED_COLUMNS) + ["SALE"]
+    # CASHAMT/CHKAMT drive Companion cash vs QR list split (Part9 tender).
+    cols = list(REQUIRED_COLUMNS) + ["SALE"] + list(OPTIONAL_TENDER_COLUMNS)
     return ", ".join(f"[{c}]" for c in cols)
 
 

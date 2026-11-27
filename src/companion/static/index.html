@@ -1063,21 +1063,21 @@
   </header>
   <div id="message"></div>
   <section class="hub-view" id="hubView" aria-label="เมนู Companion">
-    <p class="hub-intro">แยกคิวชัดเจน: เงินสดใช้ตู้ · QR ไป Tiger backoffice (ไม่ค้างตู้) · CN จ่ายคืนที่ตู้</p>
+    <p class="hub-intro">แยกตามที่ Part9 เลือก: เงินสด (CASHAMT) เข้าตู้ · โอน/เช็ค (CHKAMT) เป็น QR ออนไลน์ · CN จ่ายคืนที่ตู้</p>
     <div class="hub-tiles">
       <button type="button" class="hub-tile hub-tile-cash" data-process="cash">
         <div class="hub-tile-top">
           <span class="hub-tile-title">เงินสดเข้าตู้</span>
           <span class="hub-tile-badge" id="hubBadgeCash">—</span>
         </div>
-        <span class="hub-tile-sub">ส่งบิลให้ลูกค้าจ่ายเงินสดที่ตู้ Tiger</span>
+        <span class="hub-tile-sub">บิลที่ Part9 เลือกเงินสด — ส่งเข้าตู้ Tiger</span>
       </button>
       <button type="button" class="hub-tile hub-tile-qr" data-process="qr">
         <div class="hub-tile-top">
           <span class="hub-tile-title">QR ออนไลน์</span>
           <span class="hub-tile-badge" id="hubBadgeQr">—</span>
         </div>
-        <span class="hub-tile-sub">สร้าง QR จาก Tiger backoffice — ไม่ใช้คิวตู้</span>
+        <span class="hub-tile-sub">บิลโอน/เช็คจาก Part9 — QR Tiger backoffice</span>
       </button>
       <button type="button" class="hub-tile hub-tile-cn" data-process="cn">
         <div class="hub-tile-top">
@@ -1184,16 +1184,16 @@
     const PROCESS_META = {
       cash: {
         title: "เงินสดเข้าตู้",
-        sub: "ส่งบิลไปตู้ — รอลูกค้าใส่เงิน ยังไม่ถือว่าชำระจนกว่าตู้ยืนยัน",
+        sub: "บิล Part9 ที่เลือกเงินสด (CASHAMT) — ส่งเข้าตู้",
         header: "เงินสด → ตู้ Tiger",
-        billsTitle: "บิลเงินสด (เข้าตู้)",
+        billsTitle: "บิลเงินสดจาก Part9",
         emptyTimeline: "ยังไม่มีรายการชำระ กด「ส่งเงินสด」",
       },
       qr: {
         title: "QR ออนไลน์",
-        sub: "สร้าง QR จาก Tiger backoffice — ไม่ใช้คิวตู้",
+        sub: "บิล Part9 โอน/เช็ค (CHKAMT) — QR backoffice",
         header: "QR ออนไลน์ → Tiger backoffice",
-        billsTitle: "บิล QR ออนไลน์",
+        billsTitle: "บิลโอน/เช็คจาก Part9",
         emptyTimeline: "ยังไม่มี QR กด「สร้าง QR ออนไลน์」",
       },
       cn: {
@@ -1541,6 +1541,17 @@
       return cleaned || "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
     }
 
+    // Cloud QR keeps raw Tiger codes (C/E/X); box attempts use English statuses.
+    const SUCCESS_TERMINAL_STATUSES = new Set(["success", "used", "C"]);
+    const CANCELLED_TERMINAL_STATUSES = new Set(["cancelled", "expired", "X", "E"]);
+    const FAILED_TERMINAL_STATUSES = new Set(["failed"]);
+
+    function isTerminalTransitionStatus(status) {
+      return SUCCESS_TERMINAL_STATUSES.has(status)
+        || CANCELLED_TERMINAL_STATUSES.has(status)
+        || FAILED_TERMINAL_STATUSES.has(status);
+    }
+
     function maybeNotifyStatusTransitions(bills) {
       const nextMap = {};
       const transitions = [];
@@ -1550,7 +1561,7 @@
         if (!state.statusSnapshotReady) continue;
         const prev = state.statusByBillId[bill.id];
         if (!prev || prev === status) continue;
-        if (ACTIVE_STATUSES.has(prev) && (status === "success" || status === "used" || status === "cancelled" || status === "failed" || status === "expired")) {
+        if (ACTIVE_STATUSES.has(prev) && isTerminalTransitionStatus(status)) {
           transitions.push({ bill, prev, status });
         }
       }
@@ -1564,47 +1575,54 @@
       const chosen = modeTransitions.find((t) => t.bill.id === state.selectedBillId) || modeTransitions[0];
       const billNo = chosen.bill.bill_number;
       const kind = attemptKind(chosen.bill);
-      if (chosen.status === "success" || chosen.status === "used") {
-        closeQrDialog();
+      let alertOpts = null;
+      if (SUCCESS_TERMINAL_STATUSES.has(chosen.status)) {
         if (kind === "voucher" || isPayoutBill(chosen.bill)) {
-          showAlertDialog({
+          alertOpts = {
             type: "success",
             title: "จ่ายคืนสำเร็จ",
             message: `บิล ${billNo} — ตู้จ่ายเงินสดผ่าน voucher แล้ว`,
-          });
+          };
         } else if (kind === "cloud_qr") {
-          showAlertDialog({
+          alertOpts = {
             type: "success",
             title: "ชำระ QR สำเร็จ",
             message: `บิล ${billNo} — Tiger backoffice ยืนยันชำระแล้ว`,
-          });
+          };
         } else if (kind === "cash") {
-          showAlertDialog({
+          alertOpts = {
             type: "success",
             title: "ชำระเงินสดสำเร็จ",
             message: `บิล ${billNo} — ตู้ยืนยันรับเงินแล้ว`,
-          });
+          };
         } else {
-          showAlertDialog({
+          alertOpts = {
             type: "success",
             title: "ชำระสำเร็จ",
             message: `บิล ${billNo} ชำระเรียบร้อยแล้ว`,
-          });
+          };
         }
-      } else if (chosen.status === "cancelled" || chosen.status === "expired") {
-        closeQrDialog();
-        showAlertDialog({
+      } else if (CANCELLED_TERMINAL_STATUSES.has(chosen.status)) {
+        alertOpts = {
           type: "info",
-          title: "ยกเลิกรายการแล้ว",
-          message: `บิล ${billNo} ถูกยกเลิกเรียบร้อยแล้ว`,
-        });
+          title: chosen.status === "E" || chosen.status === "expired"
+            ? "QR หมดอายุ"
+            : "ยกเลิกรายการแล้ว",
+          message: chosen.status === "E" || chosen.status === "expired"
+            ? `บิล ${billNo} — QR หมดอายุแล้ว`
+            : `บิล ${billNo} ถูกยกเลิกเรียบร้อยแล้ว`,
+        };
       } else {
-        closeQrDialog();
-        showAlertDialog({
+        alertOpts = {
           type: "error",
           title: "รายการล้มเหลว",
           message: `บิล ${billNo} ไม่สำเร็จ (${statusLabel(chosen.status)})`,
-        });
+        };
+      }
+      // Close QR first; defer success modal so LINE/WebView accepts the new dialog.
+      closeQrDialog();
+      if (alertOpts) {
+        setTimeout(() => showAlertDialog(alertOpts), 50);
       }
     }
 
@@ -1815,6 +1833,24 @@
       return !isPayoutBill(bill);
     }
 
+    function tenderHints(bill) {
+      if (bill?.pos_tender === "cash" || bill?.pos_tender === "chk"
+        || bill?.pos_tender === "mixed" || bill?.pos_tender === "unknown") {
+        return { tender: bill.pos_tender };
+      }
+      const cashRaw = bill?.cash_amt;
+      const chkRaw = bill?.chk_amt;
+      const cash = cashRaw == null || cashRaw === "" ? null : Number(cashRaw);
+      const chk = chkRaw == null || chkRaw === "" ? null : Number(chkRaw);
+      const hasCash = cash != null && Number.isFinite(cash) && cash > 0;
+      const hasChk = chk != null && Number.isFinite(chk) && chk > 0;
+      if (hasCash && hasChk) return { tender: "mixed" };
+      if (hasCash) return { tender: "cash" };
+      if (hasChk) return { tender: "chk" };
+      // Missing cols, both null, or both zero → unknown → keep in both lists.
+      return { tender: "unknown" };
+    }
+
     function attemptKind(bill) {
       if (!bill) return null;
       if (isPayoutBill(bill) || bill.payment_type === "voucher") return "voucher";
@@ -1826,8 +1862,21 @@
 
     function billBelongsInMode(bill, processMode = state.processMode) {
       if (processMode === "cn") return isPayoutBill(bill);
-      if (processMode === "cash" || processMode === "qr") return isCollectBill(bill);
-      return false;
+      if (!isCollectBill(bill)) return false;
+      if (processMode !== "cash" && processMode !== "qr") return false;
+      const kind = attemptKind(bill);
+      const completed = bill.tiger_payment_status === "success"
+        || bill.tiger_payment_status === "C";
+      const locked = !!bill.payment_attempt_active || completed;
+      // Once a method is in flight / paid, keep the bill only in that mode.
+      if (locked && kind === "cash") return processMode === "cash";
+      if (locked && (kind === "cloud_qr" || kind === "qr")) return processMode === "qr";
+      const { tender } = tenderHints(bill);
+      if (tender === "unknown") return true;
+      // Part9 cash-only → cash menu; transfer/cheque (CHKAMT) → QR online.
+      // Rare mixed tenders stay in QR so the cash menu stays cashbox-only.
+      if (processMode === "cash") return tender === "cash";
+      return tender === "chk" || tender === "mixed";
     }
 
     function modeOwnsAttempt(bill, processMode = state.processMode) {
