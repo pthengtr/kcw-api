@@ -121,26 +121,7 @@ def post_tad(
 
     try:
         with engine.begin() as conn:
-            # Duplicate PO under same shop
-            dup = conn.execute(
-                text(
-                    """
-                    SELECT TOP 1 LTRIM(RTRIM(BILLNO)) AS billno
-                    FROM dbo.SIMAS WITH (UPDLOCK, HOLDLOCK)
-                    WHERE LTRIM(RTRIM(ACCTNO)) = :acct
-                      AND LTRIM(RTRIM(COALESCE(PO, ''))) = :po
-                      AND UPPER(LTRIM(RTRIM(BILLNO))) LIKE 'TAD%'
-                      AND COALESCE(CANCELED, 'N') <> 'Y'
-                    """
-                ),
-                {"acct": acctno.strip(), "po": po},
-            ).mappings().first()
-            if dup:
-                raise OnlineSaleError(
-                    "duplicate_po",
-                    f"เลขคำสั่งซื้อนี้มีบิล {dup['billno']} แล้วในร้านนี้",
-                )
-
+            # Many TAD bills may share one online order number (soft warning in UI).
             billno = _next_tad_billno(conn, now)
             conn.execute(
                 text(
@@ -346,26 +327,6 @@ def update_tad(
             )
             jourmode = "1"
             billtype = "1"
-
-            dup = conn.execute(
-                text(
-                    """
-                    SELECT TOP 1 LTRIM(RTRIM(BILLNO)) AS billno
-                    FROM dbo.SIMAS WITH (UPDLOCK, HOLDLOCK)
-                    WHERE LTRIM(RTRIM(ACCTNO)) = :acct
-                      AND LTRIM(RTRIM(COALESCE(PO, ''))) = :po
-                      AND UPPER(LTRIM(RTRIM(BILLNO))) LIKE 'TAD%'
-                      AND UPPER(LTRIM(RTRIM(BILLNO))) <> :exact
-                      AND COALESCE(CANCELED, 'N') <> 'Y'
-                    """
-                ),
-                {"acct": acctno.strip(), "po": po, "exact": exact},
-            ).mappings().first()
-            if dup:
-                raise OnlineSaleError(
-                    "duplicate_po",
-                    f"เลขคำสั่งซื้อนี้มีบิล {dup['billno']} แล้วในร้านนี้",
-                )
 
             old_lines = conn.execute(
                 text(

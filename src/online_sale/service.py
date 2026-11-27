@@ -79,9 +79,15 @@ def check_po_payload(
     except Exception:
         draft_dups = []
     all_dups = list(dups) + list(draft_dups)
+    warning = None
+    if all_dups:
+        refs = ", ".join(str(d.get("billno") or "").strip() for d in all_dups if d.get("billno"))
+        warning = f"เลขคำสั่งซื้อนี้มีอยู่แล้ว — {refs} (อนุญาตหลายบิลต่อหนึ่งออเดอร์)"
     return {
-        "ok": not all_dups,
+        # Format is valid; duplicates are soft warnings (many TAD → one order).
+        "ok": True,
         "duplicates": all_dups,
+        "warning": warning,
         "online_po": po,
         "platform": plat,
         "expected_len": PO_LEN_BY_PLATFORM.get(plat),
@@ -265,15 +271,6 @@ def save_sale_payload(
     platform = str(body.get("platform") or shop.get("platform") or "").strip()
     po = validate_online_po(platform, body.get("online_po"))
     draft_id = str(body.get("draft_id") or "").strip()
-    check = check_po_payload(
-        shop["acctno"],
-        po,
-        platform=platform,
-        exclude_draft_id=draft_id,
-    )
-    if not check["ok"]:
-        dup = check["duplicates"][0]["billno"]
-        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")
     if draft_id:
         # Ensure draft still open before cutting stock / issuing TAD.
         draft = draft_store.get_draft(draft_id)
@@ -322,15 +319,6 @@ def save_draft_payload(body: dict[str, Any], actor: str) -> dict[str, Any]:
     platform = str(body.get("platform") or shop.get("platform") or "").strip()
     po = validate_online_po(platform, body.get("online_po"))
     draft_id = str(body.get("draft_id") or "").strip()
-    check = check_po_payload(
-        shop["acctno"],
-        po,
-        platform=platform,
-        exclude_draft_id=draft_id,
-    )
-    if not check["ok"]:
-        dup = check["duplicates"][0]["billno"]
-        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")
     payload = dict(
         platform=platform,
         acctno=shop["acctno"],
@@ -372,12 +360,6 @@ def update_sale_payload(billno: str, body: dict[str, Any], actor: str) -> dict[s
     shop = load_shop(str(body.get("acctno") or ""))
     platform = str(body.get("platform") or shop.get("platform") or "").strip()
     po = validate_online_po(platform, body.get("online_po"))
-    check = check_po_payload(
-        shop["acctno"], po, platform=platform, exclude_billno=exact
-    )
-    if not check["ok"]:
-        dup = check["duplicates"][0]["billno"]
-        raise OnlineSaleError("duplicate_po", f"เลขคำสั่งซื้อซ้ำกับ {dup}")
     result = update_tad(
         billno=exact,
         acctno=shop["acctno"],

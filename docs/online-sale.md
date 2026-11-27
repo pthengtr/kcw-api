@@ -41,9 +41,9 @@ Staff pack before posting TAD:
 1. **ขาย** → `บันทึกฉบับร่าง` (Supabase `online_sale.drafts` — no TAD number, no stock cut, no sales)
 2. **ค้นหา** (filter ฉบับร่าง) → select drafts → `พิมพ์ใบจัดสินค้ารวม` (refs = order ids)
 3. Pack / substitute on the floor
-4. Open draft → edit lines → `ยืนยันขาย (ออก TAD)` (re-checks duplicate PO + stock)
+4. Open draft → edit lines → `ยืนยันขาย (ออก TAD)` (stock check; duplicate order id is warning-only)
 
-Duplicate order id is checked against both active drafts and posted TAD. Printed drafts show status **พิมพ์ใบจัดแล้ว**. Pick sheets are not generated from TAD anymore.
+Many TAD / drafts may share one online order number (many-to-one). Entering a PO that already exists shows a soft warning in the sale form; save / confirm still proceeds. Printed drafts show status **พิมพ์ใบจัดแล้ว**. Pick sheets are not generated from TAD anymore.
 
 ## Enable writes
 

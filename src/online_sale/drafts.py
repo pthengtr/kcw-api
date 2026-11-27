@@ -177,42 +177,33 @@ def create_draft(
     lines: list[dict[str, Any]],
     actor: str,
 ) -> dict[str, Any]:
-    from psycopg.errors import UniqueViolation
-
     normalized = _normalize_lines(lines)
     total = _aftertax(normalized)
-    try:
-        with _connect() as conn:
-            with conn.transaction():
-                row = conn.execute(
-                    """
-                    insert into online_sale.drafts (
-                      status, platform, acctno, acctname, shop_name, online_po,
-                      aftertax, lines, created_by, updated_by
-                    ) values (
-                      'open', %s, %s, %s, %s, %s,
-                      %s, %s, %s, %s
-                    )
-                    returning *
-                    """,
-                    (
-                        (platform or "").strip().lower() or None,
-                        acctno.strip(),
-                        (acctname or "").strip() or None,
-                        (shop_name or "").strip() or None,
-                        online_po.strip(),
-                        total,
-                        Jsonb(normalized),
-                        (actor or "")[:80] or None,
-                        (actor or "")[:80] or None,
-                    ),
-                ).fetchone()
-    except UniqueViolation as exc:
-        raise OnlineSaleError(
-            "duplicate_po",
-            f"เลขคำสั่งซื้อซ้ำกับฉบับร่างที่มีอยู่แล้ว ({online_po.strip()})",
-            status=409,
-        ) from exc
+    with _connect() as conn:
+        with conn.transaction():
+            row = conn.execute(
+                """
+                insert into online_sale.drafts (
+                  status, platform, acctno, acctname, shop_name, online_po,
+                  aftertax, lines, created_by, updated_by
+                ) values (
+                  'open', %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s
+                )
+                returning *
+                """,
+                (
+                    (platform or "").strip().lower() or None,
+                    acctno.strip(),
+                    (acctname or "").strip() or None,
+                    (shop_name or "").strip() or None,
+                    online_po.strip(),
+                    total,
+                    Jsonb(normalized),
+                    (actor or "")[:80] or None,
+                    (actor or "")[:80] or None,
+                ),
+            ).fetchone()
     return public_draft(row)
 
 
@@ -227,57 +218,48 @@ def update_draft(
     lines: list[dict[str, Any]],
     actor: str,
 ) -> dict[str, Any]:
-    from psycopg.errors import UniqueViolation
-
     exact = str(UUID(str(draft_id).strip()))
     normalized = _normalize_lines(lines)
     total = _aftertax(normalized)
-    try:
-        with _connect() as conn:
-            with conn.transaction():
-                current = conn.execute(
-                    "select * from online_sale.drafts where draft_id = %s",
-                    (exact,),
-                ).fetchone()
-                if not current:
-                    raise OnlineSaleError("draft", "ไม่พบฉบับร่าง", status=404)
-                if current["status"] not in ACTIVE_STATUSES:
-                    raise OnlineSaleError("draft", "แก้ไขได้เฉพาะฉบับร่างที่ยังไม่ขาย/ยกเลิก")
-                row = conn.execute(
-                    """
-                    update online_sale.drafts
-                    set platform = %s,
-                        acctno = %s,
-                        acctname = %s,
-                        shop_name = %s,
-                        online_po = %s,
-                        aftertax = %s,
-                        lines = %s,
-                        updated_by = %s,
-                        updated_at = now()
-                    where draft_id = %s
-                      and status = any(%s)
-                    returning *
-                    """,
-                    (
-                        (platform or "").strip().lower() or None,
-                        acctno.strip(),
-                        (acctname or "").strip() or None,
-                        (shop_name or "").strip() or None,
-                        online_po.strip(),
-                        total,
-                        Jsonb(normalized),
-                        (actor or "")[:80] or None,
-                        exact,
-                        list(ACTIVE_STATUSES),
-                    ),
-                ).fetchone()
-    except UniqueViolation as exc:
-        raise OnlineSaleError(
-            "duplicate_po",
-            f"เลขคำสั่งซื้อซ้ำกับฉบับร่างที่มีอยู่แล้ว ({online_po.strip()})",
-            status=409,
-        ) from exc
+    with _connect() as conn:
+        with conn.transaction():
+            current = conn.execute(
+                "select * from online_sale.drafts where draft_id = %s",
+                (exact,),
+            ).fetchone()
+            if not current:
+                raise OnlineSaleError("draft", "ไม่พบฉบับร่าง", status=404)
+            if current["status"] not in ACTIVE_STATUSES:
+                raise OnlineSaleError("draft", "แก้ไขได้เฉพาะฉบับร่างที่ยังไม่ขาย/ยกเลิก")
+            row = conn.execute(
+                """
+                update online_sale.drafts
+                set platform = %s,
+                    acctno = %s,
+                    acctname = %s,
+                    shop_name = %s,
+                    online_po = %s,
+                    aftertax = %s,
+                    lines = %s,
+                    updated_by = %s,
+                    updated_at = now()
+                where draft_id = %s
+                  and status = any(%s)
+                returning *
+                """,
+                (
+                    (platform or "").strip().lower() or None,
+                    acctno.strip(),
+                    (acctname or "").strip() or None,
+                    (shop_name or "").strip() or None,
+                    online_po.strip(),
+                    total,
+                    Jsonb(normalized),
+                    (actor or "")[:80] or None,
+                    exact,
+                    list(ACTIVE_STATUSES),
+                ),
+            ).fetchone()
     if not row:
         raise OnlineSaleError("draft", "อัปเดตฉบับร่างไม่สำเร็จ", status=409)
     return public_draft(row)
