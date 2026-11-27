@@ -14,6 +14,7 @@ from src.expense_cash.service import (
     parse_amount,
     refresh_request_voucher,
     reject_request,
+    resend_admin_notify,
     resubmit_extra_reason,
     send_back_for_info,
 )
@@ -51,6 +52,10 @@ CANCEL_RE = re.compile(
     r"^\s*ยกเลิกเบิก\s*#?\s*(\d+)\s*$",
     re.IGNORECASE,
 )
+RESEND_RE = re.compile(
+    r"^\s*ส่งเบิก\s*#?\s*(\d+)\s*$",
+    re.IGNORECASE,
+)
 
 POSTBACK_PREFIX = "expense_cash:"
 
@@ -80,6 +85,8 @@ def is_expense_cash_admin_command(text: str) -> bool:
     if STATUS_RE.match(text or ""):
         return True
     if CANCEL_RE.match(text or ""):
+        return True
+    if RESEND_RE.match(text or ""):
         return True
     return False
 
@@ -130,17 +137,20 @@ def handle_expense_cash_session_text(
             if raw.isdigit() and len(raw) >= 6:
                 return None
             try:
-                updated = resubmit_extra_reason(
+                updated, notified = resubmit_extra_reason(
                     engine,
                     request_id=str(needs["id"]),
                     extra_reason=raw,
                 )
             except ExpenseCashError:
                 return None
+            short = int(updated["short_code"])
             return {
                 "type": "text",
-                "text": copy.resubmitted_ack(
-                    short_code=int(updated["short_code"])
+                "text": (
+                    copy.resubmitted_ack(short_code=short)
+                    if notified
+                    else copy.resubmit_notify_failed(short_code=short)
                 ),
             }
         return None
@@ -161,7 +171,7 @@ def handle_expense_cash_session_text(
 
     if kind == "extra_reason":
         try:
-            updated = resubmit_extra_reason(
+            updated, notified = resubmit_extra_reason(
                 engine,
                 request_id=str(session.get("request_id")),
                 extra_reason=raw,
@@ -170,9 +180,14 @@ def handle_expense_cash_session_text(
             sessions.clear_session(line_user_id)
             return {"type": "text", "text": exc.message}
         sessions.clear_session(line_user_id)
+        short = int(updated["short_code"])
         return {
             "type": "text",
-            "text": copy.resubmitted_ack(short_code=int(updated["short_code"])),
+            "text": (
+                copy.resubmitted_ack(short_code=short)
+                if notified
+                else copy.resubmit_notify_failed(short_code=short)
+            ),
         }
 
     sessions.clear_session(line_user_id)
@@ -201,7 +216,7 @@ def _handle_request_steps(
         if amount is None:
             return {"type": "text", "text": copy.amount_invalid()}
         reason = str(session.get("reason") or "").strip()
-        row = create_pending(
+        row, notified = create_pending(
             engine,
             line_user_id=line_user_id,
             display_name=_display_name(access, line_user_id),
@@ -215,6 +230,7 @@ def _handle_request_steps(
                 short_code=int(row["short_code"]),
                 amount=amount,
                 reason=reason,
+                notify_ok=notified,
             ),
         }
 
@@ -389,6 +405,23 @@ def handle_expense_cash_admin_command(
                 "text": copy.cancel_ok(short_code=int(row["short_code"])),
             }
         except ExpenseCashError as exc:
+            return _admin_err(exc, code)
+
+    m = RESEND_RE.match(text or "")
+    if m:
+        code = int(m.group(1))
+        try:
+            row = resend_admin_notify(engine, short_code=code)
+            return {
+                "type": "text",
+                "text": copy.resend_ok(short_code=int(row["short_code"])),
+            }
+        except ExpenseCashError as exc:
+            if exc.code == "notify_failed":
+                return {
+                    "type": "text",
+                    "text": copy.resend_failed(short_code=code),
+                }
             return _admin_err(exc, code)
 
     return {"type": "text", "text": "ไม่เข้าใจคำสั่งเบิกครับ"}

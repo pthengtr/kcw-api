@@ -39,7 +39,7 @@ def create_pending(
     display_name: str | None,
     reason: str,
     amount: int,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
     row = repos.create_request(
         engine,
         requester_line_user_id=line_user_id,
@@ -47,8 +47,8 @@ def create_pending(
         reason=reason.strip(),
         amount=amount,
     )
-    notify.notify_admins_new_request(engine, row)
-    return row
+    notified = notify.notify_admins_new_request(engine, row)
+    return row, notified
 
 
 def resubmit_extra_reason(
@@ -56,7 +56,7 @@ def resubmit_extra_reason(
     *,
     request_id: str,
     extra_reason: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
     row = repos.get_by_id(engine, request_id)
     if not row:
         raise ExpenseCashError("not found", code="not_found")
@@ -74,8 +74,28 @@ def resubmit_extra_reason(
     )
     if not updated:
         raise ExpenseCashError("update failed", code="update_failed")
-    notify.notify_admins_new_request(engine, updated)
-    return updated
+    notified = notify.notify_admins_new_request(engine, updated)
+    return updated, notified
+
+
+def resend_admin_notify(
+    engine: Engine,
+    *,
+    short_code: int,
+) -> dict[str, Any]:
+    """Re-push the approver Flex for an open request (after quota recovers)."""
+    row = repos.get_by_short_code(engine, int(short_code))
+    if not row:
+        raise ExpenseCashError("not found", code="not_found")
+    if row.get("status") not in repos.OPEN_STATUSES:
+        raise ExpenseCashError(
+            f"status {row.get('status')}",
+            code="bad_state",
+        )
+    ok = notify.notify_admins_new_request(engine, row)
+    if not ok:
+        raise ExpenseCashError("notify failed", code="notify_failed")
+    return row
 
 
 def approve_request(
@@ -255,7 +275,7 @@ def format_open_list(rows: list[dict[str, Any]]) -> str:
         )
     lines.append(
         "\nพิมพ์ อนุมัติ {เลข} / ส่งกลับ {เลข} เหตุผล… / ปฏิเสธ {เลข} เหตุผล…"
-        "\nสถานะเบิก {เลข} / ยกเลิกเบิก {เลข}"
+        "\nสถานะเบิก {เลข} / ยกเลิกเบิก {เลข} / ส่งเบิก {เลข}"
     )
     return "\n".join(lines)
 

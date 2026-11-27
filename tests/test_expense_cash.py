@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from src.access.config import COMMAND_PERMISSIONS
 from src.access.helper import can_execute
 from src.expense_cash.approvers import (
@@ -12,7 +14,11 @@ from src.expense_cash.approvers import (
     PHU_LINE_USER_ID,
     is_cash_approver,
 )
-from src.expense_cash.copy import approved_peer_notice
+from src.expense_cash.copy import approved_peer_notice, pending_ack
+from src.expense_cash.notify import (
+    notify_admins_new_request,
+    notify_other_approvers_approved,
+)
 from src.expense_cash.service import parse_amount
 from src.expense_cash.tiger import expense_cash_pos_bill_id
 from src.handlers.expense_cash import (
@@ -46,7 +52,160 @@ def test_admin_commands():
     assert is_expense_cash_admin_command("ปฏิเสธ 3 ไม่ผ่าน")
     assert is_expense_cash_admin_command("สถานะเบิก 3")
     assert is_expense_cash_admin_command("ยกเลิกเบิก 12")
+    assert is_expense_cash_admin_command("ส่งเบิก 44")
+    assert is_expense_cash_admin_command("ส่งเบิก #44")
     assert not is_expense_cash_admin_command("อนุมัติ")
+    assert not is_expense_cash_admin_command("ส่งเบิก")
+
+
+def test_pending_ack_warns_when_notify_fails():
+    ok = pending_ack(short_code=44, amount=10, reason="ค่าขนส่ง", notify_ok=True)
+    assert "แอดมินดู" in ok
+    assert "โควต้า" not in ok
+    bad = pending_ack(short_code=44, amount=10, reason="ค่าขนส่ง", notify_ok=False)
+    assert "โควต้า" in bad or "ส่งหาแอดมินไม่สำเร็จ" in bad
+    assert "อนุมัติ 44" in bad
+    assert "รายการเบิก" in bad
+
+
+def test_notify_admins_skips_requester_and_uses_multicast():
+    engine = MagicMock()
+    row = {
+        "id": "req-1",
+        "short_code": 44,
+        "amount": 10,
+        "reason": "ค่าขนส่ง",
+        "status": "pending",
+        "requester_line_user_id": PEUNG_LINE_USER_ID,
+        "requester_name": "peung",
+    }
+    roster = [
+        PHU_LINE_USER_ID,
+        PEUNG_LINE_USER_ID,
+        ICE_LINE_USER_ID,
+    ]
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=roster,
+        ),
+        patch("src.expense_cash.notify.multicast_line_messages") as multi,
+        patch("src.expense_cash.notify.push_line_messages") as push,
+    ):
+        assert notify_admins_new_request(engine, row) is True
+        multi.assert_called_once()
+        sent_ids, msgs = multi.call_args.args
+        assert PEUNG_LINE_USER_ID not in sent_ids
+        assert set(sent_ids) == {PHU_LINE_USER_ID, ICE_LINE_USER_ID}
+        assert msgs and msgs[0]["type"] == "flex"
+        push.assert_not_called()
+
+
+def test_notify_admins_falls_back_when_multicast_fails():
+    engine = MagicMock()
+    row = {
+        "id": "req-1",
+        "short_code": 44,
+        "amount": 10,
+        "reason": "ค่าขนส่ง",
+        "status": "pending",
+        "requester_line_user_id": "U_requester",
+        "requester_name": "Boss",
+    }
+    roster = [PHU_LINE_USER_ID, ICE_LINE_USER_ID]
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=roster,
+        ),
+        patch(
+            "src.expense_cash.notify.multicast_line_messages",
+            side_effect=RuntimeError("quota"),
+        ),
+        patch("src.expense_cash.notify.push_line_messages") as push,
+    ):
+        assert notify_admins_new_request(engine, row) is True
+        assert push.call_count == 2
+
+
+def test_notify_admins_returns_false_when_all_pushes_fail():
+    engine = MagicMock()
+    row = {
+        "id": "req-1",
+        "short_code": 44,
+        "amount": 10,
+        "reason": "ค่าขนส่ง",
+        "status": "pending",
+        "requester_line_user_id": "U_requester",
+    }
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=[PHU_LINE_USER_ID],
+        ),
+        patch(
+            "src.expense_cash.notify.multicast_line_messages",
+            side_effect=RuntimeError("quota"),
+        ),
+        patch(
+            "src.expense_cash.notify.push_line_messages",
+            side_effect=RuntimeError("quota"),
+        ),
+    ):
+        assert notify_admins_new_request(engine, row) is False
+
+
+def test_peer_approve_notify_off_by_default(monkeypatch):
+    monkeypatch.delenv("EXPENSE_CASH_PEER_NOTIFY", raising=False)
+    engine = MagicMock()
+    row = {
+        "short_code": 7,
+        "amount": 1500,
+        "requester_name": "น้องบอส",
+    }
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=[PHU_LINE_USER_ID, ICE_LINE_USER_ID],
+        ),
+        patch("src.expense_cash.notify.multicast_line_messages") as multi,
+        patch("src.expense_cash.notify.push_line_messages") as push,
+    ):
+        notify_other_approvers_approved(
+            engine,
+            row,
+            reviewer_line_user_id=PEUNG_LINE_USER_ID,
+            reviewer_name="peung",
+        )
+        multi.assert_not_called()
+        push.assert_not_called()
+
+
+def test_peer_approve_notify_when_enabled(monkeypatch):
+    monkeypatch.setenv("EXPENSE_CASH_PEER_NOTIFY", "1")
+    engine = MagicMock()
+    row = {
+        "short_code": 7,
+        "amount": 1500,
+        "requester_name": "น้องบอส",
+    }
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=[PEUNG_LINE_USER_ID, PHU_LINE_USER_ID, ICE_LINE_USER_ID],
+        ),
+        patch("src.expense_cash.notify.multicast_line_messages") as multi,
+    ):
+        notify_other_approvers_approved(
+            engine,
+            row,
+            reviewer_line_user_id=PEUNG_LINE_USER_ID,
+            reviewer_name="peung",
+        )
+        multi.assert_called_once()
+        sent_ids, _msgs = multi.call_args.args
+        assert PEUNG_LINE_USER_ID not in sent_ids
+        assert set(sent_ids) == {PHU_LINE_USER_ID, ICE_LINE_USER_ID}
 
 
 def test_postback_prefix():
