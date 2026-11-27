@@ -159,6 +159,62 @@ def test_list_bills_keeps_paid_non_kcn_voucher_visible():
     assert bills[0]["payment_attempt_active"] is False
 
 
+def test_list_bills_hides_expense_cash_orphan_vouchers():
+    """LINE expense-cash vouchers share voucher_attempt; keep them off Companion."""
+    from src.tiger_pay.payment_service import list_bills_with_payment_status
+
+    expense_attempt = {
+        "id": "exc-attempt-1",
+        "pos_bill_id": "expense-cash:11111111-2222-3333-4444-555555555555",
+        "pos_bill_number": "EXC3",
+        "amount": 500.0,
+        "status": "pending",
+        "raw_status": "0",
+        "voucher_num": "262511110001",
+        "created_at": "2026-11-27T04:00:00+00:00",
+        "submitted_by": "Uapprover",
+        "submitted_by_name": "Peung",
+        "raw_create_response": None,
+        "raw_last_show": None,
+    }
+    pos_return = {
+        "id": "8fde274bff4f44c7afc9",
+        "pos_bill_id": "574142",
+        "pos_bill_number": "6K69-0011467",
+        "amount": 1600.0,
+        "status": "used",
+        "raw_status": "1",
+        "voucher_num": "262510640075",
+        "created_at": "2026-11-27T03:57:35+00:00",
+        "submitted_by": None,
+        "submitted_by_name": "M",
+        "raw_create_response": None,
+        "raw_last_show": None,
+    }
+    with (
+        patch("src.tiger_pay.payment_service.list_open_bills", return_value=[]),
+        patch("src.tiger_pay.payment_service.list_cn_bills", return_value=[]),
+        patch("src.tiger_pay.payment_service.schedule_refresh_active_vouchers"),
+        patch(
+            "src.tiger_pay.payment_service.repos.list_latest_attempts_by_bill_ids",
+            return_value={},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_latest_vouchers_by_bill_ids",
+            return_value={},
+        ),
+        patch(
+            "src.tiger_pay.payment_service.voucher_repos.list_voucher_attempts_for_biz_day",
+            return_value=[expense_attempt, pos_return],
+        ),
+    ):
+        bills = list_bills_with_payment_status(MagicMock(), mode="today", limit=10)
+
+    assert len(bills) == 1
+    assert bills[0]["bill_number"] == "6K69-0011467"
+    assert bills[0]["id"] == "574142"
+
+
 def test_list_bills_still_returns_pos_rows_when_attempt_lookup_fails():
     from src.tiger_pay.payment_service import list_bills_with_payment_status
 
