@@ -39,7 +39,7 @@ pushes fail — requester ack warns, and approvers can use `รายการ�
 
 Already: `LINE_*` (supports optional `LINE_CHANNEL_*_2` for a second OA), Supabase service role.
 
-With two OAs, expense-cash **pushes always use the new channel** (`EXPENSE_CASH_LINE_CHANNEL=new` → secondary/`*_2` by default). Webhook replies still follow whichever OA signed the event. Approver `line_user_id`s must belong to that push channel.
+With two OAs, expense-cash **fans out pushes to both** by default (`EXPENSE_CASH_LINE_CHANNEL=all`), so approvers who only added v1 still get Flex while dual users see it on both chats. Pin with `new` / `primary` / `secondary` if needed. Webhook replies still follow whichever OA signed the event.
 
 Add:
 
