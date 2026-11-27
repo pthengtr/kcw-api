@@ -39,6 +39,8 @@ pushes fail — requester ack warns, and approvers can use `รายการ�
 
 Already: `LINE_*` (supports optional `LINE_CHANNEL_*_2` for a second OA), Supabase service role.
 
+With two OAs, expense-cash **pushes always use the new channel** (`EXPENSE_CASH_LINE_CHANNEL=new` → secondary/`*_2` by default). Webhook replies still follow whichever OA signed the event. Approver `line_user_id`s must belong to that push channel.
+
 Add:
 
 - `TIGER_VOUCHER_USERNAME` / `PASSWORD` / `MOBILE` (+ optional host/flags)

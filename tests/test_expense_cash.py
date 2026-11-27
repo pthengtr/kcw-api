@@ -101,6 +101,44 @@ def test_notify_admins_skips_requester_and_uses_multicast():
         push.assert_not_called()
 
 
+def test_notify_admins_binds_new_line_channel(monkeypatch):
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-old")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-old")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET_2", "sec-new")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN_2", "tok-new")
+    monkeypatch.setenv("EXPENSE_CASH_LINE_CHANNEL", "new")
+
+    engine = MagicMock()
+    row = {
+        "id": "req-1",
+        "short_code": 44,
+        "amount": 10,
+        "reason": "ค่าขนส่ง",
+        "status": "pending",
+        "requester_line_user_id": "U_requester",
+    }
+    captured = {}
+
+    def fake_multi(ids, messages):
+        import src.bot.line_bot as line_bot
+
+        captured["token"] = line_bot._access_token()
+        return ids
+
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=[PHU_LINE_USER_ID],
+        ),
+        patch(
+            "src.expense_cash.notify.multicast_line_messages",
+            side_effect=fake_multi,
+        ),
+    ):
+        assert notify_admins_new_request(engine, row) is True
+    assert captured["token"] == "tok-new"
+
+
 def test_notify_admins_falls_back_when_multicast_fails():
     engine = MagicMock()
     row = {
