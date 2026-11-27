@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from sqlalchemy.engine import Engine
 
-from src.bot.line_bot import push_line_messages
+from src.bot.line_bot import multicast_line_messages, push_line_messages
 from src.expense_cash import copy, repos
 
 logger = logging.getLogger("kcw.expense_cash.notify")
@@ -146,14 +147,58 @@ def admin_flex_card(row: dict[str, Any]) -> dict:
     }
 
 
-def notify_admins_new_request(engine: Engine, row: dict[str, Any]) -> None:
-    ids = repos.list_approver_line_ids(engine)
+def _approver_recipient_ids(
+    engine: Engine, *, exclude_line_user_id: str | None = None
+) -> list[str]:
+    skip = (exclude_line_user_id or "").strip()
+    return [
+        uid
+        for uid in repos.list_approver_line_ids(engine)
+        if uid and uid != skip
+    ]
+
+
+def notify_admins_new_request(
+    engine: Engine,
+    row: dict[str, Any],
+    *,
+    exclude_line_user_id: str | None = None,
+) -> bool:
+    """Push Flex to cash approvers. Returns True if at least one delivery succeeded.
+
+    Skips the requester (they already got the reply ack). Uses multicast so one
+    exhausted-quota failure does not burn N serial push attempts.
+    """
+    ids = _approver_recipient_ids(
+        engine,
+        exclude_line_user_id=exclude_line_user_id
+        or str(row.get("requester_line_user_id") or ""),
+    )
+    if not ids:
+        logger.warning(
+            "No expense-cash approvers to notify for #%s",
+            row.get("short_code"),
+        )
+        return False
+
     msg = admin_flex_card(row)
+    try:
+        multicast_line_messages(ids, [msg])
+        return True
+    except Exception:
+        logger.exception(
+            "Multicast admin notify failed for #%s; falling back to per-user push",
+            row.get("short_code"),
+        )
+
+    delivered = 0
     for uid in ids:
         try:
             push_line_messages(uid, [msg])
+            delivered += 1
         except Exception:
             logger.exception("Failed to push admin notify to %s", uid)
+    return delivered > 0
 
 
 def notify_requester_text(line_user_id: str, text: str) -> None:
@@ -197,6 +242,12 @@ def notify_requester_approved(
         logger.exception("Failed to push approved QR")
 
 
+def _peer_notify_enabled() -> bool:
+    """Peer-approve pushes are off by default — they burn monthly LINE quota fast."""
+    raw = (os.getenv("EXPENSE_CASH_PEER_NOTIFY") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def notify_other_approvers_approved(
     engine: Engine,
     row: dict[str, Any],
@@ -205,12 +256,10 @@ def notify_other_approvers_approved(
     reviewer_name: str | None,
 ) -> None:
     """Tell peer approvers that someone already approved (skip the actor)."""
+    if not _peer_notify_enabled():
+        return
     actor = (reviewer_line_user_id or "").strip()
-    ids = [
-        uid
-        for uid in repos.list_approver_line_ids(engine)
-        if uid and uid != actor
-    ]
+    ids = _approver_recipient_ids(engine, exclude_line_user_id=actor)
     if not ids:
         return
     short = int(row.get("short_code") or 0)
@@ -222,6 +271,14 @@ def notify_other_approvers_approved(
         requester_name=(row.get("requester_name") or None),
     )
     msg = {"type": "text", "text": text[:5000]}
+    try:
+        multicast_line_messages(ids, [msg])
+        return
+    except Exception:
+        logger.exception(
+            "Multicast peer-approve notify failed for #%s; falling back",
+            short,
+        )
     for uid in ids:
         try:
             push_line_messages(uid, [msg])

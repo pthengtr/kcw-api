@@ -8,6 +8,7 @@ import requests
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
+LINE_MULTICAST_URL = "https://api.line.me/v2/bot/message/multicast"
 LINE_CONTENT_URL_BASE = "https://api-data.line.me/v2/bot/message"
 
 
@@ -83,6 +84,43 @@ def push_line_messages(to: str, messages: list[dict]):
     }
     resp = requests.post(LINE_PUSH_URL, headers=headers, json=payload, timeout=15)
     resp.raise_for_status()
+
+
+def multicast_line_messages(to: list[str], messages: list[dict]) -> list[str]:
+    """Push the same messages to many users in one API call.
+
+    LINE still counts one message per recipient toward the monthly quota.
+    Returns the de-duplicated recipient ids that were sent to.
+    """
+    recipients = []
+    seen: set[str] = set()
+    for uid in to or []:
+        uid = (uid or "").strip()
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        recipients.append(uid)
+    if not recipients:
+        raise ValueError("Missing LINE user ids")
+    if not messages:
+        raise ValueError("Missing LINE messages")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {_access_token()}",
+    }
+    # LINE multicast accepts at most 500 user ids per request.
+    for i in range(0, len(recipients), 500):
+        chunk = recipients[i : i + 500]
+        payload = {
+            "to": chunk,
+            "messages": messages[:5],
+        }
+        resp = requests.post(
+            LINE_MULTICAST_URL, headers=headers, json=payload, timeout=15
+        )
+        resp.raise_for_status()
+    return recipients
 
 
 def push_line_message(to: str, text: str):

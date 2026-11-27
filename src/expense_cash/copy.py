@@ -33,12 +33,42 @@ def cancelled() -> str:
     return "ยกเลิกการเบิกแล้วครับ อยากเบิกใหม่พิมพ์ เบิกเงิน ได้เลย"
 
 
-def pending_ack(*, short_code: int, amount: int, reason: str) -> str:
-    return (
+def pending_ack(
+    *,
+    short_code: int,
+    amount: int,
+    reason: str,
+    notify_ok: bool = True,
+) -> str:
+    base = (
         f"รับเรื่องแล้วครับ (# {short_code})\n"
         f"เหตุผล: {reason}\n"
         f"จำนวน: {amount:,} บาท\n"
-        "เดี๋ยวเฮียส่งไปให้แอดมินดู — รอแป๊บนะ 🙏"
+    )
+    if notify_ok:
+        return base + "เดี๋ยวเฮียส่งไปให้แอดมินดู — รอแป๊บนะ 🙏"
+    return (
+        base
+        + "⚠️ ส่งหาแอดมินไม่สำเร็จตอนนี้ (โควต้าข้อความ LINE เต็มหรือระบบ push มีปัญหา)\n"
+        f"แจ้งแอดมินให้พิมพ์ รายการเบิก หรือ อนุมัติ {short_code} ได้เลย"
+    )
+
+
+def resubmit_notify_failed(*, short_code: int) -> str:
+    return (
+        f"ได้บันทึกรายละเอียด #{short_code} แล้ว แต่ส่งหาแอดมินไม่สำเร็จครับ\n"
+        f"แจ้งแอดมินให้พิมพ์ รายการเบิก หรือ อนุมัติ {short_code}"
+    )
+
+
+def resend_ok(*, short_code: int) -> str:
+    return f"ส่งคำขอ #{short_code} หาแอดมินอีกครั้งแล้วครับ"
+
+
+def resend_failed(*, short_code: int) -> str:
+    return (
+        f"ส่งคำขอ #{short_code} ไม่สำเร็จครับ (โควต้า LINE เต็มหรือ push มีปัญหา)\n"
+        f"ให้แอดมินพิมพ์ รายการเบิก / อนุมัติ {short_code} แทนได้"
     )
 
 
