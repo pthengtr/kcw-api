@@ -1136,6 +1136,131 @@ def test_refresh_qtyoh2_syncs_both_sites(monkeypatch):
     assert order.count("refresh") == 1
 
 
+def test_confirm_stamps_iclow_before_supabase_order(monkeypatch):
+    """A stamp failure must not leave a canceled phantom PO while lines stay on รอสั่ง."""
+    from src.hq_po import service
+
+    class Settings:
+        stamp_enabled = True
+
+    live = {
+        9: {
+            "iclow_id": 9,
+            "bcode": "A1",
+            "descr": "part",
+            "qty": 2,
+            "ui": "ชิ้น",
+            "vendor": "V1",
+            "ordered": "N",
+            "received": "N",
+            "canceled": "N",
+        }
+    }
+    events: list[str] = []
+
+    def stamp(lines, *, docno):
+        events.append(f"stamp:{docno}")
+        raise HqPoError("stamp_conflict", "สั่ง A1 ไม่ได้ เพราะแถว ICLOW เปลี่ยนไปแล้ว")
+
+    def insert(*_args, **_kwargs):
+        events.append("insert_order")
+        raise AssertionError("Supabase order must not be written before ICLOW stamp succeeds")
+
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: Settings())
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+    monkeypatch.setattr(service, "fetch_iclow_by_ids", lambda _ids: live)
+    monkeypatch.setattr(service, "open_lines_for_iclow", lambda _client, _ids: {})
+    monkeypatch.setattr(service, "_release_returned_lines", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "fetch_sheet_products", lambda _codes: {})
+    monkeypatch.setattr(service, "_assert_supplier_choices", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "_assert_orderable_vendors", lambda _lines: None)
+    monkeypatch.setattr(service, "_vendor_name", lambda acct, hinted: hinted or acct)
+    monkeypatch.setattr(service, "make_short_id", lambda: "AAAA1111")
+    monkeypatch.setattr(service, "stamp_ordered", stamp)
+    monkeypatch.setattr(service, "insert_order", insert)
+    monkeypatch.setattr(service, "insert_ordered_lines", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(service, "mark_order_canceled", lambda *_args, **_kwargs: events.append("canceled"))
+
+    expected = make_docno("AAAA1111")
+    try:
+        service.confirm_order(
+            vendor="V1",
+            vendor_name="Vendor",
+            lines=[{"iclow_id": 9, "qty": 2, "vendor": "V1"}],
+            ordered_by="tester",
+        )
+    except HqPoError as exc:
+        assert exc.code == "stamp_conflict"
+    else:
+        raise AssertionError("expected stamp_conflict")
+    assert events == [f"stamp:{expected}"]
+    assert "insert_order" not in events
+    assert "canceled" not in events
+
+
+def test_confirm_reverts_stamp_when_supabase_write_fails(monkeypatch):
+    from src.hq_po import service
+
+    class Settings:
+        stamp_enabled = True
+
+    live = {
+        9: {
+            "iclow_id": 9,
+            "bcode": "A1",
+            "descr": "part",
+            "qty": 2,
+            "ui": "ชิ้น",
+            "vendor": "V1",
+            "ordered": "N",
+            "received": "N",
+            "canceled": "N",
+        }
+    }
+    events: list[str] = []
+
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: Settings())
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+    monkeypatch.setattr(service, "fetch_iclow_by_ids", lambda _ids: live)
+    monkeypatch.setattr(service, "open_lines_for_iclow", lambda _client, _ids: {})
+    monkeypatch.setattr(service, "_release_returned_lines", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "fetch_sheet_products", lambda _codes: {})
+    monkeypatch.setattr(service, "_assert_supplier_choices", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "_assert_orderable_vendors", lambda _lines: None)
+    monkeypatch.setattr(service, "_vendor_name", lambda acct, hinted: hinted or acct)
+    monkeypatch.setattr(service, "make_short_id", lambda: "BBBB2222")
+    monkeypatch.setattr(
+        service,
+        "stamp_ordered",
+        lambda lines, docno: events.append(f"stamp:{docno}"),
+    )
+    monkeypatch.setattr(
+        service,
+        "revert_ordered",
+        lambda lines, docno: events.append(f"revert:{docno}"),
+    )
+    monkeypatch.setattr(
+        service,
+        "insert_order",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("supabase down")),
+    )
+    monkeypatch.setattr(service, "insert_ordered_lines", lambda *_args, **_kwargs: [])
+
+    expected = make_docno("BBBB2222")
+    try:
+        service.confirm_order(
+            vendor="V1",
+            vendor_name="Vendor",
+            lines=[{"iclow_id": 9, "qty": 2, "vendor": "V1"}],
+            ordered_by="tester",
+        )
+    except HqPoError as exc:
+        assert exc.code == "supabase_write"
+    else:
+        raise AssertionError("expected supabase_write")
+    assert events == [f"stamp:{expected}", f"revert:{expected}"]
+
+
 def test_cancel_line_returns_the_row_to_iclow(monkeypatch):
     from src.hq_po import service
 

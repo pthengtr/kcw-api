@@ -1163,9 +1163,17 @@ def confirm_order(
     for _ in range(3):
         short_id = make_short_id()
         docno = make_docno(short_id, date.today())
-        inserted = insert_ordered_lines(to_insert, docno=docno) if to_insert else []
-        stored_lines = to_stamp + inserted
+        # Stamp / insert ICLOW first. Writing Supabase before that left canceled
+        # phantom POs (stamp_failed) while every line stayed on รอสั่ง.
+        stamped = False
+        inserted: list[dict[str, Any]] = []
         try:
+            if to_stamp:
+                stamp_ordered(to_stamp, docno=docno)
+                stamped = True
+            if to_insert:
+                inserted = insert_ordered_lines(to_insert, docno=docno)
+            stored_lines = to_stamp + inserted
             order = insert_order(
                 client,
                 short_id=short_id,
@@ -1176,29 +1184,32 @@ def confirm_order(
                 lines=stored_lines,
             )
         except Exception as exc:
+            if stamped:
+                try:
+                    revert_ordered(to_stamp, docno=docno)
+                except Exception:
+                    pass
             if inserted:
-                cancel_created(inserted, docno=docno)
+                try:
+                    cancel_created(inserted, docno=docno)
+                except Exception:
+                    pass
+            if isinstance(exc, HqPoError):
+                raise
             message = str(exc).lower()
             if "hq_po_lines_open_iclow" in message:
                 raise HqPoError(
                     "already_ordered",
                     "มีรายการที่อยู่ในใบสั่งซื้อแล้ว: "
                     + ", ".join(
-                        str(line.get("bcode") or line.get("iclow_id") or "") for line in stored_lines
+                        str(line.get("bcode") or line.get("iclow_id") or "")
+                        for line in (to_stamp + inserted)
                     ),
                 ) from exc
             if "duplicate" in message or "unique" in message or "23505" in message:
                 last_error = exc
                 continue
             raise HqPoError("supabase_write", str(exc)) from exc
-        try:
-            if to_stamp:
-                stamp_ordered(to_stamp, docno=docno)
-        except Exception:
-            mark_order_canceled(client, order["order_id"], reason="stamp_failed")
-            if inserted:
-                cancel_created(inserted, docno=docno)
-            raise
         ordered_ids: list[int] = []
         for line in stored_lines:
             try:
