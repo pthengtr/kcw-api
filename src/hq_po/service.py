@@ -18,6 +18,7 @@ from src.hq_po.db import (
     mark_line_canceled,
     mark_order_canceled,
     open_lines_for_iclow,
+    reopen_stamp_failed_order,
     release_marks_for,
     upsert_release_mark,
     upsert_waiting_draft,
@@ -26,6 +27,7 @@ from src.hq_po.db import (
 from src.hq_po.docno import make_docno, make_short_id
 from src.hq_po.guards import (
     HqPoError,
+    can_stamp_row,
     chosen_pack,
     plan_cancel,
     plan_confirm,
@@ -1330,6 +1332,149 @@ def get_open_order(order_id: str) -> dict[str, Any]:
 def list_open_orders() -> list[dict[str, Any]]:
     client = get_hq_po_supabase_client()
     return _attach_receive(list_orders(client))
+
+
+def restore_stamp_failed_order(order_id: str) -> dict[str, Any]:
+    """Bring back a PO that confirm canceled after stamp_failed.
+
+    Stamps every ICLOW row that still can be ordered, reopens those Supabase
+    lines, and leaves vanished / unstampable lines canceled on the same docno.
+    """
+    settings = get_hq_po_settings()
+    if not settings.stamp_enabled:
+        raise HqPoError(
+            "stamp_disabled",
+            "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่กู้คืนใบสั่งซื้อ",
+        )
+    wanted = str(order_id or "").strip()
+    if not wanted:
+        raise HqPoError("missing", "ไม่มีใบสั่งซื้อ")
+    client = get_hq_po_supabase_client()
+    order = get_order(client, wanted)
+    if (
+        not order
+        or order.get("status") != "canceled"
+        or str(order.get("cancel_reason") or "") != "stamp_failed"
+    ):
+        raise HqPoError("missing", "ไม่พบใบสั่งซื้อที่ยกเลิกจาก stamp_failed")
+    docno = str(order.get("docno") or "").strip()
+    if not docno:
+        raise HqPoError("bad_docno", "ไม่มีเลขที่ใบสั่งซื้อ")
+    vendor = str(order.get("vendor_acctno") or "").strip()
+    if not vendor:
+        raise HqPoError("vendor_mismatch", "ใบนี้ไม่มีเจ้าหนี้")
+    canceled_lines = [line for line in (order.get("lines") or []) if line.get("canceled_at")]
+    if not canceled_lines:
+        raise HqPoError("empty", "ใบนี้ไม่มีรายการให้กู้คืน")
+    ids: list[int] = []
+    for line in canceled_lines:
+        try:
+            ids.append(int(line["iclow_id"]))
+        except (TypeError, ValueError):
+            continue
+    live = fetch_iclow_by_ids(ids) if ids else {}
+    opened = open_lines_for_iclow(client, ids) if ids else {}
+    to_stamp: list[dict[str, Any]] = []
+    reopen_ids: list[str] = []
+    skipped: list[dict[str, Any]] = []
+    for line in canceled_lines:
+        try:
+            iclow_id = int(line["iclow_id"])
+        except (TypeError, ValueError):
+            skipped.append(
+                {
+                    "line_id": line.get("line_id"),
+                    "bcode": line.get("bcode"),
+                    "message": "รายการนี้ไม่มีแถว ICLOW",
+                }
+            )
+            continue
+        bcode = str(line.get("bcode") or iclow_id).strip()
+        row = live.get(iclow_id)
+        if not row:
+            skipped.append(
+                {
+                    "line_id": line.get("line_id"),
+                    "iclow_id": iclow_id,
+                    "bcode": bcode,
+                    "message": f"ไม่พบ ICLOW {bcode}",
+                }
+            )
+            continue
+        hit = opened.get(iclow_id) or {}
+        if hit and str(hit.get("order_id") or "") != wanted:
+            skipped.append(
+                {
+                    "line_id": line.get("line_id"),
+                    "iclow_id": iclow_id,
+                    "bcode": bcode,
+                    "message": f"{bcode} อยู่ในใบ {hit.get('docno') or ''} แล้ว".strip(),
+                }
+            )
+            continue
+        blocked = can_stamp_row(row)
+        if blocked:
+            skipped.append(
+                {
+                    "line_id": line.get("line_id"),
+                    "iclow_id": iclow_id,
+                    "bcode": bcode,
+                    "message": f"{bcode} กู้คืนไม่ได้ ({blocked})",
+                }
+            )
+            continue
+        try:
+            qty = float(line.get("qty"))
+        except (TypeError, ValueError):
+            qty = 0.0
+        if qty <= 0:
+            skipped.append(
+                {
+                    "line_id": line.get("line_id"),
+                    "iclow_id": iclow_id,
+                    "bcode": bcode,
+                    "message": f"{bcode} จำนวนไม่ถูกต้อง",
+                }
+            )
+            continue
+        to_stamp.append(
+            {
+                "iclow_id": iclow_id,
+                "bcode": bcode,
+                "qty": qty,
+                "ui": line.get("ui") or row.get("ui"),
+                "vendor": vendor,
+            }
+        )
+        reopen_ids.append(str(line.get("line_id") or ""))
+    reopen_ids = [line_id for line_id in reopen_ids if line_id]
+    if not to_stamp or not reopen_ids:
+        raise HqPoError(
+            "empty",
+            "กู้คืนไม่ได้: "
+            + ", ".join(str(row.get("message") or "") for row in skipped if row.get("message")),
+        )
+    stamped = False
+    try:
+        stamp_ordered(to_stamp, docno=docno)
+        stamped = True
+        reopen_stamp_failed_order(client, wanted, line_ids=reopen_ids)
+    except Exception:
+        if stamped:
+            try:
+                revert_ordered(to_stamp, docno=docno)
+            except Exception:
+                pass
+        raise
+    ordered_ids = [int(line["iclow_id"]) for line in to_stamp]
+    try:
+        delete_waiting_drafts(client, iclow_ids=ordered_ids)
+    except Exception:
+        pass
+    restored = get_open_order(wanted)
+    restored["restored_line_ids"] = reopen_ids
+    restored["skipped"] = skipped
+    return restored
 
 
 def cancel_order(order_id: str, *, reason: str | None = None) -> dict[str, Any]:
