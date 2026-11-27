@@ -169,19 +169,27 @@ def _speak_windows_edge_tts(text: str) -> None:
 
 
 def _play_mp3_windows(path: Path) -> None:
-    # WMPlayer COM is available on the Tiger cashbox Windows image.
-    escaped = str(path).replace("'", "''")
+    # WMPlayer on the cashbox stays stuck in Transitioning (state 9) and never
+    # audibly plays. WPF MediaPlayer opens the file and waits on duration.
+    resolved = str(path.resolve())
+    escaped = resolved.replace("'", "''")
     ps = (
-        f"$p = New-Object -ComObject WMPlayer.OCX.7; "
-        f"$p.URL = '{escaped}'; "
-        f"$p.settings.volume = 100; "
-        f"$p.controls.play(); "
-        f"$deadline = (Get-Date).AddSeconds(60); "
-        f"Start-Sleep -Milliseconds 300; "
-        f"while ($p.playState -eq 3 -and (Get-Date) -lt $deadline) {{ "
-        f"  Start-Sleep -Milliseconds 200 "
-        f"}}; "
-        f"$p.close()"
+        "Add-Type -AssemblyName PresentationCore; "
+        f"$path = '{escaped}'; "
+        "$mp = New-Object System.Windows.Media.MediaPlayer; "
+        "$mp.Volume = 1.0; "
+        "$mp.Open([Uri]::new((Resolve-Path -LiteralPath $path).Path)); "
+        "$opened = $false; "
+        "for ($i = 0; $i -lt 50; $i++) { "
+        "  Start-Sleep -Milliseconds 100; "
+        "  if ($mp.NaturalDuration.HasTimeSpan) { $opened = $true; break } "
+        "}; "
+        "if (-not $opened) { throw 'MediaPlayer failed to open mp3' }; "
+        "$mp.Play(); "
+        "$wait = [Math]::Max(500, [int]($mp.NaturalDuration.TimeSpan.TotalMilliseconds + 400)); "
+        "Start-Sleep -Milliseconds $wait; "
+        "$mp.Stop(); "
+        "$mp.Close()"
     )
     proc = subprocess.run(
         [
