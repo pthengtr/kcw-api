@@ -52,10 +52,23 @@ def _worker_id() -> str:
 def _configure_logging() -> None:
     if logging.getLogger().handlers:
         return
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    fmt = "%(asctime)s %(levelname)s %(name)s %(message)s"
+    handlers: list[logging.Handler] = []
+    # pythonw has no console; always keep a rotating-ish file log next to cwd/.env
+    log_path = os.getenv("ANNOUNCE_LOG_PATH", "").strip() or os.path.join(
+        os.getcwd(), "announce.log"
     )
+    try:
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter(fmt))
+        handlers.append(file_handler)
+    except Exception:
+        pass
+    if sys.stdout and hasattr(sys.stdout, "write"):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(logging.Formatter(fmt))
+        handlers.append(stream_handler)
+    logging.basicConfig(level=logging.INFO, handlers=handlers or None, format=fmt)
 
 
 def run_once(engine, *, worker_id: str, lookback_hours: float, dry_run: bool) -> bool:
@@ -78,9 +91,17 @@ def run_once(engine, *, worker_id: str, lookback_hours: float, dry_run: bool) ->
         speak_thai(phrase, dry_run=dry_run)
     except Exception:
         logger.exception(
-            "TTS failed after claim id=%s; row stays announced to avoid loops",
+            "TTS failed after claim id=%s; clearing announce lease for retry",
             row.get("id"),
         )
+        try:
+            cloud_qr_repos.clear_cloud_qr_announce(engine, str(row.get("id") or ""))
+        except Exception:
+            logger.exception(
+                "failed clearing announce lease id=%s",
+                row.get("id"),
+            )
+        raise
     return True
 
 

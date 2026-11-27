@@ -62,13 +62,50 @@ def speak_thai(text: str, *, dry_run: bool = False) -> None:
     )
 
 
+_thai_sapi_cached: bool | None = None
+
+
 def _creationflags() -> int:
+    # Hide console windows for powershell/python child processes on Windows.
+    flags = 0
     if hasattr(subprocess, "CREATE_NO_WINDOW"):
-        return subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-    return 0
+        flags |= subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+    return flags
+
+
+def _run_hidden_powershell(
+    command: str,
+    *,
+    input_text: str | None = None,
+    timeout: int = 60,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        input=input_text,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+        creationflags=_creationflags(),
+    )
 
 
 def _windows_has_thai_sapi() -> bool:
+    global _thai_sapi_cached
+    if _thai_sapi_cached is not None:
+        return _thai_sapi_cached
     ps = (
         "Add-Type -AssemblyName System.Speech; "
         "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
@@ -79,22 +116,9 @@ def _windows_has_thai_sapi() -> bool:
         "$s.Dispose(); "
         "if ($hit) { exit 0 } else { exit 1 }"
     )
-    proc = subprocess.run(
-        [
-            "powershell",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            ps,
-        ],
-        capture_output=True,
-        timeout=20,
-        check=False,
-        creationflags=_creationflags(),
-    )
-    return proc.returncode == 0
+    proc = _run_hidden_powershell(ps, timeout=20)
+    _thai_sapi_cached = proc.returncode == 0
+    return _thai_sapi_cached
 
 
 def _speak_windows_sapi(text: str) -> None:
@@ -113,25 +137,7 @@ def _speak_windows_sapi(text: str) -> None:
         "$s.Speak([Console]::In.ReadToEnd()); "
         "$s.Dispose()"
     )
-    proc = subprocess.run(
-        [
-            "powershell",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            ps,
-        ],
-        input=text,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        timeout=60,
-        check=False,
-        creationflags=_creationflags(),
-    )
+    proc = _run_hidden_powershell(ps, input_text=text, timeout=60)
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
         raise RuntimeError(f"Windows SAPI speak failed: {err}")
@@ -191,22 +197,7 @@ def _play_mp3_windows(path: Path) -> None:
         "$mp.Stop(); "
         "$mp.Close()"
     )
-    proc = subprocess.run(
-        [
-            "powershell",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            ps,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=90,
-        check=False,
-        creationflags=_creationflags(),
-    )
+    proc = _run_hidden_powershell(ps, timeout=90)
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
         raise RuntimeError(f"Windows mp3 playback failed: {err}")
