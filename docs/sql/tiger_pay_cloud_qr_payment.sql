@@ -28,6 +28,8 @@ create table if not exists tiger_pay.cloud_qr_payment (
     updated_at timestamptz not null default now(),
     last_polled_at timestamptz null,
     paid_at timestamptz null,
+    announced_at timestamptz null,
+    announced_by text null,
     constraint cloud_qr_payment_amount_non_negative check (amount >= 0),
     constraint cloud_qr_payment_id_max_len check (char_length(id) <= 20)
 );
@@ -59,6 +61,10 @@ create index if not exists cloud_qr_payment_created_at_idx
 
 create index if not exists cloud_qr_payment_paid_at_idx
     on tiger_pay.cloud_qr_payment (paid_at);
+
+create index if not exists cloud_qr_payment_announce_pending_idx
+    on tiger_pay.cloud_qr_payment (paid_at asc nulls last)
+    where status = 'C' and announced_at is null;
 
 grant usage on schema tiger_pay to service_role, authenticated;
 grant all on table tiger_pay.cloud_qr_payment to service_role;

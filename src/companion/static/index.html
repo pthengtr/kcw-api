@@ -1422,6 +1422,7 @@
       selectedAttemptId: null,
       actionInFlight: null, // { type: 'send'|'cancel'|'force', billId, attemptId, paymentType }
       pollTimer: null,
+      pollIntervalMs: null,
       billRetryTimer: null,
       refreshing: false,
       canForceComplete: false,
@@ -1589,6 +1590,7 @@
             title: "ชำระ QR สำเร็จ",
             message: `บิล ${billNo} — Tiger backoffice ยืนยันชำระแล้ว`,
           };
+          announceCloudQrSuccess(chosen.bill);
         } else if (kind === "cash") {
           alertOpts = {
             type: "success",
@@ -1634,6 +1636,45 @@
     function statusLabel(status) {
       if (!status) return "ยังไม่ส่ง";
       return STATUS_LABEL[status] || status;
+    }
+
+    function formatAmountForSpeech(amount) {
+      const n = Number(amount);
+      if (!Number.isFinite(n)) return String(amount ?? "");
+      if (Math.abs(n - Math.round(n)) < 0.005) return String(Math.round(n));
+      return n.toFixed(2);
+    }
+
+    function pickThaiVoice() {
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      return voices.find((v) => String(v.lang || "").toLowerCase().startsWith("th"))
+        || voices.find((v) => /thai|ไทย/i.test(v.name || ""))
+        || null;
+    }
+
+    function announceCloudQrSuccess(bill) {
+      if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") return;
+      const amount = formatAmountForSpeech(bill?.amount);
+      const text = `ชำระเงินผ่าน QR สำเร็จ จำนวน ${amount} บาท`;
+      try {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "th-TH";
+        utter.rate = 1;
+        const voice = pickThaiVoice();
+        if (voice) utter.voice = voice;
+        window.speechSynthesis.speak(utter);
+      } catch (_) {
+        /* TTS is best-effort; keep the success dialog path. */
+      }
+    }
+
+    // Chrome loads voices async; warm the list after first interaction.
+    if (window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.addEventListener?.("voiceschanged", () => {
+        window.speechSynthesis.getVoices();
+      });
     }
 
     function formatAmount(amount) {
@@ -1976,6 +2017,7 @@
       if (state.pollTimer) {
         clearInterval(state.pollTimer);
         state.pollTimer = null;
+        state.pollIntervalMs = null;
       }
       syncProcessModeUrl(null);
       savePrefs();
@@ -2079,6 +2121,7 @@
       const dialog = document.getElementById("qrDialog");
       state.openQrAttemptId = null;
       if (dialog?.open) dialog.close();
+      maybeStartPolling();
     }
 
     function qrStatusLabel(qr, bill) {
@@ -2182,6 +2225,7 @@
         if (!dialog.open) dialog.showModal();
       }
       syncQrDialog();
+      maybeStartPolling();
     }
 
     async function showQrDialog({ bill, attemptId, qr }) {
@@ -2237,6 +2281,7 @@
         if (!dialog.open) dialog.showModal();
       }
       syncQrDialog();
+      maybeStartPolling();
     }
 
     function buttonHtml(bill) {
@@ -2824,15 +2869,26 @@
       const scope = state.processMode ? modeBills() : [];
       const anyActive = !!state.openQrAttemptId
         || scope.some((b) => b.payment_attempt_active && modeOwnsAttempt(b));
-      if (state.processMode && anyActive && !state.pollTimer) {
-        // 3s is enough for till UX; tighter polling stacked slow Tiger voucher shows.
-        state.pollTimer = setInterval(async () => {
-          try { await loadBills(); } catch (err) { setMessage(err.message || String(err)); }
-        }, 3000);
-      } else if ((!state.processMode || !anyActive) && state.pollTimer) {
+      const wantPoll = state.processMode && anyActive;
+      // 1s while QR dialog is open so cloud QR confirm shows sooner; 3s otherwise.
+      const intervalMs = state.openQrAttemptId ? 1000 : 3000;
+      if (!wantPoll) {
+        if (state.pollTimer) {
+          clearInterval(state.pollTimer);
+          state.pollTimer = null;
+          state.pollIntervalMs = null;
+        }
+        return;
+      }
+      if (state.pollTimer && state.pollIntervalMs === intervalMs) return;
+      if (state.pollTimer) {
         clearInterval(state.pollTimer);
         state.pollTimer = null;
       }
+      state.pollIntervalMs = intervalMs;
+      state.pollTimer = setInterval(async () => {
+        try { await loadBills(); } catch (err) { setMessage(err.message || String(err)); }
+      }, intervalMs);
     }
 
     document.getElementById("backBtn").onclick = () => {
@@ -2923,6 +2979,7 @@
     document.getElementById("qrDialog").addEventListener("cancel", (event) => {
       event.stopPropagation();
       state.openQrAttemptId = null;
+      maybeStartPolling();
     });
     document.getElementById("qrDialogCancel").onclick = async () => {
       const btn = document.getElementById("qrDialogCancel");

@@ -1,0 +1,5 @@
+# Minimal deps for till/cashbox cloud QR announce worker.
+sqlalchemy
+psycopg[binary]
+python-dotenv
+edge-tts
