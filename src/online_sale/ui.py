@@ -339,6 +339,16 @@ function poLengthOk(){
   if (expected == null) return true;
   return po.length === expected;
 }
+let poCheckTimer = null;
+let poCheckToken = 0;
+
+function formatDupWarning(dups){
+  const refs = (dups||[]).map(d => d.billno).filter(Boolean).join(', ');
+  return refs
+    ? `คำเตือน: เลขคำสั่งซื้อนี้มีอยู่แล้ว — ${refs} (อนุญาตหลายบิลต่อหนึ่งออเดอร์)`
+    : 'คำเตือน: เลขคำสั่งซื้อนี้มีอยู่แล้ว (อนุญาตหลายบิลต่อหนึ่งออเดอร์)';
+}
+
 function syncPoStatus(){
   const po = poValue();
   const expected = expectedPoLen($('platform').value);
@@ -358,18 +368,51 @@ function syncPoStatus(){
     el.className = 'meta err';
     return false;
   }
-  if (!el.classList.contains('ok') && !el.classList.contains('err')) {
-    el.textContent = expected != null
-      ? `เลขคำสั่งซื้อครบ ${expected} ตัวอักษร`
-      : `เลขคำสั่งซื้อ ${po.length} ตัวอักษร`;
-    el.className = 'meta ok';
-  } else if (el.classList.contains('err') && (expected == null || po.length === expected)) {
-    el.textContent = expected != null
-      ? `เลขคำสั่งซื้อครบ ${expected} ตัวอักษร`
-      : `เลขคำสั่งซื้อ ${po.length} ตัวอักษร`;
-    el.className = 'meta ok';
-  }
+  el.textContent = expected != null
+    ? `เลขคำสั่งซื้อครบ ${expected} ตัวอักษร`
+    : `เลขคำสั่งซื้อ ${po.length} ตัวอักษร`;
+  el.className = 'meta ok';
   return true;
+}
+
+async function checkPoDuplicates(){
+  if (!poLengthOk()) {
+    syncPoStatus();
+    return;
+  }
+  if (!$('shop').value) {
+    $('poStatus').textContent = 'เลือกแพลตฟอร์ม/ร้านค้าก่อนตรวจเลขคำสั่งซื้อซ้ำ';
+    $('poStatus').className = 'meta';
+    return;
+  }
+  const token = ++poCheckToken;
+  const po = poValue();
+  try {
+    const data = await api('/api/check-po', {method:'POST', body: JSON.stringify({
+      acctno:$('shop').value,
+      online_po: po,
+      platform: $('platform').value,
+      exclude_billno: state.editBillno || '',
+      exclude_draft_id: state.editDraftId || '',
+    })});
+    if (token !== poCheckToken || po !== poValue()) return;
+    if (data.duplicates && data.duplicates.length) {
+      $('poStatus').textContent = data.warning || formatDupWarning(data.duplicates);
+      $('poStatus').className = 'meta warn';
+    } else {
+      $('poStatus').textContent = 'เลขคำสั่งซื้อใช้ได้';
+      $('poStatus').className = 'meta ok';
+    }
+  } catch(e) {
+    if (token !== poCheckToken) return;
+    $('poStatus').textContent = e.message;
+    $('poStatus').className = 'meta err';
+  }
+}
+
+function schedulePoDupCheck(){
+  clearTimeout(poCheckTimer);
+  poCheckTimer = setTimeout(() => { checkPoDuplicates(); }, 350);
 }
 function syncPoMaxLength(){
   const expected = expectedPoLen($('platform').value);
@@ -606,6 +649,7 @@ async function loadBillForEdit(billno) {
   syncPoMaxLength();
   $('po').value = bill.online_po || '';
   syncPoStatus();
+  schedulePoDupCheck();
   state.lines = await hydrateLines(bill.lines || [], { creditStock:true });
   syncEditBanner();
   renderLines();
@@ -626,6 +670,7 @@ async function loadDraftForEdit(draftId) {
   syncPoMaxLength();
   $('po').value = draft.online_po || '';
   syncPoStatus();
+  schedulePoDupCheck();
   state.lines = await hydrateLines(draft.lines || []);
   syncEditBanner();
   renderLines();
@@ -677,6 +722,7 @@ async function init() {
     await loadShops($('platform').value, $('shop'));
     syncPoMaxLength();
     syncPoStatus();
+    schedulePoDupCheck();
     renderLines();
   };
   $('qPlatform').onchange = async () => {
@@ -688,30 +734,14 @@ async function init() {
       $('qShop').appendChild(o);
     }
   };
-  $('shop').onchange = renderLines;
-  $('po').oninput = () => { syncPoStatus(); renderLines(); };
-  $('po').onpaste = () => { setTimeout(() => { syncPoStatus(); renderLines(); }, 0); };
+  $('shop').onchange = () => { renderLines(); schedulePoDupCheck(); };
+  $('po').oninput = () => { syncPoStatus(); schedulePoDupCheck(); renderLines(); };
+  $('po').onpaste = () => { setTimeout(() => { syncPoStatus(); schedulePoDupCheck(); renderLines(); }, 0); };
   $('bcode').addEventListener('keydown', e => { if (e.key==='Enter'){ e.preventDefault(); lookupProduct(); }});
   $('bcode').addEventListener('blur', lookupProduct);
   $('addLine').onclick = addLine;
   $('cancelEdit').onclick = () => clearSaleForm();
-  $('checkPo').onclick = async () => {
-    try {
-      if (!poLengthOk()) {
-        syncPoStatus();
-        return;
-      }
-      const data = await api('/api/check-po', {method:'POST', body: JSON.stringify({
-        acctno:$('shop').value,
-        online_po: poValue(),
-        platform: $('platform').value,
-        exclude_billno: state.editBillno || '',
-        exclude_draft_id: state.editDraftId || '',
-      })});
-      if (data.ok) { $('poStatus').textContent='เลขคำสั่งซื้อใช้ได้'; $('poStatus').className='meta ok'; }
-      else { $('poStatus').textContent='ซ้ำกับ '+data.duplicates.map(d=>d.billno).join(', '); $('poStatus').className='meta err'; }
-    } catch(e) { $('poStatus').textContent=e.message; $('poStatus').className='meta err'; }
-  };
+  $('checkPo').onclick = () => checkPoDuplicates();
   $('saveDraft').onclick = async () => {
     if (state.editBillno) return;
     if (!poLengthOk()) {

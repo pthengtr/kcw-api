@@ -501,35 +501,37 @@ def test_post_tad_validation():
         )
 
 
+@patch("src.online_sale.service.draft_store.find_duplicate_draft_po", return_value=[])
+@patch(
+    "src.online_sale.service.parts9.find_duplicate_po",
+    return_value=[{"billno": "TAD6911-001", "bill_date": "2026-11-27", "online_po": "1234567890123456"}],
+)
+def test_check_po_duplicate_is_warning_only(mock_find_po, mock_find_draft):
+    from src.online_sale.service import check_po_payload
+
+    out = check_po_payload("7LAZ1", "1234567890123456", platform="lazada")
+    assert out["ok"] is True
+    assert out["duplicates"][0]["billno"] == "TAD6911-001"
+    assert out["warning"]
+    assert "TAD6911-001" in out["warning"]
+    mock_find_po.assert_called_once()
+    mock_find_draft.assert_called_once()
+
+
 @patch("src.online_sale.writers.tad_simas._fetch_icmas_row")
 @patch("src.online_sale.writers.tad_simas.writer_engine_for_branch")
-def test_post_tad_blocks_duplicate_po_and_stock(mock_engine, mock_icmas):
+def test_post_tad_allows_duplicate_po_but_blocks_stock(mock_engine, mock_icmas):
     mock_conn = MagicMock()
-
-    def first_side_effect():
-        # First SELECT in TX = duplicate PO check; return an existing bill.
-        return {"billno": "TAD6911-001"}
-
-    mock_conn.execute.return_value.mappings.return_value.first.side_effect = first_side_effect
+    # Next billno lookup may return an existing max seq; stock check uses ICMAS mock.
+    mock_conn.execute.return_value.mappings.return_value.first.return_value = {
+        "max_seq": 1
+    }
 
     @contextmanager
     def fake_begin():
         yield mock_conn
 
     mock_engine.return_value.begin = fake_begin
-    with pytest.raises(OnlineSaleError) as exc:
-        post_tad(
-            acctno="7LAZ1",
-            acctname="คุณลูกค้าทั่วไป LAZADA (KC INDUSTRY)",
-            online_po="1234567890123456",
-            remarks="##0000000000001",
-            operator="tester",
-            lines=[{"bcode": "03053231", "qty": 1, "price": 100, "detail": "x"}],
-        )
-    assert exc.value.code == "duplicate_po"
-
-    # No duplicate; stock too low.
-    mock_conn.execute.return_value.mappings.return_value.first.side_effect = lambda: None
     mock_icmas.return_value = {
         "PCODE": "P",
         "MCODE": "M",
