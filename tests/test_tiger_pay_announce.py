@@ -69,14 +69,48 @@ def test_run_once_speaks_claimed_row():
             return_value=row,
         ) as claim,
         patch("src.tiger_pay.announce_worker.speak_thai") as speak,
+        patch(
+            "src.tiger_pay.announce_worker.cloud_qr_repos.clear_cloud_qr_announce"
+        ) as clear,
     ):
         assert run_once(
             engine, worker_id="w1", lookback_hours=24, dry_run=False
         ) is True
         claim.assert_called_once()
         speak.assert_called_once()
+        clear.assert_not_called()
         assert "80" in speak.call_args.args[0]
         assert speak.call_args.kwargs["dry_run"] is False
+
+
+def test_run_once_clears_lease_when_tts_fails():
+    engine = MagicMock()
+    row = {
+        "id": "cloudqr001",
+        "pos_bill_number": "B1",
+        "amount": 80,
+        "paid_amount": 80,
+        "status": "C",
+    }
+    with (
+        patch(
+            "src.tiger_pay.announce_worker.cloud_qr_repos.claim_next_cloud_qr_announce",
+            return_value=row,
+        ),
+        patch(
+            "src.tiger_pay.announce_worker.speak_thai",
+            side_effect=RuntimeError("tts boom"),
+        ),
+        patch(
+            "src.tiger_pay.announce_worker.cloud_qr_repos.clear_cloud_qr_announce"
+        ) as clear,
+    ):
+        try:
+            run_once(engine, worker_id="w1", lookback_hours=24, dry_run=False)
+            assert False, "expected RuntimeError"
+        except RuntimeError:
+            pass
+        clear.assert_called_once_with(engine, "cloudqr001")
 
 
 def test_run_once_idle_when_nothing_to_claim():

@@ -1,5 +1,6 @@
 # Install KCW cloud QR announce worker as a Scheduled Task (runs at logon).
 # Target: Windows PC with speakers next to the Tiger cashbox.
+# Uses pythonw.exe so no black console window sits on the till desktop.
 param(
     [string]$RepoDir = "",
     [string]$TaskName = "KCW-Tiger-Announce"
@@ -11,9 +12,13 @@ if (-not $RepoDir) {
     $RepoDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 }
 
+$pyw = Join-Path $RepoDir ".venv\Scripts\pythonw.exe"
 $py = Join-Path $RepoDir ".venv\Scripts\python.exe"
-if (-not (Test-Path $py)) {
-    throw "Missing $py — run run_announce.bat once to create .venv, or create the venv first"
+if (-not (Test-Path $pyw)) {
+    if (-not (Test-Path $py)) {
+        throw "Missing $pyw / $py — create the venv first"
+    }
+    $pyw = $py
 }
 $envFile = Join-Path $RepoDir ".env"
 if (-not (Test-Path $envFile)) {
@@ -26,9 +31,9 @@ Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" 
     Where-Object { $_.CommandLine -match 'tiger_pay\.announce_worker' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-# Direct python module — avoid run_announce.bat (pip + pause).
+# pythonw = no console window. Logs go to announce.log in RepoDir.
 $arg = "-m src.tiger_pay.announce_worker"
-$action = New-ScheduledTaskAction -Execute $py -Argument $arg -WorkingDirectory $RepoDir
+$action = New-ScheduledTaskAction -Execute $pyw -Argument $arg -WorkingDirectory $RepoDir
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet `
@@ -36,8 +41,9 @@ $settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries `
     -RestartCount 5 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
-    -ExecutionTimeLimit ([TimeSpan]::Zero)
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -Hidden
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
 Start-ScheduledTask -TaskName $TaskName
-Write-Host "OK: $TaskName installed; ensure a Thai Windows voice is installed and speakers are on."
+Write-Host "OK: $TaskName installed windowless via $pyw (log: $RepoDir\announce.log)"

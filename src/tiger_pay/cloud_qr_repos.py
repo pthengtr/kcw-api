@@ -331,6 +331,8 @@ def claim_next_cloud_qr_announce(
     """Claim one paid cloud QR that has not been announced yet.
 
     Uses ``FOR UPDATE SKIP LOCKED`` so two till speakers do not double-speak.
+    Sets ``announced_at`` immediately as a lease; callers should
+    ``clear_cloud_qr_announce`` if TTS fails so the row can retry.
     """
     cleaned = str(worker_id or "").strip() or "announce"
     hours = max(0.1, float(lookback_hours))
@@ -362,3 +364,18 @@ def claim_next_cloud_qr_announce(
             {"worker_id": cleaned[:120], "lookback_hours": hours},
         ).first()
     return _row_to_cloud_qr(row) if row else None
+
+
+def clear_cloud_qr_announce(engine: Engine, payment_id: str) -> None:
+    """Clear announce lease so a failed TTS can be retried."""
+    sql = text(
+        """
+        update tiger_pay.cloud_qr_payment
+        set announced_at = null,
+            announced_by = null,
+            updated_at = now()
+        where id = :id
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(sql, {"id": payment_id})
