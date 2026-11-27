@@ -29,9 +29,10 @@ from src.tiger_pay.poller import (
 
 from src.db import get_engine
 from src.bot.line_bot import (
-    verify_line_signature,
+    resolve_line_channel,
     reply_line_message,
     reply_line_response,
+    use_line_channel,
 )
 from src.handlers.router import route_user_text
 from src.handlers.product import (
@@ -172,7 +173,8 @@ async def line_webhook(request: Request):
     body = await request.body()
     signature = request.headers.get("x-line-signature", "")
 
-    if not verify_line_signature(body, signature):
+    channel = resolve_line_channel(body, signature)
+    if channel is None:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     payload = json.loads(body.decode("utf-8"))
@@ -183,134 +185,138 @@ async def line_webhook(request: Request):
 
     engine = get_engine()
 
-    for event in events:
-        print("LINE EVENT:", event)
+    with use_line_channel(channel):
+        print(f"LINE CHANNEL: {channel.name}")
+        for event in events:
+            print("LINE EVENT:", event)
 
-        reply_token = event.get("replyToken")
-        event_type = event.get("type")
+            reply_token = event.get("replyToken")
+            event_type = event.get("type")
 
-        # =========================
-        # ACCESS CHECK
-        # =========================
-        try:
-            line_user_id = get_line_user_id(event)
-            access = get_or_create_line_access(engine, line_user_id)
+            # =========================
+            # ACCESS CHECK
+            # =========================
+            try:
+                line_user_id = get_line_user_id(event)
+                access = get_or_create_line_access(engine, line_user_id)
 
-            if not access["is_allowed"]:
-                reply_text = build_access_denied_message(access)
-                reply_line_message(reply_token, reply_text)
+                if not access["is_allowed"]:
+                    reply_text = build_access_denied_message(access)
+                    reply_line_message(reply_token, reply_text)
+                    continue
+
+            except Exception as e:
+                print("ACCESS CHECK ERROR:", e)
+
+                try:
+                    reply_line_message(
+                        reply_token,
+                        "ระบบตรวจสอบสิทธิ์มีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง",
+                    )
+                except Exception as reply_err:
+                    print("LINE REPLY ERROR:", reply_err)
+
                 continue
 
-        except Exception as e:
-            print("ACCESS CHECK ERROR:", e)
+            # =========================
+            # ROUTING
+            # =========================
+            try:
+                t_route_0 = time.perf_counter()
+
+                if event_type == "postback":
+                    postback = event.get("postback", {}) or {}
+                    data = (postback.get("data") or "").strip()
+
+                    if data.startswith("kb_select:"):
+                        result = handle_kb_select_postback(data)
+                        reply_payload = openai_result_to_line_response(result)
+                    elif is_product_search_next_postback(data):
+                        reply_payload = handle_product_search_next_postback(
+                            engine,
+                            data,
+                            access=access,
+                        )
+                    elif is_expense_cash_postback(data):
+                        reply_payload = handle_expense_cash_postback(
+                            engine,
+                            data,
+                            line_user_id=line_user_id,
+                            access=access,
+                        )
+                    else:
+                        # ignore unknown postback for now
+                        continue
+
+                elif event_type == "message":
+                    message = event.get("message", {}) or {}
+                    message_type = message.get("type")
+
+                    if message_type == "text":
+                        user_text = (message.get("text") or "").strip()
+                        reply_payload = route_user_text(
+                            engine,
+                            user_text,
+                            access=access,
+                            line_user_id=line_user_id,
+                        )
+
+                    elif message_type == "image":
+                        message_id = message.get("id")
+                        reply_payload = handle_table_printout_image(
+                            line_user_id=line_user_id,
+                            message_id=message_id,
+                            engine=engine,
+                        )
+                        if reply_payload is None:
+                            reply_payload = handle_product_scan_image(
+                                engine=engine,
+                                line_user_id=line_user_id,
+                                message_id=message_id,
+                                access=access,
+                            )
+                        if reply_payload is None:
+                            reply_payload = handle_line_image_message(
+                                line_user_id=line_user_id,
+                                message_id=message_id,
+                                access=access,
+                            )
+
+                    else:
+                        continue
+
+                else:
+                    continue
+
+                t_route_1 = time.perf_counter()
+                print(f"LATENCY route_ms={(t_route_1 - t_route_0) * 1000:.1f}")
+
+                # backward compatibility
+                if isinstance(reply_payload, str):
+                    reply_payload = {"type": "text", "text": reply_payload}
+
+                if not isinstance(reply_payload, dict):
+                    raise ValueError(
+                        f"Unexpected reply_payload type: {type(reply_payload)}"
+                    )
+
+            except Exception as e:
+                print("ROUTE ERROR:", e)
+                reply_payload = {
+                    "type": "text",
+                    "text": "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง",
+                }
 
             try:
-                reply_line_message(
-                    reply_token,
-                    "ระบบตรวจสอบสิทธิ์มีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง",
-                )
-            except Exception as reply_err:
-                print("LINE REPLY ERROR:", reply_err)
+                print("DEBUG reply_payload:", reply_payload)
 
-            continue
+                t_reply_0 = time.perf_counter()
+                reply_line_response(reply_token, reply_payload)
+                t_reply_1 = time.perf_counter()
 
-        # =========================
-        # ROUTING
-        # =========================
-        try:
-            t_route_0 = time.perf_counter()
+                print(f"LATENCY line_reply_ms={(t_reply_1 - t_reply_0) * 1000:.1f}")
 
-            if event_type == "postback":
-                postback = event.get("postback", {}) or {}
-                data = (postback.get("data") or "").strip()
-
-                if data.startswith("kb_select:"):
-                    result = handle_kb_select_postback(data)
-                    reply_payload = openai_result_to_line_response(result)
-                elif is_product_search_next_postback(data):
-                    reply_payload = handle_product_search_next_postback(
-                        engine,
-                        data,
-                        access=access,
-                    )
-                elif is_expense_cash_postback(data):
-                    reply_payload = handle_expense_cash_postback(
-                        engine,
-                        data,
-                        line_user_id=line_user_id,
-                        access=access,
-                    )
-                else:
-                    # ignore unknown postback for now
-                    continue
-
-            elif event_type == "message":
-                message = event.get("message", {}) or {}
-                message_type = message.get("type")
-
-                if message_type == "text":
-                    user_text = (message.get("text") or "").strip()
-                    reply_payload = route_user_text(
-                        engine,
-                        user_text,
-                        access=access,
-                        line_user_id=line_user_id,
-                    )
-
-                elif message_type == "image":
-                    message_id = message.get("id")
-                    reply_payload = handle_table_printout_image(
-                        line_user_id=line_user_id,
-                        message_id=message_id,
-                        engine=engine,
-                    )
-                    if reply_payload is None:
-                        reply_payload = handle_product_scan_image(
-                            engine=engine,
-                            line_user_id=line_user_id,
-                            message_id=message_id,
-                            access=access,
-                        )
-                    if reply_payload is None:
-                        reply_payload = handle_line_image_message(
-                            line_user_id=line_user_id,
-                            message_id=message_id,
-                            access=access,
-                        )
-
-                else:
-                    continue
-
-            else:
-                continue
-
-            t_route_1 = time.perf_counter()
-            print(f"LATENCY route_ms={(t_route_1 - t_route_0) * 1000:.1f}")
-
-            # backward compatibility
-            if isinstance(reply_payload, str):
-                reply_payload = {"type": "text", "text": reply_payload}
-
-            if not isinstance(reply_payload, dict):
-                raise ValueError(f"Unexpected reply_payload type: {type(reply_payload)}")
-
-        except Exception as e:
-            print("ROUTE ERROR:", e)
-            reply_payload = {
-                "type": "text",
-                "text": "ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง",
-            }
-
-        try:
-            print("DEBUG reply_payload:", reply_payload)
-
-            t_reply_0 = time.perf_counter()
-            reply_line_response(reply_token, reply_payload)
-            t_reply_1 = time.perf_counter()
-
-            print(f"LATENCY line_reply_ms={(t_reply_1 - t_reply_0) * 1000:.1f}")
-
-        except Exception as e:
-            print("LINE REPLY ERROR:", e)
+            except Exception as e:
+                print("LINE REPLY ERROR:", e)
 
     return {"ok": True}

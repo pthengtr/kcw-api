@@ -1,32 +1,5 @@
-import requests
-import os
 from src.access.config import COMMAND_PERMISSIONS
-
-LINE_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-
-
-def fetch_line_display_name(line_user_id: str) -> str | None:
-    if not line_user_id:
-        return None
-
-    try:
-        url = f"https://api.line.me/v2/bot/profile/{line_user_id}"
-        headers = {
-            "Authorization": f"Bearer {LINE_TOKEN}"
-        }
-
-        resp = requests.get(url, headers=headers, timeout=5)
-
-        if resp.status_code != 200:
-            print("LINE profile fetch failed:", resp.text)
-            return None
-
-        data = resp.json()
-        return data.get("displayName")
-
-    except Exception as e:
-        print("LINE profile error:", e)
-        return None
+from src.bot.line_bot import fetch_line_display_name
 
 def get_line_user_id(event: dict) -> str:
     source = event.get("source", {}) or {}

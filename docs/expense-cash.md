@@ -37,7 +37,7 @@ pushes fail — requester ack warns, and approvers can use `รายการ�
 
 ## Railway env
 
-Already: `LINE_*`, Supabase service role.
+Already: `LINE_*` (supports optional `LINE_CHANNEL_*_2` for a second OA), Supabase service role.
 
 Add:
 
