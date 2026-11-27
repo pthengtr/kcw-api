@@ -276,6 +276,7 @@ def test_skip_already_open_keeps_the_rest_of_the_po():
         {"iclow_id": 1, "bcode": "BACK"},
         {"iclow_id": 2, "bcode": "NEW"},
         {"iclow_id": 3, "bcode": "HELD"},
+        {"iclow_id": 4, "bcode": "GONE"},
     ]
     live = {
         1: _live(iclow_id=1, bcode="BACK", ordered="X"),
@@ -291,9 +292,10 @@ def test_skip_already_open_keeps_the_rest_of_the_po():
         },
     )
     assert [row["iclow_id"] for row in kept] == [1, 2]
-    assert skipped[0]["bcode"] == "HELD"
+    assert [row["bcode"] for row in skipped] == ["HELD", "GONE"]
     assert skipped[0]["docno"] == "HP6910-DE07"
     assert "HP6910-DE07" in skipped[0]["message"]
+    assert skipped[1]["message"].startswith("ไม่พบ ICLOW")
 
 
 def test_plan_confirm_uses_live_row_and_rejects_other_vendor():
@@ -1259,6 +1261,111 @@ def test_confirm_reverts_stamp_when_supabase_write_fails(monkeypatch):
     else:
         raise AssertionError("expected supabase_write")
     assert events == [f"stamp:{expected}", f"revert:{expected}"]
+
+
+def test_restore_stamp_failed_order_restamps_surviving_lines(monkeypatch):
+    from src.hq_po import service
+
+    class Settings:
+        stamp_enabled = True
+
+    order = {
+        "order_id": "o1",
+        "docno": "HP6911-2744",
+        "vendor_acctno": "7VP",
+        "status": "canceled",
+        "cancel_reason": "stamp_failed",
+        "lines": [
+            {
+                "line_id": "l1",
+                "iclow_id": 265029,
+                "bcode": "15013130",
+                "qty": 2,
+                "ui": "หน่วย",
+                "canceled_at": "2026-11-27T00:54:34+00:00",
+            },
+            {
+                "line_id": "l2",
+                "iclow_id": 265048,
+                "bcode": "15010210",
+                "qty": 10,
+                "ui": "ตับ",
+                "canceled_at": "2026-11-27T00:54:34+00:00",
+            },
+            {
+                "line_id": "l3",
+                "iclow_id": 254840,
+                "bcode": "15010867",
+                "qty": 2,
+                "ui": "หน่วย",
+                "canceled_at": "2026-11-27T00:54:34+00:00",
+            },
+        ],
+    }
+    live = {
+        265029: {
+            "iclow_id": 265029,
+            "bcode": "15013130",
+            "qty": 2,
+            "ui": "หน่วย",
+            "vendor": "VP",
+            "ordered": "N",
+            "received": "N",
+            "canceled": "N",
+        },
+        254840: {
+            "iclow_id": 254840,
+            "bcode": "15010867",
+            "qty": 2,
+            "ui": "หน่วย",
+            "vendor": "7VP",
+            "ordered": "N",
+            "received": "N",
+            "canceled": "N",
+        },
+    }
+    events: list[tuple] = []
+
+    monkeypatch.setattr(service, "get_hq_po_settings", lambda: Settings())
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+    monkeypatch.setattr(service, "get_order", lambda _client, _order_id: order)
+    monkeypatch.setattr(service, "fetch_iclow_by_ids", lambda _ids: live)
+    monkeypatch.setattr(service, "open_lines_for_iclow", lambda _client, _ids: {})
+    monkeypatch.setattr(
+        service,
+        "stamp_ordered",
+        lambda lines, docno: events.append(("stamp", docno, [line["iclow_id"] for line in lines])),
+    )
+    monkeypatch.setattr(
+        service,
+        "reopen_stamp_failed_order",
+        lambda _client, order_id, line_ids: events.append(("reopen", order_id, list(line_ids))),
+    )
+    monkeypatch.setattr(
+        service,
+        "delete_waiting_drafts",
+        lambda _client, iclow_ids: events.append(("drafts", list(iclow_ids))),
+    )
+    monkeypatch.setattr(
+        service,
+        "get_open_order",
+        lambda order_id: {
+            "order_id": order_id,
+            "docno": "HP6911-2744",
+            "status": "ordered",
+            "lines": [line for line in order["lines"] if line["line_id"] in {"l1", "l3"}],
+        },
+    )
+
+    result = service.restore_stamp_failed_order("o1")
+    assert result["status"] == "ordered"
+    assert result["restored_line_ids"] == ["l1", "l3"]
+    assert result["skipped"][0]["bcode"] == "15010210"
+    assert events[0][0] == "stamp"
+    assert events[0][1] == "HP6911-2744"
+    assert events[0][2] == [265029, 254840]
+    assert events[1] == ("reopen", "o1", ["l1", "l3"])
+    assert events[2][0] == "drafts"
 
 
 def test_cancel_line_returns_the_row_to_iclow(monkeypatch):

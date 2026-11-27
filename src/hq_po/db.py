@@ -210,6 +210,43 @@ def mark_order_canceled(client: Client, order_id: str, *, reason: str | None = N
     ).eq("order_id", order_id).execute()
 
 
+def reopen_stamp_failed_order(
+    client: Client, order_id: str, *, line_ids: list[str]
+) -> None:
+    """Reopen a stamp_failed PO for the recoverable lines only."""
+    wanted = [str(line_id or "").strip() for line_id in line_ids if str(line_id or "").strip()]
+    if not wanted:
+        raise HqPoError("empty", "ไม่มีรายการที่กู้คืนได้")
+    now = datetime.now(timezone.utc).isoformat()
+    for line_id in wanted:
+        updated = _rows(
+            _table(client, "lines")
+            .update({"canceled_at": None})
+            .eq("order_id", order_id)
+            .eq("line_id", line_id)
+            .execute()
+        )
+        if not updated:
+            raise HqPoError("missing", f"กู้คืนรายการ {line_id} ไม่ได้")
+    updated_order = _rows(
+        _table(client, "orders")
+        .update(
+            {
+                "status": "ordered",
+                "canceled_at": None,
+                "cancel_reason": None,
+                "updated_at": now,
+            }
+        )
+        .eq("order_id", order_id)
+        .eq("status", "canceled")
+        .eq("cancel_reason", "stamp_failed")
+        .execute()
+    )
+    if not updated_order:
+        raise HqPoError("missing", "ไม่พบใบสั่งซื้อที่กู้คืนได้")
+
+
 def get_order(client: Client, order_id: str) -> dict[str, Any] | None:
     header = _first(
         _table(client, "orders").select("*").eq("order_id", order_id).limit(1).execute()

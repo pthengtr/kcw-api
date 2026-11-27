@@ -24,6 +24,7 @@ from src.hq_po.service import (
     list_open_orders,
     mark_product_unavailable,
     release_incoming,
+    restore_stamp_failed_order,
     product_bill_detail_payload,
     product_insight_payload,
     product_purchase_history_payload,
@@ -650,6 +651,18 @@ def api_cancel(order_id: str, body: CancelBody, request: Request):
         return err
     try:
         return cancel_order(order_id, reason=body.reason)
+    except HqPoError as exc:
+        return _error(exc)
+
+
+@router.post("/api/orders/{order_id}/restore")
+def api_restore(order_id: str, request: Request):
+    """Reopen a PO that confirm canceled after stamp_failed."""
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return restore_stamp_failed_order(order_id)
     except HqPoError as exc:
         return _error(exc)
 

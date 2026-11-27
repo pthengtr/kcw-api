@@ -45,7 +45,15 @@ def skip_already_open(
             continue
         live = live_by_id.get(iclow_id)
         if not live:
-            kept.append(raw)
+            bcode = str(raw.get("bcode") or iclow_id).strip()
+            skipped.append(
+                {
+                    "iclow_id": iclow_id,
+                    "bcode": bcode,
+                    "docno": None,
+                    "message": f"ไม่พบ ICLOW {bcode}",
+                }
+            )
             continue
         if _flag(live.get("ordered")) == "X":
             kept.append(raw)
