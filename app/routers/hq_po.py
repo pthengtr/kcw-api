@@ -63,6 +63,7 @@ class DraftBody(BaseModel):
     vendor_name: str | None = None
     ui: str | None = None
     source: str | None = None
+    qtymin: float | None = None
 
 
 class DraftCheckBody(BaseModel):
@@ -556,6 +557,7 @@ def api_save_extra_draft(bcode: str, body: DraftBody, request: Request):
             vendor_name=body.vendor_name,
             ui=body.ui,
             source=body.source,
+            qtymin=body.qtymin,
             updated_by=_actor(ident),
         )
     except HqPoError as exc:
@@ -594,6 +596,7 @@ def api_save_draft(iclow_id: int, body: DraftBody, request: Request):
             vendor=body.vendor,
             vendor_name=body.vendor_name,
             ui=body.ui,
+            qtymin=body.qtymin,
             updated_by=_actor(ident),
         )
     except HqPoError as exc:

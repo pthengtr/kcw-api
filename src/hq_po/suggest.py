@@ -399,12 +399,19 @@ def apply_waiting_draft(item: dict[str, Any], draft: dict[str, Any]) -> None:
         name = draft.get("vendor_name")
         item["vendor_name"] = str(name).strip() if name not in (None, "") else item.get("vendor_name")
         item["vendor_blocked"] = False
+    try:
+        draft_l = float(draft["qtymin"]) if draft.get("qtymin") not in (None, "") else None
+    except (TypeError, ValueError, KeyError):
+        draft_l = None
+    if draft_l is not None and draft_l > 0:
+        item["order_qtymin"] = draft_l
     item["draft"] = {
         "saved": True,
         "updated_at": draft.get("updated_at"),
         "updated_by": draft.get("updated_by"),
         "stale": bool(reasons),
         "stale_reasons": reasons,
+        "qtymin": draft_l if draft_l is not None and draft_l > 0 else None,
     }
 
 
@@ -457,7 +464,7 @@ def _extra_draft_item(
     if not (qty_n > 0):
         qty_n = 1.0
     ui = str(draft.get("ui") or "").strip() or str(product.get("ui") or "").strip()
-    return {
+    item = {
         "iclow_id": None,
         "source": origin,
         "confirmable": bool(vendor),
@@ -490,8 +497,17 @@ def _extra_draft_item(
             "updated_by": draft.get("updated_by"),
             "stale": False,
             "stale_reasons": [],
+            "qtymin": None,
         },
     }
+    try:
+        draft_l = float(draft["qtymin"]) if draft.get("qtymin") not in (None, "") else None
+    except (TypeError, ValueError, KeyError):
+        draft_l = None
+    if draft_l is not None and draft_l > 0:
+        item["order_qtymin"] = draft_l
+        item["draft"]["qtymin"] = draft_l
+    return item
 
 
 def _merge_extra_waiting_drafts(items: list[dict[str, Any]]) -> None:

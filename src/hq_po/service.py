@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from src.hq_po.config import get_hq_po_settings
 from src.hq_po.db import (
@@ -315,6 +318,19 @@ def _draft_qty(value: Any) -> float:
     return qty
 
 
+def _draft_qtymin(value: Any) -> float | None:
+    """Optional Low Stock override. None = leave PARTS9 L alone."""
+    if value is None or value == "":
+        return None
+    try:
+        qtymin = float(value)
+    except (TypeError, ValueError):
+        raise HqPoError("missing", "สต็อกต่ำ (L) ต้องเป็นตัวเลข") from None
+    if qtymin != qtymin or qtymin <= 0:
+        raise HqPoError("missing", "สต็อกต่ำ (L) ต้องมากกว่า 0")
+    return qtymin
+
+
 def _draft_base_vendor(raw: str) -> str:
     """Snapshot the APMAS account settle would show, so refresh is not 'stale'."""
     code = str(raw or "").strip()
@@ -339,9 +355,10 @@ def save_waiting_draft(
     vendor: str = "",
     vendor_name: str | None = None,
     ui: str | None = None,
+    qtymin: Any = None,
     updated_by: str | None = None,
 ) -> dict[str, Any]:
-    """Autosave qty / vendor for one waiting line. Shared by every staff session."""
+    """Autosave qty / vendor / optional L for one waiting line. Shared by every staff session."""
     try:
         iclow_n = int(iclow_id)
     except (TypeError, ValueError):
@@ -359,27 +376,36 @@ def save_waiting_draft(
     if not bcode:
         raise HqPoError("missing", "แถวนี้ไม่มีรหัสสินค้า")
     qty_n = _draft_qty(qty)
+    qtymin_n = _draft_qtymin(qtymin)
     vendor_acct = str(vendor or "").strip()
     unit = str(ui or "").strip() or None
     name = str(vendor_name or "").strip() or None
     live_vendor = str(live.get("vendor") or "").strip()
     base_vendor = _draft_base_vendor(live_vendor)
     client = get_hq_po_supabase_client()
-    stored = upsert_waiting_draft(
-        client,
-        {
-            "iclow_id": iclow_n,
-            "bcode": bcode,
-            "qty": qty_n,
-            "ui": unit,
-            "vendor_acctno": vendor_acct,
-            "vendor_name": name,
-            "base_qty": live.get("qty"),
-            "base_vendor": base_vendor,
-            "base_descr": str(live.get("descr") or "").strip() or None,
-            "updated_by": (updated_by or "")[:120] or None,
-        },
-    )
+    payload = {
+        "iclow_id": iclow_n,
+        "bcode": bcode,
+        "qty": qty_n,
+        "ui": unit,
+        "vendor_acctno": vendor_acct,
+        "vendor_name": name,
+        "qtymin": qtymin_n,
+        "base_qty": live.get("qty"),
+        "base_vendor": base_vendor,
+        "base_descr": str(live.get("descr") or "").strip() or None,
+        "updated_by": (updated_by or "")[:120] or None,
+    }
+    try:
+        stored = upsert_waiting_draft(client, payload)
+    except Exception as exc:
+        detail = str(exc).lower()
+        if qtymin_n is not None and "qtymin" in detail:
+            payload = dict(payload)
+            payload.pop("qtymin", None)
+            stored = upsert_waiting_draft(client, payload)
+        else:
+            raise
     item = {
         "iclow_id": iclow_n,
         "bcode": bcode,
@@ -398,6 +424,7 @@ def save_waiting_draft(
             "ui": unit,
             "vendor": vendor_acct,
             "vendor_name": name,
+            "qtymin": qtymin_n,
             "updated_at": stored.get("updated_at"),
             "updated_by": stored.get("updated_by"),
             "stale": bool(reasons),
@@ -467,6 +494,7 @@ def save_extra_waiting_draft(
     vendor_name: str | None = None,
     ui: str | None = None,
     source: str | None = None,
+    qtymin: Any = None,
     updated_by: str | None = None,
 ) -> dict[str, Any]:
     """Autosave a catalog / peer / history line that has no ICLOW id yet."""
@@ -474,6 +502,7 @@ def save_extra_waiting_draft(
     if not code or not any(ch.isdigit() for ch in code):
         raise HqPoError("missing", "ไม่มีรหัสสินค้า")
     qty_n = _draft_qty(qty)
+    qtymin_n = _draft_qtymin(qtymin)
     vendor_acct = str(vendor or "").strip()
     if not vendor_acct:
         raise HqPoError("vendor_mismatch", "เลือกเจ้าหนี้ก่อนบันทึก")
@@ -499,6 +528,7 @@ def save_extra_waiting_draft(
                 "ui": unit,
                 "vendor_acctno": vendor_acct,
                 "vendor_name": name,
+                "qtymin": qtymin_n,
                 "source": origin,
                 "updated_by": (updated_by or "")[:120] or None,
             },
@@ -515,7 +545,22 @@ def save_extra_waiting_draft(
                 "supabase_missing",
                 "ยังไม่ได้สร้างตาราง Draft สินค้าเพิ่ม — ติดต่อแอดมิน",
             ) from exc
-        raise HqPoError("supabase_write", detail or "บันทึก Draft ไม่สำเร็จ") from exc
+        # qtymin column may lag a deploy; retry without it so qty/vendor still save.
+        if qtymin_n is not None and "qtymin" in lowered:
+            stored = upsert_extra_waiting_draft(
+                client,
+                {
+                    "bcode": code,
+                    "qty": qty_n,
+                    "ui": unit,
+                    "vendor_acctno": vendor_acct,
+                    "vendor_name": name,
+                    "source": origin,
+                    "updated_by": (updated_by or "")[:120] or None,
+                },
+            )
+        else:
+            raise HqPoError("supabase_write", detail or "บันทึก Draft ไม่สำเร็จ") from exc
     return {
         "bcode": code,
         "draft": {
@@ -524,6 +569,7 @@ def save_extra_waiting_draft(
             "ui": unit,
             "vendor": vendor_acct,
             "vendor_name": name,
+            "qtymin": qtymin_n,
             "source": origin,
             "updated_at": stored.get("updated_at"),
             "updated_by": stored.get("updated_by"),
@@ -554,6 +600,33 @@ def update_product_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:
             "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังแก้สต็อกต่ำไม่ได้",
         )
     return update_qtymin_icmas(bcode, qtymin)
+
+
+def _apply_confirm_qtymin(lines: list[dict[str, Any]]) -> None:
+    """Write drafted L overrides to PARTS9 after the PO is already stored.
+
+    Qty and L are independent: a missing/invalid qtymin leaves ICMAS alone.
+    Failures are logged and skipped so a PARTS9 L write cannot undo a confirmed PO.
+    """
+    seen: set[str] = set()
+    for line in lines or []:
+        code = str(line.get("bcode") or "").strip()
+        if not code or code in seen:
+            continue
+        raw = line.get("qtymin")
+        if raw is None or raw == "":
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value != value or value <= 0:
+            continue
+        seen.add(code)
+        try:
+            update_qtymin_icmas(code, value)
+        except Exception:
+            logger.warning("hq po confirm qtymin update failed for %s", code, exc_info=True)
 
 
 def vendor_search_payload(query: str) -> dict[str, Any]:
@@ -839,9 +912,11 @@ def product_search_payload(query: str) -> dict[str, Any]:
         last_name = str((latest or {}).get("name") or "").strip()
         vendor = last_vendor or str(card.get("acctno") or row.get("vendor") or "").strip()
         vendor_name = last_name or str(card.get("name") or "").strip()
-        hq_qty = _on_hand(hq.get(bcode)) if ok else _on_hand({"qtyoh2": row.get("qtyoh2")})
+        hq_meta = hq.get(bcode) if ok else None
+        hq_qty = _on_hand(hq_meta) if ok else _on_hand({"qtyoh2": row.get("qtyoh2")})
         syp_qty = _on_hand(syp.get(bcode)) if ok else None
         company = None if hq_qty is None or syp_qty is None else hq_qty + syp_qty
+        hq_qtymin = _history_qtymin(hq_meta)
         try:
             mtp2 = float(row.get("mtp2") or 1)
         except (TypeError, ValueError):
@@ -869,6 +944,7 @@ def product_search_payload(query: str) -> dict[str, Any]:
                 "hq_qtyoh2": hq_qty,
                 "syp_qtyoh2": syp_qty,
                 "company_qtyoh2": company,
+                "hq_qtymin": hq_qtymin,
                 "waiting": bool((holds.get(bcode) or {}).get("waiting")),
                 "hold_docs": list((holds.get(bcode) or {}).get("docs") or []),
             }
@@ -1324,6 +1400,7 @@ def confirm_order(
                 )
             except Exception:
                 pass
+        _apply_confirm_qtymin(planned)
         order["vendor_name"] = name
         order["skipped"] = skipped
         return order

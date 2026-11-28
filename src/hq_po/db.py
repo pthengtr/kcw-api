@@ -401,7 +401,7 @@ def waiting_drafts_for(client: Client, iclow_ids: list[int]) -> dict[int, dict[s
         rows = _rows(
             _table(client, "waiting_drafts")
             .select(
-                "iclow_id,bcode,qty,ui,vendor_acctno,vendor_name,"
+                "iclow_id,bcode,qty,ui,vendor_acctno,vendor_name,qtymin,"
                 "base_qty,base_vendor,base_descr,updated_by,updated_at"
             )
             .in_("iclow_id", chunk)
@@ -420,7 +420,7 @@ def list_extra_waiting_drafts(client: Client) -> list[dict[str, Any]]:
     """All shared catalog/peer drafts (no ICLOW id). Newest first."""
     return _rows(
         _table(client, "waiting_extra_drafts")
-        .select("bcode,qty,ui,vendor_acctno,vendor_name,source,updated_by,updated_at")
+        .select("bcode,qty,ui,vendor_acctno,vendor_name,qtymin,source,updated_by,updated_at")
         .order("updated_at", desc=True)
         .execute()
     )

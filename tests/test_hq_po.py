@@ -1194,7 +1194,7 @@ def test_product_search_payload_marks_waiting_and_last_vendor(monkeypatch):
     monkeypatch.setattr(
         "src.hq_po.stock.fetch_dual_stock",
         lambda _codes, refresh=False: (
-            {"01011980": {"qtyoh2": 2}},
+            {"01011980": {"qtyoh2": 2, "qtymin": -1}},
             {"01011980": {"qtyoh2": 1}},
             True,
         ),
@@ -1207,6 +1207,7 @@ def test_product_search_payload_marks_waiting_and_last_vendor(monkeypatch):
     assert item["waiting"] is True
     assert item["hold_docs"] == []
     assert item["company_qtyoh2"] == 3
+    assert item["hq_qtymin"] == -1.0
     assert item["price"] == 120
     assert item["cost"] == 80
     assert item["location1"] == "15B-3-5"
@@ -1831,6 +1832,46 @@ def test_update_qtymin_refuses_zero_and_negative():
             raise AssertionError(f"expected refusal for {bad}")
 
 
+def test_apply_confirm_qtymin_writes_only_positive_overrides(monkeypatch):
+    from src.hq_po import service
+
+    writes = []
+
+    def fake_update(bcode, qtymin):
+        writes.append((bcode, qtymin))
+        return {"bcode": bcode, "qtymin": qtymin}
+
+    monkeypatch.setattr(service, "update_qtymin_icmas", fake_update)
+    service._apply_confirm_qtymin(
+        [
+            {"bcode": "A1", "qtymin": 8},
+            {"bcode": "A1", "qtymin": 9},
+            {"bcode": "B2"},
+            {"bcode": "C3", "qtymin": -1},
+            {"bcode": "D4", "qtymin": 0},
+            {"bcode": "E5", "qtymin": 3.5},
+        ]
+    )
+    assert writes == [("A1", 8), ("E5", 3.5)]
+
+
+def test_plan_created_carries_qtymin_override():
+    from src.hq_po.guards import plan_created
+
+    planned = plan_created(
+        [{"bcode": "A1", "qty": 2, "vendor": "V1", "qtymin": 10}],
+        {"A1": {"bcode": "A1", "qty": 1, "vendor": "V1", "propose_meta": {}}},
+        vendor="V1",
+    )
+    assert planned[0]["qtymin"] == 10.0
+    planned_plain = plan_created(
+        [{"bcode": "A1", "qty": 2, "vendor": "V1"}],
+        {"A1": {"bcode": "A1", "qty": 1, "vendor": "V1", "propose_meta": {}}},
+        vendor="V1",
+    )
+    assert "qtymin" not in planned_plain[0]
+
+
 def test_update_product_qtymin_requires_the_stamp_flag(monkeypatch):
     from src.hq_po import service
 
@@ -1901,18 +1942,24 @@ def test_page_confirms_before_removing_a_waiting_line():
     assert "data-block-ordered" in html
     assert "/hq-po/api/iclow/" in html
     assert "data-l=" in html
-    assert "แก้ไขค่า L" in html
-    assert "function lowStockEdit" in html
+    assert "ค่า L" in html
+    assert "L ปัจจุบัน" in html
+    assert "ไม่สั่งซ้ำ" in html
+    assert "function lowStockQtyHtml" in html
     assert "function lowStockLabel" in html
-    assert "lowStockEdit(row)" in html.split("function productTools", 1)[1].split("function linesHead", 1)[0]
-    assert "data-l=" in html.split("function lowStockEdit", 1)[1].split("function stockRecovered", 1)[0]
-    assert "data-l=" not in html.split("function lowStockLabel", 1)[1].split("function lowStockEdit", 1)[0]
+    assert "function draftQtymin" in html
+    assert "function catalogLowStockHtml" in html
+    assert "lowStockQtyHtml(row)" in html.split("function qtyCell", 1)[1].split("function liveLowStock", 1)[0]
+    assert "data-l=" in html.split("function lowStockQtyHtml", 1)[1].split("function stockRecovered", 1)[0]
+    assert "data-l=" not in html.split("function lowStockLabel", 1)[1].split("function lowStockQtyHtml", 1)[0]
     assert "data-l=" not in html.split("function stockCellHtml", 1)[1].split("function lineHtml", 1)[0]
     assert "HQ ถึง L แล้ว" in html.split("function stockCellHtml", 1)[1].split("function lineHtml", 1)[0]
-    assert "/hq-po/api/products/" in html
+    assert "data-catalog-l" in html
     assert "qtymin" in html
     assert "ต้องมากกว่า 0" in html
-    assert "saveLowStock" in html
+    assert "applyDraftLowStock" in html
+    assert "saveLowStock" not in html
+    assert "lowStockEdit" not in html
 
 
 def test_page_autosaves_waiting_drafts():
@@ -1928,6 +1975,8 @@ def test_page_autosaves_waiting_drafts():
     assert "removeExtraDraft" in html
     assert "data-remove-extra" in html
     assert "scheduleDraftSave(added)" in html
+    assert "body.qtymin" in html
+    assert "order_qtymin" in html
     assert "บันทึกแล้ว" in html
     assert "warnStaleDrafts" in html
     assert "staleFlagLabel" in html
@@ -1952,6 +2001,7 @@ def test_apply_waiting_draft_overlays_qty_and_vendor():
         "ui": "BOX",
         "vendor_acctno": "V2",
         "vendor_name": "Beta",
+        "qtymin": 12,
         "base_qty": 2,
         "base_vendor": "V1",
         "base_descr": "bolt",
@@ -1964,8 +2014,10 @@ def test_apply_waiting_draft_overlays_qty_and_vendor():
     assert item["order_ui"] == "BOX"
     assert item["vendor"] == "V2"
     assert item["vendor_name"] == "Beta"
+    assert item["order_qtymin"] == 12.0
     assert item["draft"]["saved"] is True
     assert item["draft"]["stale"] is False
+    assert item["draft"]["qtymin"] == 12.0
 
     stale_item = dict(item, qty=9, vendor="V1", descr="bolt v2", order_qty=None)
     reasons = draft_stale_reasons(stale_item, draft)
@@ -2118,6 +2170,7 @@ def test_save_extra_waiting_draft_writes_shared_bcode_row(monkeypatch):
     monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
 
     def fake_upsert(_client, row):
+        stored.clear()
         stored.update(row)
         return dict(row, updated_at="2026-11-28T10:00:00+00:00")
 
@@ -2129,6 +2182,7 @@ def test_save_extra_waiting_draft_writes_shared_bcode_row(monkeypatch):
         vendor_name="สตาร์ทกัง",
         ui="PCS",
         source="catalog",
+        qtymin=8,
         updated_by="Pannawit",
     )
     assert stored["bcode"] == "30052971"
@@ -2136,8 +2190,10 @@ def test_save_extra_waiting_draft_writes_shared_bcode_row(monkeypatch):
     assert stored["vendor_acctno"] == "7STKG"
     assert stored["ui"] == "PCS"
     assert stored["source"] == "catalog"
+    assert stored["qtymin"] == 8.0
     assert result["draft"]["saved"] is True
     assert result["draft"]["vendor"] == "7STKG"
+    assert result["draft"]["qtymin"] == 8.0
 
     monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: {"30052971"})
     try:
@@ -2181,6 +2237,7 @@ def test_extra_draft_item_and_merge_skips_existing_bcode(monkeypatch):
         "ui": "BOX",
         "vendor_acctno": "7STKG",
         "vendor_name": "สตาร์ทกัง",
+        "qtymin": 6,
         "source": "catalog",
         "updated_at": "2026-11-28T10:00:00+00:00",
         "updated_by": "Pannawit",
@@ -2196,8 +2253,10 @@ def test_extra_draft_item_and_merge_skips_existing_bcode(monkeypatch):
     assert item["order_qty"] == 4
     assert item["order_ui"] == "BOX"
     assert item["vendor"] == "7STKG"
+    assert item["order_qtymin"] == 6.0
     assert item["propose_meta"]["iclow_origin"] == "catalog"
     assert item["draft"]["saved"] is True
+    assert item["draft"]["qtymin"] == 6.0
 
     items = [{"iclow_id": 1, "bcode": "30052971", "source": "iclow"}]
     monkeypatch.setattr(
