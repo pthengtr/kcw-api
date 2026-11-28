@@ -177,18 +177,20 @@ def plan_confirm(
                 mtp = None
             if mtp is not None and mtp <= 0:
                 mtp = None
-        out.append(
-            {
-                "iclow_id": iclow_id,
-                "bcode": str(live.get("bcode") or "").strip(),
-                "descr": str(live.get("descr") or "").strip() or None,
-                "qty": qty,
-                "ui": ui,
-                "mtp": mtp,
-                "vendor": line_vendor,
-                "propose_meta": raw.get("propose_meta"),
-            }
-        )
+        planned = {
+            "iclow_id": iclow_id,
+            "bcode": str(live.get("bcode") or "").strip(),
+            "descr": str(live.get("descr") or "").strip() or None,
+            "qty": qty,
+            "ui": ui,
+            "mtp": mtp,
+            "vendor": line_vendor,
+            "propose_meta": raw.get("propose_meta"),
+        }
+        qtymin = _optional_qtymin(raw.get("qtymin"))
+        if qtymin is not None:
+            planned["qtymin"] = qtymin
+        out.append(planned)
     return out
 
 
@@ -226,7 +228,11 @@ def plan_created(
             raise HqPoError("bad_qty", f"{bcode} จำนวนไม่ถูกต้อง")
         meta = dict(live.get("propose_meta") or {})
         meta["iclow_origin"] = "created"
-        out.append({**live, "iclow_id": None, "qty": qty, "vendor": line_vendor, "propose_meta": meta})
+        planned = {**live, "iclow_id": None, "qty": qty, "vendor": line_vendor, "propose_meta": meta}
+        qtymin = _optional_qtymin(raw.get("qtymin"))
+        if qtymin is not None:
+            planned["qtymin"] = qtymin
+        out.append(planned)
     return out
 
 
@@ -249,6 +255,19 @@ def _qty(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _optional_qtymin(value: Any) -> float | None:
+    """Positive Low Stock override from confirm payload. Missing/invalid → None."""
+    if value is None or value == "":
+        return None
+    try:
+        qtymin = float(value)
+    except (TypeError, ValueError):
+        return None
+    if qtymin != qtymin or qtymin <= 0:
+        return None
+    return qtymin
 
 
 def chosen_qty(raw: dict[str, Any], fallback: Any) -> float:

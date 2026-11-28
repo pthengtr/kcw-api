@@ -106,8 +106,10 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .stock-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px}
 .low-edit{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;font-weight:650}
 .low-in{width:64px;min-height:32px;font-size:14px;padding:4px 6px}
-.manage-menu .low-edit{width:100%;justify-content:space-between;box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--blue-deep)}
-.manage-menu .low-in{width:72px;min-height:34px}
+.low-qty{display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-top:4px}
+.low-qty .low-edit{justify-content:flex-end}
+.qty-edit .low-qty .meta{margin-top:0}
+.catalog-low{display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-top:6px}
 .thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
 .thumb{width:40px;height:40px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
 .thumb-empty{display:none}
@@ -831,8 +833,7 @@ function productTools(row){
   const removeExtra = (STAMP && !row.iclow_id && row.bcode && (row.source === "catalog" || row.source === "peer" || row.source === "history"))
     ? `<button type="button" class="peer-btn warn" data-remove-extra="${esc(row.bcode||"")}">นำออก</button>`
     : "";
-  const lowEdit = lowStockEdit(row);
-  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${lowEdit}${cancel}${dismiss}${removeExtra}</div></details>`;
+  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${cancel}${dismiss}${removeExtra}</div></details>`;
   return {
     actions: `<div class="line-actions">${manage}${tradeButton(row.bcode)}</div>`,
     extra: `<div class="col-extra"><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div></div>`,
@@ -959,6 +960,8 @@ async function saveDraft(row){
     vendor_name: row.vendor_name || "",
     ui: selectedUnit(row) || "",
   };
+  const draftL = draftQtymin(row);
+  if(draftL != null) body.qtymin = draftL;
   if(!row.iclow_id) body.source = row.source || "catalog";
   try {
     const res = await fetch(url, {
@@ -1015,21 +1018,48 @@ function qtyCell(row){
   }
   const units = unitHtml(row);
   const unitLabel = units ? "" : `<span class="meta">${esc(selectedUnit(row))}</span>`;
-  return `<div class="qty-edit"><div class="qty-row"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/>${unitLabel}${units}</div>${draftStatusHtml(row)}</div>`;
+  return `<div class="qty-edit"><div class="qty-row"><input class="qty-in" data-qty="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(orderQty(row)))}" aria-label="จำนวน ${esc(row.bcode||"")}"/>${unitLabel}${units}</div>${lowStockQtyHtml(row)}${draftStatusHtml(row)}</div>`;
+}
+function liveLowStock(row){
+  if(!row || row.hq_qtymin == null || row.hq_qtymin === "") return null;
+  const L = Number(row.hq_qtymin);
+  return Number.isFinite(L) ? L : null;
+}
+function lowStockCurrentText(row){
+  const L = liveLowStock(row);
+  if(L == null) return "";
+  if(L < 0) return "ไม่สั่งซ้ำ";
+  return qtyText(L);
+}
+function draftQtymin(row){
+  if(!row || row.order_qtymin == null || row.order_qtymin === "") return null;
+  const n = Number(row.order_qtymin);
+  if(!Number.isFinite(n) || n <= 0) return null;
+  const cur = liveLowStock(row);
+  if(cur != null && Math.abs(cur - n) < 1e-9) return null;
+  return n;
+}
+function lowStockInputValue(row){
+  if(row && row.order_qtymin != null && row.order_qtymin !== ""){
+    const n = Number(row.order_qtymin);
+    if(Number.isFinite(n) && n > 0) return qtyText(n);
+  }
+  const L = liveLowStock(row);
+  if(L != null && L > 0) return qtyText(L);
+  return "";
 }
 function lowStockLabel(row){
-  if(row.hq_qtymin == null || row.hq_qtymin === "") return "";
-  const L = Number(row.hq_qtymin);
-  if(!Number.isFinite(L)) return "";
-  if(L < 0) return `<span>L${esc(qtyText(L))}</span>`;
-  return `<span>L ${esc(qtyText(L))}</span>`;
+  const text = lowStockCurrentText(row);
+  if(!text) return "";
+  const L = liveLowStock(row);
+  if(L != null && L < 0) return `<span>L ${esc(text)}</span>`;
+  return `<span>L ${esc(text)}</span>`;
 }
-function lowStockEdit(row){
+function lowStockQtyHtml(row){
   if(!STAMP || !row || !row.bcode) return "";
-  if(row.hq_qtymin == null || row.hq_qtymin === "") return "";
-  const L = Number(row.hq_qtymin);
-  if(!Number.isFinite(L) || L < 0) return "";
-  return `<label class="manage-item low-edit">แก้ไขค่า L <input class="qty-in low-in" data-l="${esc(row.bcode)}" data-lkey="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(L))}" aria-label="สต็อกต่ำ ${esc(row.bcode||"")}"/></label>`;
+  const current = lowStockCurrentText(row) || "—";
+  const placeholder = liveLowStock(row) != null && liveLowStock(row) < 0 ? "ตั้ง L ใหม่" : "";
+  return `<div class="low-qty"><span class="meta">L ปัจจุบัน: ${esc(current)}</span><label class="low-edit">ค่า L <input class="qty-in low-in" data-l="${esc(rowKey(row))}" inputmode="decimal" enterkeyhint="done" value="${esc(lowStockInputValue(row))}" placeholder="${esc(placeholder)}" aria-label="สต็อกต่ำ ${esc(row.bcode||"")}"/></label></div>`;
 }
 function stockRecovered(row){
   const hq = Number(row.hq_qtyoh2);
@@ -1440,6 +1470,8 @@ function linePayload(row){
   const meta = Object.assign({}, row.propose_meta || {});
   if(row.parts9_qty) meta.parts9_qty = row.parts9_qty;
   const body = {qty: orderQty(row), vendor: row.vendor || "", ui: selectedUnit(row), propose_meta: Object.keys(meta).length ? meta : null};
+  const draftL = draftQtymin(row);
+  if(draftL != null) body.qtymin = draftL;
   if(row.iclow_id) body.iclow_id = row.iclow_id;
   else body.bcode = row.bcode;
   return body;
@@ -1764,53 +1796,23 @@ async function loadOrders(){
     host.innerHTML = '<div class="empty">โหลดใบที่สั่งแล้วไม่ได้</div>';
   }
 }
-async function saveLowStock(input){
-  if(state.busy || !STAMP || !input) return;
-  const bcode = String(input.getAttribute("data-l") || "").trim();
-  const key = String(input.getAttribute("data-lkey") || "").trim();
-  if(!bcode) return;
-  const row = key ? findRow(key) : state.items.find(item => item.bcode === bcode);
-  const prev = row && row.hq_qtymin != null ? Number(row.hq_qtymin) : null;
-  const value = Number(String(input.value || "").trim());
+function applyDraftLowStock(row, raw){
+  if(!row) return;
+  const text = String(raw == null ? "" : raw).trim();
+  if(!text){
+    delete row.order_qtymin;
+    scheduleDraftSave(row);
+    return;
+  }
+  const value = Number(text);
   if(!Number.isFinite(value) || value <= 0){
-    alert("สต็อกต่ำ (L) ต้องมากกว่า 0\nถ้าไม่ต้องการสั่ง ให้กดนำออก");
-    input.value = prev != null && Number.isFinite(prev) && prev > 0 ? qtyText(prev) : "";
+    alert("สต็อกต่ำ (L) ต้องมากกว่า 0\nถ้าไม่ต้องการสั่งซ้ำ ให้เว้นว่างไว้ หรือกดนำออก");
+    const input = document.querySelector(`input[data-l="${CSS.escape(rowKey(row))}"]`);
+    if(input) input.value = lowStockInputValue(row);
     return;
   }
-  if(prev != null && Number.isFinite(prev) && Math.abs(prev - value) < 1e-9){
-    input.value = qtyText(prev);
-    return;
-  }
-  setBusy(true, "กำลังบันทึก L…");
-  let failed = null;
-  let saved = null;
-  try {
-    const res = await fetch("/hq-po/api/products/" + encodeURIComponent(bcode) + "/qtymin", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({qtymin: value})
-    });
-    const data = await res.json().catch(()=>({}));
-    if(!res.ok) failed = new Error(data.message || "บันทึก L ไม่สำเร็จ");
-    else saved = data;
-  } catch (err) {
-    failed = err;
-  } finally {
-    setBusy(false);
-  }
-  if(failed){
-    alert(failed.message || "บันทึก L ไม่สำเร็จ");
-    input.value = prev != null && Number.isFinite(prev) && prev > 0 ? qtyText(prev) : "";
-    return;
-  }
-  const next = Number(saved && saved.qtymin);
-  state.items.forEach(item => {
-    if(item.bcode !== bcode) return;
-    item.hq_qtymin = Number.isFinite(next) ? next : value;
-    if(saved && saved.parts9_qty) item.parts9_qty = saved.parts9_qty;
-    else if(saved) delete item.parts9_qty;
-  });
-  renderList();
+  row.order_qtymin = value;
+  scheduleDraftSave(row);
 }
 async function cancelWaiting(iclowId, bcode){
   if(state.busy || !iclowId) return;
@@ -2597,6 +2599,7 @@ function usePeer(row, bcode){
     hq_qtyoh2: hit.hq_qtyoh2,
     syp_qtyoh2: hit.syp_qtyoh2,
     company_qtyoh2: hit.company_qtyoh2,
+    hq_qtymin: hit.hq_qtymin,
     propose_meta: {iclow_origin: "peer"},
   };
   const idx = state.items.indexOf(row);
@@ -2808,10 +2811,15 @@ function catalogSupplierHtml(row){
     : `<button type="button" class="peer-btn" data-new-ap="catalog">เลือกเจ้าหนี้ใหม่</button>`;
   return `<label class="vendor-pick">เจ้าหนี้<select data-catalog-pick aria-label="เจ้าหนี้ ${esc(row.bcode || "")}">${empty}${opts}</select></label>${ap}`;
 }
+function catalogLowStockHtml(row){
+  const current = lowStockCurrentText(row) || "—";
+  const placeholder = liveLowStock(row) != null && liveLowStock(row) < 0 ? "ตั้ง L ใหม่" : "";
+  return `<div class="catalog-low"><span class="meta">L ปัจจุบัน: ${esc(current)}</span><label class="low-edit">ค่า L <input class="qty-in low-in" data-catalog-l inputmode="decimal" enterkeyhint="done" value="${esc(lowStockInputValue(row))}" placeholder="${esc(placeholder)}" aria-label="สต็อกต่ำ ${esc(row.bcode || "")}"/></label></div>`;
+}
 function catalogEditorHtml(row){
   const label = state.catalogVendor ? "ใส่ในใบของเจ้าหนี้นี้" : "ใส่รายการนี้";
   const stock = row.company_qtyoh2 == null ? "" : `<div class="meta">คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}</div>`;
-  return `<div class="card"><div class="line plain"><div><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${catalogUnitHtml(row)}${stock}${catalogSupplierHtml(row)}<button type="button" class="order-btn" data-catalog-accept>${label}</button></div><div class="qty-edit"><input class="qty-in" data-catalog-qty inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(row.order_qty || 1))}" aria-label="จำนวน ${esc(row.bcode || "")}"/><span class="meta">${esc(row.order_ui || row.ui || "")}</span></div></div></div>`;
+  return `<div class="card"><div class="line plain"><div><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${catalogUnitHtml(row)}${stock}${catalogSupplierHtml(row)}<button type="button" class="order-btn" data-catalog-accept>${label}</button></div><div class="qty-edit"><div class="qty-row"><input class="qty-in" data-catalog-qty inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(row.order_qty || 1))}" aria-label="จำนวน ${esc(row.bcode || "")}"/><span class="meta">${esc(row.order_ui || row.ui || "")}</span></div>${catalogLowStockHtml(row)}</div></div></div>`;
 }
 function scheduleCatalogSearch(){
   clearTimeout(catalogTimer);
@@ -2994,6 +3002,14 @@ function acceptCatalog(){
   const qty = Number(row.order_qty);
   if(!(qty > 0)){ alert("ใส่จำนวน"); return; }
   if(!row.vendor){ alert("เลือกเจ้าหนี้ก่อน"); return; }
+  const draftL = draftQtymin(row);
+  if(row.order_qtymin != null && row.order_qtymin !== "" && draftL == null){
+    const typed = Number(row.order_qtymin);
+    if(!Number.isFinite(typed) || typed <= 0){
+      alert("สต็อกต่ำ (L) ต้องมากกว่า 0\nถ้าไม่ต้องการเปลี่ยน L ให้เว้นว่างไว้");
+      return;
+    }
+  }
   const existing = state.items.find(item => String(item.bcode || "") === String(row.bcode || ""));
   if(existing){
     closeCatalog();
@@ -3025,10 +3041,15 @@ function acceptCatalog(){
     hq_qtyoh2: row.hq_qtyoh2,
     syp_qtyoh2: row.syp_qtyoh2,
     company_qtyoh2: row.company_qtyoh2,
+    hq_qtymin: row.hq_qtymin,
     suppliers: row.suppliers || [],
     propose_meta: {iclow_origin: "catalog"},
     picked: true,
   };
+  if(row.order_qtymin != null && row.order_qtymin !== ""){
+    const n = Number(row.order_qtymin);
+    if(Number.isFinite(n) && n > 0) added.order_qtymin = n;
+  }
   haystack(added);
   state.items.push(added);
   closeCatalog();
@@ -3067,6 +3088,13 @@ document.getElementById("catalog").oninput = (e) => {
   const qty = e.target.closest("input[data-catalog-qty]");
   if(qty && state.catalogPick){
     state.catalogPick.order_qty = qty.value;
+    return;
+  }
+  const low = e.target.closest("input[data-catalog-l]");
+  if(low && state.catalogPick){
+    const text = String(low.value || "").trim();
+    if(!text) delete state.catalogPick.order_qtymin;
+    else state.catalogPick.order_qtymin = text;
     return;
   }
   const ap = e.target.closest("input[data-apq]");
@@ -3203,6 +3231,16 @@ document.getElementById("list").oninput = (e) => {
     scheduleAp(row, ap.dataset.apq || "");
     return;
   }
+  const low = e.target.closest("input[data-l]");
+  if(low){
+    const row = findRow(low.dataset.l || "");
+    if(!row) return;
+    const text = String(low.value || "").trim();
+    if(!text) delete row.order_qtymin;
+    else row.order_qtymin = text;
+    scheduleDraftSave(row);
+    return;
+  }
   const input = e.target.closest("input[data-qty]");
   if(!input) return;
   const row = findRow(input.dataset.qty || "");
@@ -3213,7 +3251,8 @@ document.getElementById("list").oninput = (e) => {
 };
 document.getElementById("list").addEventListener("change", (e) => {
   const input = e.target.closest("input[data-l]");
-  if(input) saveLowStock(input);
+  if(!input) return;
+  applyDraftLowStock(findRow(input.dataset.l || ""), input.value);
 });
 document.getElementById("list").addEventListener("keydown", (e) => {
   const input = e.target.closest("input[data-l]");
