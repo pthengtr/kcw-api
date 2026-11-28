@@ -441,7 +441,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"vendor", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, doneQ:"", hold:[], holdLoaded:false, busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:""};
+const state = {items:[], view:"vendor", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, doneQ:"", hold:[], holdLoaded:false, busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:"", catalogPeerPick:false};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -2501,7 +2501,7 @@ function peerLText(line){
   if(!Number.isFinite(L)) return "";
   return L < 0 ? "L" + qtyText(L) : "L " + qtyText(L);
 }
-function peerLineHtml(owner, line){
+function peerLineHtml(owner, line, section){
   const bits = [];
   if(line.model) bits.push("รุ่น " + line.model);
   if(line.brand) bits.push("ยี่ห้อ " + line.brand);
@@ -2515,7 +2515,8 @@ function peerLineHtml(owner, line){
   }
   const L = peerLText(line);
   if(L) bits.push(L);
-  return `<button type="button" class="peer" data-use="${esc(rowKey(owner))}" data-peer="${esc(line.bcode)}"><span class="sku">${esc(line.bcode)}</span>${esc(line.descr||"")}<span class="meta">${esc(bits.join(" · "))}</span></button>`;
+  const catalog = section === "location" ? ' data-peer-catalog="1"' : "";
+  return `<button type="button" class="peer" data-use="${esc(rowKey(owner))}" data-peer="${esc(line.bcode)}"${catalog}><span class="sku">${esc(line.bcode)}</span>${esc(line.descr||"")}<span class="meta">${esc(bits.join(" · "))}</span></button>`;
 }
 function peerPanelHtml(row){
   const groups = ((row.peers && row.peers.groups) || []).filter(g => (g.lines||[]).length);
@@ -2524,7 +2525,7 @@ function peerPanelHtml(row){
     const note = g.key === "location"
       ? `<div class="meta">ตรวจก่อนเลือก — สินค้าใน Location เดียวกันอาจไม่ได้ใช้ทดแทนกันทุกตัว</div>`
       : "";
-    return `<div class="peer-sec"><div class="meta">${esc(g.label||"")}</div>${note}${(g.lines||[]).map(line => peerLineHtml(row, line)).join("")}</div>`;
+    return `<div class="peer-sec"><div class="meta">${esc(g.label||"")}</div>${note}${(g.lines||[]).map(line => peerLineHtml(row, line, g.key)).join("")}</div>`;
   }).join("");
 }
 async function loadPeers(row){
@@ -2562,10 +2563,51 @@ function scrollToRow(row){
   const el = document.getElementById("line-" + rowKey(row));
   if(el) el.scrollIntoView({block:"center"});
 }
-function usePeer(row, bcode){
+function openPeerCatalog(hit){
+  if(!hit || !hit.bcode) return;
+  const bcode = String(hit.bcode || "");
+  const existing = state.items.find(item => String(item.bcode || "") === bcode);
+  if(existing){
+    if(existing.vendor) openVendorOrder(existing);
+    else { renderList(); scrollToRow(existing); }
+    return;
+  }
+  const fromVendor = state.view === "vendor" && state.vendorKey != null;
+  state.catalogVendor = fromVendor ? (state.vendorKey || "") : "";
+  state.catalogVendorName = fromVendor ? (state.vendorName || "") : "";
+  state.catalogPeerPick = true;
+  state.catalogQ = "";
+  state.catalogHits = [];
+  state.catalogQuery = "";
+  state.catalogLoading = false;
+  state.catalogPick = Object.assign({}, hit, {
+    order_qty: 1,
+    order_ui: hit.ui1 || hit.ui || "",
+    suppliers: Array.isArray(hit.suppliers) ? hit.suppliers : null,
+    suppliersLoading: true,
+    apOpen: false,
+    apQ: "",
+    apHits: [],
+    apQuery: "",
+  });
+  if(state.catalogVendor){
+    state.catalogPick.vendor = state.catalogVendor;
+    state.catalogPick.vendor_name = state.catalogVendorName || "";
+  }
+  document.getElementById("catalog").hidden = false;
+  const input = document.getElementById("catalogQ");
+  if(input) input.value = "";
+  renderCatalog();
+  loadCatalogSuppliers(state.catalogPick);
+}
+function usePeer(row, bcode, openForm){
   if(!row || !bcode) return;
   const hit = findPeer(row, bcode);
   if(!hit) return;
+  if(openForm){
+    openPeerCatalog(hit);
+    return;
+  }
   const existing = state.items.find(item => String(item.bcode||"") === bcode);
   if(!existing && !hit.vendor){
     alert("สินค้านี้ยังไม่มีเจ้าหนี้ที่สั่งได้");
@@ -2728,6 +2770,7 @@ function openCatalog(){
   const fromVendor = state.view === "vendor" && state.vendorKey != null;
   state.catalogVendor = fromVendor ? (state.vendorKey || "") : "";
   state.catalogVendorName = fromVendor ? (state.vendorName || "") : "";
+  state.catalogPeerPick = false;
   state.catalogPick = null;
   state.catalogHits = [];
   state.catalogQuery = "";
@@ -2742,6 +2785,7 @@ function openCatalog(){
 }
 function closeCatalog(){
   state.catalogPick = null;
+  state.catalogPeerPick = false;
   document.getElementById("catalog").hidden = true;
 }
 function renderCatalog(){
@@ -3058,6 +3102,10 @@ function acceptCatalog(){
 }
 document.getElementById("catalogClose").onclick = () => closeCatalog();
 document.getElementById("catalogBack").onclick = () => {
+  if(state.catalogPeerPick){
+    closeCatalog();
+    return;
+  }
   state.catalogPick = null;
   renderCatalog();
   document.getElementById("catalogQ").focus();
@@ -3208,7 +3256,10 @@ document.getElementById("list").onclick = (e) => {
   const peers = e.target.closest("[data-peers]");
   if(peers){ loadPeers(findRow(peers.dataset.peers || "")); return; }
   const use = e.target.closest("[data-use]");
-  if(use){ usePeer(findRow(use.dataset.use || ""), use.dataset.peer || ""); return; }
+  if(use){
+    usePeer(findRow(use.dataset.use || ""), use.dataset.peer || "", use.getAttribute("data-peer-catalog") === "1");
+    return;
+  }
   const fill = e.target.closest("[data-fill]");
   if(fill){
     const row = findRow(fill.dataset.fill || "");

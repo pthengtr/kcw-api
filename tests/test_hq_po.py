@@ -473,6 +473,16 @@ def test_page_defaults_vendor_view():
     assert "หรือ Location" in html
     assert "Location เดียวกัน" in html
     assert "อาจไม่ได้ใช้ทดแทนกันทุกตัว" in html
+    assert 'data-peer-catalog="1"' in html
+    assert "function openPeerCatalog" in html
+    peer_line_fn = html.split("function peerLineHtml", 1)[1].split("function peerPanelHtml", 1)[0]
+    assert 'section === "location"' in peer_line_fn
+    assert "data-peer-catalog" in peer_line_fn
+    use_peer_fn = html.split("function usePeer", 1)[1].split("async function loadSuppliers", 1)[0]
+    assert "openPeerCatalog(hit)" in use_peer_fn
+    open_peer_fn = html.split("function openPeerCatalog", 1)[1].split("function usePeer", 1)[0]
+    assert "loadCatalogSuppliers(state.catalogPick)" in open_peer_fn
+    assert 'document.getElementById("catalog").hidden = false' in open_peer_fn
     assert "/hq-po/api/products" in html
     assert "/hq-po/api/vendors" in html
     assert "openVendorOrder" in html
