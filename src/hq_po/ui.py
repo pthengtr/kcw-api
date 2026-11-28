@@ -403,8 +403,8 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
     <button type="button" id="catalogBack" hidden>เลือกสินค้าอื่น</button>
   </div>
   <h2 class="catalog-head">เพิ่มสินค้า</h2>
-  <p class="catalog-sub" id="catalogSub">ค้นจากรหัสสินค้าใน PARTS9</p>
-  <div class="bar"><input id="catalogQ" type="search" placeholder="รหัส ชื่อ ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน" enterkeyhint="search" autocomplete="off"/></div>
+  <p class="catalog-sub" id="catalogSub">ค้นจากรหัสสินค้า หรือ Location ใน PARTS9</p>
+  <div class="bar"><input id="catalogQ" type="search" placeholder="รหัส ชื่อ ชื่อรุ่น เบอร์แท้ เบอร์โรงงาน หรือ Location" enterkeyhint="search" autocomplete="off"/></div>
   <div id="catalogBody"></div>
 </div>
 <div id="printSheet" aria-hidden="true"></div>
@@ -700,10 +700,12 @@ function productMeta(row){
   const pcode = String(row.pcode || "").trim();
   const mcode = String(row.mcode || "").trim();
   const brand = String(row.brand || "").trim();
+  const location1 = String(row.location1 || "").trim();
   if(model) bits.push("ชื่อรุ่น " + esc(model));
   if(pcode) bits.push("เบอร์แท้ " + esc(pcode));
   if(mcode) bits.push("เบอร์โรงงาน " + esc(mcode));
   if(brand) bits.push("ยี่ห้อ " + esc(brand));
+  if(location1) bits.push("Location " + esc(location1));
   const price = moneyText(row.price);
   const cost = moneyText(row.cost);
   if(price) bits.push("ราคา " + price);
@@ -2491,19 +2493,37 @@ document.getElementById("histBody").onclick = (e) => {
 };
 document.getElementById("histClose").onclick = () => { document.getElementById("hist").hidden = true; };
 document.getElementById("hist").onclick = (e) => { if(e.target.id === "hist") document.getElementById("hist").hidden = true; };
+function peerLText(line){
+  if(line.hq_qtymin == null || line.hq_qtymin === "") return "";
+  const L = Number(line.hq_qtymin);
+  if(!Number.isFinite(L)) return "";
+  return L < 0 ? "L" + qtyText(L) : "L " + qtyText(L);
+}
 function peerLineHtml(owner, line){
   const bits = [];
+  if(line.model) bits.push("รุ่น " + line.model);
+  if(line.brand) bits.push("ยี่ห้อ " + line.brand);
+  if(line.vendor_name || line.vendor) bits.push("เจ้าสั่ง " + (line.vendor_name || line.vendor));
   const cost = moneyText(line.cost);
-  if(line.brand) bits.push(line.brand);
   if(cost) bits.push("ทุน " + cost);
-  if(line.company_qtyoh2 != null) bits.push("คงเหลือ " + qtyText(line.company_qtyoh2));
-  if(line.vendor_name || line.vendor) bits.push(line.vendor_name || line.vendor);
+  if(line.hq_qtyoh2 != null || line.syp_qtyoh2 != null){
+    bits.push("HQ " + qtyText(line.hq_qtyoh2) + " / SYP " + qtyText(line.syp_qtyoh2));
+  } else if(line.company_qtyoh2 != null){
+    bits.push("คงเหลือ " + qtyText(line.company_qtyoh2));
+  }
+  const L = peerLText(line);
+  if(L) bits.push(L);
   return `<button type="button" class="peer" data-use="${esc(rowKey(owner))}" data-peer="${esc(line.bcode)}"><span class="sku">${esc(line.bcode)}</span>${esc(line.descr||"")}<span class="meta">${esc(bits.join(" · "))}</span></button>`;
 }
 function peerPanelHtml(row){
   const groups = ((row.peers && row.peers.groups) || []).filter(g => (g.lines||[]).length);
   if(!groups.length) return `<div class="meta">ไม่พบสินค้าแทน</div>`;
-  return groups.map(g => `<div class="peer-sec"><div class="meta">${esc(g.label||"")}</div>${(g.lines||[]).map(line => peerLineHtml(row, line)).join("")}</div>`).join("");
+  return groups.map(g => {
+    const note = g.key === "location"
+      ? `<div class="meta">ตรวจก่อนเลือก — สินค้าใน Location เดียวกันอาจไม่ได้ใช้ทดแทนกันทุกตัว</div>`
+      : "";
+    return `<div class="peer-sec"><div class="meta">${esc(g.label||"")}</div>${note}${(g.lines||[]).map(line => peerLineHtml(row, line)).join("")}</div>`;
+  }).join("");
 }
 async function loadPeers(row){
   if(!row || !row.bcode) return;
@@ -2732,7 +2752,7 @@ function renderCatalog(){
       ? "ใส่ในใบของ " + state.catalogVendorName
       : "เลือกจำนวนและเจ้าหนี้ แล้วใส่ในรายการ";
   } else {
-    sub.textContent = "ค้นจากรหัสสินค้าใน PARTS9";
+    sub.textContent = "ค้นจากรหัสสินค้า หรือ Location ใน PARTS9";
   }
   const host = document.getElementById("catalogBody");
   if(pick){

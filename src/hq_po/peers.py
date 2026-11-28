@@ -1,8 +1,9 @@
 """On-demand same-product lookup for the HQ PO line.
 
 Confirmed replacements come from the catalog group. Same เบอร์แท้ and เบอร์โรงงาน
-come from the live substitute suggestions. Nothing here runs until the buyer
-opens สินค้าแทน on one line.
+come from the live substitute suggestions. Same LOCATION1 is a separate bin-mates
+group — those codes are not assumed to be substitutes. Nothing here runs until
+the buyer opens สินค้าแทน on one line.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from src.hq_po.guards import HqPoError
 from src.hq_po.iclow_read import (
     fetch_bcode_suppliers,
     fetch_sheet_products,
+    products_at_location,
     supplier_choices,
 )
 from src.hq_po.stock import fetch_dual_stock
@@ -22,7 +24,8 @@ from src.hq_po.suggest import _positive_money
 logger = logging.getLogger(__name__)
 
 _PEER_CAP = 24
-_SECTION_ORDER = ("catalog", "pcode", "mcode", "other")
+_LOCATION_CAP = 48
+_SECTION_ORDER = ("catalog", "location", "pcode", "mcode", "other")
 
 
 def peer_section(sources: list[str] | None, *, in_catalog: bool) -> str:
@@ -30,6 +33,8 @@ def peer_section(sources: list[str] | None, *, in_catalog: bool) -> str:
     if in_catalog:
         return "catalog"
     found = {str(src or "").strip() for src in (sources or []) if str(src or "").strip()}
+    if "location" in found:
+        return "location"
     if "pcode" in found:
         return "pcode"
     if "mcode" in found:
@@ -37,9 +42,12 @@ def peer_section(sources: list[str] | None, *, in_catalog: bool) -> str:
     return "other"
 
 
-def section_label(key: str, *, pcode: str = "", mcode: str = "") -> str:
+def section_label(key: str, *, pcode: str = "", mcode: str = "", location1: str = "") -> str:
     if key == "catalog":
         return "กลุ่มทดแทน"
+    if key == "location":
+        loc = (location1 or "").strip()
+        return f"Location เดียวกัน {loc}".strip()
     if key == "pcode":
         code = (pcode or "").strip()
         return f"เบอร์แท้เดียวกัน {code}".strip()
@@ -53,8 +61,10 @@ def group_peer_hits(
     *,
     catalog: list[dict[str, Any]],
     suggestions: list[dict[str, Any]],
+    location_mates: list[dict[str, Any]] | None = None,
     pcode: str = "",
     mcode: str = "",
+    location1: str = "",
 ) -> list[dict[str, Any]]:
     """One row per product code. Confirmed replacements are not repeated below."""
     rows: dict[str, dict[str, Any]] = {}
@@ -69,6 +79,16 @@ def group_peer_hits(
             "descr": str(member.get("descr") or "").strip(),
             "sources": ["catalog"],
             "section": "catalog",
+        }
+    for mate in location_mates or []:
+        code = str(mate.get("bcode") or "").strip()
+        if not code or code in rows:
+            continue
+        rows[code] = {
+            "bcode": code,
+            "descr": str(mate.get("descr") or "").strip(),
+            "sources": ["location"],
+            "section": "location",
         }
     for hit in suggestions or []:
         code = str(hit.get("bcode") or "").strip()
@@ -100,7 +120,7 @@ def group_peer_hits(
         out.append(
             {
                 "key": key,
-                "label": section_label(key, pcode=pcode, mcode=mcode),
+                "label": section_label(key, pcode=pcode, mcode=mcode, location1=location1),
                 "lines": lines,
             }
         )
@@ -133,8 +153,31 @@ def _live_peers(bcode: str) -> list[dict[str, Any]]:
         return []
 
 
+def _location_peers(bcode: str, location1: str) -> list[dict[str, Any]]:
+    loc = str(location1 or "").strip()
+    if not loc:
+        return []
+    try:
+        return products_at_location(loc, exclude=bcode, limit=_LOCATION_CAP)
+    except Exception:
+        logger.warning("hq po same-location lookup failed", exc_info=True)
+        return []
+
+
 def _money(value: Any) -> float | None:
     return _positive_money(value)
+
+
+def _qtymin(meta: dict[str, Any] | None, fallback: Any = None) -> float | None:
+    raw = None if meta is None else meta.get("qtymin")
+    if raw is None:
+        raw = fallback
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _decorate(
@@ -144,11 +187,13 @@ def _decorate(
     hq: dict[str, Any] | None,
     syp: dict[str, Any] | None,
     suppliers: list[dict[str, Any]],
+    mate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    ui1 = str(product.get("ui") or (hq or {}).get("ui1") or "").strip()
-    ui2 = str(product.get("ui2") or (hq or {}).get("ui2") or "").strip()
+    seed = mate or {}
+    ui1 = str(product.get("ui") or seed.get("ui") or (hq or {}).get("ui1") or "").strip()
+    ui2 = str(product.get("ui2") or seed.get("ui2") or (hq or {}).get("ui2") or "").strip()
     try:
-        mtp2 = float(product.get("mtp2") or (hq or {}).get("mtp2") or 0)
+        mtp2 = float(product.get("mtp2") or seed.get("mtp2") or (hq or {}).get("mtp2") or 0)
     except (TypeError, ValueError):
         mtp2 = 0.0
     if mtp2 <= 0:
@@ -161,22 +206,29 @@ def _decorate(
     if suppliers:
         vendor = str(suppliers[0].get("acctno") or "").strip()
         vendor_name = str(suppliers[0].get("name") or "").strip()
+    if not vendor:
+        vendor = str(seed.get("vendor") or product.get("vendor") or "").strip()
     return {
         "bcode": row["bcode"],
-        "descr": str(product.get("descr") or row.get("descr") or "").strip(),
-        "model": str(product.get("model") or "").strip(),
-        "brand": str(product.get("brand") or "").strip(),
-        "pcode": str(product.get("pcode") or "").strip(),
-        "mcode": str(product.get("mcode") or "").strip(),
+        "descr": str(product.get("descr") or seed.get("descr") or row.get("descr") or "").strip(),
+        "model": str(product.get("model") or seed.get("model") or "").strip(),
+        "brand": str(product.get("brand") or seed.get("brand") or "").strip(),
+        "pcode": str(product.get("pcode") or seed.get("pcode") or "").strip(),
+        "mcode": str(product.get("mcode") or seed.get("mcode") or "").strip(),
+        "location1": str(product.get("location1") or seed.get("location1") or "").strip(),
         "ui": ui1,
         "ui1": ui1,
         "ui2": ui2,
         "mtp2": mtp2,
-        "price": _money(product.get("price1")),
-        "cost": _money(product.get("costlast")) or _money(product.get("costnet")),
+        "price": _money(product.get("price1")) or _money(seed.get("price1")),
+        "cost": _money(product.get("costlast"))
+        or _money(product.get("costnet"))
+        or _money(seed.get("costlast"))
+        or _money(seed.get("costnet")),
         "hq_qtyoh2": hq_qty,
         "syp_qtyoh2": syp_qty,
         "company_qtyoh2": company,
+        "hq_qtymin": _qtymin(hq, seed.get("qtymin")),
         "vendor": vendor,
         "vendor_name": vendor_name,
         "suppliers": suppliers,
@@ -185,19 +237,41 @@ def _decorate(
 
 
 def load_peers(bcode: str) -> dict[str, Any]:
-    """Confirmed replacements plus same เบอร์แท้ / เบอร์โรงงาน for one product."""
+    """Confirmed replacements, same LOCATION1, plus same เบอร์แท้ / เบอร์โรงงาน."""
     code = str(bcode or "").strip()
     if not code:
         raise HqPoError("missing", "ไม่มีรหัสสินค้า")
     source = fetch_sheet_products([code]).get(code) or {}
+    location1 = str(source.get("location1") or "").strip()
+    location_mates = _location_peers(code, location1)
     groups = group_peer_hits(
         catalog=_catalog_peers(code),
         suggestions=_live_peers(code),
+        location_mates=location_mates,
         pcode=str(source.get("pcode") or "").strip(),
         mcode=str(source.get("mcode") or "").strip(),
+        location1=location1,
     )
     codes = [line["bcode"] for group in groups for line in group["lines"]]
     products = fetch_sheet_products(codes) if codes else {}
+    for mate in location_mates:
+        peer = str(mate.get("bcode") or "").strip()
+        if peer and peer not in products:
+            products[peer] = {
+                "descr": mate.get("descr") or "",
+                "model": mate.get("model") or "",
+                "brand": mate.get("brand") or "",
+                "pcode": mate.get("pcode") or "",
+                "mcode": mate.get("mcode") or "",
+                "ui": mate.get("ui") or "",
+                "ui2": mate.get("ui2") or "",
+                "location1": mate.get("location1") or "",
+                "mtp2": mate.get("mtp2"),
+                "price1": mate.get("price1"),
+                "costlast": mate.get("costlast"),
+                "costnet": mate.get("costnet"),
+                "vendor": mate.get("vendor") or "",
+            }
     hq: dict[str, dict[str, Any]] = {}
     syp: dict[str, dict[str, Any]] = {}
     stock_ok = False
@@ -210,6 +284,11 @@ def load_peers(bcode: str) -> dict[str, Any]:
             history, catalog = fetch_bcode_suppliers(codes)
         except Exception:
             logger.warning("hq po peer supplier lookup failed", exc_info=True)
+    mates_by_code = {
+        str(row.get("bcode") or "").strip(): row
+        for row in location_mates
+        if str(row.get("bcode") or "").strip()
+    }
     for group in groups:
         decorated = []
         for line in group["lines"]:
@@ -232,6 +311,7 @@ def load_peers(bcode: str) -> dict[str, Any]:
                     hq=hq_meta,
                     syp=syp_meta,
                     suppliers=choices,
+                    mate=mates_by_code.get(peer),
                 )
             )
         group["lines"] = decorated
@@ -239,5 +319,6 @@ def load_peers(bcode: str) -> dict[str, Any]:
         "bcode": code,
         "pcode": str(source.get("pcode") or "").strip(),
         "mcode": str(source.get("mcode") or "").strip(),
+        "location1": location1,
         "groups": groups,
     }

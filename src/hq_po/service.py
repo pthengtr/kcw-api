@@ -857,6 +857,7 @@ def product_search_payload(query: str) -> dict[str, Any]:
                 "ui": row.get("ui") or "",
                 "ui1": row.get("ui") or "",
                 "ui2": row.get("ui2") or "",
+                "location1": row.get("location1") or "",
                 "mtp2": mtp2 if mtp2 > 0 else 1.0,
                 "price": _money(row.get("price1")),
                 "cost": _money(row.get("costlast")) or _money(row.get("costnet")),
