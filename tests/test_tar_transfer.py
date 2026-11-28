@@ -3,10 +3,18 @@ from decimal import Decimal
 
 import pytest
 
+from src.expense_cash.approvers import PEUNG_LINE_USER_ID
 from src.handlers.router import route_user_text
 from src.handlers.tar_transfer import handle_tar_transfer_command
 from src.handlers.transfer_entry import is_transfer_command
-from src.tar_transfer.push import already_sent, mark_sent, push_recipient_ids
+from src.tar_transfer import push as tar_push
+from src.tar_transfer.push import (
+    already_sent,
+    mark_sent,
+    push_names,
+    push_recipient_ids,
+    push_yesterday,
+)
 from src.tar_transfer.summary import (
     command_date,
     format_tar_transfer_message,
@@ -138,6 +146,11 @@ def test_route_denies_other_users(monkeypatch):
     assert result["text"] == "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้ครับ"
 
 
+def test_default_push_names_is_peung_only(monkeypatch):
+    monkeypatch.delenv("TAR_TRANSFER_PUSH_NAMES", raising=False)
+    assert push_names() == ["peung"]
+
+
 def test_push_recipient_matches_display_name(monkeypatch):
     monkeypatch.delenv("TAR_TRANSFER_PUSH_LINE_USER_ID", raising=False)
     monkeypatch.setenv("TAR_TRANSFER_PUSH_NAMES", "narumonwit")
@@ -150,6 +163,13 @@ def test_push_recipient_matches_display_name(monkeypatch):
     assert push_recipient_ids(engine) == ["Unaru"]
 
 
+def test_push_recipient_falls_back_to_peung_roster(monkeypatch):
+    monkeypatch.delenv("TAR_TRANSFER_PUSH_LINE_USER_ID", raising=False)
+    monkeypatch.delenv("TAR_TRANSFER_PUSH_NAMES", raising=False)
+    engine = _Engine([("Uother", "Nu")])
+    assert push_recipient_ids(engine) == [PEUNG_LINE_USER_ID]
+
+
 def test_push_state_skips_same_day(tmp_path):
     path = tmp_path / "sent"
     day = date(2026, 10, 31)
@@ -157,3 +177,79 @@ def test_push_state_skips_same_day(tmp_path):
     mark_sent(day, path)
     assert already_sent(day, path) is True
     assert already_sent(date(2026, 10, 30), path) is False
+
+
+def test_push_yesterday_waits_when_not_ready(monkeypatch, tmp_path):
+    monkeypatch.setenv("TAR_TRANSFER_PUSH_STATE", str(tmp_path / "sent"))
+    monkeypatch.setattr(tar_push, "get_engine", lambda: _Engine([]))
+    monkeypatch.setattr(tar_push, "push_recipient_ids", lambda engine: ["Upeung"])
+    monkeypatch.setattr(
+        tar_push,
+        "load_tar_transfer",
+        lambda engine, day: {
+            "date": day.isoformat(),
+            "ready": False,
+            "latest": "2026-11-26",
+        },
+    )
+    sent = []
+    monkeypatch.setattr(
+        tar_push,
+        "push_line_message",
+        lambda uid, text: sent.append((uid, text)),
+    )
+    result = push_yesterday(today=date(2026, 11, 28))
+    assert "not ready" in result
+    assert sent == []
+    assert already_sent(date(2026, 11, 28)) is False
+
+
+def test_push_yesterday_binds_outbound_channel(monkeypatch, tmp_path):
+    monkeypatch.setenv("TAR_TRANSFER_PUSH_STATE", str(tmp_path / "sent"))
+    monkeypatch.delenv("TAR_TRANSFER_LINE_CHANNEL", raising=False)
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
+    monkeypatch.setattr(tar_push, "get_engine", lambda: _Engine([]))
+    monkeypatch.setattr(tar_push, "push_recipient_ids", lambda engine: ["Upeung"])
+    monkeypatch.setattr(
+        tar_push,
+        "load_tar_transfer",
+        lambda engine, day: {
+            "date": day.isoformat(),
+            "ready": True,
+            "hq_net": 1,
+            "syp_net": 2,
+        },
+    )
+    monkeypatch.setattr(
+        tar_push,
+        "format_tar_transfer_message",
+        lambda summary: "TAR msg",
+    )
+
+    class _Channel:
+        name = "secondary"
+
+    bound = []
+    sent = []
+
+    class _Ctx:
+        def __enter__(self):
+            bound.append("enter")
+            return _Channel()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(tar_push, "outbound_line_channel", lambda pref: _Channel())
+    monkeypatch.setattr(tar_push, "use_line_channel", lambda channel: _Ctx())
+    monkeypatch.setattr(
+        tar_push,
+        "push_line_message",
+        lambda uid, text: sent.append((uid, text)),
+    )
+
+    result = push_yesterday(today=date(2026, 11, 28))
+    assert result.startswith("pushed 2026-11-27 to 1 user(s)")
+    assert bound == ["enter"]
+    assert sent == [("Upeung", "TAR msg")]
+    assert already_sent(date(2026, 11, 28)) is True

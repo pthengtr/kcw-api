@@ -153,9 +153,21 @@ def _access_tokens_to_try() -> list[str]:
     active = _active_access_token.get()
     if active:
         return [active]
+    channels = configured_line_channels()
+    if not channels:
+        return []
+    # Prefer the outbound/"new" OA first so proactive pushes land on bot v2
+    # when dual channels are configured, then fall back to the rest.
+    preferred = outbound_line_channel(os.getenv("LINE_OUTBOUND_CHANNEL") or "new")
+    ordered: list[LineChannel] = []
+    if preferred is not None:
+        ordered.append(preferred)
+    for channel in channels:
+        if channel not in ordered:
+            ordered.append(channel)
     tokens: list[str] = []
     seen: set[str] = set()
-    for channel in configured_line_channels():
+    for channel in ordered:
         token = channel.access_token
         if not token or token in seen:
             continue
@@ -176,7 +188,8 @@ def _is_retryable_wrong_channel(exc: requests.HTTPError) -> bool:
     if resp is None:
         return False
     # Wrong OA for this user id / message id → try the other channel.
-    return resp.status_code in (400, 404)
+    # 429 (monthly quota) on one OA should also fall through to the next.
+    return resp.status_code in (400, 404, 429)
 
 
 def download_line_message_content(message_id: str) -> tuple[bytes, str]:

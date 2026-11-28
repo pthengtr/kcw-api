@@ -83,6 +83,7 @@ def test_push_falls_back_to_second_token(monkeypatch):
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-a")
     monkeypatch.setenv("LINE_CHANNEL_SECRET_2", "sec-b")
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN_2", "tok-b")
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
 
     attempts: list[str] = []
 
@@ -98,13 +99,44 @@ def test_push_falls_back_to_second_token(monkeypatch):
     def fake_post(url, headers=None, json=None, timeout=None):
         auth = headers["Authorization"]
         attempts.append(auth)
-        if auth == "Bearer tok-a":
+        # Unbound push prefers secondary ("new") first; 400 → try primary.
+        if auth == "Bearer tok-b":
             return _Resp(400)
         return _Resp(200)
 
     monkeypatch.setattr(line_bot.requests, "post", fake_post)
     line_bot.push_line_message("U-legacy", "hi")
-    assert attempts == ["Bearer tok-a", "Bearer tok-b"]
+    assert attempts == ["Bearer tok-b", "Bearer tok-a"]
+
+
+def test_push_falls_back_on_quota_429(monkeypatch):
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-a")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-a")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET_2", "sec-b")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN_2", "tok-b")
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
+
+    attempts: list[str] = []
+
+    class _Resp:
+        def __init__(self, status):
+            self.status_code = status
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                err = requests.HTTPError(response=self)
+                raise err
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        auth = headers["Authorization"]
+        attempts.append(auth)
+        if auth == "Bearer tok-b":
+            return _Resp(429)
+        return _Resp(200)
+
+    monkeypatch.setattr(line_bot.requests, "post", fake_post)
+    line_bot.push_line_message("U-peung", "TAR")
+    assert attempts == ["Bearer tok-b", "Bearer tok-a"]
 
 
 def test_multicast_with_two_channels_fans_out(monkeypatch):
@@ -146,6 +178,7 @@ def test_fetch_display_name_tries_both_tokens(monkeypatch):
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-a")
     monkeypatch.setenv("LINE_CHANNEL_SECRET_2", "sec-b")
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN_2", "tok-b")
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
 
     calls: list[str] = []
 
@@ -161,10 +194,11 @@ def test_fetch_display_name_tries_both_tokens(monkeypatch):
     def fake_get(url, headers=None, timeout=None):
         auth = headers["Authorization"]
         calls.append(auth)
-        if auth == "Bearer tok-a":
+        # Prefers secondary ("new") first; 404 → try primary.
+        if auth == "Bearer tok-b":
             return _Resp(404)
         return _Resp(200, {"displayName": "Peung"})
 
     monkeypatch.setattr(line_bot.requests, "get", fake_get)
     assert line_bot.fetch_line_display_name("U-old") == "Peung"
-    assert calls == ["Bearer tok-a", "Bearer tok-b"]
+    assert calls == ["Bearer tok-b", "Bearer tok-a"]
