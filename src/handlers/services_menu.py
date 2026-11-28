@@ -68,7 +68,7 @@ def _category_header(title: str, *, first: bool) -> dict:
         "size": "xs",
         "weight": "bold",
         "color": _CATEGORY_COLOR,
-        "margin": "md" if not first else "sm",
+        "margin": "sm" if not first else "xs",
     }
 
 
@@ -83,7 +83,10 @@ def _service_cell(svc: ServiceDef) -> dict:
         "flex": 1,
         "backgroundColor": _BTN_BG,
         "cornerRadius": "8px",
-        "paddingAll": "10px",
+        "paddingTop": "8px",
+        "paddingBottom": "8px",
+        "paddingStart": "10px",
+        "paddingEnd": "10px",
         "spacing": "sm",
         "action": {
             "type": "message",
@@ -94,7 +97,7 @@ def _service_cell(svc: ServiceDef) -> dict:
             {
                 "type": "icon",
                 "url": _icon_url(svc.icon),
-                "size": "xxs",  # 16px — closest LINE size to 14–16px
+                "size": "20px",  # 18–20px outline icons
                 "aspectRatio": "1:1",
             },
             {
@@ -123,7 +126,7 @@ def _button_rows(services: list[ServiceDef]) -> list[dict]:
                 "type": "box",
                 "layout": "horizontal",
                 "spacing": "sm",
-                "margin": "sm",
+                "margin": "xs",
                 "contents": contents,
             }
         )
@@ -134,7 +137,7 @@ def _help_footer(svc: ServiceDef) -> dict:
     return {
         "type": "box",
         "layout": "baseline",
-        "margin": "lg",
+        "margin": "md",
         "spacing": "sm",
         "action": {
             "type": "message",
@@ -145,7 +148,7 @@ def _help_footer(svc: ServiceDef) -> dict:
             {
                 "type": "icon",
                 "url": _icon_url(svc.icon),
-                "size": "xxs",
+                "size": "20px",
                 "aspectRatio": "1:1",
             },
             {
@@ -179,7 +182,7 @@ def handle_services_menu() -> dict:
 
     help_svc = line_menu_help_service()
     if help_svc is not None:
-        body_contents.append({"type": "separator", "margin": "lg"})
+        body_contents.append({"type": "separator", "margin": "md"})
         body_contents.append(_help_footer(help_svc))
 
     return {
@@ -192,7 +195,7 @@ def handle_services_menu() -> dict:
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "none",
-                "paddingAll": "16px",
+                "paddingAll": "14px",
                 "contents": body_contents,
             },
         },

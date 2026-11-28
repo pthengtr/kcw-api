@@ -48,7 +48,7 @@ def test_catalog_has_web_services_and_line_extras():
     } <= ids
     labels = [label for label, _ in line_menu_entries()]
     assert "จัดการรูปสินค้า" in labels
-    assert "วิธีใช้ทั้งหมด" in labels
+    assert "วิธีใช้งาน" in labels
     assert "สถานะใบสั่งซื้อ" not in labels
 
 
@@ -63,11 +63,16 @@ def test_filter_web_services_by_site():
 def test_line_menu_sections_cover_catalog():
     sections = line_menu_sections()
     titles = [t for t, _ in sections]
-    assert titles == ["สินค้า", "ขาย", "จัดซื้อ", "บัญชี"]
+    assert titles == ["สินค้าและสต๊อก", "ขาย", "จัดซื้อ", "บัญชี"]
     by_title = {t: [s.id for s in svcs] for t, svcs in sections}
-    assert by_title["สินค้า"] == ["stock-check", "parts9-explorer", "product-image"]
+    assert by_title["สินค้าและสต๊อก"] == [
+        "stock-check",
+        "parts9-explorer",
+        "product-image",
+        "transfer",
+    ]
     assert by_title["ขาย"] == ["companion", "online-sale"]
-    assert by_title["จัดซื้อ"] == ["hq-po", "hq-receive", "transfer"]
+    assert by_title["จัดซื้อ"] == ["hq-po", "hq-receive"]
     assert by_title["บัญชี"] == ["pay-notes", "receive-notes"]
     ids = {svc.id for _t, svcs in sections for svc in svcs}
     assert "transfer" in ids and "product-image" in ids

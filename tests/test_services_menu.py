@@ -31,7 +31,7 @@ def test_menu_is_categorized_two_column():
         for c in body
     )
     titles = [c["text"] for c in body if c.get("type") == "text" and c.get("size") == "xs"]
-    assert titles == ["สินค้า", "ขาย", "จัดซื้อ", "บัญชี"]
+    assert titles == ["สินค้าและสต๊อก", "ขาย", "จัดซื้อ", "บัญชี"]
 
     # Grid rows: horizontal boxes whose children are tappable service cells.
     grid_rows = [
@@ -59,7 +59,7 @@ def test_menu_is_categorized_two_column():
             # LINE rejects icon outside baseline boxes — menu would not appear.
             assert cell.get("layout") == "baseline"
             icon = next(n for n in cell["contents"] if n.get("type") == "icon")
-            assert icon["size"] == "xxs"
+            assert icon["size"] == "20px"
             assert icon["url"].endswith(".png")
             label = next(n for n in cell["contents"] if n.get("type") == "text")
             assert label.get("size") == "sm"
@@ -67,7 +67,7 @@ def test_menu_is_categorized_two_column():
             assert "gravity" not in label  # invalid inside baseline boxes
 
     sections = line_menu_sections()
-    assert [t for t, _ in sections] == ["สินค้า", "ขาย", "จัดซื้อ", "บัญชี"]
+    assert [t for t, _ in sections] == ["สินค้าและสต๊อก", "ขาย", "จัดซื้อ", "บัญชี"]
     assert all(services for _title, services in sections)
     # Help is footer-only, not a category grid item.
     assert all(svc.id != "help" for _t, svcs in sections for svc in svcs)
@@ -80,4 +80,4 @@ def test_menu_is_categorized_two_column():
         b for b in iter_services_menu_buttons(msg) if b["action"]["text"] == "help"
     ]
     assert len(help_btns) == 1
-    assert help_btns[0]["action"]["label"] == "วิธีใช้ทั้งหมด"
+    assert help_btns[0]["action"]["label"] == "วิธีใช้งาน"
