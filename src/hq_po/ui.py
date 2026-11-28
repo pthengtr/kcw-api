@@ -3382,11 +3382,12 @@ function pdfFilenameFromHeader(header, fallback){
 }
 async function openSheetPdf(){
   if(!state.forms){ alert("กำลังจัดใบสั่งซื้อ"); return; }
-  // Open the tab during the click so iOS/Android do not treat it as a blocked popup.
-  const preview = window.open("about:blank", "_blank");
+  // Do NOT open about:blank before fetch — LINE / mobile WebViews often navigate
+  // the same window, so relative fetch then fails with "Failed to fetch".
   setBusy(true, "กำลังสร้าง PDF…");
+  let url = "";
   try {
-    const res = await fetch("/hq-po/api/sheet/pdf", {
+    const res = await fetch(new URL("/hq-po/api/sheet/pdf", window.location.origin).href, {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ ...sheetPayload(), variant: state.variant }),
@@ -3397,22 +3398,35 @@ async function openSheetPdf(){
     }
     const blob = await res.blob();
     const name = pdfFilenameFromHeader(res.headers.get("Content-Disposition"), "PO.pdf");
-    const url = URL.createObjectURL(blob);
-    if(preview && !preview.closed){
-      preview.location = url;
-    } else {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+    const file = new File([blob], name, { type: "application/pdf" });
+    if(navigator.canShare && navigator.canShare({ files: [file] })){
+      try {
+        await navigator.share({ files: [file], title: name });
+        return;
+      } catch (shareErr) {
+        if(shareErr && shareErr.name === "AbortError") return;
+      }
     }
-    setTimeout(() => URL.revokeObjectURL(url), 120000);
+    url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    const preview = window.open(url, "_blank", "noopener");
+    if(!preview){
+      // Popup blocked — download above still provides the named PDF.
+    }
+    setTimeout(() => { if(url) URL.revokeObjectURL(url); }, 120000);
   } catch (err) {
-    if(preview && !preview.closed) preview.close();
-    alert(err.message || "สร้าง PDF ไม่สำเร็จ");
+    const msg = String((err && err.message) || "");
+    alert(
+      msg === "Failed to fetch" || /NetworkError/i.test(msg)
+        ? "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่"
+        : (msg || "สร้าง PDF ไม่สำเร็จ")
+    );
   } finally {
     setBusy(false);
   }

@@ -2,6 +2,7 @@ from src.hq_po.guards import HqPoError
 from src.hq_po.pdf import (
     build_sheet_pdf,
     content_disposition,
+    inline_remote_images,
     sheet_pdf_filename,
     wrap_sheet_document,
 )
@@ -23,7 +24,30 @@ def test_wrap_sheet_document_is_printable_html():
     assert "<!DOCTYPE html>" in html
     assert 'lang="th"' in html
     assert "ใบสั่งซื้อ" in html
-    assert "Prompt" in html
+    assert "Noto Sans Thai" in html
+    # Remote webfonts stall headless Chrome and break mobile fetch.
+    assert "fonts.googleapis.com" not in html
+
+
+def test_inline_remote_images_embeds_ok_and_drops_missing(monkeypatch):
+    from src.hq_po import pdf as pdf_mod
+
+    def fake_data(url, *, timeout_s=2.5):
+        if "ok.jpg" in url:
+            return "data:image/jpeg;base64,qq=="
+        return None
+
+    monkeypatch.setattr(pdf_mod, "_data_uri_for", fake_data)
+    html = (
+        '<img class="pos-photo" src="https://cdn.example/ok.jpg" alt="">'
+        '<img class="pos-photo" src="https://cdn.example/missing.jpg" alt="">'
+        "<span>x</span>"
+    )
+    out = inline_remote_images(html)
+    assert "data:image/jpeg;base64,qq==" in out
+    assert "https://cdn.example/" not in out
+    assert "missing.jpg" not in out
+    assert "<span>x</span>" in out
 
 
 def test_build_sheet_pdf_uses_selected_variant(monkeypatch):

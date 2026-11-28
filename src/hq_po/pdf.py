@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import re
@@ -12,12 +13,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import httpx
+
 from src.hq_po.guards import HqPoError
 from src.hq_po.sheet import build_sheet_forms
 
 logger = logging.getLogger(__name__)
 
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_IMG_TAG = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_IMG_SRC = re.compile(r"""\bsrc=(["'])(https?://.*?)\1""", re.IGNORECASE)
 
 
 def sheet_pdf_filename(groups: list[dict[str, Any]]) -> str:
@@ -43,16 +48,24 @@ def content_disposition(filename: str) -> str:
 
 
 def wrap_sheet_document(fragment: str) -> str:
-    """Full HTML document so headless Chrome prints the same sheet CSS."""
+    """Full HTML document so headless Chrome prints the same sheet CSS.
+
+    Use local fonts only — a Google Fonts <link> can stall headless Chrome
+    for tens of seconds and make mobile clients report "Failed to fetch".
+    """
     body = fragment or ""
     return f"""<!DOCTYPE html>
 <html lang="th">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
 <style>
-  html, body {{ margin: 0; padding: 0; background: #fff; }}
+  html, body {{
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    font-family: "Noto Sans Thai", "Noto Sans", Prompt, sans-serif;
+  }}
 </style>
 </head>
 <body>
@@ -73,6 +86,47 @@ def _chrome_bin() -> str | None:
     return None
 
 
+def _data_uri_for(url: str, *, timeout_s: float = 2.5) -> str | None:
+    """Fetch a remote image for embedding. Missing/slow URLs become None."""
+    try:
+        with httpx.Client(timeout=timeout_s, follow_redirects=True) as client:
+            resp = client.get(url)
+        if resp.status_code != 200 or not resp.content:
+            return None
+        ctype = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+        if not ctype.startswith("image/"):
+            ctype = "image/jpeg"
+        return f"data:{ctype};base64,{base64.b64encode(resp.content).decode('ascii')}"
+    except Exception:
+        logger.debug("hq po pdf image inline failed url=%s", url[:160], exc_info=True)
+        return None
+
+
+def inline_remote_images(html: str) -> str:
+    """Embed http(s) <img> as data URIs.
+
+    Headless Chrome printing a file:// document stalls ~20s+ on remote images
+    (even fast 4xx), which makes mobile clients time out with "Failed to fetch".
+    """
+    cache: dict[str, str | None] = {}
+
+    def repl(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        src = _IMG_SRC.search(tag)
+        if not src:
+            return tag
+        url = src.group(2)
+        if url not in cache:
+            cache[url] = _data_uri_for(url)
+        data = cache[url]
+        if not data:
+            return ""
+        quote = src.group(1)
+        return tag[: src.start()] + f"src={quote}{data}{quote}" + tag[src.end() :]
+
+    return _IMG_TAG.sub(repl, html or "")
+
+
 def html_to_pdf(html: str, *, timeout_s: float = 60.0) -> bytes:
     """Print an HTML document to PDF bytes via headless Chrome."""
     chrome = _chrome_bin()
@@ -91,6 +145,7 @@ def html_to_pdf(html: str, *, timeout_s: float = 60.0) -> bytes:
             "--no-first-run",
             "--disable-extensions",
             "--disable-dev-shm-usage",
+            "--hide-scrollbars",
             "--no-pdf-header-footer",
             f"--print-to-pdf={pdf_path}",
             html_path.resolve().as_uri(),
@@ -135,5 +190,6 @@ def build_sheet_pdf(groups: list[dict[str, Any]], variant: str = "simple") -> tu
     fragment = forms.get(key) or ""
     if not fragment.strip():
         raise HqPoError("empty", "ไม่มีรายการสำหรับใบสั่งซื้อ")
-    pdf = html_to_pdf(wrap_sheet_document(fragment))
+    doc = inline_remote_images(wrap_sheet_document(fragment))
+    pdf = html_to_pdf(doc)
     return pdf, sheet_pdf_filename(groups)
