@@ -19,6 +19,7 @@ import os
 from datetime import date, timedelta
 from pathlib import Path
 
+import requests
 from dotenv import load_dotenv
 from sqlalchemy import text
 
@@ -27,7 +28,6 @@ load_dotenv()
 from src.bot.line_bot import (  # noqa: E402
     outbound_line_channel,
     push_line_message,
-    use_line_channel,
 )
 from src.db import get_engine  # noqa: E402
 from src.expense_cash.approvers import PEUNG_LINE_USER_ID  # noqa: E402
@@ -162,11 +162,34 @@ def push_yesterday(*, force: bool = False, today: date | None = None) -> str:
         )
 
     message = format_tar_transfer_message(summary)
-    channel = outbound_line_channel(outbound_preference())
-    with use_line_channel(channel):
-        for line_user_id in recipients:
-            push_line_message(line_user_id, message)
+    # Prefer bot v2 / "new" without exclusive bind so a 429 on one OA can
+    # fall through to the other (see _access_tokens_to_try + 429 retry).
+    pref = outbound_preference()
+    previous_outbound = os.environ.get("LINE_OUTBOUND_CHANNEL")
+    os.environ["LINE_OUTBOUND_CHANNEL"] = pref
+    try:
+        try:
+            for line_user_id in recipients:
+                push_line_message(line_user_id, message)
+        except requests.HTTPError as exc:
+            resp = getattr(exc, "response", None)
+            if resp is not None and resp.status_code == 429:
+                # Leave unmarked so the hourly timer retries after quota
+                # recovers or LINE_CHANNEL_*_2 (bot v2) is configured.
+                return (
+                    f"quota 429 for {report_day.isoformat()}; "
+                    "set LINE_CHANNEL_SECRET_2 + LINE_CHANNEL_ACCESS_TOKEN_2 "
+                    "for bot v2 (or wait for monthly reset); will retry"
+                )
+            raise
+    finally:
+        if previous_outbound is None:
+            os.environ.pop("LINE_OUTBOUND_CHANNEL", None)
+        else:
+            os.environ["LINE_OUTBOUND_CHANNEL"] = previous_outbound
+
     mark_sent(send_day)
+    channel = outbound_line_channel(pref)
     channel_name = channel.name if channel else "default"
     return (
         f"pushed {report_day.isoformat()} to {len(recipients)} user(s) "
