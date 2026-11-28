@@ -16,6 +16,7 @@ from src.hq_po.service import (
     clear_named_block,
     clear_product_unavailable,
     confirm_order,
+    delete_extra_waiting_draft,
     dismiss_waiting_line,
     drop_incoming,
     incoming_payload,
@@ -31,6 +32,7 @@ from src.hq_po.service import (
     product_sales_history_payload,
     peers_payload,
     product_search_payload,
+    save_extra_waiting_draft,
     save_waiting_draft,
     suggest_payload,
     suppliers_payload,
@@ -60,6 +62,7 @@ class DraftBody(BaseModel):
     vendor: str = ""
     vendor_name: str | None = None
     ui: str | None = None
+    source: str | None = None
 
 
 class DraftCheckBody(BaseModel):
@@ -557,6 +560,43 @@ def api_save_draft(iclow_id: int, body: DraftBody, request: Request):
         return _error(exc, 400 if exc.code in ("missing", "bad_qty") else 409)
     except Exception as exc:
         return JSONResponse({"error": "draft_save_failed", "message": str(exc)}, status_code=502)
+
+
+@router.put("/api/drafts/extra/{bcode}")
+def api_save_extra_draft(bcode: str, body: DraftBody, request: Request):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return save_extra_waiting_draft(
+            bcode,
+            qty=body.qty,
+            vendor=body.vendor,
+            vendor_name=body.vendor_name,
+            ui=body.ui,
+            source=body.source,
+            updated_by=_actor(ident),
+        )
+    except HqPoError as exc:
+        return _error(
+            exc,
+            400 if exc.code in ("missing", "bad_qty", "vendor_mismatch") else 409,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": "draft_save_failed", "message": str(exc)}, status_code=502)
+
+
+@router.delete("/api/drafts/extra/{bcode}")
+def api_delete_extra_draft(bcode: str, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return delete_extra_waiting_draft(bcode)
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code == "missing" else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "draft_delete_failed", "message": str(exc)}, status_code=502)
 
 
 @router.post("/api/drafts/check")

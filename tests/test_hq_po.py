@@ -1680,7 +1680,12 @@ def test_page_autosaves_waiting_drafts():
     assert "keepalive: true" in html
     assert "pagehide" in html
     assert "/hq-po/api/drafts/" in html
+    assert "/hq-po/api/drafts/extra/" in html
     assert "/hq-po/api/drafts/check" in html
+    assert "canDraftSave" in html
+    assert "removeExtraDraft" in html
+    assert "data-remove-extra" in html
+    assert "scheduleDraftSave(added)" in html
     assert "บันทึกแล้ว" in html
     assert "warnStaleDrafts" in html
     assert "staleFlagLabel" in html
@@ -1860,6 +1865,101 @@ def test_save_waiting_draft_snapshots_trail_parent(monkeypatch):
     result = service.save_waiting_draft(8, qty=3, vendor="BK", vendor_name="บี.เค.", updated_by="Pannawit")
     assert stored["base_vendor"] == "BK"
     assert result["draft"]["stale"] is False
+
+
+def test_save_extra_waiting_draft_writes_shared_bcode_row(monkeypatch):
+    from src.hq_po import service
+    from src.hq_po.guards import HqPoError
+
+    stored = {}
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: set())
+    monkeypatch.setattr(service, "get_hq_po_supabase_client", lambda: object())
+
+    def fake_upsert(_client, row):
+        stored.update(row)
+        return dict(row, updated_at="2026-11-28T10:00:00+00:00")
+
+    monkeypatch.setattr(service, "upsert_extra_waiting_draft", fake_upsert)
+    result = service.save_extra_waiting_draft(
+        "30052971",
+        qty=2,
+        vendor="7STKG",
+        vendor_name="สตาร์ทกัง",
+        ui="PCS",
+        source="catalog",
+        updated_by="Pannawit",
+    )
+    assert stored["bcode"] == "30052971"
+    assert stored["qty"] == 2
+    assert stored["vendor_acctno"] == "7STKG"
+    assert stored["ui"] == "PCS"
+    assert stored["source"] == "catalog"
+    assert result["draft"]["saved"] is True
+    assert result["draft"]["vendor"] == "7STKG"
+
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: {"30052971"})
+    try:
+        service.save_extra_waiting_draft(
+            "30052971",
+            qty=1,
+            vendor="7STKG",
+            source="peer",
+            updated_by="Pannawit",
+        )
+        raise AssertionError("expected duplicate")
+    except HqPoError as exc:
+        assert exc.code == "duplicate"
+
+
+def test_extra_draft_item_and_merge_skips_existing_bcode(monkeypatch):
+    from src.hq_po import suggest
+
+    draft = {
+        "bcode": "30052971",
+        "qty": 4,
+        "ui": "BOX",
+        "vendor_acctno": "7STKG",
+        "vendor_name": "สตาร์ทกัง",
+        "source": "catalog",
+        "updated_at": "2026-11-28T10:00:00+00:00",
+        "updated_by": "Pannawit",
+    }
+    item = suggest._extra_draft_item(
+        draft,
+        product={"descr": "สินค้าทดสอบ", "ui": "PCS", "ui2": "BOX", "mtp2": 10},
+        names={},
+    )
+    assert item["iclow_id"] is None
+    assert item["source"] == "catalog"
+    assert item["bcode"] == "30052971"
+    assert item["order_qty"] == 4
+    assert item["order_ui"] == "BOX"
+    assert item["vendor"] == "7STKG"
+    assert item["propose_meta"]["iclow_origin"] == "catalog"
+    assert item["draft"]["saved"] is True
+
+    items = [{"iclow_id": 1, "bcode": "30052971", "source": "iclow"}]
+    monkeypatch.setattr(
+        "src.hq_po.db.list_extra_waiting_drafts",
+        lambda _client: [draft],
+    )
+    monkeypatch.setattr(
+        "src.hq_po.db.get_hq_po_supabase_client",
+        lambda: object(),
+    )
+    suggest._merge_extra_waiting_drafts(items)
+    assert len(items) == 1
+
+    items = [{"iclow_id": 2, "bcode": "OTHER", "source": "iclow"}]
+    monkeypatch.setattr(suggest, "fetch_sheet_products", lambda _codes: {"30052971": {"descr": "x", "ui": "PCS"}})
+    monkeypatch.setattr(suggest, "fetch_vendor_names", lambda _codes: {"7STKG": "สตาร์ทกัง"})
+    monkeypatch.setattr(suggest, "fetch_dual_stock", lambda _codes: ({}, {}, False))
+    monkeypatch.setattr(suggest, "fetch_parts9_qty", lambda _codes: {})
+    monkeypatch.setattr("src.hq_po.vendor_link.apply_vendor_blocks", lambda _items: None)
+    suggest._merge_extra_waiting_drafts(items)
+    assert len(items) == 2
+    assert items[1]["bcode"] == "30052971"
+    assert items[1]["source"] == "catalog"
 
 
 def test_resolve_vendor_keeps_the_account_under_a_trail():

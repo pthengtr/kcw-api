@@ -416,6 +416,16 @@ def waiting_drafts_for(client: Client, iclow_ids: list[int]) -> dict[int, dict[s
     return found
 
 
+def list_extra_waiting_drafts(client: Client) -> list[dict[str, Any]]:
+    """All shared catalog/peer drafts (no ICLOW id). Newest first."""
+    return _rows(
+        _table(client, "waiting_extra_drafts")
+        .select("bcode,qty,ui,vendor_acctno,vendor_name,source,updated_by,updated_at")
+        .order("updated_at", desc=True)
+        .execute()
+    )
+
+
 def upsert_waiting_draft(client: Client, row: dict[str, Any]) -> dict[str, Any]:
     """Insert or replace one waiting draft. Shared across staff, not per browser."""
     now = datetime.now(timezone.utc).isoformat()
@@ -423,6 +433,17 @@ def upsert_waiting_draft(client: Client, row: dict[str, Any]) -> dict[str, Any]:
     payload["updated_at"] = now
     stored = _first(
         _table(client, "waiting_drafts").upsert(payload, on_conflict="iclow_id").execute()
+    )
+    return stored or payload
+
+
+def upsert_extra_waiting_draft(client: Client, row: dict[str, Any]) -> dict[str, Any]:
+    """Insert or replace one catalog/peer draft keyed by bcode."""
+    now = datetime.now(timezone.utc).isoformat()
+    payload = dict(row)
+    payload["updated_at"] = now
+    stored = _first(
+        _table(client, "waiting_extra_drafts").upsert(payload, on_conflict="bcode").execute()
     )
     return stored or payload
 
@@ -448,3 +469,4 @@ def delete_waiting_drafts(
     for start in range(0, len(codes), 250):
         chunk = codes[start : start + 250]
         _table(client, "waiting_drafts").delete().in_("bcode", chunk).execute()
+        _table(client, "waiting_extra_drafts").delete().in_("bcode", chunk).execute()

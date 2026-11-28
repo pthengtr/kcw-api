@@ -20,6 +20,7 @@ from src.hq_po.db import (
     open_lines_for_iclow,
     reopen_stamp_failed_order,
     release_marks_for,
+    upsert_extra_waiting_draft,
     upsert_release_mark,
     upsert_waiting_draft,
     waiting_drafts_for,
@@ -453,6 +454,81 @@ def check_waiting_drafts(iclow_ids: list[int]) -> dict[str, Any]:
             }
         )
     return {"items": out}
+
+
+_EXTRA_DRAFT_SOURCES = frozenset({"catalog", "peer", "history"})
+
+
+def save_extra_waiting_draft(
+    bcode: str,
+    *,
+    qty: Any,
+    vendor: str = "",
+    vendor_name: str | None = None,
+    ui: str | None = None,
+    source: str | None = None,
+    updated_by: str | None = None,
+) -> dict[str, Any]:
+    """Autosave a catalog / peer / history line that has no ICLOW id yet."""
+    code = str(bcode or "").strip()
+    if not code or not any(ch.isdigit() for ch in code):
+        raise HqPoError("missing", "ไม่มีรหัสสินค้า")
+    qty_n = _draft_qty(qty)
+    vendor_acct = str(vendor or "").strip()
+    if not vendor_acct:
+        raise HqPoError("vendor_mismatch", "เลือกเจ้าหนี้ก่อนบันทึก")
+    unit = str(ui or "").strip() or None
+    name = str(vendor_name or "").strip() or None
+    origin = str(source or "catalog").strip().lower() or "catalog"
+    if origin not in _EXTRA_DRAFT_SOURCES:
+        origin = "catalog"
+    # One shared row per bcode — refuse to mirror a product already on รอสั่ง ICLOW.
+    try:
+        live_waiting = fetch_unordered_bcodes([code])
+    except Exception:
+        live_waiting = set()
+    if code in live_waiting:
+        raise HqPoError("duplicate", f"{code} อยู่ในรายการรอสั่งแล้ว")
+    client = get_hq_po_supabase_client()
+    stored = upsert_extra_waiting_draft(
+        client,
+        {
+            "bcode": code,
+            "qty": qty_n,
+            "ui": unit,
+            "vendor_acctno": vendor_acct,
+            "vendor_name": name,
+            "source": origin,
+            "updated_by": (updated_by or "")[:120] or None,
+        },
+    )
+    return {
+        "bcode": code,
+        "draft": {
+            "saved": True,
+            "qty": qty_n,
+            "ui": unit,
+            "vendor": vendor_acct,
+            "vendor_name": name,
+            "source": origin,
+            "updated_at": stored.get("updated_at"),
+            "updated_by": stored.get("updated_by"),
+            "stale": False,
+            "stale_reasons": [],
+        },
+    }
+
+
+def delete_extra_waiting_draft(bcode: str) -> dict[str, Any]:
+    """Staff intentionally removed a catalog/peer draft line."""
+    code = str(bcode or "").strip()
+    if not code:
+        raise HqPoError("missing", "ไม่มีรหัสสินค้า")
+    try:
+        delete_waiting_drafts(get_hq_po_supabase_client(), bcodes=[code])
+    except Exception as exc:
+        raise HqPoError("supabase_write", str(exc)) from exc
+    return {"bcode": code, "deleted": True}
 
 
 def update_product_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:
@@ -1213,14 +1289,24 @@ def confirm_order(
                 continue
             raise HqPoError("supabase_write", str(exc)) from exc
         ordered_ids: list[int] = []
+        ordered_bcodes: list[str] = []
+        seen_bcodes: set[str] = set()
         for line in stored_lines:
             try:
                 ordered_ids.append(int(line.get("iclow_id")))
             except (TypeError, ValueError):
-                continue
-        if ordered_ids:
+                pass
+            code = str(line.get("bcode") or "").strip()
+            if code and code not in seen_bcodes:
+                seen_bcodes.add(code)
+                ordered_bcodes.append(code)
+        if ordered_ids or ordered_bcodes:
             try:
-                delete_waiting_drafts(client, iclow_ids=ordered_ids)
+                delete_waiting_drafts(
+                    client,
+                    iclow_ids=ordered_ids or None,
+                    bcodes=ordered_bcodes or None,
+                )
             except Exception:
                 pass
         order["vendor_name"] = name
