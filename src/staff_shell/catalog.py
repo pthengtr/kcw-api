@@ -13,7 +13,7 @@ OPEN_GROUPS = frozenset({"admin", "exec", "staff", "user", "guest", "cash_approv
 
 # Display order for LINE Flex category sections (id → Thai title).
 MENU_CATEGORIES: tuple[tuple[str, str], ...] = (
-    ("products", "สินค้า"),
+    ("products", "สินค้าและสต๊อก"),
     ("sales", "ขาย"),
     ("procurement", "จัดซื้อ"),
     ("accounting", "บัญชี"),
@@ -21,9 +21,9 @@ MENU_CATEGORIES: tuple[tuple[str, str], ...] = (
 
 # Preferred service order within each category (and overall card flow).
 _CATEGORY_SERVICE_ORDER: dict[str, tuple[str, ...]] = {
-    "products": ("stock-check", "parts9-explorer", "product-image"),
+    "products": ("stock-check", "parts9-explorer", "product-image", "transfer"),
     "sales": ("companion", "online-sale"),
-    "procurement": ("hq-po", "hq-receive", "transfer"),
+    "procurement": ("hq-po", "hq-receive"),
     "accounting": ("pay-notes", "receive-notes"),
 }
 
@@ -98,7 +98,7 @@ WEB_SERVICES: tuple[ServiceDef, ...] = (
         port=_port("TRANSFER_LISTEN_PORT", 8792),
         hosts=frozenset({"HQ", "SYP"}),
         icon="transfer",
-        category="procurement",
+        category="products",
     ),
     ServiceDef(
         id="hq-po",
@@ -173,7 +173,7 @@ _LINE_ONLY: tuple[ServiceDef, ...] = (
     ),
     ServiceDef(
         id=HELP_SERVICE_ID,
-        label="วิธีใช้ทั้งหมด",
+        label="วิธีใช้งาน",
         line_command="help",
         app="",
         path="",
