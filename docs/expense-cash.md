@@ -22,12 +22,12 @@ Approvers are **Peung / Phu / Ice / May / Cartoon / Jeab** (LINE id roster in `s
 - `ส่งเบิก 3` (re-push the Flex to approvers — use after LINE push quota recovers)
 - Or Flex postbacks (Need info / Reject then ask for a note)
 
-Approver Flex notifies use multicast and skip the requester. Peer-approve
-text pushes are off by default (set `EXPENSE_CASH_PEER_NOTIFY=1` to enable);
-they burn the monthly LINE message quota quickly. If the OA hits the plan
-limit (e.g. free 500/mo), new requests still save as `pending` but Flex
-pushes fail — requester ack warns, and approvers can use `รายการเบิก` /
-`อนุมัติ N` / `ส่งเบิก N` via reply.
+Approver Flex notifies use multicast and skip the requester. After one
+approver approves or rejects, peer status text is pushed to the others
+(on by default; set `EXPENSE_CASH_PEER_NOTIFY=0` to disable if LINE quota
+is tight). If the OA hits the plan limit (e.g. free 500/mo), new requests
+still save as `pending` but Flex pushes fail — requester ack warns, and
+approvers can use `รายการเบิก` / `อนุมัติ N` / `ส่งเบิก N` via reply.
 
 ## Admin (kcw-v2)
 

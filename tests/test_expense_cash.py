@@ -14,10 +14,15 @@ from src.expense_cash.approvers import (
     PHU_LINE_USER_ID,
     is_cash_approver,
 )
-from src.expense_cash.copy import approved_peer_notice, pending_ack
+from src.expense_cash.copy import (
+    approved_peer_notice,
+    pending_ack,
+    rejected_peer_notice,
+)
 from src.expense_cash.notify import (
     notify_admins_new_request,
     notify_other_approvers_approved,
+    notify_other_approvers_rejected,
 )
 from src.expense_cash.service import parse_amount
 from src.expense_cash.tiger import expense_cash_pos_bill_id
@@ -227,8 +232,37 @@ def test_notify_admins_returns_false_when_all_pushes_fail():
         assert notify_admins_new_request(engine, row) is False
 
 
-def test_peer_approve_notify_off_by_default(monkeypatch):
+def test_peer_approve_notify_on_by_default(monkeypatch):
     monkeypatch.delenv("EXPENSE_CASH_PEER_NOTIFY", raising=False)
+    engine = MagicMock()
+    row = {
+        "short_code": 7,
+        "amount": 1500,
+        "requester_name": "น้องบอส",
+    }
+    with (
+        patch(
+            "src.expense_cash.notify.repos.list_approver_line_ids",
+            return_value=[PEUNG_LINE_USER_ID, PHU_LINE_USER_ID, ICE_LINE_USER_ID],
+        ),
+        patch("src.expense_cash.notify.multicast_line_messages") as multi,
+    ):
+        notify_other_approvers_approved(
+            engine,
+            row,
+            reviewer_line_user_id=PEUNG_LINE_USER_ID,
+            reviewer_name="peung",
+        )
+        multi.assert_called_once()
+        sent_ids, msgs = multi.call_args.args
+        assert PEUNG_LINE_USER_ID not in sent_ids
+        assert set(sent_ids) == {PHU_LINE_USER_ID, ICE_LINE_USER_ID}
+        assert "อนุมัติ" in msgs[0]["text"]
+        assert "#7" in msgs[0]["text"]
+
+
+def test_peer_approve_notify_when_disabled(monkeypatch):
+    monkeypatch.setenv("EXPENSE_CASH_PEER_NOTIFY", "0")
     engine = MagicMock()
     row = {
         "short_code": 7,
@@ -253,13 +287,14 @@ def test_peer_approve_notify_off_by_default(monkeypatch):
         push.assert_not_called()
 
 
-def test_peer_approve_notify_when_enabled(monkeypatch):
-    monkeypatch.setenv("EXPENSE_CASH_PEER_NOTIFY", "1")
+def test_peer_reject_notify_on_by_default(monkeypatch):
+    monkeypatch.delenv("EXPENSE_CASH_PEER_NOTIFY", raising=False)
     engine = MagicMock()
     row = {
-        "short_code": 7,
-        "amount": 1500,
+        "short_code": 9,
+        "amount": 800,
         "requester_name": "น้องบอส",
+        "admin_note": "เอกสารไม่ครบ",
     }
     with (
         patch(
@@ -268,16 +303,19 @@ def test_peer_approve_notify_when_enabled(monkeypatch):
         ),
         patch("src.expense_cash.notify.multicast_line_messages") as multi,
     ):
-        notify_other_approvers_approved(
+        notify_other_approvers_rejected(
             engine,
             row,
-            reviewer_line_user_id=PEUNG_LINE_USER_ID,
-            reviewer_name="peung",
+            reviewer_line_user_id=PHU_LINE_USER_ID,
+            reviewer_name="phu",
         )
         multi.assert_called_once()
-        sent_ids, _msgs = multi.call_args.args
-        assert PEUNG_LINE_USER_ID not in sent_ids
-        assert set(sent_ids) == {PHU_LINE_USER_ID, ICE_LINE_USER_ID}
+        sent_ids, msgs = multi.call_args.args
+        assert PHU_LINE_USER_ID not in sent_ids
+        assert set(sent_ids) == {PEUNG_LINE_USER_ID, ICE_LINE_USER_ID}
+        assert "ปฏิเสธ" in msgs[0]["text"]
+        assert "#9" in msgs[0]["text"]
+        assert "เอกสารไม่ครบ" in msgs[0]["text"]
 
 
 def test_postback_prefix():
@@ -361,3 +399,20 @@ def test_approved_peer_notice_copy():
     assert "1,500" in text
     assert "peung" in text
     assert "น้องบอส" in text
+    assert "อนุมัติ" in text
+
+
+def test_rejected_peer_notice_copy():
+    text = rejected_peer_notice(
+        short_code=9,
+        amount=800,
+        reviewer_name="phu",
+        requester_name="น้องบอส",
+        admin_note="เอกสารไม่ครบ",
+    )
+    assert "#9" in text
+    assert "800" in text
+    assert "phu" in text
+    assert "น้องบอส" in text
+    assert "ปฏิเสธ" in text
+    assert "เอกสารไม่ครบ" in text

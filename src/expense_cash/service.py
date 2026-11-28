@@ -257,6 +257,12 @@ def reject_request(
         str(row.get("requester_line_user_id") or ""),
         copy.rejected_text(short_code=int(row["short_code"]), admin_note=note),
     )
+    notify.notify_other_approvers_rejected(
+        engine,
+        updated,
+        reviewer_line_user_id=reviewer_line_user_id,
+        reviewer_name=reviewer_name,
+    )
     return updated
 
 
