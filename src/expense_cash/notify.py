@@ -308,9 +308,12 @@ def notify_requester_approved(
 
 
 def _peer_notify_enabled() -> bool:
-    """Peer-approve pushes are off by default — they burn monthly LINE quota fast."""
-    raw = (os.getenv("EXPENSE_CASH_PEER_NOTIFY") or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    """Peer status pushes (approve/reject) are on by default.
+
+    Set ``EXPENSE_CASH_PEER_NOTIFY=0`` to disable if LINE monthly quota is tight.
+    """
+    raw = (os.getenv("EXPENSE_CASH_PEER_NOTIFY") or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 def notify_other_approvers_approved(
@@ -338,3 +341,31 @@ def notify_other_approvers_approved(
     msg = {"type": "text", "text": text[:5000]}
     if _deliver_messages(ids, [msg]) == 0:
         logger.warning("No peer-approve notify delivered for #%s", short)
+
+
+def notify_other_approvers_rejected(
+    engine: Engine,
+    row: dict[str, Any],
+    *,
+    reviewer_line_user_id: str | None,
+    reviewer_name: str | None,
+) -> None:
+    """Tell peer approvers that someone already rejected (skip the actor)."""
+    if not _peer_notify_enabled():
+        return
+    actor = (reviewer_line_user_id or "").strip()
+    ids = _approver_recipient_ids(engine, exclude_line_user_id=actor)
+    if not ids:
+        return
+    short = int(row.get("short_code") or 0)
+    amount = _amount_int(row)
+    text = copy.rejected_peer_notice(
+        short_code=short,
+        amount=amount,
+        reviewer_name=reviewer_name,
+        requester_name=(row.get("requester_name") or None),
+        admin_note=(row.get("admin_note") or None),
+    )
+    msg = {"type": "text", "text": text[:5000]}
+    if _deliver_messages(ids, [msg]) == 0:
+        logger.warning("No peer-reject notify delivered for #%s", short)

@@ -119,6 +119,23 @@ def approved_peer_notice(
     return f"{who} อนุมัติ #{short_code} แล้ว ({amount:,}฿ · {req})"
 
 
+def rejected_peer_notice(
+    *,
+    short_code: int,
+    amount: int,
+    reviewer_name: str | None,
+    requester_name: str | None,
+    admin_note: str | None = None,
+) -> str:
+    who = (reviewer_name or "แอดมิน").strip() or "แอดมิน"
+    req = (requester_name or "ผู้ขอ").strip() or "ผู้ขอ"
+    note = (admin_note or "").strip()
+    base = f"{who} ปฏิเสธ #{short_code} แล้ว ({amount:,}฿ · {req})"
+    if note:
+        return f"{base}\nเหตุผล: {note}"
+    return base
+
+
 def needs_info_ok(*, short_code: int) -> str:
     return f"ส่งกลับ #{short_code} ให้ผู้ขอเพิ่มเหตุผลแล้วครับ"
 
