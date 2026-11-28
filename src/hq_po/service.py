@@ -71,6 +71,7 @@ from src.hq_po.stamp import (
     cancel_waiting as cancel_waiting_iclow,
     dismiss_waiting as dismiss_waiting_iclow,
     insert_ordered_lines,
+    mark_no_reorder as mark_no_reorder_icmas,
     release_to_waiting,
     revert_ordered,
     stamp_ordered,
@@ -627,6 +628,36 @@ def _apply_confirm_qtymin(lines: list[dict[str, Any]]) -> None:
             update_qtymin_icmas(code, value)
         except Exception:
             logger.warning("hq po confirm qtymin update failed for %s", code, exc_info=True)
+
+
+def _retire_original_codes(lines: list[dict[str, Any]]) -> list[str]:
+    """Original bcodes marked ไม่สั่งซ้ำ when ordering a substitute."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for line in lines or []:
+        meta = line.get("propose_meta") if isinstance(line.get("propose_meta"), dict) else {}
+        code = str(line.get("retire_original") or meta.get("retire_original") or "").strip()
+        ordered = str(line.get("bcode") or "").strip()
+        if not code or code in seen or code == ordered:
+            continue
+        seen.add(code)
+        out.append(code)
+    return out
+
+
+def _apply_confirm_retire_original(codes: list[str]) -> None:
+    """Set original-code L = -1 after a substitute PO is stored.
+
+    Waiting ICLOW rows for the original stay put — staff clear them separately.
+    Failures are logged and skipped so an L write cannot undo a confirmed PO.
+    """
+    for code in codes or []:
+        try:
+            mark_no_reorder_icmas(code)
+        except Exception:
+            logger.warning(
+                "hq po confirm retire-original failed for %s", code, exc_info=True
+            )
 
 
 def vendor_search_payload(query: str) -> dict[str, Any]:
@@ -1279,6 +1310,7 @@ def confirm_order(
             "stamp_disabled",
             "ยังไม่เปิด HQ_PO_ICLOW_STAMP_ENABLED จึงยังไม่บันทึกใบสั่งซื้อ",
         )
+    retire_originals = _retire_original_codes(lines)
     existing, created = _split_lines(lines)
     peers = [line for line in created if _peer_flag(line)]
     ai_lines = [line for line in created if not _peer_flag(line)]
@@ -1401,6 +1433,7 @@ def confirm_order(
             except Exception:
                 pass
         _apply_confirm_qtymin(planned)
+        _apply_confirm_retire_original(retire_originals)
         order["vendor_name"] = name
         order["skipped"] = skipped
         return order

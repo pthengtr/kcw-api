@@ -276,7 +276,9 @@ def update_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:
     """Write a positive HQ low-stock point (PARTS9 qtylo / ICMAS.QTYMIN).
 
     Zero and negatives are refused here. Setting QTYMIN to -1 (do not restock)
-    stays on dismiss_waiting / นำออก so the waiting ICLOW rows are canceled too.
+    stays on dismiss_waiting / นำออก so the waiting ICLOW rows are canceled too,
+    or on mark_no_reorder when a substitute order should stop restocking the
+    original code without touching its waiting ICLOW rows.
     """
     code = str(bcode or "").strip()
     if not code:
@@ -331,6 +333,40 @@ def update_qtymin(bcode: str, qtymin: Any) -> dict[str, Any]:
             qtyoh=row.get("QTYOH2"),
         )
     return {"bcode": code, "qtymin": value, "parts9_qty": parts9}
+
+
+def mark_no_reorder(bcode: str) -> dict[str, Any]:
+    """Set QTYMIN = -1 so later low-stock passes skip this code.
+
+    Unlike dismiss_waiting, this does not cancel open รอสั่ง ICLOW rows —
+    staff keep those and clear them themselves after switching to a substitute.
+    """
+    code = str(bcode or "").strip()
+    if not code:
+        raise HqPoError("missing", "ไม่มีรหัสสินค้า")
+    try:
+        engine = _engine()
+        with engine.begin() as conn:
+            product = conn.execute(
+                text(
+                    """
+                    UPDATE dbo.ICMAS
+                    SET QTYMIN = -1
+                    WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :bcode
+                    """
+                ),
+                {"bcode": code},
+            )
+            if product.rowcount < 1:
+                raise HqPoError("missing", f"ไม่พบ {code} ใน ICMAS")
+    except HqPoError:
+        raise
+    except Exception as exc:
+        denied = _permission(exc)
+        if denied:
+            raise denied from exc
+        raise HqPoError("iclow_update_failed", str(exc)) from exc
+    return {"bcode": code, "qtymin": -1}
 
 
 def dismiss_waiting(iclow_id: int) -> dict[str, Any]:

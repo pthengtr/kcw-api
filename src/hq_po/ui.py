@@ -110,6 +110,8 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .low-qty .low-edit{justify-content:flex-end}
 .qty-edit .low-qty .meta{margin-top:0}
 .catalog-low{display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-top:6px}
+.catalog-retire{display:flex;align-items:flex-start;gap:6px;margin-top:8px;font-size:12px;font-weight:650;color:var(--text);text-align:left;line-height:1.35}
+.catalog-retire input{margin-top:2px;flex:none}
 .thumb-btn{padding:0;border:0;background:transparent;border-radius:8px;flex:none;cursor:zoom-in;line-height:0}
 .thumb{width:40px;height:40px;object-fit:cover;border-radius:8px;background:#e2e8f0;display:block}
 .thumb-empty{display:none}
@@ -441,7 +443,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
 <script>
 const USER = __USER_JSON__;
 const STAMP = __STAMP__;
-const state = {items:[], view:"vendor", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, doneQ:"", hold:[], holdLoaded:false, busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:"", catalogPeerPick:false};
+const state = {items:[], view:"vendor", tab:"order", doneMode:"bill", orderSort:"new", holdSort:"old", vendorKey:null, vendorName:"", vendorSort:"count", historyOnly:false, vendorHits:[], vendorQuery:"", historyLoaded:{}, historyLoading:false, vendorInsight:"", source:"all", q:"", orders:[], ordersLoaded:false, doneQ:"", hold:[], holdLoaded:false, busy:false, loading:true, sheet:[], forms:null, variant:"simple", sheetSaved:false, insightLoaded:false, insightLoading:false, catalogQ:"", catalogHits:[], catalogQuery:"", catalogLoading:false, catalogPick:null, catalogVendor:"", catalogVendorName:"", catalogPeerPick:false, catalogPeerOrigin:""};
 let insightGen = 0;
 let searchTimer = 0;
 let vendorTimer = 0;
@@ -2515,8 +2517,7 @@ function peerLineHtml(owner, line, section){
   }
   const L = peerLText(line);
   if(L) bits.push(L);
-  const catalog = section === "location" ? ' data-peer-catalog="1"' : "";
-  return `<button type="button" class="peer" data-use="${esc(rowKey(owner))}" data-peer="${esc(line.bcode)}"${catalog}><span class="sku">${esc(line.bcode)}</span>${esc(line.descr||"")}<span class="meta">${esc(bits.join(" · "))}</span></button>`;
+  return `<button type="button" class="peer" data-use="${esc(rowKey(owner))}" data-peer="${esc(line.bcode)}" data-peer-catalog="1"><span class="sku">${esc(line.bcode)}</span>${esc(line.descr||"")}<span class="meta">${esc(bits.join(" · "))}</span></button>`;
 }
 function peerPanelHtml(row){
   const groups = ((row.peers && row.peers.groups) || []).filter(g => (g.lines||[]).length);
@@ -2563,7 +2564,7 @@ function scrollToRow(row){
   const el = document.getElementById("line-" + rowKey(row));
   if(el) el.scrollIntoView({block:"center"});
 }
-function openPeerCatalog(hit){
+function openPeerCatalog(hit, originRow){
   if(!hit || !hit.bcode) return;
   const bcode = String(hit.bcode || "");
   const existing = state.items.find(item => String(item.bcode || "") === bcode);
@@ -2573,15 +2574,18 @@ function openPeerCatalog(hit){
     return;
   }
   const fromVendor = state.view === "vendor" && state.vendorKey != null;
+  const origin = String((originRow && originRow.bcode) || "").trim();
   state.catalogVendor = fromVendor ? (state.vendorKey || "") : "";
   state.catalogVendorName = fromVendor ? (state.vendorName || "") : "";
   state.catalogPeerPick = true;
+  state.catalogPeerOrigin = origin && origin !== bcode ? origin : "";
   state.catalogQ = "";
   state.catalogHits = [];
   state.catalogQuery = "";
   state.catalogLoading = false;
+  const seedQty = originRow ? orderQty(originRow) : 0;
   state.catalogPick = Object.assign({}, hit, {
-    order_qty: 1,
+    order_qty: seedQty > 0 ? seedQty : 1,
     order_ui: hit.ui1 || hit.ui || "",
     suppliers: Array.isArray(hit.suppliers) ? hit.suppliers : null,
     suppliersLoading: true,
@@ -2589,6 +2593,7 @@ function openPeerCatalog(hit){
     apQ: "",
     apHits: [],
     apQuery: "",
+    retire_original: false,
   });
   if(state.catalogVendor){
     state.catalogPick.vendor = state.catalogVendor;
@@ -2600,56 +2605,11 @@ function openPeerCatalog(hit){
   renderCatalog();
   loadCatalogSuppliers(state.catalogPick);
 }
-function usePeer(row, bcode, openForm){
+function usePeer(row, bcode){
   if(!row || !bcode) return;
   const hit = findPeer(row, bcode);
   if(!hit) return;
-  if(openForm){
-    openPeerCatalog(hit);
-    return;
-  }
-  const existing = state.items.find(item => String(item.bcode||"") === bcode);
-  if(!existing && !hit.vendor){
-    alert("สินค้านี้ยังไม่มีเจ้าหนี้ที่สั่งได้");
-    return;
-  }
-  if(existing){
-    renderList();
-    scrollToRow(existing);
-    return;
-  }
-  const added = {
-    iclow_id: null,
-    source: "peer",
-    confirmable: !!hit.vendor,
-    vendor: hit.vendor || "",
-    vendor_name: hit.vendor_name || "",
-    bcode: hit.bcode,
-    descr: hit.descr || "",
-    model: hit.model || "",
-    brand: hit.brand || "",
-    pcode: hit.pcode || "",
-    mcode: hit.mcode || "",
-    ui: hit.ui1 || hit.ui || "",
-    ui1: hit.ui1 || hit.ui || "",
-    ui2: hit.ui2 || "",
-    mtp2: hit.mtp2 || 1,
-    price: hit.price,
-    cost: hit.cost,
-    qty: orderQty(row) || 1,
-    order_qty: orderQty(row) || 1,
-    hq_qtyoh2: hit.hq_qtyoh2,
-    syp_qtyoh2: hit.syp_qtyoh2,
-    company_qtyoh2: hit.company_qtyoh2,
-    hq_qtymin: hit.hq_qtymin,
-    propose_meta: {iclow_origin: "peer"},
-  };
-  const idx = state.items.indexOf(row);
-  state.items.splice(idx < 0 ? state.items.length : idx + 1, 0, added);
-  haystack(added);
-  renderList();
-  scrollToRow(added);
-  scheduleDraftSave(added);
+  openPeerCatalog(hit, row);
 }
 async function loadSuppliers(row){
   if(!row || !row.bcode) return;
@@ -2771,6 +2731,7 @@ function openCatalog(){
   state.catalogVendor = fromVendor ? (state.vendorKey || "") : "";
   state.catalogVendorName = fromVendor ? (state.vendorName || "") : "";
   state.catalogPeerPick = false;
+  state.catalogPeerOrigin = "";
   state.catalogPick = null;
   state.catalogHits = [];
   state.catalogQuery = "";
@@ -2786,6 +2747,7 @@ function openCatalog(){
 function closeCatalog(){
   state.catalogPick = null;
   state.catalogPeerPick = false;
+  state.catalogPeerOrigin = "";
   document.getElementById("catalog").hidden = true;
 }
 function renderCatalog(){
@@ -2795,9 +2757,13 @@ function renderCatalog(){
   document.getElementById("catalogQ").parentElement.hidden = !!pick;
   const sub = document.getElementById("catalogSub");
   if(pick){
-    sub.textContent = state.catalogVendorName
-      ? "ใส่ในใบของ " + state.catalogVendorName
-      : "เลือกจำนวนและเจ้าหนี้ แล้วใส่ในรายการ";
+    if(state.catalogPeerPick && state.catalogPeerOrigin){
+      sub.textContent = "สินค้าแทนของ " + state.catalogPeerOrigin + " — เลือกเจ้าหนี้ จำนวน และค่า L";
+    } else {
+      sub.textContent = state.catalogVendorName
+        ? "ใส่ในใบของ " + state.catalogVendorName
+        : "เลือกจำนวนและเจ้าหนี้ แล้วใส่ในรายการ";
+    }
   } else {
     sub.textContent = "ค้นจากรหัสสินค้า หรือ Location ใน PARTS9";
   }
@@ -2860,10 +2826,16 @@ function catalogLowStockHtml(row){
   const placeholder = liveLowStock(row) != null && liveLowStock(row) < 0 ? "ตั้ง L ใหม่" : "";
   return `<div class="catalog-low"><span class="meta">L ปัจจุบัน: ${esc(current)}</span><label class="low-edit">ค่า L <input class="qty-in low-in" data-catalog-l inputmode="decimal" enterkeyhint="done" value="${esc(lowStockInputValue(row))}" placeholder="${esc(placeholder)}" aria-label="สต็อกต่ำ ${esc(row.bcode || "")}"/></label></div>`;
 }
+function catalogRetireOriginalHtml(row){
+  if(!state.catalogPeerPick || !state.catalogPeerOrigin) return "";
+  if(String(state.catalogPeerOrigin) === String(row.bcode || "")) return "";
+  const checked = row.retire_original ? " checked" : "";
+  return `<label class="catalog-retire"><input type="checkbox" data-catalog-retire${checked}/> ไม่สั่งซ้ำรหัสเดิม (L = -1)<span class="meta"> · ${esc(state.catalogPeerOrigin)}</span></label>`;
+}
 function catalogEditorHtml(row){
   const label = state.catalogVendor ? "ใส่ในใบของเจ้าหนี้นี้" : "ใส่รายการนี้";
   const stock = row.company_qtyoh2 == null ? "" : `<div class="meta">คงเหลือรวม ${esc(qtyText(row.company_qtyoh2))} · HQ ${esc(qtyText(row.hq_qtyoh2))} / SYP ${esc(qtyText(row.syp_qtyoh2))}</div>`;
-  return `<div class="card"><div class="line plain"><div><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${catalogUnitHtml(row)}${stock}${catalogSupplierHtml(row)}<button type="button" class="order-btn" data-catalog-accept>${label}</button></div><div class="qty-edit"><div class="qty-row"><input class="qty-in" data-catalog-qty inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(row.order_qty || 1))}" aria-label="จำนวน ${esc(row.bcode || "")}"/><span class="meta">${esc(row.order_ui || row.ui || "")}</span></div>${catalogLowStockHtml(row)}</div></div></div>`;
+  return `<div class="card"><div class="line plain"><div><div class="code"><span class="sku">${esc(row.bcode || "—")}</span>${esc(row.descr || "")}</div>${productMeta(row)}${catalogUnitHtml(row)}${stock}${catalogSupplierHtml(row)}${catalogRetireOriginalHtml(row)}<button type="button" class="order-btn" data-catalog-accept>${label}</button></div><div class="qty-edit"><div class="qty-row"><input class="qty-in" data-catalog-qty inputmode="decimal" enterkeyhint="done" value="${esc(qtyText(row.order_qty || 1))}" aria-label="จำนวน ${esc(row.bcode || "")}"/><span class="meta">${esc(row.order_ui || row.ui || "")}</span></div>${catalogLowStockHtml(row)}</div></div></div>`;
 }
 function scheduleCatalogSearch(){
   clearTimeout(catalogTimer);
@@ -3061,9 +3033,15 @@ function acceptCatalog(){
     else { renderList(); scrollToRow(existing); }
     return;
   }
+  const peerPick = !!state.catalogPeerPick;
+  const origin = peerPick ? String(state.catalogPeerOrigin || "").trim() : "";
+  const meta = {iclow_origin: peerPick ? "peer" : "catalog"};
+  if(peerPick && row.retire_original && origin && origin !== String(row.bcode || "")){
+    meta.retire_original = origin;
+  }
   const added = {
     iclow_id: null,
-    source: "catalog",
+    source: peerPick ? "peer" : "catalog",
     confirmable: true,
     vendor: row.vendor,
     vendor_name: row.vendor_name || "",
@@ -3087,7 +3065,7 @@ function acceptCatalog(){
     company_qtyoh2: row.company_qtyoh2,
     hq_qtymin: row.hq_qtymin,
     suppliers: row.suppliers || [],
-    propose_meta: {iclow_origin: "catalog"},
+    propose_meta: meta,
     picked: true,
   };
   if(row.order_qtymin != null && row.order_qtymin !== ""){
@@ -3132,6 +3110,23 @@ document.getElementById("catalog").onclick = (e) => {
   }
   if(e.target.closest("[data-catalog-accept]")) acceptCatalog();
 };
+document.getElementById("catalog").onchange = (e) => {
+  const retire = e.target.closest("input[data-catalog-retire]");
+  if(retire && state.catalogPick){
+    state.catalogPick.retire_original = !!retire.checked;
+    return;
+  }
+  const pick = e.target.closest("select[data-catalog-pick]");
+  if(!pick || !state.catalogPick) return;
+  const hit = (state.catalogPick.suppliers || []).find(s => s.acctno === pick.value);
+  if(!hit){
+    state.catalogPick.vendor = "";
+    state.catalogPick.vendor_name = "";
+    return;
+  }
+  state.catalogPick.vendor = hit.acctno;
+  state.catalogPick.vendor_name = hit.name || "";
+};
 document.getElementById("catalog").oninput = (e) => {
   const qty = e.target.closest("input[data-catalog-qty]");
   if(qty && state.catalogPick){
@@ -3150,18 +3145,6 @@ document.getElementById("catalog").oninput = (e) => {
     state.catalogPick.apQ = ap.value;
     scheduleAp(state.catalogPick, "catalog");
   }
-};
-document.getElementById("catalog").onchange = (e) => {
-  const pick = e.target.closest("select[data-catalog-pick]");
-  if(!pick || !state.catalogPick) return;
-  const hit = (state.catalogPick.suppliers || []).find(s => s.acctno === pick.value);
-  if(!hit){
-    state.catalogPick.vendor = "";
-    state.catalogPick.vendor_name = "";
-    return;
-  }
-  state.catalogPick.vendor = hit.acctno;
-  state.catalogPick.vendor_name = hit.name || "";
 };
 document.getElementById("poBoxClose").onclick = () => closePoDialog();
 document.getElementById("poBox").onclick = (e) => {
@@ -3257,7 +3240,7 @@ document.getElementById("list").onclick = (e) => {
   if(peers){ loadPeers(findRow(peers.dataset.peers || "")); return; }
   const use = e.target.closest("[data-use]");
   if(use){
-    usePeer(findRow(use.dataset.use || ""), use.dataset.peer || "", use.getAttribute("data-peer-catalog") === "1");
+    usePeer(findRow(use.dataset.use || ""), use.dataset.peer || "");
     return;
   }
   const fill = e.target.closest("[data-fill]");

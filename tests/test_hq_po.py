@@ -475,14 +475,25 @@ def test_page_defaults_vendor_view():
     assert "อาจไม่ได้ใช้ทดแทนกันทุกตัว" in html
     assert 'data-peer-catalog="1"' in html
     assert "function openPeerCatalog" in html
+    assert "ไม่สั่งซ้ำรหัสเดิม (L = -1)" in html
+    assert "data-catalog-retire" in html
+    assert "catalogPeerOrigin" in html
+    assert "function catalogRetireOriginalHtml" in html
     peer_line_fn = html.split("function peerLineHtml", 1)[1].split("function peerPanelHtml", 1)[0]
-    assert 'section === "location"' in peer_line_fn
-    assert "data-peer-catalog" in peer_line_fn
+    assert 'data-peer-catalog="1"' in peer_line_fn
+    assert 'section === "location"' not in peer_line_fn
     use_peer_fn = html.split("function usePeer", 1)[1].split("async function loadSuppliers", 1)[0]
-    assert "openPeerCatalog(hit)" in use_peer_fn
+    assert "openPeerCatalog(hit, row)" in use_peer_fn
     open_peer_fn = html.split("function openPeerCatalog", 1)[1].split("function usePeer", 1)[0]
     assert "loadCatalogSuppliers(state.catalogPick)" in open_peer_fn
     assert 'document.getElementById("catalog").hidden = false' in open_peer_fn
+    assert "retire_original: false" in open_peer_fn
+    assert "catalogPeerOrigin" in open_peer_fn
+    accept_fn = html.split("function acceptCatalog", 1)[1].split(
+        'document.getElementById("catalogClose")', 1
+    )[0]
+    assert 'iclow_origin: peerPick ? "peer" : "catalog"' in accept_fn
+    assert "meta.retire_original = origin" in accept_fn
     assert "/hq-po/api/products" in html
     assert "/hq-po/api/vendors" in html
     assert "openVendorOrder" in html
@@ -1863,6 +1874,48 @@ def test_apply_confirm_qtymin_writes_only_positive_overrides(monkeypatch):
         ]
     )
     assert writes == [("A1", 8), ("E5", 3.5)]
+
+
+def test_mark_no_reorder_sets_l_minus_one_without_touching_iclow(monkeypatch):
+    from src.hq_po import stamp
+
+    conn = _QtyminConn(after={"QTYGET": 0, "QTYMIN": -1, "QTYOH2": 0})
+    monkeypatch.setattr(stamp, "_engine", lambda: _DismissEngine(conn))
+    result = stamp.mark_no_reorder("OLD1")
+    assert result == {"bcode": "OLD1", "qtymin": -1}
+    updates = [query for query, _params in conn.sql if "UPDATE" in query]
+    assert len(updates) == 1
+    assert "QTYMIN = -1" in updates[0]
+    assert "ICLOW" not in updates[0]
+    assert conn.sql[0][1] == {"bcode": "OLD1"}
+
+
+def test_retire_original_codes_dedupes_and_skips_self():
+    from src.hq_po import service
+
+    codes = service._retire_original_codes(
+        [
+            {"bcode": "NEW1", "propose_meta": {"retire_original": "OLD1"}},
+            {"bcode": "NEW2", "retire_original": "OLD1"},
+            {"bcode": "OLD2", "propose_meta": {"retire_original": "OLD2"}},
+            {"bcode": "NEW3"},
+            {"bcode": "NEW4", "propose_meta": {"retire_original": "OLD3"}},
+        ]
+    )
+    assert codes == ["OLD1", "OLD3"]
+
+
+def test_apply_confirm_retire_original_marks_no_reorder(monkeypatch):
+    from src.hq_po import service
+
+    writes = []
+    monkeypatch.setattr(
+        service,
+        "mark_no_reorder_icmas",
+        lambda bcode: writes.append(bcode) or {"bcode": bcode, "qtymin": -1},
+    )
+    service._apply_confirm_retire_original(["OLD1", "OLD2"])
+    assert writes == ["OLD1", "OLD2"]
 
 
 def test_plan_created_carries_qtymin_override():
