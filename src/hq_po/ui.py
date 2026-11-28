@@ -234,7 +234,8 @@ input[type=search]:focus{outline:2px solid #93c5fd;border-color:var(--blue)}
 .peer .meta{display:block;font-weight:500}
 #sheet{position:fixed;inset:0;z-index:20;background:#eef2f7;overflow:auto;padding:0 0 calc(118px + env(safe-area-inset-bottom))}
 #sheet[hidden]{display:none}
-#sheet .kcw-doc-toolbar{margin:0}
+#sheet .kcw-doc-toolbar{margin:0;flex-wrap:wrap}
+#sheet .kcw-doc-pdf{background:#fff;color:#1d4ed8;border:1px solid #1d4ed8}
 #sheetBody{padding:12px}
 .sheet-preview{overflow:auto;-webkit-overflow-scrolling:touch}
 #printSheet{display:none}
@@ -393,6 +394,7 @@ input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--bl
       <button type="button" id="varSimple" class="on">แบบย่อ</button>
       <button type="button" id="varFull">แบบเต็ม</button>
     </div>
+    <button type="button" id="sheetPdf" class="kcw-doc-print kcw-doc-pdf">เปิด PDF</button>
     <button type="button" id="sheetPrint" class="kcw-doc-print">พิมพ์</button>
   </div>
   <div id="sheetBody"></div>
@@ -1626,7 +1628,7 @@ function setSheetMode(saved){
   state.sheetSaved = !!saved;
   document.getElementById("sheetCommit").hidden = !!saved;
   document.getElementById("sheetFootNote").textContent = saved
-    ? "ใบที่บันทึกแล้ว — กดพิมพ์ได้"
+    ? "ใบที่บันทึกแล้ว — กดเปิด PDF หรือพิมพ์ได้"
     : "ตรวจใบแล้วกดบันทึกว่าสั่งแล้ว";
 }
 async function loadSheetForms(){
@@ -3367,6 +3369,55 @@ document.getElementById("sheetPrint").onclick = () => {
   window.print();
 };
 window.addEventListener("afterprint", () => document.body.removeAttribute("data-print"));
+function pdfFilenameFromHeader(header, fallback){
+  const raw = String(header || "");
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(raw);
+  if(star){
+    try { return decodeURIComponent(star[1].trim().replace(/^"|"$/g, "")); }
+    catch (_err) { /* keep scanning */ }
+  }
+  const plain = /filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)/i.exec(raw);
+  if(plain) return (plain[1] || plain[2] || "").trim().replace(/^"|"$/g, "") || fallback;
+  return fallback;
+}
+async function openSheetPdf(){
+  if(!state.forms){ alert("กำลังจัดใบสั่งซื้อ"); return; }
+  // Open the tab during the click so iOS/Android do not treat it as a blocked popup.
+  const preview = window.open("about:blank", "_blank");
+  setBusy(true, "กำลังสร้าง PDF…");
+  try {
+    const res = await fetch("/hq-po/api/sheet/pdf", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ ...sheetPayload(), variant: state.variant }),
+    });
+    if(!res.ok){
+      const data = await res.json().catch(()=>({}));
+      throw new Error(data.message || "สร้าง PDF ไม่สำเร็จ");
+    }
+    const blob = await res.blob();
+    const name = pdfFilenameFromHeader(res.headers.get("Content-Disposition"), "PO.pdf");
+    const url = URL.createObjectURL(blob);
+    if(preview && !preview.closed){
+      preview.location = url;
+    } else {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (err) {
+    if(preview && !preview.closed) preview.close();
+    alert(err.message || "สร้าง PDF ไม่สำเร็จ");
+  } finally {
+    setBusy(false);
+  }
+}
+document.getElementById("sheetPdf").onclick = () => { openSheetPdf(); };
 document.getElementById("sheetCommit").onclick = () => confirmRows(state.sheet || []);
 function openSavedSheet(id){
   const order = (state.orders || []).find(row => row.order_id === id);

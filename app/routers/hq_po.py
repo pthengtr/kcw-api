@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from src.hq_po.config import get_hq_po_settings
@@ -41,6 +41,7 @@ from src.hq_po.service import (
     vendor_ordered_payload,
     vendor_search_payload,
 )
+from src.hq_po.pdf import build_sheet_pdf, content_disposition
 from src.hq_po.sheet import build_sheet_forms
 from src.hq_po.ui import APP, SESSION_COOKIE, page
 from src.staff_shell.auth import STAFF_COOKIE, identity_from_staff_cookie_for_app
@@ -109,6 +110,10 @@ class SheetGroupBody(BaseModel):
 
 class SheetBody(BaseModel):
     groups: list[SheetGroupBody] = Field(default_factory=list)
+
+
+class SheetPdfBody(SheetBody):
+    variant: str = "simple"
 
 
 def _settings():
@@ -403,6 +408,29 @@ def api_sheet(body: SheetBody, request: Request):
         return build_sheet_forms([group.model_dump() for group in body.groups])
     except HqPoError as exc:
         return _error(exc, 400 if exc.code == "empty" else 409)
+
+
+@router.post("/api/sheet/pdf")
+def api_sheet_pdf(body: SheetPdfBody, request: Request):
+    _, err = _require_api(request)
+    if err:
+        return err
+    try:
+        pdf, filename = build_sheet_pdf(
+            [group.model_dump() for group in body.groups],
+            body.variant,
+        )
+    except HqPoError as exc:
+        status = 400 if exc.code in {"empty", "pdf_unavailable"} else 502
+        return _error(exc, status)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": content_disposition(filename),
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/api/incoming")
