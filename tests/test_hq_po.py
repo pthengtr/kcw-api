@@ -1910,6 +1910,25 @@ def test_save_extra_waiting_draft_writes_shared_bcode_row(monkeypatch):
     except HqPoError as exc:
         assert exc.code == "duplicate"
 
+    monkeypatch.setattr(service, "fetch_unordered_bcodes", lambda _codes: set())
+
+    def boom(_client, _row):
+        raise RuntimeError('relation "hq_po.waiting_extra_drafts" does not exist')
+
+    monkeypatch.setattr(service, "upsert_extra_waiting_draft", boom)
+    try:
+        service.save_extra_waiting_draft(
+            "22010585",
+            qty=1,
+            vendor="7SSY",
+            source="catalog",
+            updated_by="Pannawit",
+        )
+        raise AssertionError("expected missing table")
+    except HqPoError as exc:
+        assert exc.code == "supabase_missing"
+        assert "Draft" in str(exc)
+
 
 def test_extra_draft_item_and_merge_skips_existing_bcode(monkeypatch):
     from src.hq_po import suggest

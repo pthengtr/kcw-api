@@ -490,18 +490,32 @@ def save_extra_waiting_draft(
     if code in live_waiting:
         raise HqPoError("duplicate", f"{code} อยู่ในรายการรอสั่งแล้ว")
     client = get_hq_po_supabase_client()
-    stored = upsert_extra_waiting_draft(
-        client,
-        {
-            "bcode": code,
-            "qty": qty_n,
-            "ui": unit,
-            "vendor_acctno": vendor_acct,
-            "vendor_name": name,
-            "source": origin,
-            "updated_by": (updated_by or "")[:120] or None,
-        },
-    )
+    try:
+        stored = upsert_extra_waiting_draft(
+            client,
+            {
+                "bcode": code,
+                "qty": qty_n,
+                "ui": unit,
+                "vendor_acctno": vendor_acct,
+                "vendor_name": name,
+                "source": origin,
+                "updated_by": (updated_by or "")[:120] or None,
+            },
+        )
+    except HqPoError:
+        raise
+    except Exception as exc:
+        detail = str(exc)
+        lowered = detail.lower()
+        if "waiting_extra_drafts" in lowered and (
+            "does not exist" in lowered or "42p01" in lowered or "pgrst205" in lowered
+        ):
+            raise HqPoError(
+                "supabase_missing",
+                "ยังไม่ได้สร้างตาราง Draft สินค้าเพิ่ม — ติดต่อแอดมิน",
+            ) from exc
+        raise HqPoError("supabase_write", detail or "บันทึก Draft ไม่สำเร็จ") from exc
     return {
         "bcode": code,
         "draft": {
