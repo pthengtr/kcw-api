@@ -470,6 +470,9 @@ def test_page_defaults_vendor_view():
     assert 'id="addProduct"' in html
     assert "เพิ่มสินค้าจากรหัสนี้" in html
     assert "เพิ่มสินค้าที่ไม่อยู่ในรายการ" in html
+    assert "หรือ Location" in html
+    assert "Location เดียวกัน" in html
+    assert "อาจไม่ได้ใช้ทดแทนกันทุกตัว" in html
     assert "/hq-po/api/products" in html
     assert "/hq-po/api/vendors" in html
     assert "openVendorOrder" in html
@@ -874,6 +877,243 @@ def test_peer_groups_keep_catalog_ahead_of_part_numbers():
     assert [line["bcode"] for line in groups[3]["lines"]] == ["E5"]
 
 
+def test_peer_groups_keep_same_location_separate_from_substitutes():
+    from src.hq_po.peers import group_peer_hits
+
+    groups = group_peer_hits(
+        catalog=[{"bcode": "B2", "descr": "confirmed"}],
+        suggestions=[
+            {"bcode": "C3", "source": "pcode", "sources": ["pcode"], "descr": "oem"},
+        ],
+        location_mates=[
+            {"bcode": "B2", "descr": "also in bin"},
+            {"bcode": "30052033", "descr": "bin mate"},
+            {"bcode": "30052971", "descr": "blocked L-1"},
+        ],
+        pcode="OEM-1",
+        location1="15B-3-5",
+    )
+    assert [group["key"] for group in groups] == ["catalog", "location", "pcode"]
+    assert groups[0]["label"] == "กลุ่มทดแทน"
+    assert [line["bcode"] for line in groups[0]["lines"]] == ["B2"]
+    assert groups[1]["label"] == "Location เดียวกัน 15B-3-5"
+    assert [line["bcode"] for line in groups[1]["lines"]] == ["30052033", "30052971"]
+    assert groups[2]["label"] == "เบอร์แท้เดียวกัน OEM-1"
+
+
+def test_products_at_location_skips_blank_and_self(monkeypatch):
+    from src.hq_po import iclow_read
+
+    assert iclow_read.products_at_location("") == []
+    assert iclow_read.products_at_location("   ") == []
+
+    class _Result:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return [
+                {
+                    "BCODE": "30052033",
+                    "DESCR": "A",
+                    "MODEL": "M1",
+                    "BRAND": "X",
+                    "PCODE": "",
+                    "MCODE": "",
+                    "UI1": "ชิ้น",
+                    "UI2": "",
+                    "LOCATION1": "15B-3-5",
+                    "MTP2": 1,
+                    "PRICE1": 10,
+                    "COSTLAST": 8,
+                    "COSTNET": 7,
+                    "VENDOR": "AP1",
+                    "QTYOH2": 2,
+                    "QTYMIN": 5,
+                },
+                {
+                    "BCODE": "30052069",
+                    "DESCR": "self",
+                    "MODEL": "",
+                    "BRAND": "",
+                    "PCODE": "",
+                    "MCODE": "",
+                    "UI1": "ชิ้น",
+                    "UI2": "",
+                    "LOCATION1": "15B-3-5",
+                    "MTP2": 1,
+                    "PRICE1": 1,
+                    "COSTLAST": 1,
+                    "COSTNET": 1,
+                    "VENDOR": "",
+                    "QTYOH2": 0,
+                    "QTYMIN": -1,
+                },
+            ]
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, *_args, **_kwargs):
+            return _Result()
+
+    class _Engine:
+        def connect(self):
+            return _Conn()
+
+    monkeypatch.setattr(iclow_read, "get_site_engine", lambda _site: _Engine())
+    rows = iclow_read.products_at_location("15B-3-5", exclude="30052069")
+    assert [row["bcode"] for row in rows] == ["30052033"]
+    assert rows[0]["location1"] == "15B-3-5"
+    assert rows[0]["qtymin"] == 5
+
+
+def test_load_peers_includes_same_location_group(monkeypatch):
+    from src.hq_po import peers
+
+    monkeypatch.setattr(
+        peers,
+        "fetch_sheet_products",
+        lambda codes: {
+            "30052069": {
+                "descr": "source",
+                "model": "M",
+                "brand": "B",
+                "pcode": "",
+                "mcode": "",
+                "location1": "15B-3-5",
+                "ui": "ชิ้น",
+                "ui2": "",
+                "mtp2": 1,
+                "price1": 10,
+                "costlast": 8,
+                "costnet": 7,
+            },
+            "30052033": {
+                "descr": "mate",
+                "model": "M2",
+                "brand": "Y",
+                "pcode": "",
+                "mcode": "",
+                "location1": "15B-3-5",
+                "ui": "ชิ้น",
+                "ui2": "",
+                "mtp2": 1,
+                "price1": 12,
+                "costlast": 9,
+                "costnet": 8,
+            },
+            "30052971": {
+                "descr": "blocked",
+                "model": "M3",
+                "brand": "Z",
+                "pcode": "",
+                "mcode": "",
+                "location1": "15B-3-5",
+                "ui": "ชิ้น",
+                "ui2": "",
+                "mtp2": 1,
+                "price1": 11,
+                "costlast": 7,
+                "costnet": 6,
+            },
+        },
+    )
+    monkeypatch.setattr(peers, "_catalog_peers", lambda _bcode: [])
+    monkeypatch.setattr(peers, "_live_peers", lambda _bcode: [])
+    monkeypatch.setattr(
+        peers,
+        "products_at_location",
+        lambda loc, exclude="", limit=48: [
+            {
+                "bcode": "30052033",
+                "descr": "mate",
+                "model": "M2",
+                "brand": "Y",
+                "pcode": "",
+                "mcode": "",
+                "ui": "ชิ้น",
+                "ui2": "",
+                "location1": loc,
+                "mtp2": 1,
+                "price1": 12,
+                "costlast": 9,
+                "costnet": 8,
+                "vendor": "AP1",
+                "qtyoh2": 4,
+                "qtymin": 2,
+            },
+            {
+                "bcode": "30052971",
+                "descr": "blocked",
+                "model": "M3",
+                "brand": "Z",
+                "pcode": "",
+                "mcode": "",
+                "ui": "ชิ้น",
+                "ui2": "",
+                "location1": loc,
+                "mtp2": 1,
+                "price1": 11,
+                "costlast": 7,
+                "costnet": 6,
+                "vendor": "AP2",
+                "qtyoh2": 0,
+                "qtymin": -1,
+            },
+        ]
+        if loc == "15B-3-5" and exclude == "30052069"
+        else [],
+    )
+    monkeypatch.setattr(
+        peers,
+        "fetch_dual_stock",
+        lambda codes, refresh=False: (
+            {
+                "30052033": {"qtyoh2": 4, "qtymin": 2, "mtp2": 1},
+                "30052971": {"qtyoh2": 0, "qtymin": -1, "mtp2": 1, "blocked": True},
+            },
+            {
+                "30052033": {"qtyoh2": 1, "mtp2": 1},
+                "30052971": {"qtyoh2": 0, "mtp2": 1},
+            },
+            True,
+        ),
+    )
+    monkeypatch.setattr(
+        peers,
+        "fetch_bcode_suppliers",
+        lambda _codes: (
+            {
+                "30052033": [{"acctno": "AP1", "name": "ร้าน A", "bills": 2, "last_date": "2026-01-01"}],
+                "30052971": [{"acctno": "AP2", "name": "ร้าน B", "bills": 1, "last_date": "2026-02-01"}],
+            },
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        peers,
+        "supplier_choices",
+        lambda history, catalog="", catalog_name="": list(history or []),
+    )
+    payload = peers.load_peers("30052069")
+    assert payload["location1"] == "15B-3-5"
+    assert [group["key"] for group in payload["groups"]] == ["location"]
+    assert payload["groups"][0]["label"] == "Location เดียวกัน 15B-3-5"
+    lines = payload["groups"][0]["lines"]
+    assert [line["bcode"] for line in lines] == ["30052033", "30052971"]
+    assert lines[0]["hq_qtyoh2"] == 4
+    assert lines[0]["syp_qtyoh2"] == 1
+    assert lines[0]["hq_qtymin"] == 2
+    assert lines[0]["vendor"] == "AP1"
+    assert lines[1]["hq_qtymin"] == -1
+    assert lines[1]["cost"] == 7
+
+
 def test_history_reorder_uses_the_peer_path():
     from src.hq_po.service import _peer_flag
 
@@ -927,6 +1167,7 @@ def test_product_search_payload_marks_waiting_and_last_vendor(monkeypatch):
                 "mcode": "FAC",
                 "ui": "ชิ้น",
                 "ui2": "กล่อง",
+                "location1": "15B-3-5",
                 "mtp2": 10,
                 "price1": 120,
                 "costlast": 80,
@@ -968,6 +1209,7 @@ def test_product_search_payload_marks_waiting_and_last_vendor(monkeypatch):
     assert item["company_qtyoh2"] == 3
     assert item["price"] == 120
     assert item["cost"] == 80
+    assert item["location1"] == "15B-3-5"
 
 
 def test_describe_holds_names_the_po_instead_of_calling_it_waiting():

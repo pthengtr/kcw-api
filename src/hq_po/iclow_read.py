@@ -506,7 +506,7 @@ def fetch_sheet_products(bcodes: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def search_products(query: str, *, limit: int = 12) -> list[dict[str, Any]]:
-    """HQ ICMAS rows matching a code, genuine number, factory number, or name."""
+    """HQ ICMAS rows matching a code, genuine number, factory number, name, or location."""
     q = str(query or "").strip()
     if len(q) < 2:
         return []
@@ -526,6 +526,7 @@ def search_products(query: str, *, limit: int = 12) -> list[dict[str, Any]]:
           LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) AS MCODE,
           LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI1,'')))) AS UI1,
           LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI2,'')))) AS UI2,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) AS LOCATION1,
           MTP2,
           PRICE1, COSTLAST, COSTNET,
           LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(VENDOR,'')))) AS VENDOR,
@@ -538,6 +539,8 @@ def search_products(query: str, *, limit: int = 12) -> list[dict[str, Any]]:
             OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) LIKE :prefix
             OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) = :q
             OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) LIKE :prefix
+            OR LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) = :q
+            OR LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) LIKE :prefix
             OR (
               :name_ok = 1 AND (
                 LTRIM(RTRIM(CONVERT(nvarchar(400), COALESCE(DESCR,'')))) LIKE :contains
@@ -545,16 +548,19 @@ def search_products(query: str, *, limit: int = 12) -> list[dict[str, Any]]:
                 OR LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(BRAND,'')))) LIKE :contains
                 OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) LIKE :contains
                 OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) LIKE :contains
+                OR LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) LIKE :contains
               )
             )
           )
         ORDER BY
           CASE
             WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) = :q THEN 0
-            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) LIKE :prefix THEN 1
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) = :q THEN 1
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) LIKE :prefix THEN 2
             WHEN LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) = :q
-              OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) = :q THEN 2
-            ELSE 3
+              OR LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) = :q THEN 3
+            WHEN LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) LIKE :prefix THEN 4
+            ELSE 5
           END,
           LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE)))
         """
@@ -585,12 +591,74 @@ def search_products(query: str, *, limit: int = 12) -> list[dict[str, Any]]:
                 "mcode": str(row.get("MCODE") or "").strip(),
                 "ui": str(row.get("UI1") or "").strip(),
                 "ui2": str(row.get("UI2") or "").strip(),
+                "location1": str(row.get("LOCATION1") or "").strip(),
                 "mtp2": row.get("MTP2"),
                 "price1": row.get("PRICE1"),
                 "costlast": row.get("COSTLAST"),
                 "costnet": row.get("COSTNET"),
                 "vendor": str(row.get("VENDOR") or "").strip(),
                 "qtyoh2": row.get("QTYOH2"),
+            }
+        )
+    return out
+
+
+def products_at_location(
+    location1: str, *, exclude: str = "", limit: int = 48
+) -> list[dict[str, Any]]:
+    """Every HQ ICMAS code in one LOCATION1, including L = -1 (do-not-restock)."""
+    loc = str(location1 or "").strip()
+    if not loc:
+        return []
+    skip = str(exclude or "").strip()
+    engine = get_site_engine("hq")
+    sql = text(
+        """
+        SELECT TOP (:lim)
+          LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE))) AS BCODE,
+          LTRIM(RTRIM(CONVERT(nvarchar(400), COALESCE(DESCR,'')))) AS DESCR,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(MODEL,'')))) AS MODEL,
+          LTRIM(RTRIM(CONVERT(nvarchar(200), COALESCE(BRAND,'')))) AS BRAND,
+          LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(PCODE,'')))) AS PCODE,
+          LTRIM(RTRIM(CONVERT(nvarchar(80), COALESCE(MCODE,'')))) AS MCODE,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI1,'')))) AS UI1,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(UI2,'')))) AS UI2,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) AS LOCATION1,
+          MTP2,
+          PRICE1, COSTLAST, COSTNET,
+          LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(VENDOR,'')))) AS VENDOR,
+          QTYOH2,
+          QTYMIN
+        FROM dbo.ICMAS WITH (NOLOCK)
+        WHERE LTRIM(RTRIM(CONVERT(nvarchar(40), COALESCE(LOCATION1,'')))) = :loc
+        ORDER BY LTRIM(RTRIM(CONVERT(nvarchar(40), BCODE)))
+        """
+    )
+    out: list[dict[str, Any]] = []
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"lim": int(limit), "loc": loc}).mappings().all()
+    for row in rows:
+        bcode = str(row.get("BCODE") or "").strip()
+        if not bcode or bcode == skip:
+            continue
+        out.append(
+            {
+                "bcode": bcode,
+                "descr": str(row.get("DESCR") or "").strip(),
+                "model": str(row.get("MODEL") or "").strip(),
+                "brand": str(row.get("BRAND") or "").strip(),
+                "pcode": str(row.get("PCODE") or "").strip(),
+                "mcode": str(row.get("MCODE") or "").strip(),
+                "ui": str(row.get("UI1") or "").strip(),
+                "ui2": str(row.get("UI2") or "").strip(),
+                "location1": str(row.get("LOCATION1") or "").strip(),
+                "mtp2": row.get("MTP2"),
+                "price1": row.get("PRICE1"),
+                "costlast": row.get("COSTLAST"),
+                "costnet": row.get("COSTNET"),
+                "vendor": str(row.get("VENDOR") or "").strip(),
+                "qtyoh2": row.get("QTYOH2"),
+                "qtymin": row.get("QTYMIN"),
             }
         )
     return out
