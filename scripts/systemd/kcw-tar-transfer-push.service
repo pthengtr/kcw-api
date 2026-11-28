@@ -1,8 +1,9 @@
 [Unit]
-Description=Push yesterday TAR-CNTAR net to LINE
+Description=Push yesterday TAR-CNTAR net to LINE (peung / prefer bot v2)
 
 [Service]
 Type=oneshot
+# Stable main checkout — not an ephemeral support worktree (avoids CHDIR failures).
 WorkingDirectory=%h/projects/kcw-api
 EnvironmentFile=%h/projects/kcw-api/.env
 Environment=TZ=Asia/Bangkok

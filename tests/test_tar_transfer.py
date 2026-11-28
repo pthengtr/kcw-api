@@ -1,7 +1,10 @@
 from datetime import date
 from decimal import Decimal
 
+import os
+
 import pytest
+import requests
 
 from src.expense_cash.approvers import PEUNG_LINE_USER_ID
 from src.handlers.router import route_user_text
@@ -204,9 +207,9 @@ def test_push_yesterday_waits_when_not_ready(monkeypatch, tmp_path):
     assert already_sent(date(2026, 11, 28)) is False
 
 
-def test_push_yesterday_binds_outbound_channel(monkeypatch, tmp_path):
+def test_push_yesterday_prefers_outbound_without_bind(monkeypatch, tmp_path):
     monkeypatch.setenv("TAR_TRANSFER_PUSH_STATE", str(tmp_path / "sent"))
-    monkeypatch.delenv("TAR_TRANSFER_LINE_CHANNEL", raising=False)
+    monkeypatch.setenv("TAR_TRANSFER_LINE_CHANNEL", "new")
     monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
     monkeypatch.setattr(tar_push, "get_engine", lambda: _Engine([]))
     monkeypatch.setattr(tar_push, "push_recipient_ids", lambda engine: ["Upeung"])
@@ -229,27 +232,52 @@ def test_push_yesterday_binds_outbound_channel(monkeypatch, tmp_path):
     class _Channel:
         name = "secondary"
 
-    bound = []
+    seen_outbound: list[str | None] = []
     sent = []
 
-    class _Ctx:
-        def __enter__(self):
-            bound.append("enter")
-            return _Channel()
-
-        def __exit__(self, *args):
-            return False
+    def fake_push(uid, text):
+        seen_outbound.append(os.environ.get("LINE_OUTBOUND_CHANNEL"))
+        sent.append((uid, text))
 
     monkeypatch.setattr(tar_push, "outbound_line_channel", lambda pref: _Channel())
-    monkeypatch.setattr(tar_push, "use_line_channel", lambda channel: _Ctx())
-    monkeypatch.setattr(
-        tar_push,
-        "push_line_message",
-        lambda uid, text: sent.append((uid, text)),
-    )
+    monkeypatch.setattr(tar_push, "push_line_message", fake_push)
 
     result = push_yesterday(today=date(2026, 11, 28))
     assert result.startswith("pushed 2026-11-27 to 1 user(s)")
-    assert bound == ["enter"]
+    assert seen_outbound == ["new"]
+    assert os.environ.get("LINE_OUTBOUND_CHANNEL") is None
     assert sent == [("Upeung", "TAR msg")]
     assert already_sent(date(2026, 11, 28)) is True
+
+
+def test_push_yesterday_soft_fails_on_quota_429(monkeypatch, tmp_path):
+    monkeypatch.setenv("TAR_TRANSFER_PUSH_STATE", str(tmp_path / "sent"))
+    monkeypatch.setattr(tar_push, "get_engine", lambda: _Engine([]))
+    monkeypatch.setattr(tar_push, "push_recipient_ids", lambda engine: ["Upeung"])
+    monkeypatch.setattr(
+        tar_push,
+        "load_tar_transfer",
+        lambda engine, day: {
+            "date": day.isoformat(),
+            "ready": True,
+            "hq_net": 1,
+            "syp_net": 2,
+        },
+    )
+    monkeypatch.setattr(
+        tar_push,
+        "format_tar_transfer_message",
+        lambda summary: "TAR msg",
+    )
+
+    class _Resp:
+        status_code = 429
+
+    def boom(uid, text):
+        raise requests.HTTPError("429", response=_Resp())
+
+    monkeypatch.setattr(tar_push, "push_line_message", boom)
+    result = push_yesterday(today=date(2026, 11, 28))
+    assert "quota 429" in result
+    assert "will retry" in result
+    assert already_sent(date(2026, 11, 28)) is False
