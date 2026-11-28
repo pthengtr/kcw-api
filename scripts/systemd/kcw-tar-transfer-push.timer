@@ -1,9 +1,10 @@
 [Unit]
-Description=Daily 10:00 Asia/Bangkok TAR net LINE push
+Description=Hourly 10:00-18:00 Asia/Bangkok TAR net LINE push (retries until sent)
 
 [Timer]
-OnCalendar=*-*-* 10:00:00
-Timezone=Asia/Bangkok
+# Hourly window so a 429 / late fin_* day still delivers once quota or data recovers.
+# already_sent in the job prevents duplicates after a successful push.
+OnCalendar=*-*-* 10..18:00:00
 Persistent=true
 AccuracySec=1min
 Unit=kcw-tar-transfer-push.service

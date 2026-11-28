@@ -1,8 +1,15 @@
-"""Push yesterday's TAR net to Narumon at 10:00 Asia/Bangkok.
+"""Push yesterday's TAR net to Peung (auto LINE notice).
+
+Runs on a systemd timer (default hourly 10:00–18:00 Asia/Bangkok). The
+state file prevents duplicate sends; a failed push leaves the day unmarked
+so the next tick retries.
 
 Recipient: TAR_TRANSFER_PUSH_LINE_USER_ID if set, otherwise an allowed
 ops.line_access row whose display name matches TAR_TRANSFER_PUSH_NAMES
-(default narumonwit).
+(default peung). Falls back to the known Peung LINE id roster.
+
+Channel: prefers the outbound/"new" OA (bot v2) when dual channels are
+configured — TAR_TRANSFER_LINE_CHANNEL or LINE_OUTBOUND_CHANNEL, else "new".
 """
 
 from __future__ import annotations
@@ -12,17 +19,25 @@ import os
 from datetime import date, timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import text
 
-from src.bot.line_bot import push_line_message
-from src.db import get_engine
-from src.tar_transfer.summary import (
+load_dotenv()
+
+from src.bot.line_bot import (  # noqa: E402
+    outbound_line_channel,
+    push_line_message,
+    use_line_channel,
+)
+from src.db import get_engine  # noqa: E402
+from src.expense_cash.approvers import PEUNG_LINE_USER_ID  # noqa: E402
+from src.tar_transfer.summary import (  # noqa: E402
     bangkok_today,
     format_tar_transfer_message,
     load_tar_transfer,
 )
 
-DEFAULT_PUSH_NAMES = "narumonwit"
+DEFAULT_PUSH_NAMES = "peung"
 
 
 def push_names() -> list[str]:
@@ -82,7 +97,23 @@ def push_recipient_ids(engine) -> list[str]:
     explicit = explicit_push_user_ids()
     if explicit:
         return explicit
-    return line_user_ids_for_names(engine, push_names())
+    names = push_names()
+    found = line_user_ids_for_names(engine, names)
+    if found:
+        return found
+    # Peung is the only intended auto recipient; keep delivery working even
+    # when display_name matching misses the ops.line_access row.
+    if "peung" in names:
+        return [PEUNG_LINE_USER_ID]
+    return []
+
+
+def outbound_preference() -> str:
+    return (
+        os.getenv("TAR_TRANSFER_LINE_CHANNEL")
+        or os.getenv("LINE_OUTBOUND_CHANNEL")
+        or "new"
+    ).strip() or "new"
 
 
 def state_path() -> Path:
@@ -121,16 +152,35 @@ def push_yesterday(*, force: bool = False, today: date | None = None) -> str:
         )
 
     report_day = send_day - timedelta(days=1)
-    message = format_tar_transfer_message(load_tar_transfer(engine, report_day))
-    for line_user_id in recipients:
-        push_line_message(line_user_id, message)
+    summary = load_tar_transfer(engine, report_day)
+    if not summary.get("ready") and not force:
+        # Leave unmarked so the next timer tick retries once fin_* lands.
+        latest = summary.get("latest") or "none"
+        return (
+            f"not ready {report_day.isoformat()} "
+            f"(latest={latest}); will retry"
+        )
+
+    message = format_tar_transfer_message(summary)
+    channel = outbound_line_channel(outbound_preference())
+    with use_line_channel(channel):
+        for line_user_id in recipients:
+            push_line_message(line_user_id, message)
     mark_sent(send_day)
-    return f"pushed {report_day.isoformat()} to {len(recipients)} user(s)"
+    channel_name = channel.name if channel else "default"
+    return (
+        f"pushed {report_day.isoformat()} to {len(recipients)} user(s) "
+        f"via {channel_name}"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Push yesterday's TAR net to LINE")
-    parser.add_argument("--force", action="store_true", help="Send again even if today already pushed")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Send again even if today already pushed / data not ready",
+    )
     args = parser.parse_args(argv)
     print(push_yesterday(force=args.force))
     return 0
