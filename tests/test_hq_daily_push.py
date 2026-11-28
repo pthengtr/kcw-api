@@ -1,9 +1,19 @@
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import requests
+
 import src.bot.line_bot as line_bot
 import src.hq_daily_push as hq_daily_push
-from src.hq_daily_push import fail_names, format_hq_failure, log_excerpt, ok_names
+from src.hq_daily_push import (
+    fail_names,
+    format_hq_failure,
+    log_excerpt,
+    ok_names,
+    outbound_preference,
+    push_to,
+)
 from src.tar_transfer.push import line_user_ids_for_names, name_tokens
 
 
@@ -69,7 +79,11 @@ def test_push_reads_token_set_after_import(monkeypatch):
         captured["auth"] = headers["Authorization"]
         return _Resp()
 
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "late-secret")
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "late-token")
+    monkeypatch.delenv("LINE_CHANNEL_ACCESS_TOKEN_2", raising=False)
+    monkeypatch.delenv("LINE_CHANNEL_SECRET_2", raising=False)
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
     monkeypatch.setattr(line_bot.requests, "post", fake_post)
     line_bot.push_line_message("U1", "hi")
     assert captured["auth"] == "Bearer late-token"
@@ -120,3 +134,62 @@ def test_failure_message_includes_step_and_log(tmp_path):
     assert "exit 1" in text
     assert "FAILED: vat inventory" in text
     assert "ยอดขาย" not in text
+
+
+def test_outbound_defaults_to_new(monkeypatch):
+    monkeypatch.delenv("HQ_DAILY_LINE_CHANNEL", raising=False)
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
+    assert outbound_preference() == "new"
+    monkeypatch.setenv("HQ_DAILY_LINE_CHANNEL", "secondary")
+    assert outbound_preference() == "secondary"
+
+
+def test_push_to_prefers_bot_v2_without_bind(monkeypatch):
+    monkeypatch.setenv("HQ_DAILY_LINE_CHANNEL", "new")
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
+
+    class _Channel:
+        name = "secondary"
+
+    seen_outbound: list[str | None] = []
+    sent = []
+
+    def fake_push(uid, text):
+        seen_outbound.append(os.environ.get("LINE_OUTBOUND_CHANNEL"))
+        sent.append((uid, text))
+
+    monkeypatch.setattr(
+        hq_daily_push,
+        "line_user_ids_for_names",
+        lambda engine, names: ["Upeung", "Uphu"],
+    )
+    monkeypatch.setattr(hq_daily_push, "outbound_line_channel", lambda pref: _Channel())
+    monkeypatch.setattr(hq_daily_push, "push_line_message", fake_push)
+
+    result = push_to(object(), ["peung", "phu"], "ยอดขาย test")
+    assert result == "pushed to 2 user(s) via secondary"
+    assert seen_outbound == ["new", "new"]
+    assert os.environ.get("LINE_OUTBOUND_CHANNEL") is None
+    assert sent == [("Upeung", "ยอดขาย test"), ("Uphu", "ยอดขาย test")]
+
+
+def test_push_to_soft_fails_on_quota_429(monkeypatch):
+    monkeypatch.delenv("HQ_DAILY_LINE_CHANNEL", raising=False)
+    monkeypatch.delenv("LINE_OUTBOUND_CHANNEL", raising=False)
+    monkeypatch.setattr(
+        hq_daily_push,
+        "line_user_ids_for_names",
+        lambda engine, names: ["Upeung"],
+    )
+
+    class _Resp:
+        status_code = 429
+
+    def boom(uid, text):
+        raise requests.HTTPError("429", response=_Resp())
+
+    monkeypatch.setattr(hq_daily_push, "push_line_message", boom)
+    result = push_to(object(), ["peung"], "ยอดขาย test")
+    assert "quota 429" in result
+    assert "bot v2" in result
+    assert os.environ.get("LINE_OUTBOUND_CHANNEL") is None
