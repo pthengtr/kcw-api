@@ -469,4 +469,8 @@ def delete_waiting_drafts(
     for start in range(0, len(codes), 250):
         chunk = codes[start : start + 250]
         _table(client, "waiting_drafts").delete().in_("bcode", chunk).execute()
-        _table(client, "waiting_extra_drafts").delete().in_("bcode", chunk).execute()
+        try:
+            _table(client, "waiting_extra_drafts").delete().in_("bcode", chunk).execute()
+        except Exception:
+            # Catalog/peer drafts table may lag a deploy; ICLOW draft cleanup still wins.
+            pass

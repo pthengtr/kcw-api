@@ -851,7 +851,7 @@ function draftStatusText(row){
   const d = row && row.draft;
   if(!d) return "";
   if(d.saving) return "กำลังบันทึก…";
-  if(d.error) return "บันทึกไม่สำเร็จ";
+  if(d.error) return d.error_message || "บันทึกไม่สำเร็จ";
   if(d.stale) return staleFlagLabel(row);
   if(d.saved) return "บันทึกแล้ว";
   return "";
@@ -969,11 +969,16 @@ async function saveDraft(row){
     const data = await res.json().catch(() => ({}));
     if(draftSeq[id] !== seq) return;
     if(!res.ok) throw new Error(data.message || "บันทึกไม่สำเร็จ");
-    row.draft = Object.assign({}, data.draft || {}, {saving: false, saved: true, error: false});
+    row.draft = Object.assign({}, data.draft || {}, {saving: false, saved: true, error: false, error_message: ""});
     paintDraftStatus(row);
   } catch (err) {
     if(draftSeq[id] !== seq) return;
-    row.draft = Object.assign({}, row.draft || {}, {saving: false, saved: false, error: true});
+    row.draft = Object.assign({}, row.draft || {}, {
+      saving: false,
+      saved: false,
+      error: true,
+      error_message: (err && err.message) || "บันทึกไม่สำเร็จ",
+    });
     paintDraftStatus(row);
   }
 }

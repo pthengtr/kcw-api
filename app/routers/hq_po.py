@@ -542,26 +542,7 @@ def api_cancel_waiting(iclow_id: int, request: Request):
         return _error(exc, 400 if exc.code == "missing" else 409)
 
 
-@router.put("/api/drafts/{iclow_id}")
-def api_save_draft(iclow_id: int, body: DraftBody, request: Request):
-    ident, err = _require_api(request)
-    if err:
-        return err
-    try:
-        return save_waiting_draft(
-            iclow_id,
-            qty=body.qty,
-            vendor=body.vendor,
-            vendor_name=body.vendor_name,
-            ui=body.ui,
-            updated_by=_actor(ident),
-        )
-    except HqPoError as exc:
-        return _error(exc, 400 if exc.code in ("missing", "bad_qty") else 409)
-    except Exception as exc:
-        return JSONResponse({"error": "draft_save_failed", "message": str(exc)}, status_code=502)
-
-
+# Register /extra before /{iclow_id} so the static path always wins.
 @router.put("/api/drafts/extra/{bcode}")
 def api_save_extra_draft(bcode: str, body: DraftBody, request: Request):
     ident, err = _require_api(request)
@@ -580,7 +561,9 @@ def api_save_extra_draft(bcode: str, body: DraftBody, request: Request):
     except HqPoError as exc:
         return _error(
             exc,
-            400 if exc.code in ("missing", "bad_qty", "vendor_mismatch") else 409,
+            400
+            if exc.code in ("missing", "bad_qty", "vendor_mismatch", "supabase_missing")
+            else 409,
         )
     except Exception as exc:
         return JSONResponse({"error": "draft_save_failed", "message": str(exc)}, status_code=502)
@@ -597,6 +580,26 @@ def api_delete_extra_draft(bcode: str, request: Request):
         return _error(exc, 400 if exc.code == "missing" else 409)
     except Exception as exc:
         return JSONResponse({"error": "draft_delete_failed", "message": str(exc)}, status_code=502)
+
+
+@router.put("/api/drafts/{iclow_id}")
+def api_save_draft(iclow_id: int, body: DraftBody, request: Request):
+    ident, err = _require_api(request)
+    if err:
+        return err
+    try:
+        return save_waiting_draft(
+            iclow_id,
+            qty=body.qty,
+            vendor=body.vendor,
+            vendor_name=body.vendor_name,
+            ui=body.ui,
+            updated_by=_actor(ident),
+        )
+    except HqPoError as exc:
+        return _error(exc, 400 if exc.code in ("missing", "bad_qty") else 409)
+    except Exception as exc:
+        return JSONResponse({"error": "draft_save_failed", "message": str(exc)}, status_code=502)
 
 
 @router.post("/api/drafts/check")
