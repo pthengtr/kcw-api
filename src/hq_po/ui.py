@@ -826,8 +826,11 @@ function productTools(row){
   const dismiss = canStamp
     ? `<button type="button" class="peer-btn warn" data-dismiss="${esc(String(row.iclow_id))}" data-bcode="${esc(row.bcode||"")}">นำออก</button>`
     : "";
+  const removeExtra = (STAMP && !row.iclow_id && row.bcode && (row.source === "catalog" || row.source === "peer" || row.source === "history"))
+    ? `<button type="button" class="peer-btn warn" data-remove-extra="${esc(row.bcode||"")}">นำออก</button>`
+    : "";
   const lowEdit = lowStockEdit(row);
-  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${lowEdit}${cancel}${dismiss}</div></details>`;
+  const manage = `<details class="manage"><summary>จัดการ</summary><div class="manage-menu"><button type="button" class="peer-btn" data-vendors="${key}">${esc(vendorLabel)}</button>${stock}${back}<button type="button" class="peer-btn" data-peers="${key}">สินค้าแทน</button>${lowEdit}${cancel}${dismiss}${removeExtra}</div></details>`;
   return {
     actions: `<div class="line-actions">${manage}${tradeButton(row.bcode)}</div>`,
     extra: `<div class="col-extra"><div class="peers" data-vendorbox="${key}" hidden></div><div class="peers" data-peerbox="${key}" hidden></div></div>`,
@@ -860,13 +863,41 @@ function draftStatusClass(row){
   if(d.saved && !d.saving) return " ok";
   return "";
 }
+function draftRowKey(row){
+  if(!row) return "";
+  if(row.iclow_id) return "iclow:" + row.iclow_id;
+  if(row.bcode) return "bcode:" + row.bcode;
+  return "";
+}
+function draftSaveUrl(row){
+  if(row && row.iclow_id) return "/hq-po/api/drafts/" + encodeURIComponent(row.iclow_id);
+  if(row && row.bcode) return "/hq-po/api/drafts/extra/" + encodeURIComponent(row.bcode);
+  return "";
+}
+function canDraftSave(row){
+  if(!STAMP || !row) return false;
+  if(row.iclow_id) return true;
+  return !!(row.bcode && (row.source === "catalog" || row.source === "peer" || row.source === "history"));
+}
+function findDraftRow(id){
+  if(!id) return null;
+  if(id.startsWith("iclow:")){
+    const want = id.slice(6);
+    return (state.items || []).find(item => String(item.iclow_id) === want) || null;
+  }
+  if(id.startsWith("bcode:")){
+    const want = id.slice(6);
+    return (state.items || []).find(item => !item.iclow_id && String(item.bcode || "") === want) || null;
+  }
+  return (state.items || []).find(item => String(item.iclow_id) === id) || null;
+}
 function draftStatusHtml(row){
-  if(!(row && row.iclow_id && STAMP)) return "";
+  if(!(row && STAMP && canDraftSave(row))) return "";
   const text = draftStatusText(row);
   return `<div class="draft-status${draftStatusClass(row)}" data-draft-status="${esc(rowKey(row))}">${esc(text)}</div>`;
 }
 function paintDraftStatus(row){
-  if(!row || !row.iclow_id) return;
+  if(!row || !canDraftSave(row)) return;
   const el = document.querySelector(`[data-draft-status="${CSS.escape(rowKey(row))}"]`);
   if(el){
     el.textContent = draftStatusText(row);
@@ -880,8 +911,9 @@ function paintDraftStatus(row){
   }
 }
 function scheduleDraftSave(row){
-  if(!STAMP || !row || !row.iclow_id) return;
-  const id = String(row.iclow_id);
+  if(!canDraftSave(row)) return;
+  const id = draftRowKey(row);
+  if(!id) return;
   clearTimeout(draftTimers[id]);
   row.draft = Object.assign({}, row.draft || {}, {saving: true, saved: false, error: false});
   paintDraftStatus(row);
@@ -893,35 +925,44 @@ function flushPendingDrafts(){
   for(const id of ids){
     clearTimeout(draftTimers[id]);
     delete draftTimers[id];
-    const row = (state.items || []).find(item => String(item.iclow_id) === id);
+    const row = findDraftRow(id);
     if(row) saveDraft(row);
   }
 }
 async function saveDraft(row){
-  if(!STAMP || !row || !row.iclow_id) return;
+  if(!canDraftSave(row)) return;
   const qty = orderQty(row);
   if(!(qty > 0)){
     row.draft = Object.assign({}, row.draft || {}, {saving: false, saved: false, error: false});
     paintDraftStatus(row);
     return;
   }
-  const id = String(row.iclow_id);
+  if(!row.iclow_id && !row.vendor){
+    row.draft = Object.assign({}, row.draft || {}, {saving: false, saved: false, error: false});
+    paintDraftStatus(row);
+    return;
+  }
+  const id = draftRowKey(row);
+  const url = draftSaveUrl(row);
+  if(!id || !url) return;
   clearTimeout(draftTimers[id]);
   delete draftTimers[id];
   const seq = (draftSeq[id] || 0) + 1;
   draftSeq[id] = seq;
   row.draft = Object.assign({}, row.draft || {}, {saving: true, saved: false, error: false});
   paintDraftStatus(row);
+  const body = {
+    qty,
+    vendor: row.vendor || "",
+    vendor_name: row.vendor_name || "",
+    ui: selectedUnit(row) || "",
+  };
+  if(!row.iclow_id) body.source = row.source || "catalog";
   try {
-    const res = await fetch("/hq-po/api/drafts/" + encodeURIComponent(id), {
+    const res = await fetch(url, {
       method: "PUT",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        qty,
-        vendor: row.vendor || "",
-        vendor_name: row.vendor_name || "",
-        ui: selectedUnit(row) || "",
-      }),
+      body: JSON.stringify(body),
       // Survive refresh / service switch while the request is in flight.
       keepalive: true,
     });
@@ -935,6 +976,26 @@ async function saveDraft(row){
     row.draft = Object.assign({}, row.draft || {}, {saving: false, saved: false, error: true});
     paintDraftStatus(row);
   }
+}
+async function removeExtraDraft(bcode){
+  const code = String(bcode || "").trim();
+  if(!code || !STAMP) return;
+  const name = code ? ` ${code}` : "";
+  if(!confirm(`นำออก${name} ออกจากรายการรอสั่ง?\nจะล้าง Draft ของสินค้านี้`)) return;
+  setBusy(true, "กำลังนำออก…");
+  let failed = null;
+  try {
+    const res = await fetch("/hq-po/api/drafts/extra/" + encodeURIComponent(code), {method:"DELETE"});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) failed = new Error(data.message || "นำออกไม่สำเร็จ");
+  } catch (err) {
+    failed = err;
+  } finally {
+    setBusy(false);
+  }
+  if(failed){ alert(failed.message || "นำออกไม่สำเร็จ"); return; }
+  state.items = state.items.filter(row => !(!row.iclow_id && String(row.bcode || "") === code));
+  renderList();
 }
 document.addEventListener("visibilitychange", () => {
   if(document.visibilityState === "hidden") flushPendingDrafts();
@@ -2518,6 +2579,7 @@ function usePeer(row, bcode){
   haystack(added);
   renderList();
   scrollToRow(added);
+  scheduleDraftSave(added);
 }
 async function loadSuppliers(row){
   if(!row || !row.bcode) return;
@@ -2946,6 +3008,7 @@ function acceptCatalog(){
   state.items.push(added);
   closeCatalog();
   openVendorOrder(added);
+  scheduleDraftSave(added);
 }
 document.getElementById("catalogClose").onclick = () => closeCatalog();
 document.getElementById("catalogBack").onclick = () => {
@@ -3019,6 +3082,11 @@ document.getElementById("list").onclick = (e) => {
   const dismiss = e.target.closest("[data-dismiss]");
   if(dismiss){
     dismissWaiting(dismiss.getAttribute("data-dismiss") || "", dismiss.getAttribute("data-bcode") || "");
+    return;
+  }
+  const removeExtra = e.target.closest("[data-remove-extra]");
+  if(removeExtra){
+    removeExtraDraft(removeExtra.getAttribute("data-remove-extra") || "");
     return;
   }
   const block = e.target.closest("[data-block]");

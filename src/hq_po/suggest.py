@@ -436,6 +436,136 @@ def _attach_waiting_drafts(items: list[dict[str, Any]]) -> None:
             apply_waiting_draft(item, draft)
 
 
+def _extra_draft_item(
+    draft: dict[str, Any],
+    *,
+    product: dict[str, Any],
+    names: dict[str, str],
+) -> dict[str, Any]:
+    """Rebuild a catalog/peer line from a shared extra draft."""
+    bcode = str(draft.get("bcode") or "").strip()
+    origin = str(draft.get("source") or "catalog").strip().lower() or "catalog"
+    if origin not in ("catalog", "peer", "history"):
+        origin = "catalog"
+    vendor = str(draft.get("vendor_acctno") or "").strip()
+    name = draft.get("vendor_name")
+    vendor_name = str(name).strip() if name not in (None, "") else names.get(vendor)
+    try:
+        qty_n = float(draft.get("qty"))
+    except (TypeError, ValueError):
+        qty_n = 0.0
+    if not (qty_n > 0):
+        qty_n = 1.0
+    ui = str(draft.get("ui") or "").strip() or str(product.get("ui") or "").strip()
+    return {
+        "iclow_id": None,
+        "source": origin,
+        "confirmable": bool(vendor),
+        "vendor": vendor,
+        "vendor_name": vendor_name,
+        "bcode": bcode,
+        "descr": str(product.get("descr") or "").strip(),
+        "model": str(product.get("model") or "").strip(),
+        "brand": str(product.get("brand") or "").strip(),
+        "pcode": str(product.get("pcode") or "").strip(),
+        "mcode": str(product.get("mcode") or "").strip(),
+        "ui": ui,
+        "ui1": str(product.get("ui") or "").strip() or ui,
+        "ui2": str(product.get("ui2") or "").strip(),
+        "mtp2": product.get("mtp2") or 1,
+        "qty": qty_n,
+        "order_qty": qty_n,
+        "order_ui": ui,
+        "price": _positive_money(product.get("price1")),
+        "cost": _positive_money(product.get("costlast"))
+        or _positive_money(product.get("costnet")),
+        "hq_qtyoh2": None,
+        "syp_qtyoh2": None,
+        "company_qtyoh2": None,
+        "propose_meta": {"iclow_origin": origin},
+        "picked": True,
+        "draft": {
+            "saved": True,
+            "updated_at": draft.get("updated_at"),
+            "updated_by": draft.get("updated_by"),
+            "stale": False,
+            "stale_reasons": [],
+        },
+    }
+
+
+def _merge_extra_waiting_drafts(items: list[dict[str, Any]]) -> None:
+    """Append shared catalog/peer drafts that are not already on the ICLOW list."""
+    have = {
+        str(item.get("bcode") or "").strip()
+        for item in items
+        if str(item.get("bcode") or "").strip()
+    }
+    try:
+        from src.hq_po.db import get_hq_po_supabase_client, list_extra_waiting_drafts
+
+        drafts = list_extra_waiting_drafts(get_hq_po_supabase_client())
+    except Exception:
+        logger.warning("hq po extra-draft lookup failed", exc_info=True)
+        return
+    pending = [
+        draft
+        for draft in drafts
+        if _valid_bcode(draft.get("bcode"))
+        and str(draft.get("bcode") or "").strip() not in have
+    ]
+    if not pending:
+        return
+    codes = [str(draft.get("bcode") or "").strip() for draft in pending]
+    try:
+        products = fetch_sheet_products(codes)
+    except Exception:
+        logger.warning("hq po extra-draft catalog lookup failed", exc_info=True)
+        products = {}
+    try:
+        names = fetch_vendor_names(
+            [str(draft.get("vendor_acctno") or "").strip() for draft in pending]
+        )
+    except Exception:
+        logger.warning("hq po extra-draft vendor name lookup failed", exc_info=True)
+        names = {}
+    try:
+        hq, syp, stock_ok = fetch_dual_stock(codes)
+    except Exception:
+        logger.warning("hq po extra-draft stock lookup failed", exc_info=True)
+        hq, syp, stock_ok = {}, {}, False
+    try:
+        parts9 = fetch_parts9_qty(codes)
+    except Exception:
+        logger.warning("hq po extra-draft parts9 lookup failed", exc_info=True)
+        parts9 = {}
+    extras: list[dict[str, Any]] = []
+    for draft in pending:
+        bcode = str(draft.get("bcode") or "").strip()
+        if not bcode or bcode in have:
+            continue
+        item = _extra_draft_item(draft, product=products.get(bcode) or {}, names=names)
+        if stock_ok:
+            hq_meta = hq.get(bcode)
+            syp_meta = syp.get(bcode)
+            if hq_meta is None or syp_meta is None:
+                hq_meta = hq_meta or {"qtyoh2": 0, "mtp2": 1, "blocked": False}
+                syp_meta = syp_meta or {"qtyoh2": 0, "mtp2": 1, "blocked": False}
+            _attach_stock(item, hq_meta, syp_meta)
+        qty = parts9.get(bcode)
+        if qty:
+            item["parts9_qty"] = qty
+        extras.append(item)
+        have.add(bcode)
+    if not extras:
+        return
+    from src.hq_po.vendor_link import apply_vendor_blocks
+
+    apply_vendor_blocks(extras)
+    _attach_photos(extras)
+    items.extend(extras)
+
+
 def _catalog_for(bcodes: list[str]) -> dict[str, dict[str, Any]]:
     try:
         return fetch_sheet_products(bcodes)
@@ -629,6 +759,8 @@ def build_suggest() -> dict[str, Any]:
     _attach_parts9(items, parts9)
     attach_catalog(items, products)
     _attach_photos(items)
+    # Catalog / peer drafts survive refresh; skip bcodes already on ICLOW.
+    _merge_extra_waiting_drafts(items)
     return {
         "items": sort_products(items),
         "stock_ok": stock_ok,
